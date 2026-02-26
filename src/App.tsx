@@ -1,9 +1,9 @@
-import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
-import { Dashboard } from './pages/Dashboard';
-import { CreditLines } from './pages/CreditLines';
-import { WalletProvider } from './context/WalletContext';
-import { WalletButton } from './components/WalletButton';
-import { RequestEvaluation } from './pages/RequestEvaluation';
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import { Dashboard } from "./pages/Dashboard";
+import { CreditLines } from "./pages/CreditLines";
+import { WalletProvider } from "./context/WalletContext";
+import { WalletButton } from "./components/WalletButton";
+import DrawCreditPage from "./pages/DrawCreditPage";
 
 function App() {
   return (
@@ -11,7 +11,9 @@ function App() {
       <BrowserRouter>
         <div className="app">
           <header className="header">
-            <Link to="/" className="logo">Creditra</Link>
+            <Link to="/" className="logo">
+              Creditra
+            </Link>
             <nav>
               <Link to="/">Dashboard</Link>
               <Link to="/credit-lines">Credit Lines</Link>
@@ -22,6 +24,8 @@ function App() {
           <main className="main">
             <Routes>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/draw-credit" element={<DrawCreditPage />} />
+
               <Route path="/credit-lines" element={<CreditLines />} />
               <Route path="/open-credit" element={<RequestEvaluation />} />
             </Routes>

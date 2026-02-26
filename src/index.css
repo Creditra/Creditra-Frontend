@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 :root {
   --bg: #0d1117;
   --surface: #161b22;
@@ -15,7 +17,10 @@
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
   background: var(--bg);
   color: var(--text);
   line-height: 1.5;
@@ -93,5 +98,11 @@ body {
   font-weight: 500;
 }
 
-.badge.active { background: rgba(63, 185, 80, 0.2); color: var(--success); }
-.badge.suspended { background: rgba(210, 153, 34, 0.2); color: var(--warning); }
+.badge.active {
+  background: rgba(63, 185, 80, 0.2);
+  color: var(--success);
+}
+.badge.suspended {
+  background: rgba(210, 153, 34, 0.2);
+  color: var(--warning);
+}

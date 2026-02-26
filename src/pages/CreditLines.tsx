@@ -1,238 +1,12 @@
 import { useState, useMemo } from 'react';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type CreditLineStatus = 'Active' | 'Suspended' | 'Defaulted' | 'Closed';
-type SortField = 'status' | 'limit' | 'utilization' | 'updatedAt' | 'apr' | 'riskScore';
-type SortDirection = 'asc' | 'desc';
-type UtilizationLevel = 'low' | 'medium' | 'high';
-type TransactionType = 'Draw' | 'Repay' | 'Fee' | 'Interest';
-
-interface Transaction {
-  id: string;
-  type: TransactionType;
-  amount: number;
-  date: string;
-  note?: string;
-}
-
-interface StatusHistoryEntry {
-  status: CreditLineStatus;
-  date: string;
-  note?: string;
-}
-
-interface CreditLine {
-  id: string;
-  name: string;
-  status: CreditLineStatus;
-  limit: number;
-  utilized: number;
-  apr: number;
-  riskScore: number;
-  collateral?: string;
-  openedAt: string;
-  updatedAt: string;
-  transactions: Transaction[];
-  statusHistory: StatusHistoryEntry[];
-  nextPaymentDate?: string;
-  nextPaymentAmount?: number;
-}
-
-// ─── Mock Data ────────────────────────────────────────────────────────────────
-
-const MOCK_CREDIT_LINES: CreditLine[] = [
-  {
-    id: 'CL-2024-001',
-    name: 'Primary Business Line',
-    status: 'Active',
-    limit: 500000,
-    utilized: 187500,
-    apr: 8.5,
-    riskScore: 720,
-    collateral: 'Commercial Real Estate',
-    openedAt: '2024-03-15',
-    updatedAt: '2025-02-20T14:32:00Z',
-    nextPaymentDate: '2025-03-01',
-    nextPaymentAmount: 3200,
-    transactions: [
-      { id: 'T1', type: 'Draw', amount: 50000, date: '2025-02-18', note: 'Equipment purchase' },
-      { id: 'T2', type: 'Repay', amount: 12500, date: '2025-02-10', note: 'Monthly repayment' },
-      { id: 'T3', type: 'Draw', amount: 150000, date: '2025-01-22', note: 'Inventory expansion' },
-      { id: 'T4', type: 'Interest', amount: 1328, date: '2025-02-01', note: 'Monthly interest accrual' },
-    ],
-    statusHistory: [
-      { status: 'Active', date: '2024-03-15', note: 'Line opened and activated' },
-    ],
-  },
-  {
-    id: 'CL-2024-002',
-    name: 'Expansion Capital Line',
-    status: 'Active',
-    limit: 250000,
-    utilized: 210000,
-    apr: 9.25,
-    riskScore: 685,
-    collateral: 'Accounts Receivable',
-    openedAt: '2024-06-01',
-    updatedAt: '2025-02-19T09:15:00Z',
-    nextPaymentDate: '2025-03-05',
-    nextPaymentAmount: 5100,
-    transactions: [
-      { id: 'T5', type: 'Draw', amount: 100000, date: '2025-02-05', note: 'Market expansion' },
-      { id: 'T6', type: 'Repay', amount: 40000, date: '2025-01-28', note: 'Partial repayment' },
-      { id: 'T7', type: 'Interest', amount: 1620, date: '2025-02-01', note: 'Monthly interest' },
-    ],
-    statusHistory: [
-      { status: 'Active', date: '2024-06-01', note: 'Line opened' },
-    ],
-  },
-  {
-    id: 'CL-2023-003',
-    name: 'Working Capital Facility',
-    status: 'Suspended',
-    limit: 100000,
-    utilized: 45000,
-    apr: 11.0,
-    riskScore: 610,
-    openedAt: '2023-11-10',
-    updatedAt: '2025-01-15T16:45:00Z',
-    transactions: [
-      { id: 'T8', type: 'Draw', amount: 45000, date: '2024-12-10', note: 'Operations' },
-      { id: 'T9', type: 'Interest', amount: 413, date: '2025-01-01', note: 'Monthly interest' },
-    ],
-    statusHistory: [
-      { status: 'Active', date: '2023-11-10', note: 'Line opened' },
-      { status: 'Suspended', date: '2025-01-15', note: 'Missed payment — under review' },
-    ],
-  },
-  {
-    id: 'CL-2023-004',
-    name: 'Emergency Reserve Line',
-    status: 'Defaulted',
-    limit: 75000,
-    utilized: 75000,
-    apr: 14.5,
-    riskScore: 490,
-    openedAt: '2023-05-20',
-    updatedAt: '2024-11-01T10:00:00Z',
-    transactions: [
-      { id: 'T10', type: 'Draw', amount: 75000, date: '2024-03-15', note: 'Full draw' },
-      { id: 'T11', type: 'Fee', amount: 750, date: '2024-11-01', note: 'Default fee applied' },
-    ],
-    statusHistory: [
-      { status: 'Active', date: '2023-05-20', note: 'Line opened' },
-      { status: 'Suspended', date: '2024-09-01', note: 'Payment overdue' },
-      { status: 'Defaulted', date: '2024-11-01', note: '90+ days overdue' },
-    ],
-  },
-  {
-    id: 'CL-2022-005',
-    name: 'Startup Seed Line',
-    status: 'Closed',
-    limit: 50000,
-    utilized: 0,
-    apr: 10.0,
-    riskScore: 740,
-    openedAt: '2022-08-01',
-    updatedAt: '2024-06-30T12:00:00Z',
-    transactions: [
-      { id: 'T12', type: 'Draw', amount: 30000, date: '2022-09-01', note: 'Initial draw' },
-      { id: 'T13', type: 'Repay', amount: 30000, date: '2023-06-15', note: 'Full repayment' },
-    ],
-    statusHistory: [
-      { status: 'Active', date: '2022-08-01', note: 'Line opened' },
-      { status: 'Closed', date: '2024-06-30', note: 'Fully repaid and closed by borrower' },
-    ],
-  },
-];
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
-
-const fmtDate = (iso: string) =>
-  new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
-const fmtDateTime = (iso: string) =>
-  new Date(iso).toLocaleString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
-
-const getUtilizationLevel = (utilized: number, limit: number): UtilizationLevel => {
-  const pct = utilized / limit;
-  if (pct < 0.4) return 'low';
-  if (pct < 0.75) return 'medium';
-  return 'high';
-};
-
-const utilizationPct = (utilized: number, limit: number) =>
-  limit === 0 ? 0 : Math.round((utilized / limit) * 100);
-
-// ─── Design tokens (matching index.css vars) ──────────────────────────────────
-
-const COLOR = {
-  bg:      '#0d1117',
-  surface: '#161b22',
-  border:  '#30363d',
-  text:    '#e6edf3',
-  muted:   '#8b949e',
-  accent:  '#58a6ff',
-  success: '#3fb950',
-  warning: '#d29922',
-  danger:  '#f85149',
-};
-
-const UTIL_COLOR: Record<UtilizationLevel, string> = {
-  low:    COLOR.success,
-  medium: COLOR.warning,
-  high:   COLOR.danger,
-};
-
-const STATUS_COLOR: Record<CreditLineStatus, { bg: string; color: string }> = {
-  Active:    { bg: 'rgba(63,185,80,0.2)',   color: COLOR.success },
-  Suspended: { bg: 'rgba(210,153,34,0.2)',  color: COLOR.warning },
-  Defaulted: { bg: 'rgba(248,81,73,0.15)',  color: COLOR.danger },
-  Closed:    { bg: 'rgba(139,148,158,0.15)', color: COLOR.muted },
-};
-
-const RISK_COLOR = (score: number) =>
-  score >= 700 ? COLOR.success : score >= 600 ? COLOR.warning : COLOR.danger;
-
-// ─── Shared style objects ─────────────────────────────────────────────────────
-
-const inputStyle: React.CSSProperties = {
-  background: COLOR.surface,
-  border: `1px solid ${COLOR.border}`,
-  borderRadius: 6,
-  padding: '0.5rem 0.75rem',
-  color: COLOR.text,
-  fontSize: '0.875rem',
-  outline: 'none',
-};
-
-const btnBase: React.CSSProperties = {
-  border: `1px solid ${COLOR.border}`,
-  borderRadius: 6,
-  padding: '0.375rem 0.75rem',
-  fontSize: '0.8rem',
-  fontWeight: 500,
-  cursor: 'pointer',
-  background: COLOR.surface,
-  color: COLOR.muted,
-};
-
-const btn = {
-  ghost:   { ...btnBase } as React.CSSProperties,
-  primary: { ...btnBase, background: COLOR.accent, color: COLOR.bg, border: 'none', fontWeight: 600 } as React.CSSProperties,
-  secondary: { ...btnBase, color: COLOR.text } as React.CSSProperties,
-  draw:    { ...btnBase, background: 'rgba(88,166,255,0.12)', color: COLOR.accent, borderColor: 'rgba(88,166,255,0.3)' } as React.CSSProperties,
-  repay:   { ...btnBase, background: 'rgba(63,185,80,0.12)',  color: COLOR.success, borderColor: 'rgba(63,185,80,0.3)' } as React.CSSProperties,
-  danger:  { ...btnBase, background: 'rgba(248,81,73,0.12)',  color: COLOR.danger,  borderColor: 'rgba(248,81,73,0.3)' } as React.CSSProperties,
-  suspend: { ...btnBase, background: 'rgba(210,153,34,0.12)', color: COLOR.warning, borderColor: 'rgba(210,153,34,0.3)' } as React.CSSProperties,
-};
+import type { CreditLine, CreditLineStatus, SortField, SortDirection, UtilizationLevel } from '../types/creditLine';
+import { MOCK_CREDIT_LINES } from '../data/mockData';
+import {
+  COLOR, UTIL_COLOR, STATUS_COLOR, RISK_COLOR,
+  inputStyle, btn,
+  fmt, fmtDate, fmtDateTime,
+  getUtilizationLevel, utilizationPct,
+} from '../utils/tokens';
 
 // ─── StatusBadge ──────────────────────────────────────────────────────────────
 
@@ -371,8 +145,8 @@ function DetailModal({
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderBottom: `1px solid ${COLOR.border}` }}>
           {[
             { label: 'Credit Limit', value: fmt(creditLine.limit), color: COLOR.text },
-            { label: 'Utilized',     value: fmt(creditLine.utilized), color: UTIL_COLOR[level] },
-            { label: 'Available',    value: fmt(available), color: COLOR.success },
+            { label: 'Utilized', value: fmt(creditLine.utilized), color: UTIL_COLOR[level] },
+            { label: 'Available', value: fmt(available), color: COLOR.success },
           ].map((item, i) => (
             <div key={item.label} style={{ padding: '1rem 1.25rem', borderRight: i < 2 ? `1px solid ${COLOR.border}` : undefined }}>
               <p style={{ margin: '0 0 0.25rem', fontSize: '0.7rem', color: COLOR.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{item.label}</p>
@@ -480,8 +254,8 @@ function DetailModal({
           <div style={{ padding: '1rem 1.5rem', borderTop: `1px solid ${COLOR.border}`, display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
             {creditLine.status === 'Active' && (
               <>
-                <button style={btn.draw}    onClick={() => { onAction('draw', creditLine); onClose(); }}>Draw Funds</button>
-                <button style={btn.repay}   onClick={() => { onAction('repay', creditLine); onClose(); }}>Make Repayment</button>
+                <button style={btn.draw} onClick={() => { onAction('draw', creditLine); onClose(); }}>Draw Funds</button>
+                <button style={btn.repay} onClick={() => { onAction('repay', creditLine); onClose(); }}>Make Repayment</button>
                 <button style={btn.suspend} onClick={() => { onAction('suspend', creditLine); onClose(); }}>Suspend</button>
               </>
             )}
@@ -603,8 +377,8 @@ export function CreditLines() {
   const clearFilters = () => { setSearch(''); setStatusFilter('All'); setUtilizationFilter('All'); };
   const hasFilters = search !== '' || statusFilter !== 'All' || utilizationFilter !== 'All';
 
-  const activeLines   = creditLines.filter(cl => cl.status === 'Active');
-  const totalLimit    = activeLines.reduce((s, cl) => s + cl.limit, 0);
+  const activeLines = creditLines.filter(cl => cl.status === 'Active');
+  const totalLimit = activeLines.reduce((s, cl) => s + cl.limit, 0);
   const totalUtilized = activeLines.reduce((s, cl) => s + cl.utilized, 0);
 
   const thStyle: React.CSSProperties = {
@@ -661,10 +435,10 @@ export function CreditLines() {
       {/* Summary cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
         {[
-          { label: 'Total Credit Limit', value: fmt(totalLimit),               sub: 'across active lines',                                                    color: COLOR.accent },
-          { label: 'Total Utilized',     value: fmt(totalUtilized),             sub: `${utilizationPct(totalUtilized, totalLimit || 1)}% of limit`,            color: UTIL_COLOR[getUtilizationLevel(totalUtilized, totalLimit || 1)] },
-          { label: 'Total Available',    value: fmt(totalLimit - totalUtilized), sub: 'ready to draw',                                                          color: COLOR.success },
-          { label: 'Total Lines',        value: String(creditLines.length),     sub: `${activeLines.length} active`,                                           color: COLOR.text },
+          { label: 'Total Credit Limit', value: fmt(totalLimit), sub: 'across active lines', color: COLOR.accent },
+          { label: 'Total Utilized', value: fmt(totalUtilized), sub: `${utilizationPct(totalUtilized, totalLimit || 1)}% of limit`, color: UTIL_COLOR[getUtilizationLevel(totalUtilized, totalLimit || 1)] },
+          { label: 'Total Available', value: fmt(totalLimit - totalUtilized), sub: 'ready to draw', color: COLOR.success },
+          { label: 'Total Lines', value: String(creditLines.length), sub: `${activeLines.length} active`, color: COLOR.text },
         ].map(card => (
           <div key={card.label} className="card" style={{ marginBottom: 0 }}>
             <p style={{ margin: '0 0 0.4rem', fontSize: '0.7rem', color: COLOR.muted, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 500 }}>{card.label}</p>
@@ -719,14 +493,14 @@ export function CreditLines() {
                 <tr>
                   {[
                     { label: 'Credit Line', field: null },
-                    { label: 'Status',      field: 'status' as SortField },
-                    { label: 'Limit',       field: 'limit' as SortField },
-                    { label: 'Utilized',    field: 'utilization' as SortField },
-                    { label: 'Available',   field: null },
-                    { label: 'APR',         field: 'apr' as SortField },
-                    { label: 'Risk Score',  field: 'riskScore' as SortField },
-                    { label: 'Updated',     field: 'updatedAt' as SortField },
-                    { label: 'Actions',     field: null },
+                    { label: 'Status', field: 'status' as SortField },
+                    { label: 'Limit', field: 'limit' as SortField },
+                    { label: 'Utilized', field: 'utilization' as SortField },
+                    { label: 'Available', field: null },
+                    { label: 'APR', field: 'apr' as SortField },
+                    { label: 'Risk Score', field: 'riskScore' as SortField },
+                    { label: 'Updated', field: 'updatedAt' as SortField },
+                    { label: 'Actions', field: null },
                   ].map(col => (
                     <th
                       key={col.label}
@@ -777,10 +551,10 @@ export function CreditLines() {
                     {/* Actions */}
                     <td style={{ ...tdStyle }}>
                       <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap' }}>
-                        <button style={btn.ghost}  onClick={() => setSelectedLine(cl)}>Details</button>
+                        <button style={btn.ghost} onClick={() => setSelectedLine(cl)}>Details</button>
                         {cl.status === 'Active' && (
                           <>
-                            <button style={btn.draw}  onClick={() => handleAction('draw', cl)}>Draw</button>
+                            <button style={btn.draw} onClick={() => handleAction('draw', cl)}>Draw</button>
                             <button style={btn.repay} onClick={() => handleAction('repay', cl)}>Repay</button>
                           </>
                         )}
