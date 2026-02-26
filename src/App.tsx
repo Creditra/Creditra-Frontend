@@ -17,6 +17,7 @@ function App() {
             <nav>
               <Link to="/">Dashboard</Link>
               <Link to="/credit-lines">Credit Lines</Link>
+              <Link to="/open-credit">Open Credit Line</Link>
             </nav>
             <WalletButton />
           </header>
@@ -26,6 +27,7 @@ function App() {
               <Route path="/draw-credit" element={<DrawCreditPage />} />
 
               <Route path="/credit-lines" element={<CreditLines />} />
+              <Route path="/open-credit" element={<RequestEvaluation />} />
             </Routes>
           </main>
         </div>
