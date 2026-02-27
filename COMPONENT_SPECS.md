@@ -520,3 +520,52 @@ Desktop: > 1024px
 - Complete: "Get Started"
 - Skip: "Skip"
 - Disconnect: "Disconnect"
+
+---
+
+## Component 4: Repay Modal
+
+### Dimensions & Layout
+- Width: 100%, max 480px
+- Border Radius: 12px
+- Background: var(--surface)
+- Border: 1px solid var(--border)
+- Box Shadow: 0 16px 40px rgba(0,0,0,0.4)
+
+### Header
+- Padding: 1.5rem
+- Border Bottom: 1px solid var(--border)
+- Title Size: 1.25rem
+- Subtitle: 0.85rem (Credit Line Name / ID)
+
+### Current Debt Display
+- Layout: Grid or Flex Row
+- "Total Due" Emphasis: Font Size 2rem, Font Weight 700, Color var(--error)
+- "Accrued Interest": Font Size 0.85rem, Color var(--muted)
+
+### Input Section
+- Label: Font Size 0.9rem, Color var(--text)
+- Input Element: Height 48px, Font Size 1.25rem, Padding 0 1rem
+- Focus State: Border var(--accent), Box Shadow 0 0 0 2px rgba(88, 166, 255, 0.2)
+- Error State: Border var(--error), Text Color var(--error)
+
+### Quick Action Buttons (25%, 50%, 75%, 100%)
+- Layout: Grid (4 columns), gap 0.5rem
+- Button Style: Base Ghost/Outline style
+- Active State: Background rgba(88, 166, 255, 0.1), Border var(--accent), Color var(--accent)
+
+### Preview Section
+- Layout: Flex column with dividers
+- Remaining Debt: Highlighted in green if 0, else white
+- Progress Bar (Utilization): Animate width change from old percentage to new percentage (CSS `transition: width 0.4s ease`).
+
+### Verification Steps & Statuses
+- "Review Repayment" Button: Primary style (var(--accent)).
+- Pending State Container: Flex centered, large spinner, muted helper text.
+- Success State Container: Confetti or Bounce-In checkmark icon (color: var(--success)).
+
+### Microcopy
+- Header: "Make a Repayment"
+- Input Label: "Amount to Repay"
+- Warning: "Amount exceeds outstanding debt" or "Insufficient wallet balance"
+- Success: "Repayment Successful! Your credit line balance has been updated."
