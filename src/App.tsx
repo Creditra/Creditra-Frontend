@@ -1,10 +1,10 @@
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { Dashboard } from "./pages/Dashboard";
-import { CreditLines } from "./pages/CreditLines";
+//import { CreditLines } from "./pages/CreditLines"  causing error;
 import { WalletProvider } from "./context/WalletContext";
 import { WalletButton } from "./components/WalletButton";
 import DrawCreditPage from "./pages/DrawCreditPage";
-
+import { RequestEvaluation } from "./pages/RequestEvaluation";
 function App() {
   return (
     <WalletProvider>
@@ -25,8 +25,7 @@ function App() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/draw-credit" element={<DrawCreditPage />} />
-
-              <Route path="/credit-lines" element={<CreditLines />} />
+             {/*<Route path="/login" element={<CreditLines />} />  causing error*/}
               <Route path="/open-credit" element={<RequestEvaluation />} />
             </Routes>
           </main>
