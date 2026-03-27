@@ -47,11 +47,13 @@ export function AmountInput({
       </div>
 
       <div className="space-y-3">
+        <label htmlFor="amount-input" className="sr-only">Amount to draw</label>
         <div className="flex items-center gap-2 bg-surface p-4 rounded-xl border-2 border-border overflow-hidden">
-          <span className="text-3xl font-bold text-foreground flex-shrink-0">
+          <span className="text-3xl font-bold text-foreground flex-shrink-0" aria-hidden="true">
             $
           </span>
           <input
+            id="amount-input"
             type="number"
             placeholder="0"
             value={amount}
@@ -59,11 +61,13 @@ export function AmountInput({
             className="text-2xl font-bold bg-transparent outline-none flex-1 text-foreground placeholder:text-muted/50 min-w-0"
             min="0"
             max={creditLine.available}
+            aria-invalid={!!error}
+            aria-describedby={error ? "amount-error" : undefined}
           />
         </div>
         {error && (
-          <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg border border-destructive/30">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <div id="amount-error" className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg border border-destructive/30" role="alert">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
             {error}
           </div>
         )}
@@ -79,6 +83,7 @@ export function AmountInput({
               key={percent}
               onClick={() => handlePreset(percent)}
               className="py-2 px-3 border-2 border-border rounded-lg hover:border-blue-400 hover:bg-surface hover:shadow-md hover:shadow-blue-500/20 transition-all text-foreground font-medium text-sm"
+              aria-label={`Set amount to ${percent} percent`}
             >
               {percent}%
             </button>

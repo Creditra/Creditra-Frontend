@@ -127,7 +127,13 @@ export default function LandingPage() {
                             Dynamic Credit Limit
                         </p>
 
-                        <div className="w-full h-4 bg-[#21262d] rounded">
+                        <div className="w-full h-4 bg-[#21262d] rounded" 
+                            role="progressbar" 
+                            aria-valuenow={85} 
+                            aria-valuemin={0} 
+                            aria-valuemax={100}
+                            aria-label="Adaptive credit limit growth preview"
+                        >
                             <motion.div
                                 initial={{ width: "20%" }}
                                 animate={{ width: "85%" }}
@@ -186,6 +192,7 @@ export default function LandingPage() {
                                     <Icon
                                         className="text-[#58a6ff]"
                                         size={22}
+                                        aria-hidden="true"
                                     />
                                     <span>{label}</span>
                                 </div>
@@ -247,13 +254,15 @@ export default function LandingPage() {
                                 onClick={() =>
                                     setOpenFAQ(openFAQ === index ? null : index)
                                 }
+                                aria-expanded={openFAQ === index}
+                                aria-controls={`faq-answer-${index}`}
                             >
                                 {item.q}
-                                <span>{openFAQ === index ? "−" : "+"}</span>
+                                <span aria-hidden="true">{openFAQ === index ? "−" : "+"}</span>
                             </button>
 
                             {openFAQ === index && (
-                                <div className="px-5 pb-5 text-[#8b949e]">
+                                <div id={`faq-answer-${index}`} className="px-5 pb-5 text-[#8b949e]" role="region">
                                     {item.a}
                                 </div>
                             )}
