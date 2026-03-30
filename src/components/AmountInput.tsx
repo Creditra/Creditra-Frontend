@@ -1,6 +1,7 @@
 import { CreditLine } from "@/types/draw-credit.types";
 import { AlertCircle } from "lucide-react";
 import { useState, useEffect } from "react";
+import { CreditLineSummaryBlock } from "@/components/CreditLineSummaryBlock";
 
 interface AmountInputProps {
   creditLine: CreditLine;
@@ -43,10 +44,13 @@ export function AmountInput({
     <div className="space-y-8">
       <div>
         <h2 className="text-3xl font-bold text-foreground">Enter Amount</h2>
-        <p className="text-muted mt-2">{creditLine.name}</p>
+        <p className="text-muted mt-2">Choose how much to draw</p>
       </div>
 
+      <CreditLineSummaryBlock creditLine={creditLine} amount={numAmount} />
+
       <div className="space-y-3">
+        <label className="text-sm font-semibold text-foreground block">Draw amount</label>
         <div className="flex items-center gap-2 bg-surface p-4 rounded-xl border-2 border-border overflow-hidden">
           <span className="text-3xl font-bold text-foreground flex-shrink-0">
             $
@@ -61,19 +65,23 @@ export function AmountInput({
             max={creditLine.available}
           />
         </div>
-        {error && (
-          <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg border border-destructive/30">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            {error}
-          </div>
-        )}
+        <div className="min-h-12">
+          {error ? (
+            <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg border border-destructive/30">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              {error}
+            </div>
+          ) : (
+            <p className="text-sm text-muted px-1 pt-2">
+              Enter an amount greater than $0 and up to ${creditLine.available.toLocaleString()}.
+            </p>
+          )}
+        </div>
       </div>
 
       <div>
-        <p className="text-sm font-semibold text-foreground mb-3">
-          Quick preset
-        </p>
-        <div className="grid grid-cols-4 gap-2">
+        <p className="text-sm font-semibold text-foreground mb-3">Quick preset</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {[25, 50, 75, 100].map((percent) => (
             <button
               key={percent}
@@ -86,41 +94,27 @@ export function AmountInput({
         </div>
       </div>
 
-      <div className="bg-surface p-5 rounded-xl border border-border space-y-3 shadow-lg shadow-blue-500/5">
-        <div className="flex justify-between text-sm">
-          <span className="text-muted">Available:</span>
-          <span className="font-semibold text-foreground">
-            ${creditLine.available.toLocaleString()}
-          </span>
-        </div>
-        <div className="flex justify-between text-sm border-t border-border pt-3">
-          <span className="text-muted">Requested:</span>
-          <span className="font-semibold text-foreground">
-            ${numAmount.toLocaleString()}
-          </span>
-        </div>
-        <div className="flex justify-between text-sm border-t border-border pt-3">
-          <span className="text-muted">Remaining:</span>
-          <span className="font-semibold text-foreground">
-            ${(creditLine.available - numAmount).toLocaleString()}
-          </span>
-        </div>
-      </div>
-
-      <div className="flex gap-3 pt-4">
+      <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
         <button
           onClick={onBack}
-          className="flex-1 py-3 px-4 border-2 border-border text-foreground rounded-lg hover:bg-surface transition-colors font-semibold"
+          className="sm:flex-1 py-3 px-4 border-2 border-border text-foreground rounded-lg hover:bg-surface transition-colors font-semibold"
         >
           Back
         </button>
-        <button
-          onClick={() => onNext(numAmount)}
-          disabled={!isValid}
-          className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-500/40 transition-all font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Continue
-        </button>
+        <div className="sm:flex-1 space-y-2">
+          <button
+            onClick={() => onNext(numAmount)}
+            disabled={!isValid}
+            className="w-full py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-500/40 transition-all font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Continue to review
+          </button>
+          {!isValid && (
+            <p className="text-xs text-muted text-center sm:text-right">
+              Add a valid draw amount to continue.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { CreditLine } from "@/types/draw-credit.types";
 import { AlertCircle } from "lucide-react";
 import { useState } from "react";
+import { CreditLineSummaryBlock } from "@/components/CreditLineSummaryBlock";
 
 interface ConfirmationStepProps {
   creditLine: CreditLine;
@@ -28,31 +29,22 @@ export function ConfirmationStep({
       <div>
         <h2 className="text-3xl font-bold text-foreground">Review & Confirm</h2>
         <p className="text-muted mt-2">
-          Please review the details before confirming
+          Confirm your draw details before submitting.
         </p>
       </div>
 
+      <CreditLineSummaryBlock creditLine={creditLine} amount={amount} />
+
       <div className="space-y-4">
         <div className="bg-surface p-5 rounded-xl border border-border space-y-4">
-          <div>
-            <p className="text-sm text-muted font-medium">Credit Line</p>
-            <p className="text-lg font-semibold text-foreground mt-1">
-              {creditLine.name}
-            </p>
-          </div>
-          <div className="border-t border-border pt-4">
-            <p className="text-sm text-muted font-medium">Draw Amount</p>
-            <p className="text-2xl font-bold text-foreground mt-1">
-              ${amount.toLocaleString()}
-            </p>
-          </div>
-        </div>
-
-        <div className="bg-surface p-5 rounded-xl border border-border space-y-4">
           <div className="flex justify-between items-center">
-            <span className="text-sm text-muted font-medium">
-              Current Utilization
+            <span className="text-sm text-muted font-medium">Draw Amount</span>
+            <span className="text-2xl font-bold text-foreground">
+              ${amount.toLocaleString()}
             </span>
+          </div>
+          <div className="flex justify-between items-center border-t border-border pt-4">
+            <span className="text-sm text-muted font-medium">Current Utilization</span>
             <span className="text-sm font-semibold text-foreground">
               {creditLine.utilization}%
             </span>
@@ -95,21 +87,28 @@ export function ConfirmationStep({
         </span>
       </label>
 
-      <div className="flex gap-3 pt-4">
+      <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
         <button
           onClick={onBack}
           disabled={isLoading}
-          className="flex-1 py-3 px-4 border-2 border-border text-foreground rounded-lg hover:bg-surface transition-colors font-semibold disabled:opacity-50"
+          className="sm:flex-1 py-3 px-4 border-2 border-border text-foreground rounded-lg hover:bg-surface transition-colors font-semibold disabled:opacity-50"
         >
           Back
         </button>
-        <button
-          onClick={onConfirm}
-          disabled={!agreedToTerms || isLoading}
-          className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-500/40 transition-all font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isLoading ? "Processing..." : "Confirm Draw"}
-        </button>
+        <div className="sm:flex-1 space-y-2">
+          <button
+            onClick={onConfirm}
+            disabled={!agreedToTerms || isLoading}
+            className="w-full py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-500/40 transition-all font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? "Processing..." : "Confirm draw"}
+          </button>
+          {!agreedToTerms && !isLoading && (
+            <p className="text-xs text-muted text-center sm:text-right">
+              Accept terms to enable confirmation.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

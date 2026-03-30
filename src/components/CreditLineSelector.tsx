@@ -17,54 +17,74 @@ export function CreditLineSelector({
           Select Credit Line
         </h2>
         <p className="text-muted mt-2">
-          Choose which line of credit to draw from
+          Choose the account, then continue to amount entry.
         </p>
       </div>
       <div className="space-y-3">
-        {creditLines.map((line) => (
-          <button
-            key={line.id}
-            onClick={() => onSelect(line)}
-            className="w-full text-left p-5 border-2 border-border rounded-xl hover:border-blue-400 hover:bg-surface hover:shadow-lg hover:shadow-blue-500/20 transition-all duration-200 group"
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="font-semibold text-foreground text-lg mb-3">
-                  {line.name}
-                </div>
-                <div className="flex items-center gap-6 mb-3 flex-wrap">
-                  <div className="text-sm">
-                    <span className="text-muted">Available:</span>
-                    <span className="font-semibold text-foreground ml-2">
-                      ${line.available.toLocaleString()}
-                    </span>
+        {creditLines.map((line) => {
+          const utilized = line.limit - line.available;
+
+          return (
+            <button
+              key={line.id}
+              onClick={() => onSelect(line)}
+              className="w-full text-left p-5 border-2 border-border rounded-xl hover:border-blue-400 hover:bg-surface hover:shadow-lg hover:shadow-blue-500/20 transition-all duration-200 group"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 space-y-4">
+                  <div className="font-semibold text-foreground text-lg">
+                    {line.name}
                   </div>
-                  <div className="text-sm">
-                    <span className="text-muted">Utilization:</span>
-                    <span
-                      className={`font-semibold ml-2 ${line.utilization > 80 ? "text-yellow-500" : "text-foreground"}`}
-                    >
-                      {line.utilization}%
-                    </span>
-                  </div>
-                  {line.utilization > 80 && (
-                    <div className="flex items-center gap-1 text-yellow-500 text-sm">
-                      <AlertCircle className="w-4 h-4" />
-                      <span>High utilization</span>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+                    <div className="rounded-lg border border-border bg-background/60 p-3">
+                      <p className="text-muted">Limit</p>
+                      <p className="font-semibold text-foreground mt-1">
+                        ${line.limit.toLocaleString()}
+                      </p>
                     </div>
-                  )}
+                    <div className="rounded-lg border border-border bg-background/60 p-3">
+                      <p className="text-muted">Utilized</p>
+                      <p className="font-semibold text-foreground mt-1">
+                        ${utilized.toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-background/60 p-3">
+                      <p className="text-muted">Available</p>
+                      <p className="font-semibold text-foreground mt-1">
+                        ${line.available.toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap text-sm">
+                      <span className="text-muted">Utilization:</span>
+                      <span
+                        className={`font-semibold ${line.utilization > 80 ? "text-yellow-500" : "text-foreground"}`}
+                      >
+                        {line.utilization}%
+                      </span>
+                      {line.utilization > 80 && (
+                        <span className="flex items-center gap-1 text-yellow-500">
+                          <AlertCircle className="w-4 h-4" />
+                          High utilization
+                        </span>
+                      )}
+                    </div>
+                    <div className="w-full bg-border rounded-full h-2">
+                      <div
+                        className={`h-2 rounded-full transition-all ${line.utilization > 80 ? "bg-yellow-500" : "bg-blue-500"}`}
+                        style={{ width: `${line.utilization}%` }}
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="w-full bg-border rounded-full h-2">
-                  <div
-                    className={`h-2 rounded-full transition-all ${line.utilization > 80 ? "bg-yellow-500" : "bg-blue-500"}`}
-                    style={{ width: `${line.utilization}%` }}
-                  />
-                </div>
+                <ChevronRight className="w-5 h-5 text-muted group-hover:text-blue-400 shrink-0 mt-1 transition-colors" />
               </div>
-              <ChevronRight className="w-5 h-5 text-muted group-hover:text-blue-400 ml-4 shrink-0 mt-1 transition-colors" />
-            </div>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
