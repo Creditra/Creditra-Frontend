@@ -77,11 +77,43 @@ body {
   border-radius: 8px;
   padding: 1.5rem;
   margin-bottom: 1rem;
+  transition: border-color 0.2s, transform 0.2s;
+  animation: fadeInUp 0.4s ease both;
+}
+
+.card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 768px) {
+  .card {
+    padding: 1rem;
+  }
+}
+
+.card-large {
+  padding: 2rem;
+}
+
+@media (max-width: 768px) {
+  .card-large {
+    padding: 1.5rem;
+  }
 }
 
 .card h2 {
   margin: 0 0 0.75rem;
   font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.card h2 .icon {
+  font-size: 1.1rem;
 }
 
 .card p {
@@ -105,4 +137,17 @@ body {
 .badge.suspended {
   background: rgba(210, 153, 34, 0.2);
   color: var(--warning);
+}
+
+/* ─── Animations ────────────────────────────────────────────────────────────── */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
