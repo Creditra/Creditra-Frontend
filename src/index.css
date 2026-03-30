@@ -9,6 +9,18 @@
   --accent: #58a6ff;
   --success: #3fb950;
   --warning: #d29922;
+  --error: #f85149;
+
+  /* Typography Scale */
+  --font-size-h1: 1.5rem;    /* Onboarding Title */
+  --font-size-h2: 1.25rem;   /* Modal Title */
+  --font-size-h3: 1rem;      /* Wallet Name / Section Headers */
+  --font-size-body: 0.9rem;  /* Body text */
+  --font-size-small: 0.85rem;/* Wallet Description, Security Note */
+  --font-size-tiny: 0.75rem; /* Badge */
+  
+  --line-height-base: 1.5;
+  --line-height-loose: 1.6;
 }
 
 * {
@@ -17,13 +29,39 @@
 
 body {
   margin: 0;
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
-  line-height: 1.5;
+  line-height: var(--line-height-base);
+  font-size: var(--font-size-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin-top: 0;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+h1 { font-size: var(--font-size-h1); }
+h2 { font-size: var(--font-size-h2); }
+h3 { font-size: var(--font-size-h3); }
+
+p {
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+.text-muted { color: var(--muted); }
+.text-small { font-size: var(--font-size-small); }
+.text-tiny { font-size: var(--font-size-tiny); }
+
+.paragraph {
+  line-height: var(--line-height-loose);
+  max-width: 65ch; /* Comfortable reading width */
 }
 
 .app {

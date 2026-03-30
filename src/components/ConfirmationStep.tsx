@@ -25,10 +25,10 @@ export function ConfirmationStep({
 
   return (
     <div className="space-y-8">
-      <div>
-        <h2 className="text-3xl font-bold text-foreground">Review & Confirm</h2>
-        <p className="text-muted mt-2">
-          Please review the details before confirming
+      <div className="space-y-4">
+        <h2 className="text-foreground">Review & Confirm</h2>
+        <p className="text-muted text-lg">
+          Please review your draw request details.
         </p>
       </div>
 

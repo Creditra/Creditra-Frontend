@@ -37,7 +37,7 @@ const btnBase: React.CSSProperties = {
   border: `1px solid ${COLOR.border}`,
   borderRadius: 6,
   padding: '0.75rem 1rem',
-  fontSize: '0.9rem',
+  fontSize: 'var(--font-size-body)',
   fontWeight: 500,
   cursor: 'pointer',
   background: COLOR.surface,
@@ -113,10 +113,10 @@ export function RepayModal({ creditLine, walletBalance, onClose, onSuccess }: Re
         {/* Header */}
         <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${COLOR.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h2 style={{ margin: '0 0 0.25rem', fontSize: '1.25rem', fontWeight: 600, color: COLOR.text }}>
+            <h2 style={{ margin: '0 0 0.25rem', fontWeight: 600, color: COLOR.text }}>
               {step === 'success' ? 'Repayment Successful' : step === 'review' ? 'Review Repayment' : 'Make a Repayment'}
             </h2>
-            {step !== 'success' && <p style={{ margin: 0, fontSize: '0.85rem', color: COLOR.muted }}>{creditLine.name} · {creditLine.id}</p>}
+            {step !== 'success' && <p style={{ margin: 0, fontSize: 'var(--font-size-small)', color: COLOR.muted }}>{creditLine.name} · {creditLine.id}</p>}
           </div>
           {step !== 'pending' && <button onClick={onClose} style={{ ...btn.ghost, padding: '0.4rem', borderRadius: 4 }}>✕</button>}
         </div>
@@ -125,26 +125,26 @@ export function RepayModal({ creditLine, walletBalance, onClose, onSuccess }: Re
         {step === 'input' && (
           <div style={{ padding: '1.5rem' }}>
             <div style={{ marginBottom: '1.5rem', background: COLOR.bg, padding: '1rem', borderRadius: 8, border: `1px solid ${COLOR.border}` }}>
-              <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: COLOR.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Current Debt</p>
+              <p style={{ margin: '0 0 0.5rem', fontSize: 'var(--font-size-tiny)', color: COLOR.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Current Debt</p>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <p style={{ margin: 0, fontSize: '2rem', fontWeight: 700, color: COLOR.danger, lineHeight: 1 }}>{fmt(totalDue)}</p>
                 <div style={{ textAlign: 'right' }}>
-                  <p style={{ margin: 0, fontSize: '0.75rem', color: COLOR.muted }}>Includes {fmt(accruedInterestEstimate)}</p>
-                  <p style={{ margin: 0, fontSize: '0.75rem', color: COLOR.muted }}>accrued interest est.</p>
+                  <p style={{ margin: 0, fontSize: 'var(--font-size-tiny)', color: COLOR.muted }}>Includes {fmt(accruedInterestEstimate)}</p>
+                  <p style={{ margin: 0, fontSize: 'var(--font-size-tiny)', color: COLOR.muted }}>accrued interest est.</p>
                 </div>
               </div>
             </div>
 
             <div style={{ marginBottom: '1.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                <label style={{ fontSize: '0.9rem', color: COLOR.text, fontWeight: 500 }}>Amount to Repay</label>
-                <span style={{ fontSize: '0.8rem', color: exceedsBalance ? COLOR.danger : COLOR.muted }}>Wallet: {fmt(walletBalance)}</span>
+                <label style={{ fontSize: 'var(--font-size-body)', color: COLOR.text, fontWeight: 500 }}>Amount to Repay</label>
+                <span style={{ fontSize: 'var(--font-size-small)', color: exceedsBalance ? COLOR.danger : COLOR.muted }}>Wallet: {fmt(walletBalance)}</span>
               </div>
 
               <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
                 {[25, 50, 75, 100].map(pct => (
                   <button key={pct} onClick={() => handlePercent(pct)}
-                    style={{ ...btn.outline, flex: 1, padding: '0.4rem 0', fontSize: '0.8rem', color: COLOR.accent, borderColor: 'rgba(88,166,255,0.3)', background: pct === 100 ? 'rgba(88,166,255,0.1)' : 'transparent' }}>
+                    style={{ ...btn.outline, flex: 1, padding: '0.4rem 0', fontSize: 'var(--font-size-small)', color: COLOR.accent, borderColor: 'rgba(88,166,255,0.3)', background: pct === 100 ? 'rgba(88,166,255,0.1)' : 'transparent' }}>
                     {pct === 100 ? 'MAX' : `${pct}%`}
                   </button>
                 ))}
@@ -172,23 +172,23 @@ export function RepayModal({ creditLine, walletBalance, onClose, onSuccess }: Re
                   }}
                 />
               </div>
-              {exceedsDebt && <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: COLOR.danger }}>⚠ Amount exceeds total outstanding debt</p>}
-              {exceedsBalance && <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: COLOR.danger }}>⚠ Insufficient wallet balance</p>}
+              {exceedsDebt && <p style={{ margin: '0.5rem 0 0', fontSize: 'var(--font-size-small)', color: COLOR.danger }}>⚠ Amount exceeds total outstanding debt</p>}
+              {exceedsBalance && <p style={{ margin: '0.5rem 0 0', fontSize: 'var(--font-size-small)', color: COLOR.danger }}>⚠ Insufficient wallet balance</p>}
             </div>
 
             <div style={{ marginBottom: '1.5rem' }}>
-              <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: COLOR.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Preview</p>
+              <p style={{ margin: '0 0 0.5rem', fontSize: 'var(--font-size-tiny)', color: COLOR.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Preview</p>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                <span style={{ fontSize: '0.9rem', color: COLOR.muted }}>Remaining Debt</span>
-                <span style={{ fontSize: '0.9rem', fontWeight: 600, color: amount > 0 && remainingDebt === 0 ? COLOR.success : COLOR.text }}>
+                <span style={{ fontSize: 'var(--font-size-body)', color: COLOR.muted }}>Remaining Debt</span>
+                <span style={{ fontSize: 'var(--font-size-body)', fontWeight: 600, color: amount > 0 && remainingDebt === 0 ? COLOR.success : COLOR.text }}>
                   {fmt(remainingDebt)}
                 </span>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                <span style={{ fontSize: '0.8rem', color: COLOR.muted }}>New Utilization</span>
-                <span style={{ fontSize: '0.8rem', color: amount > 0 ? COLOR.success : COLOR.text }}>{newPct}% <span style={{ textDecoration: 'line-through', color: COLOR.muted, marginLeft: 4 }}>{oldPct}%</span></span>
+                <span style={{ fontSize: 'var(--font-size-small)', color: COLOR.muted }}>New Utilization</span>
+                <span style={{ fontSize: 'var(--font-size-small)', color: amount > 0 ? COLOR.success : COLOR.text }}>{newPct}% <span style={{ textDecoration: 'line-through', color: COLOR.muted, marginLeft: 4 }}>{oldPct}%</span></span>
               </div>
 
               <div style={{ height: 8, background: COLOR.border, borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
@@ -206,17 +206,17 @@ export function RepayModal({ creditLine, walletBalance, onClose, onSuccess }: Re
         {/* Step: Review */}
         {step === 'review' && (
           <div style={{ padding: '1.5rem', animation: 'fadeIn 0.2s ease' }}>
-            <p style={{ margin: '0 0 1rem', fontSize: '0.9rem', color: COLOR.muted }}>You are about to repay:</p>
+            <p style={{ margin: '0 0 1rem', fontSize: 'var(--font-size-body)', color: COLOR.muted }}>You are about to repay:</p>
             <p style={{ margin: '0 0 1.5rem', fontSize: '2.5rem', fontWeight: 700, color: COLOR.text, textAlign: 'center' }}>{fmt(amount)}</p>
 
             <div style={{ background: COLOR.bg, border: `1px solid ${COLOR.border}`, borderRadius: 8, padding: '1rem', marginBottom: '1.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem', paddingBottom: '0.75rem', borderBottom: `1px solid ${COLOR.border}` }}>
-                <span style={{ color: COLOR.muted, fontSize: '0.9rem' }}>Remaining Debt After</span>
+                <span style={{ color: COLOR.muted, fontSize: 'var(--font-size-body)' }}>Remaining Debt After</span>
                 <span style={{ fontWeight: 600, color: remainingDebt === 0 ? COLOR.success : COLOR.text }}>{fmt(remainingDebt)}</span>
               </div>
               <div>
-                <span style={{ display: 'block', color: COLOR.muted, fontSize: '0.8rem', marginBottom: '0.25rem' }}>Wallet Balance Check</span>
-                <span style={{ color: COLOR.success, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span style={{ display: 'block', color: COLOR.muted, fontSize: 'var(--font-size-small)', marginBottom: '0.25rem' }}>Wallet Balance Check</span>
+                <span style={{ color: COLOR.success, fontSize: 'var(--font-size-small)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <span style={{ display: 'inline-block', width: 14, height: 14, background: COLOR.success, color: '#fff', borderRadius: '50%', textAlign: 'center', lineHeight: '14px', fontSize: 10 }}>✓</span>
                   Sufficient Balance ({fmt(walletBalance)} available)
                 </span>
@@ -234,9 +234,9 @@ export function RepayModal({ creditLine, walletBalance, onClose, onSuccess }: Re
         {step === 'pending' && (
           <div style={{ padding: '3rem 1.5rem', textAlign: 'center', animation: 'fadeIn 0.2s ease' }}>
             <div style={{ width: 48, height: 48, border: `3px solid ${COLOR.border}`, borderTopColor: COLOR.accent, borderRadius: '50%', margin: '0 auto 1.5rem', animation: 'spin 1s linear infinite' }} />
-            <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.25rem', color: COLOR.text }}>Processing Repayment</h3>
-            <p style={{ margin: 0, fontSize: '0.9rem', color: COLOR.muted }}>Confirming transaction on network...</p>
-            <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: COLOR.muted }}>Please check your wallet if confirmation is required.</p>
+            <h3 style={{ margin: '0 0 0.5rem', color: COLOR.text }}>Processing Repayment</h3>
+            <p style={{ margin: 0, fontSize: 'var(--font-size-body)', color: COLOR.muted }}>Confirming transaction on network...</p>
+            <p style={{ margin: '0.5rem 0 0', fontSize: 'var(--font-size-small)', color: COLOR.muted }}>Please check your wallet if confirmation is required.</p>
           </div>
         )}
 
@@ -249,15 +249,15 @@ export function RepayModal({ creditLine, walletBalance, onClose, onSuccess }: Re
               </svg>
             </div>
 
-            <h3 style={{ margin: '0 0 0.25rem', fontSize: '1.5rem', color: COLOR.text }}>You repaid {fmt(amount)}!</h3>
-            <p style={{ margin: '0 0 1.5rem', fontSize: '0.9rem', color: COLOR.muted }}>Your transaction was successful.</p>
+            <h1 style={{ margin: '0 0 0.25rem', color: COLOR.text }}>You repaid {fmt(amount)}!</h1>
+            <p style={{ margin: '0 0 1.5rem', fontSize: 'var(--font-size-body)', color: COLOR.muted }}>Your transaction was successful.</p>
 
             <div style={{ background: COLOR.bg, border: `1px solid ${COLOR.border}`, borderRadius: 8, padding: '1rem', marginBottom: '2rem', textAlign: 'left' }}>
-              <p style={{ margin: '0 0 0.4rem', fontSize: '0.9rem', color: COLOR.text, display: 'flex', justifyContent: 'space-between' }}>
+              <p style={{ margin: '0 0 0.4rem', fontSize: 'var(--font-size-body)', color: COLOR.text, display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: COLOR.muted }}>Remaining Debt:</span>
                 <span style={{ fontWeight: 600 }}>{fmt(remainingDebt)}</span>
               </p>
-              <p style={{ margin: 0, fontSize: '0.8rem', color: COLOR.muted, display: 'flex', justifyContent: 'space-between' }}>
+              <p style={{ margin: 0, fontSize: 'var(--font-size-small)', color: COLOR.muted, display: 'flex', justifyContent: 'space-between' }}>
                 <span>Credit Line Utilization:</span>
                 <span style={{ color: remainingDebt === 0 ? COLOR.success : COLOR.text }}>Reduced to {newPct}%</span>
               </p>

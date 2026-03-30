@@ -41,7 +41,6 @@
 
 .modal-header h2 {
   margin: 0;
-  font-size: 1.25rem;
 }
 
 .close-btn {
@@ -69,8 +68,7 @@
   padding: 1.5rem;
   margin: 0;
   color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.6;
+  line-height: var(--line-height-loose);
 }
 
 .wallet-list {
@@ -133,13 +131,12 @@
 
 .wallet-info h3 {
   margin: 0 0 0.25rem;
-  font-size: 1rem;
   color: var(--text);
 }
 
 .wallet-info p {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--font-size-small);
   color: var(--muted);
 }
 
@@ -171,12 +168,12 @@
 .error-state strong {
   display: block;
   margin-bottom: 0.10rem;
-  color: #f85149;
+  color: var(--error);
 }
 
 .error-state p {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--font-size-small);
   color: var(--muted);
 }
 
@@ -207,7 +204,6 @@
 .success-state p {
   margin: 0;
   color: var(--muted);
-  font-size: 0.9rem;
 }
 
 .security-note {
@@ -215,7 +211,7 @@
   display: flex;
   gap: 0.75rem;
   align-items: center;
-  font-size: 0.85rem;
+  font-size: var(--font-size-small);
   color: var(--muted);
 }
 
@@ -270,7 +266,6 @@
 
   .modal-description {
     padding: 1rem;
-    font-size: 0.85rem;
   }
 
   .wallet-list {
@@ -286,14 +281,6 @@
     height: 40px;
   }
 
-  .wallet-info h3 {
-    font-size: 0.9rem;
-  }
-
-  .wallet-info p {
-    font-size: 0.8rem;
-  }
-
   .error-state {
     margin: 0 1rem 1rem;
     padding: 0.75rem;
@@ -301,6 +288,5 @@
 
   .security-note {
     padding: 0.75rem 1rem 1rem;
-    font-size: 0.8rem;
   }
 }

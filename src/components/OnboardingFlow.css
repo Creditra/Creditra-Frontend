@@ -31,7 +31,7 @@
   color: var(--muted);
   cursor: pointer;
   padding: 0.5rem 1rem;
-  font-size: 0.9rem;
+  font-size: var(--font-size-body);
   border-radius: 4px;
   transition: all 0.2s;
 }
@@ -53,16 +53,14 @@
 
 .onboarding-step h2 {
   margin: 0 0 1rem;
-  font-size: 1.5rem;
   color: var(--text);
 }
 
 .onboarding-step p {
   margin: 0;
   color: var(--muted);
-  font-size: 1rem;
-  line-height: 1.6;
-  max-width: 400px;
+  line-height: var(--line-height-loose);
+  max-width: 65ch;
   margin: 0 auto;
 }
 
@@ -96,7 +94,7 @@
   border: none;
   padding: 0.75rem 2rem;
   border-radius: 8px;
-  font-size: 1rem;
+  font-size: var(--font-size-h3);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;

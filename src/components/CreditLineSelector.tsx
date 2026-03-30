@@ -12,12 +12,12 @@ export function CreditLineSelector({
 }: CreditLineSelectorProps) {
   return (
     <div className="space-y-8">
-      <div>
-        <h2 className="text-3xl font-bold text-foreground">
+      <div className="space-y-4">
+        <h2 className="text-foreground">
           Select Credit Line
         </h2>
-        <p className="text-muted mt-2">
-          Choose which line of credit to draw from
+        <p className="text-muted">
+          Choose an active credit line to draw from.
         </p>
       </div>
       <div className="space-y-3">

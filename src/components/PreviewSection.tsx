@@ -14,7 +14,7 @@ export function PreviewSection({ creditLine, amount }: PreviewSectionProps) {
 
   return (
     <div className="space-y-6">
-      <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide">
+      <h3 className="text-muted text-tiny font-semibold uppercase tracking-wide">
         Summary
       </h3>
 

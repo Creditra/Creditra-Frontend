@@ -45,11 +45,11 @@ export function TransactionStatus({
         </div>
       </div>
 
-      <div>
-        <h2 className="text-3xl font-bold text-foreground mb-3">
+      <div className="space-y-4">
+        <h2 className="text-foreground">
           {config.title}
         </h2>
-        <p className="text-muted text-lg">{config.message}</p>
+        <p className="text-muted">{config.message}</p>
       </div>
 
       <div className="bg-surface p-6 rounded-xl border border-border space-y-4 text-left">

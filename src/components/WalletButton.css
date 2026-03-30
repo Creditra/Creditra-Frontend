@@ -4,7 +4,7 @@
   border: none;
   padding: 0.5rem 1rem;
   border-radius: 6px;
-  font-size: 0.9rem;
+  font-size: var(--font-size-body);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
@@ -29,7 +29,7 @@
   color: var(--text);
   padding: 0.5rem 1rem;
   border-radius: 6px;
-  font-size: 0.9rem;
+  font-size: var(--font-size-body);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -64,7 +64,7 @@
   display: flex;
   justify-content: space-between;
   padding: 0.5rem;
-  font-size: 0.85rem;
+  font-size: var(--font-size-small);
 }
 
 .dropdown-item .label {
@@ -86,14 +86,14 @@
   color: var(--text);
   border-radius: 6px;
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: var(--font-size-small);
   transition: all 0.2s;
 }
 
 .disconnect-btn:hover {
   background: rgba(248, 81, 73, 0.1);
-  border-color: #f85149;
-  color: #f85149;
+  border-color: var(--error);
+  color: var(--error);
 }
 
 @keyframes pulse {

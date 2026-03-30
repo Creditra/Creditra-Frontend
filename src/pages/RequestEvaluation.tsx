@@ -166,8 +166,8 @@ export function RequestEvaluation() {
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem', gap: '1rem', flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ margin: '0 0 0.3rem', fontSize: '1.5rem', fontWeight: 700, color: COLOR.text }}>Open Credit Line</h1>
-          <p style={{ margin: 0, fontSize: '0.9rem', color: COLOR.muted }}>Request a new adaptive credit line by initiating a transparent on-chain evaluation.</p>
+          <h1 style={{ margin: '0 0 0.3rem', color: COLOR.text }}>Open Credit Line</h1>
+          <p style={{ margin: 0, color: COLOR.muted }}>Request a new adaptive credit line by initiating a transparent on-chain evaluation.</p>
         </div>
         <Link to="/credit-lines" style={{ ...btn.secondary, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8 } as React.CSSProperties}>← Back to Credit Lines</Link>
       </div>
@@ -175,8 +175,8 @@ export function RequestEvaluation() {
       <div className="card" style={{ marginBottom: '1rem' }}>
         {/* Progress bar */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-          <p style={{ margin: 0, color: COLOR.muted, fontSize: '0.85rem' }}>Step {step} of {totalSteps}</p>
-          <p style={{ margin: 0, color: COLOR.muted, fontSize: '0.85rem' }}>{stepTitle}</p>
+          <p style={{ margin: 0, color: COLOR.muted, fontSize: 'var(--font-size-small)' }}>Step {step} of {totalSteps}</p>
+          <p style={{ margin: 0, color: COLOR.muted, fontSize: 'var(--font-size-small)' }}>{stepTitle}</p>
         </div>
         <div style={{ height: 6, background: COLOR.border, borderRadius: 4, overflow: 'hidden', marginBottom: '1rem' }}>
           <div style={{ height: '100%', width: `${(step - 1) / (totalSteps - 1) * 100}%`, background: COLOR.accent, borderRadius: 4, transition: 'width 200ms' }} />
@@ -291,8 +291,8 @@ export function RequestEvaluation() {
                     { label: 'Risk Score', value: String(result.riskScore), color: result.riskScore && result.riskScore >= 700 ? COLOR.success : COLOR.warning },
                   ].map(k => (
                     <div key={k.label} className="card" style={{ marginBottom: 0 }}>
-                      <p style={{ margin: '0 0 0.35rem', color: COLOR.muted, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{k.label}</p>
-                      <p style={{ margin: 0, fontWeight: 700, color: k.color, fontSize: '1.25rem' }}>{k.value}</p>
+                      <p style={{ margin: '0 0 0.35rem', color: COLOR.muted, fontSize: 'var(--font-size-tiny)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{k.label}</p>
+                      <p style={{ margin: 0, fontWeight: 700, color: k.color, fontSize: 'var(--font-size-h2)' }}>{k.value}</p>
                     </div>
                   ))}
                 </div>

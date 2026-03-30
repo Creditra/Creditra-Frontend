@@ -11,14 +11,10 @@
 
 .dashboard-header h1 {
   margin: 0 0 0.25rem;
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--text);
 }
 
 .dashboard-header .subtitle {
   margin: 0;
-  font-size: 0.875rem;
   color: var(--muted);
 }
 
@@ -36,7 +32,7 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-size: 0.8rem;
+  font-size: var(--font-size-small);
   font-family: monospace;
   color: var(--muted);
   cursor: pointer;
@@ -49,7 +45,7 @@
 }
 
 .wallet-address-chip .copy-feedback {
-  font-size: 0.7rem;
+  font-size: var(--font-size-tiny);
   color: var(--success);
   font-family: system-ui;
 }
@@ -60,7 +56,7 @@
   gap: 0.35rem;
   padding: 0.25rem 0.6rem;
   border-radius: 4px;
-  font-size: 0.7rem;
+  font-size: var(--font-size-tiny);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -113,7 +109,7 @@
 
 .summary-card .label {
   margin: 0 0 0.4rem;
-  font-size: 0.7rem;
+  font-size: var(--font-size-tiny);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -129,7 +125,7 @@
 
 .summary-card .sub {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: var(--font-size-tiny);
   color: var(--muted);
 }
 
@@ -167,8 +163,6 @@
 
 .dash-card h2 {
   margin: 0 0 1rem;
-  font-size: 1.05rem;
-  font-weight: 600;
   color: var(--text);
   display: flex;
   align-items: center;
@@ -192,7 +186,7 @@
 }
 
 .util-bar-header span {
-  font-size: 0.8rem;
+  font-size: var(--font-size-small);
 }
 
 .util-bar-track {
@@ -225,7 +219,7 @@
 
 .credit-breakdown-item .cb-label {
   margin: 0 0 0.25rem;
-  font-size: 0.7rem;
+  font-size: var(--font-size-tiny);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -234,7 +228,7 @@
 
 .credit-breakdown-item .cb-value {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--font-size-h3);
   font-weight: 700;
 }
 
@@ -276,7 +270,7 @@
 }
 
 .risk-gauge-label {
-  font-size: 0.65rem;
+  font-size: var(--font-size-tiny);
   fill: var(--muted);
   text-anchor: middle;
   text-transform: uppercase;
@@ -295,7 +289,7 @@
 
 .risk-meta-item .rm-label {
   display: block;
-  font-size: 0.65rem;
+  font-size: var(--font-size-tiny);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -303,7 +297,7 @@
 }
 
 .risk-meta-item .rm-value {
-  font-size: 0.85rem;
+  font-size: var(--font-size-small);
   font-weight: 600;
 }
 
@@ -346,12 +340,12 @@
 }
 
 .qa-btn .qa-label {
-  font-size: 0.875rem;
+  font-size: var(--font-size-small);
   font-weight: 600;
 }
 
 .qa-btn .qa-desc {
-  font-size: 0.75rem;
+  font-size: var(--font-size-tiny);
   margin-top: 0.15rem;
 }
 
@@ -383,14 +377,14 @@
 }
 
 .cl-preview-name {
-  font-size: 0.875rem;
+  font-size: var(--font-size-small);
   font-weight: 600;
   color: var(--text);
   margin: 0 0 0.2rem;
 }
 
 .cl-preview-id {
-  font-size: 0.7rem;
+  font-size: var(--font-size-tiny);
   color: var(--muted);
   font-family: monospace;
 }
@@ -401,7 +395,7 @@
 }
 
 .cl-preview-amount {
-  font-size: 0.875rem;
+  font-size: var(--font-size-small);
   font-weight: 600;
   color: var(--text);
   margin-bottom: 0.2rem;
@@ -429,7 +423,7 @@
   padding: 0.75rem;
   margin-top: 0.5rem;
   color: var(--accent);
-  font-size: 0.8rem;
+  font-size: var(--font-size-tiny);
   font-weight: 500;
   text-decoration: none;
   border-radius: 6px;
@@ -461,7 +455,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.8rem;
+  font-size: var(--font-size-tiny);
   flex-shrink: 0;
   margin-top: 2px;
 }
@@ -472,19 +466,19 @@
 }
 
 .activity-title {
-  font-size: 0.825rem;
+  font-size: var(--font-size-small);
   font-weight: 500;
   color: var(--text);
   margin-bottom: 0.15rem;
 }
 
 .activity-sub {
-  font-size: 0.725rem;
+  font-size: var(--font-size-tiny);
   color: var(--muted);
 }
 
 .activity-amount {
-  font-size: 0.825rem;
+  font-size: var(--font-size-small);
   font-weight: 600;
   flex-shrink: 0;
   margin-top: 2px;
@@ -499,7 +493,7 @@
   padding: 0.75rem;
   border-radius: 6px;
   margin-bottom: 0.5rem;
-  font-size: 0.8rem;
+  font-size: var(--font-size-small);
 }
 
 .notification-item:last-child {
@@ -514,7 +508,7 @@
 
 .notification-text {
   color: var(--text);
-  line-height: 1.4;
+  line-height: var(--line-height-loose);
 }
 
 .notification-text strong {
@@ -522,7 +516,7 @@
 }
 
 .notification-time {
-  font-size: 0.7rem;
+  font-size: var(--font-size-tiny);
   color: var(--muted);
   margin-top: 0.25rem;
 }
@@ -543,18 +537,16 @@
 
 .empty-state h2 {
   margin: 0 0 0.5rem;
-  font-size: 1.25rem;
-  font-weight: 600;
   color: var(--text);
 }
 
 .empty-state p {
   margin: 0 0 1.5rem;
   color: var(--muted);
-  font-size: 0.9rem;
-  max-width: 400px;
+  max-width: 65ch;
   margin-left: auto;
   margin-right: auto;
+  line-height: var(--line-height-loose);
 }
 
 .empty-state-btn {
@@ -566,7 +558,7 @@
   color: #0d1117;
   border: none;
   border-radius: 8px;
-  font-size: 0.9rem;
+  font-size: var(--font-size-body);
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s, transform 0.15s;
@@ -586,7 +578,7 @@
   gap: 4px;
   padding: 0.15rem 0.45rem;
   border-radius: 4px;
-  font-size: 0.7rem;
+  font-size: var(--font-size-tiny);
   font-weight: 500;
 }
 

@@ -42,13 +42,13 @@ export function AmountInput({
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-3xl font-bold text-foreground">Enter Amount</h2>
+        <h2 className="text-foreground">Enter Amount</h2>
         <p className="text-muted mt-2">{creditLine.name}</p>
       </div>
 
       <div className="space-y-3">
         <div className="flex items-center gap-2 bg-surface p-4 rounded-xl border-2 border-border overflow-hidden">
-          <span className="text-3xl font-bold text-foreground flex-shrink-0">
+          <span className="text-2xl font-bold text-foreground flex-shrink-0">
             $
           </span>
           <input
@@ -56,7 +56,7 @@ export function AmountInput({
             placeholder="0"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="text-2xl font-bold bg-transparent outline-none flex-1 text-foreground placeholder:text-muted/50 min-w-0"
+            className="text-xl font-bold bg-transparent outline-none flex-1 text-foreground placeholder:text-muted/50 min-w-0"
             min="0"
             max={creditLine.available}
           />
