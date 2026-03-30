@@ -43,6 +43,10 @@
 
 .onboarding-step {
   margin-bottom: 2.5rem;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
 }
 
 .step-icon {
@@ -75,19 +79,29 @@
 
 .indicator {
   width: 32px;
-  height: 4px;
-  background: var(--border);
-  border-radius: 2px;
+  height: 32px;
+  background: transparent;
+  border: 2px solid var(--border);
+  border-radius: 50%;
   transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.9rem;
 }
 
 .indicator.active {
   background: var(--accent);
-  width: 48px;
+  border-color: var(--accent);
+  color: white;
 }
 
 .indicator.completed {
   background: var(--success);
+  border-color: var(--success);
+  color: white;
 }
 
 .primary-btn {
@@ -121,5 +135,17 @@
   100% {
     transform: scale(1);
     opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-overlay,
+  .onboarding-content,
+  .step-icon,
+  .indicator,
+  .primary-btn {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
   }
 }

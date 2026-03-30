@@ -63,7 +63,9 @@ export const OnboardingFlow = ({ isOpen, onComplete, onSkip }: Props) => {
             <div
               key={index}
               className={`indicator ${index === currentStep ? 'active' : ''} ${index < currentStep ? 'completed' : ''}`}
-            />
+            >
+              {index < currentStep ? '✓' : index + 1}
+            </div>
           ))}
         </div>
 
