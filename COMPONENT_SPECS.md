@@ -398,6 +398,24 @@ Timing: ease
 }
 Duration: 0.6s
 Timing: ease
+
+---
+
+## Contrast Audit Adjustments (Dark Theme)
+
+### Changes Made for WCAG AA Compliance
+- Added `--error: #f85149` to color palette for consistent error styling.
+- Updated badge text colors from status-specific colors (e.g., `var(--success)`) to `var(--text)` for improved contrast on colored backgrounds.
+- Updated network badge text colors to `var(--text)` for consistency and contrast.
+- Updated status badge text colors in `STATUS_COLOR` to `COLOR.text` for all statuses.
+- Updated error state text colors in WalletConnectionModal from red/muted to `var(--text)` for higher contrast.
+- Updated disconnect button hover colors to use `var(--error)` variable.
+
+### Rationale
+- Badge and status text on semi-transparent colored backgrounds had contrast ratios below 4.5:1 for normal text.
+- Error text on light red background had insufficient contrast.
+- Changes maintain aesthetic by keeping colored backgrounds for visual cues while ensuring text readability.
+- All adjustments use token variables to allow future fine-tuning without component overrides.
 ```
 
 ### Spin
