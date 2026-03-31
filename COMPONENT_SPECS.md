@@ -51,6 +51,42 @@ Round: 50%
 
 ---
 
+## Card Component
+
+### Base Card (.card)
+- **Background**: var(--surface)
+- **Border**: 1px solid var(--border)
+- **Border Radius**: 8px
+- **Padding**: 1.5rem (24px) desktop, 1rem (16px) mobile
+- **Margin Bottom**: 1rem
+- **Transition**: border-color 0.2s, transform 0.2s
+- **Animation**: fadeInUp 0.4s ease both
+
+#### Hover State
+- **Border Color**: var(--accent)
+- **Transform**: translateY(-1px)
+
+#### Header (h2)
+- **Margin**: 0 0 0.75rem
+- **Font Size**: 1.125rem (18px)
+- **Font Weight**: 600
+- **Color**: var(--text)
+- **Display**: Flex, align-items center, gap 0.5rem
+
+#### Header Icon (.icon)
+- **Font Size**: 1.1rem
+
+#### Body Text (p)
+- **Margin**: 0
+- **Color**: var(--muted)
+- **Font Size**: 0.9rem (14.4px)
+
+### Large Card (.card-large)
+- **Padding**: 2rem (32px) desktop, 1.5rem (24px) mobile
+- All other properties same as base .card
+
+---
+
 ## Component 1: Wallet Connection Modal
 
 ### Dimensions

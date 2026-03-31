@@ -33,17 +33,24 @@ export const WalletButton = () => {
   if (wallet && status === 'connected') {
     return (
       <div className="wallet-connected">
-        <button className="wallet-address-btn" onClick={() => setShowDropdown(!showDropdown)}>
-          <span className="status-dot"></span>
+        <button 
+          className="wallet-address-btn" 
+          onClick={() => setShowDropdown(!showDropdown)}
+          aria-haspopup="true"
+          aria-expanded={showDropdown}
+          aria-label={`Wallet connected: ${formatAddress(wallet.publicKey)}`}
+        >
+          <span className="status-dot" aria-hidden="true"></span>
+          <span className="sr-only">Status: Connected</span>
           {formatAddress(wallet.publicKey)}
         </button>
         {showDropdown && (
-          <div className="wallet-dropdown">
-            <div className="dropdown-item">
+          <div className="wallet-dropdown" role="menu">
+            <div className="dropdown-item" role="menuitem">
               <span className="label">Wallet:</span>
               <span className="value">{wallet.type}</span>
             </div>
-            <div className="dropdown-item">
+            <div className="dropdown-item" role="menuitem">
               <span className="label">Network:</span>
               <span className="value">{wallet.network}</span>
             </div>

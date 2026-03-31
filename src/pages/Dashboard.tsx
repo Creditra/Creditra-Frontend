@@ -298,7 +298,7 @@ export function Dashboard() {
         {/* Left Column */}
         <div>
           {/* Credit Summary */}
-          <div className="dash-card" style={{ animationDelay: '0.1s' }}>
+          <div className="card" style={{ animationDelay: '0.1s' }}>
             <h2><span className="icon">📊</span> Credit Summary</h2>
 
             <div className="util-bar-container">
@@ -331,7 +331,7 @@ export function Dashboard() {
           </div>
 
           {/* Risk Score */}
-          <div className="dash-card" style={{ animationDelay: '0.15s' }}>
+          <div className="card" style={{ animationDelay: '0.15s' }}>
             <h2><span className="icon">🛡️</span> Risk Score</h2>
             <RiskGauge
               score={avgRiskScore}
@@ -341,7 +341,7 @@ export function Dashboard() {
           </div>
 
           {/* Active Credit Lines Preview */}
-          <div className="dash-card" style={{ animationDelay: '0.2s' }}>
+          <div className="card" style={{ animationDelay: '0.2s' }}>
             <h2>
               <span className="icon">💳</span> Active Credit Lines
               <span style={{ marginLeft: 'auto', fontSize: '0.75rem', fontWeight: 400, color: COLOR.muted }}>
@@ -382,7 +382,7 @@ export function Dashboard() {
         {/* Right Column */}
         <div>
           {/* Quick Actions */}
-          <div className="dash-card" style={{ animationDelay: '0.12s' }}>
+          <div className="card" style={{ animationDelay: '0.12s' }}>
             <h2><span className="icon">⚡</span> Quick Actions</h2>
             <div className="quick-actions-grid">
               {!hasLines && (
@@ -440,7 +440,7 @@ export function Dashboard() {
           </div>
 
           {/* Recent Activity */}
-          <div className="dash-card" style={{ animationDelay: '0.18s' }}>
+          <div className="card" style={{ animationDelay: '0.18s' }}>
             <h2><span className="icon">📝</span> Recent Activity</h2>
 
             {recentActivity.length === 0 ? (
@@ -473,7 +473,7 @@ export function Dashboard() {
 
           {/* Notifications */}
           {notifications.length > 0 && (
-            <div className="dash-card" style={{ animationDelay: '0.22s' }}>
+            <div className="card" style={{ animationDelay: '0.22s' }}>
               <h2><span className="icon">🔔</span> Alerts</h2>
 
               {notifications.map((note, i) => (
