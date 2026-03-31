@@ -22,10 +22,10 @@ export const UTIL_COLOR: Record<UtilizationLevel, string> = {
 };
 
 export const STATUS_COLOR: Record<CreditLineStatus, { bg: string; color: string }> = {
-  Active: { bg: 'rgba(63,185,80,0.2)', color: COLOR.success },
-  Suspended: { bg: 'rgba(210,153,34,0.2)', color: COLOR.warning },
-  Defaulted: { bg: 'rgba(248,81,73,0.15)', color: COLOR.danger },
-  Closed: { bg: 'rgba(139,148,158,0.15)', color: COLOR.muted },
+  Active: { bg: 'rgba(63,185,80,0.2)', color: COLOR.text },
+  Suspended: { bg: 'rgba(210,153,34,0.2)', color: COLOR.text },
+  Defaulted: { bg: 'rgba(248,81,73,0.15)', color: COLOR.text },
+  Closed: { bg: 'rgba(139,148,158,0.15)', color: COLOR.text },
 };
 
 export const RISK_COLOR = (score: number) =>

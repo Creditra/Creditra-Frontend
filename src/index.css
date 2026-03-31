@@ -139,11 +139,11 @@ body {
 
 .badge.active {
   background: rgba(63, 185, 80, 0.2);
-  color: var(--success);
+  color: var(--text);
 }
 .badge.suspended {
   background: rgba(210, 153, 34, 0.2);
-  color: var(--warning);
+  color: var(--text);
 }
 
 @media (prefers-reduced-motion: reduce) {

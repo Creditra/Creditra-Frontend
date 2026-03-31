@@ -68,12 +68,12 @@
 
 .network-badge.testnet {
   background: rgba(210, 153, 34, 0.15);
-  color: var(--warning);
+  color: var(--text);
 }
 
 .network-badge.mainnet {
   background: rgba(63, 185, 80, 0.15);
-  color: var(--success);
+  color: var(--text);
 }
 
 .network-badge .dot {
