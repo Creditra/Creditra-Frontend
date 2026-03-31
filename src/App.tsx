@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import { BrowserRouter, NavLink, Route, Routes, Link } from "react-router-dom";
 import { Dashboard } from "./pages/Dashboard";
 import CreditLines from "./pages/CreditLines";
 import { WalletProvider } from "./context/WalletContext";

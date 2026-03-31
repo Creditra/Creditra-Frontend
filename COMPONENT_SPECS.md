@@ -623,3 +623,42 @@ Desktop: > 1024px
 - Input Label: "Amount to Repay"
 - Warning: "Amount exceeds outstanding debt" or "Insufficient wallet balance"
 - Success: "Repayment Successful! Your credit line balance has been updated."
+
+---
+
+## Component 3: App Header / Top Navigation
+
+### Layout
+- Header container padding: `0.75rem 1.5rem`
+- Header gap between major regions: `1rem`
+- Vertical alignment: all items centered
+- Background: `var(--surface)`
+- Bottom border: `1px solid var(--border)`
+
+### Brand Link
+- Font size: `1.25rem`
+- Font weight: `700`
+- Min interactive height: `44px`
+- Vertical padding: `0.5rem`
+- Focus: `2px` accent outline with `2px` offset
+
+### Navigation Links
+- Group gap: `0.5rem`
+- Link font size: `0.9rem`
+- Link font weight: `500`
+- Link padding: `0.625rem 0.75rem`
+- Min interactive height: `44px`
+- Border radius: `6px`
+- Default color: `var(--muted)`
+- Hover: `var(--text)` + `rgba(88, 166, 255, 0.1)` background
+- Active route state: accent text, soft accent background, and subtle accent border
+- Focus-visible: `2px solid var(--accent)` outline, offset `2px`
+
+### Wallet Action Area
+- Connect/disconnected trigger buttons share the same min height (`44px`) and min width (`168px`) to prevent layout shift
+- Shared typography: `0.9rem`, weight `500`
+- Shared border radius: `6px`
+- Shared interaction states:
+  - Hover: color/background change only
+  - Active: `translateY(1px)`
+  - Focus-visible: `2px` accent outline with `2px` offset

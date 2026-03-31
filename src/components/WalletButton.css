@@ -1,19 +1,34 @@
 .connect-wallet-btn {
   background: var(--accent);
   color: white;
-  border: none;
-  padding: 0.5rem 1rem;
+  border: 1px solid transparent;
+  padding: 0.625rem 1rem;
+  min-height: 44px;
+  min-width: 168px;
   border-radius: 6px;
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .connect-wallet-btn:hover {
   background: #4a8fd8;
-  transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(88, 166, 255, 0.3);
+}
+
+.connect-wallet-btn:active {
+  transform: translateY(1px);
+}
+
+.connect-wallet-btn:focus-visible,
+.wallet-address-btn:focus-visible,
+.disconnect-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .wallet-connected {
@@ -21,21 +36,30 @@
 }
 
 .wallet-address-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text);
-  padding: 0.5rem 1rem;
+  padding: 0.625rem 1rem;
+  min-height: 44px;
+  min-width: 168px;
   border-radius: 6px;
   font-size: 0.9rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
 
 .wallet-address-btn:hover {
   border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.08);
+}
+
+.wallet-address-btn:active {
+  transform: translateY(1px);
 }
 
 .status-dot {
@@ -80,14 +104,15 @@
 .disconnect-btn {
   width: 100%;
   margin-top: 0.5rem;
-  padding: 0.5rem;
+  padding: 0.625rem;
+  min-height: 44px;
   background: none;
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 6px;
   cursor: pointer;
   font-size: 0.85rem;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
 
 .disconnect-btn:hover {
@@ -96,8 +121,13 @@
   color: var(--error);
 }
 
+.disconnect-btn:active {
+  transform: translateY(1px);
+}
+
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
