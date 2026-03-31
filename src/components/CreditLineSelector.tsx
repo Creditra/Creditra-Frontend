@@ -26,6 +26,7 @@ export function CreditLineSelector({
             key={line.id}
             onClick={() => onSelect(line)}
             className="w-full text-left p-5 border-2 border-border rounded-xl hover:border-blue-400 hover:bg-surface hover:shadow-lg hover:shadow-blue-500/20 transition-all duration-200 group"
+            aria-label={`Select ${line.name} credit line, available balance ${line.available.toLocaleString()} dollars`}
           >
             <div className="flex items-start justify-between">
               <div className="flex-1">
@@ -48,20 +49,26 @@ export function CreditLineSelector({
                     </span>
                   </div>
                   {line.utilization > 80 && (
-                    <div className="flex items-center gap-1 text-yellow-500 text-sm">
-                      <AlertCircle className="w-4 h-4" />
+                    <div className="flex items-center gap-1 text-yellow-500 text-sm" role="status">
+                      <AlertCircle className="w-4 h-4" aria-hidden="true" />
                       <span>High utilization</span>
                     </div>
                   )}
                 </div>
-                <div className="w-full bg-border rounded-full h-2">
+                <div className="w-full bg-border rounded-full h-2" 
+                  role="progressbar" 
+                  aria-valuenow={line.utilization} 
+                  aria-valuemin={0} 
+                  aria-valuemax={100}
+                  aria-label={`${line.name} utilization percentage`}
+                >
                   <div
                     className={`h-2 rounded-full transition-all ${line.utilization > 80 ? "bg-yellow-500" : "bg-blue-500"}`}
                     style={{ width: `${line.utilization}%` }}
                   />
                 </div>
               </div>
-              <ChevronRight className="w-5 h-5 text-muted group-hover:text-blue-400 ml-4 shrink-0 mt-1 transition-colors" />
+              <ChevronRight className="w-5 h-5 text-muted group-hover:text-blue-400 ml-4 shrink-0 mt-1 transition-colors" aria-hidden="true" />
             </div>
           </button>
         ))}

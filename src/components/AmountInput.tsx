@@ -52,53 +52,30 @@ export function AmountInput({
       </div>
 
       <div className="space-y-3">
-        <label
-          htmlFor={inputId}
-          className="text-sm font-semibold text-foreground block"
-        >
-          Draw amount
-        </label>
-        <div
-          className={`group flex items-center gap-2 bg-surface p-4 rounded-xl border-2 overflow-hidden transition-colors focus-within:ring-2 focus-within:ring-blue-400 focus-within:ring-offset-2 focus-within:ring-offset-background ${
-            error
-              ? "border-destructive"
-              : "border-border hover:border-blue-400 focus-within:border-blue-500"
-          } ${hasNoAvailability ? "opacity-60" : ""}`}
-        >
-          <span className="text-3xl font-bold text-foreground flex-shrink-0">
+        <label htmlFor="amount-input" className="sr-only">Amount to draw</label>
+        <div className="flex items-center gap-2 bg-surface p-4 rounded-xl border-2 border-border overflow-hidden">
+          <span className="text-3xl font-bold text-foreground flex-shrink-0" aria-hidden="true">
             $
           </span>
           <input
-            id={inputId}
+            id="amount-input"
             type="number"
-            inputMode="decimal"
-            placeholder="0.00"
+            placeholder="0"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="text-2xl font-bold bg-transparent outline-none flex-1 text-foreground placeholder:text-muted/50 min-w-0 disabled:cursor-not-allowed disabled:opacity-70"
+            className="text-2xl font-bold bg-transparent outline-none flex-1 text-foreground placeholder:text-muted/50 min-w-0"
             min="0"
             max={creditLine.available}
-            disabled={hasNoAvailability}
-            aria-invalid={Boolean(error)}
-            aria-describedby={describedBy}
+            aria-invalid={!!error}
+            aria-describedby={error ? "amount-error" : undefined}
           />
-          <span className="text-sm font-medium text-muted flex-shrink-0">USD</span>
         </div>
-        <p id={helperId} className="text-sm text-muted">
-          Enter a value up to ${creditLine.available.toLocaleString()}.
-        </p>
-        <div className="min-h-12">
-          {error && (
-            <div
-              id={errorId}
-              role="alert"
-              className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg border border-destructive/30"
-            >
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              {error}
-            </div>
-          )}
-        </div>
+        {error && (
+          <div id="amount-error" className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg border border-destructive/30" role="alert">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+            {error}
+          </div>
+        )}
       </div>
 
       <div>
@@ -110,8 +87,8 @@ export function AmountInput({
             <button
               key={percent}
               onClick={() => handlePreset(percent)}
-              disabled={hasNoAvailability}
-              className="py-2 px-3 border-2 border-border rounded-lg hover:border-blue-400 hover:bg-surface hover:shadow-md hover:shadow-blue-500/20 transition-all text-foreground font-medium text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-50 disabled:cursor-not-allowed"
+              className="py-2 px-3 border-2 border-border rounded-lg hover:border-blue-400 hover:bg-surface hover:shadow-md hover:shadow-blue-500/20 transition-all text-foreground font-medium text-sm"
+              aria-label={`Set amount to ${percent} percent`}
             >
               {percent}%
             </button>

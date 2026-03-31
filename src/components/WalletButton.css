@@ -92,8 +92,8 @@
 
 .disconnect-btn:hover {
   background: rgba(248, 81, 73, 0.1);
-  border-color: #f85149;
-  color: #f85149;
+  border-color: var(--error);
+  color: var(--error);
 }
 
 @keyframes pulse {

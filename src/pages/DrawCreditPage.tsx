@@ -67,8 +67,7 @@ export default function DrawCreditPage() {
   return (
     <main className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-2xl">
-        <div className="bg-card rounded-2xl shadow-2xl overflow-hidden border border-border">
-          <div className="p-8 md:p-12">
+        <div className="card card-large" style={{ maxWidth: 'none', margin: 0 }}>
             {step === "select" && (
               <CreditLineSelector
                 creditLines={mockCreditLines}
@@ -130,7 +129,6 @@ export default function DrawCreditPage() {
                 )}
               </>
             )}
-          </div>
         </div>
 
         <div className="text-center mt-8 text-sm text-muted">

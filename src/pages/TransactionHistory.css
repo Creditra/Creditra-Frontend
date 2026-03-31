@@ -1,0 +1,682 @@
+/* ─── Transaction History Page Layout ─────────────────────────────────────── */
+
+.transaction-history-page {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 1.5rem 2rem;
+}
+
+.th-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.th-header h1 {
+    margin: 0 0 0.25rem;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.th-header .subtitle {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--muted);
+}
+
+.th-header-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+/* ─── Export Button & Dropdown ─────────────────────────────────────────────── */
+
+.export-dropdown {
+    position: relative;
+}
+
+.export-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.export-btn:hover {
+    border-color: var(--accent);
+    background: var(--bg);
+}
+
+.export-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.25rem;
+    min-width: 160px;
+    z-index: 100;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    animation: fadeIn 0.15s ease;
+}
+
+.export-menu button {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.625rem 0.75rem;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 0.8rem;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.export-menu button:hover {
+    background: var(--border);
+}
+
+/* ─── Summary Statistics ─────────────────────────────────────────────────────── */
+
+.th-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.th-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 1rem 1.25rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    animation: fadeInUp 0.4s ease both;
+}
+
+.th-stat-card:nth-child(1) {
+    animation-delay: 0.05s;
+}
+
+.th-stat-card:nth-child(2) {
+    animation-delay: 0.1s;
+}
+
+.th-stat-card:nth-child(3) {
+    animation-delay: 0.15s;
+}
+
+.th-stat-card:nth-child(4) {
+    animation-delay: 0.2s;
+}
+
+.th-stat-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+
+.th-stat-content {
+    display: flex;
+    flex-direction: column;
+}
+
+.th-stat-label {
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.th-stat-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+/* ─── Filters ───────────────────────────────────────────────────────────────── */
+
+.th-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    animation: fadeInUp 0.4s ease both;
+    animation-delay: 0.25s;
+}
+
+.th-filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 160px;
+    flex: 1;
+}
+
+.th-filter-group label {
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+}
+
+.th-filter-group select,
+.th-search-group input {
+    padding: 0.5rem 0.75rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 0.85rem;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.th-filter-group select:focus,
+.th-search-group input:focus {
+    border-color: var(--accent);
+}
+
+.th-filter-group select {
+    cursor: pointer;
+}
+
+.th-search-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 200px;
+    flex: 2;
+}
+
+.th-search-group input::placeholder {
+    color: var(--muted);
+}
+
+/* ─── Table Container ───────────────────────────────────────────────────────── */
+
+.th-table-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    animation: fadeInUp 0.4s ease both;
+    animation-delay: 0.3s;
+}
+
+.th-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.th-table thead {
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+}
+
+.th-table th {
+    padding: 0.875rem 1rem;
+    text-align: left;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* ─── Transaction Rows ─────────────────────────────────────────────────────── */
+
+.tx-row {
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.tx-row:hover {
+    background: rgba(88, 166, 255, 0.04);
+}
+
+.tx-row.expanded {
+    background: rgba(88, 166, 255, 0.06);
+}
+
+.tx-row td {
+    padding: 1rem;
+    font-size: 0.875rem;
+    vertical-align: middle;
+}
+
+.tx-date {
+    min-width: 100px;
+}
+
+.tx-date-main {
+    font-weight: 500;
+    color: var(--text);
+}
+
+.tx-date-sub {
+    font-size: 0.75rem;
+    color: var(--muted);
+}
+
+.tx-type {
+    min-width: 140px;
+}
+
+.tx-type-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.tx-type-icon {
+    font-size: 0.85rem;
+}
+
+.tx-amount {
+    min-width: 100px;
+    font-weight: 600;
+    font-family: monospace;
+}
+
+.tx-line {
+    min-width: 150px;
+}
+
+.tx-line-name {
+    display: block;
+    font-weight: 500;
+    color: var(--text);
+    font-size: 0.85rem;
+}
+
+.tx-line-id {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--muted);
+    font-family: monospace;
+}
+
+.tx-status {
+    min-width: 100px;
+}
+
+.tx-status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.tx-hash {
+    min-width: 120px;
+}
+
+.tx-hash-link {
+    font-size: 0.75rem;
+    font-family: monospace;
+    color: var(--accent);
+    text-decoration: none;
+    transition: opacity 0.15s;
+}
+
+.tx-hash-link:hover {
+    opacity: 0.8;
+}
+
+.tx-hash-muted {
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
+.tx-expand {
+    width: 40px;
+    text-align: center;
+}
+
+.expand-icon {
+    font-size: 0.8rem;
+    color: var(--muted);
+    transition: transform 0.2s ease;
+    display: inline-block;
+}
+
+.expand-icon.rotated {
+    transform: rotate(180deg);
+}
+
+/* ─── Transaction Detail Row ──────────────────────────────────────────────── */
+
+.tx-detail-row {
+    background: var(--bg);
+}
+
+.tx-detail-row td {
+    padding: 0;
+}
+
+.tx-detail {
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--border);
+}
+
+.tx-detail-section h4 {
+    margin: 0 0 1rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.tx-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+.tx-detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.tx-detail-item.full-width {
+    grid-column: 1 / -1;
+}
+
+.tx-detail-item .label {
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.tx-detail-item .value {
+    font-size: 0.875rem;
+    color: var(--text);
+}
+
+.tx-hash-full {
+    font-size: 0.8rem;
+    font-family: monospace;
+    color: var(--accent);
+    text-decoration: none;
+    word-break: break-all;
+}
+
+.tx-hash-full:hover {
+    text-decoration: underline;
+}
+
+/* ─── Empty State ──────────────────────────────────────────────────────────── */
+
+.th-empty {
+    padding: 4rem 2rem;
+    text-align: center;
+}
+
+.th-empty-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+.th-empty h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1.1rem;
+    color: var(--text);
+}
+
+.th-empty p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--muted);
+}
+
+/* ─── Pagination ───────────────────────────────────────────────────────────── */
+
+.th-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    border-top: 1px solid var(--border);
+}
+
+.th-page-btn {
+    padding: 0.5rem 1rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.th-page-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    background: var(--surface);
+}
+
+.th-page-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.th-page-info {
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+/* ─── Global Empty State ───────────────────────────────────────────────────── */
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    text-align: center;
+}
+
+.empty-state-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+.empty-state h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1.25rem;
+    color: var(--text);
+}
+
+.empty-state p {
+    max-width: 400px;
+    margin: 0 0 1.5rem;
+    font-size: 0.9rem;
+    color: var(--muted);
+    line-height: 1.5;
+}
+
+.empty-state-btn {
+    padding: 0.75rem 1.5rem;
+    background: var(--accent);
+    border: none;
+    border-radius: 6px;
+    color: var(--bg);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: opacity 0.15s;
+}
+
+.empty-state-btn:hover {
+    opacity: 0.9;
+}
+
+/* ─── Animations ──────────────────────────────────────────────────────────── */
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ─── Responsive Design ─────────────────────────────────────────────────────── */
+
+@media (max-width: 1024px) {
+    .th-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .tx-detail-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .transaction-history-page {
+        padding: 0 1rem 1.5rem;
+    }
+
+    .th-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .th-header-actions {
+        justify-content: flex-start;
+    }
+
+    .th-stats {
+        grid-template-columns: 1fr;
+    }
+
+    .th-filters {
+        flex-direction: column;
+    }
+
+    .th-filter-group,
+    .th-search-group {
+        min-width: 100%;
+    }
+
+    /* Card-based layout for mobile */
+    .th-table-container {
+        overflow-x: auto;
+    }
+
+    .th-table {
+        min-width: 700px;
+    }
+
+    .tx-detail-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .th-header h1 {
+        font-size: 1.25rem;
+    }
+
+    .th-stat-card {
+        padding: 0.875rem 1rem;
+    }
+
+    .th-stat-value {
+        font-size: 1.1rem;
+    }
+
+    .th-filters {
+        padding: 1rem;
+    }
+
+    .th-pagination {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+}
+
+/* ─── Print Styles ─────────────────────────────────────────────────────────── */
+
+@media print {
+
+    .th-header-actions,
+    .th-filters,
+    .th-pagination,
+    .tx-expand {
+        display: none !important;
+    }
+
+    .transaction-history-page {
+        max-width: 100%;
+        padding: 0;
+    }
+
+    .th-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .th-table {
+        font-size: 0.75rem;
+    }
+
+    .tx-row {
+        page-break-inside: avoid;
+    }
+}
