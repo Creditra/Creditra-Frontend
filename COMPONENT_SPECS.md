@@ -51,6 +51,42 @@ Round: 50%
 
 ---
 
+## Card Component
+
+### Base Card (.card)
+- **Background**: var(--surface)
+- **Border**: 1px solid var(--border)
+- **Border Radius**: 8px
+- **Padding**: 1.5rem (24px) desktop, 1rem (16px) mobile
+- **Margin Bottom**: 1rem
+- **Transition**: border-color 0.2s, transform 0.2s
+- **Animation**: fadeInUp 0.4s ease both
+
+#### Hover State
+- **Border Color**: var(--accent)
+- **Transform**: translateY(-1px)
+
+#### Header (h2)
+- **Margin**: 0 0 0.75rem
+- **Font Size**: 1.125rem (18px)
+- **Font Weight**: 600
+- **Color**: var(--text)
+- **Display**: Flex, align-items center, gap 0.5rem
+
+#### Header Icon (.icon)
+- **Font Size**: 1.1rem
+
+#### Body Text (p)
+- **Margin**: 0
+- **Color**: var(--muted)
+- **Font Size**: 0.9rem (14.4px)
+
+### Large Card (.card-large)
+- **Padding**: 2rem (32px) desktop, 1.5rem (24px) mobile
+- All other properties same as base .card
+
+---
+
 ## Component 1: Wallet Connection Modal
 
 ### Dimensions
@@ -398,6 +434,24 @@ Timing: ease
 }
 Duration: 0.6s
 Timing: ease
+
+---
+
+## Contrast Audit Adjustments (Dark Theme)
+
+### Changes Made for WCAG AA Compliance
+- Added `--error: #f85149` to color palette for consistent error styling.
+- Updated badge text colors from status-specific colors (e.g., `var(--success)`) to `var(--text)` for improved contrast on colored backgrounds.
+- Updated network badge text colors to `var(--text)` for consistency and contrast.
+- Updated status badge text colors in `STATUS_COLOR` to `COLOR.text` for all statuses.
+- Updated error state text colors in WalletConnectionModal from red/muted to `var(--text)` for higher contrast.
+- Updated disconnect button hover colors to use `var(--error)` variable.
+
+### Rationale
+- Badge and status text on semi-transparent colored backgrounds had contrast ratios below 4.5:1 for normal text.
+- Error text on light red background had insufficient contrast.
+- Changes maintain aesthetic by keeping colored backgrounds for visual cues while ensuring text readability.
+- All adjustments use token variables to allow future fine-tuning without component overrides.
 ```
 
 ### Spin

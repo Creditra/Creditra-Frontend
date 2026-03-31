@@ -1,9 +1,10 @@
 import { BrowserRouter, NavLink, Route, Routes, Link } from "react-router-dom";
 import { Dashboard } from "./pages/Dashboard";
-import { CreditLines } from "./pages/CreditLines";
+import CreditLines from "./pages/CreditLines";
 import { WalletProvider } from "./context/WalletContext";
 import { WalletButton } from "./components/WalletButton";
 import DrawCreditPage from "./pages/DrawCreditPage";
+import { TransactionHistory } from "./pages/TransactionHistory";
 import { RequestEvaluation } from "./pages/RequestEvaluation";
 
 function App() {
@@ -15,24 +16,20 @@ function App() {
             <Link to="/" className="logo">
               Creditra
             </Link>
-            <nav className="header-nav" aria-label="Primary navigation">
-              <NavLink to="/" end className="header-nav-link">
-                Dashboard
-              </NavLink>
-              <NavLink to="/credit-lines" className="header-nav-link">
-                Credit Lines
-              </NavLink>
-              <NavLink to="/open-credit" className="header-nav-link">
-                Open Credit Line
-              </NavLink>
+            <nav>
+              <Link to="/">Dashboard</Link>
+              <Link to="/transactions">Transactions</Link>
+              <Link to="/credit-lines">Credit Lines</Link>
+              <Link to="/open-credit">Open Credit Line</Link>
             </nav>
             <WalletButton />
           </header>
           <main className="main">
             <Routes>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/transactions" element={<TransactionHistory />} />
               <Route path="/draw-credit" element={<DrawCreditPage />} />
-              <Route path="/credit-lines" element={<CreditLines />} />
+             {/*<Route path="/login" element={<CreditLines />} />  causing error*/}
               <Route path="/open-credit" element={<RequestEvaluation />} />
             </Routes>
           </main>

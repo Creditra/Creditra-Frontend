@@ -68,12 +68,12 @@
 
 .network-badge.testnet {
   background: rgba(210, 153, 34, 0.15);
-  color: var(--warning);
+  color: var(--text);
 }
 
 .network-badge.mainnet {
   background: rgba(63, 185, 80, 0.15);
-  color: var(--success);
+  color: var(--text);
 }
 
 .network-badge .dot {
@@ -152,31 +152,6 @@
   grid-template-columns: 1fr 380px;
   gap: 1.25rem;
   align-items: start;
-}
-
-/* ─── Dashboard Cards ───────────────────────────────────────────────────────── */
-
-.dash-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1.5rem;
-  margin-bottom: 1.25rem;
-  animation: fadeInUp 0.4s ease both;
-}
-
-.dash-card h2 {
-  margin: 0 0 1rem;
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--text);
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.dash-card h2 .icon {
-  font-size: 1.1rem;
 }
 
 /* ─── Utilization Bar ───────────────────────────────────────────────────────── */

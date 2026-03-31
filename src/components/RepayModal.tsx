@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 // --- We assume CreditLine type is available or we define a simplified version here ---
 // Actually, let's just define the interface here to avoid circular dependencies if CreditLines.tsx doesn't export it
@@ -61,6 +62,7 @@ const fmt = (n: number) =>
 
 export function RepayModal({ creditLine, walletBalance, onClose, onSuccess }: RepayModalProps) {
   const [step, setStep] = useState<ModalStep>('input');
+  const modalRef = useFocusTrap(true);
   const [amountStr, setAmountStr] = useState('');
 
   // Calculate derived values
@@ -105,20 +107,26 @@ export function RepayModal({ creditLine, walletBalance, onClose, onSuccess }: Re
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fadeIn 0.2s ease' }}
-      onClick={step !== 'pending' ? onClose : undefined}>
+      onClick={step !== 'pending' ? onClose : undefined} role="presentation">
 
-      <div style={{ background: COLOR.surface, border: `1px solid ${COLOR.border}`, borderRadius: 12, width: '100%', maxWidth: 480, boxShadow: '0 16px 40px rgba(0,0,0,0.4)', overflow: 'hidden', animation: 'slideUp 0.3s ease' }}
-        onClick={e => e.stopPropagation()}>
+      <div 
+        ref={modalRef}
+        style={{ background: COLOR.surface, border: `1px solid ${COLOR.border}`, borderRadius: 12, width: '100%', maxWidth: 480, boxShadow: '0 16px 40px rgba(0,0,0,0.4)', overflow: 'hidden', animation: 'slideUp 0.3s ease' }}
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="repay-modal-title"
+      >
 
         {/* Header */}
         <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${COLOR.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h2 style={{ margin: '0 0 0.25rem', fontSize: '1.25rem', fontWeight: 600, color: COLOR.text }}>
+            <h2 id="repay-modal-title" style={{ margin: '0 0 0.25rem', fontSize: '1.25rem', fontWeight: 600, color: COLOR.text }}>
               {step === 'success' ? 'Repayment Successful' : step === 'review' ? 'Review Repayment' : 'Make a Repayment'}
             </h2>
             {step !== 'success' && <p style={{ margin: 0, fontSize: '0.85rem', color: COLOR.muted }}>{creditLine.name} · {creditLine.id}</p>}
           </div>
-          {step !== 'pending' && <button onClick={onClose} style={{ ...btn.ghost, padding: '0.4rem', borderRadius: 4 }}>✕</button>}
+          {step !== 'pending' && <button onClick={onClose} style={{ ...btn.ghost, padding: '0.4rem', borderRadius: 4 }} aria-label="Close modal">✕</button>}
         </div>
 
         {/* Step: Input */}
@@ -137,26 +145,30 @@ export function RepayModal({ creditLine, walletBalance, onClose, onSuccess }: Re
 
             <div style={{ marginBottom: '1.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                <label style={{ fontSize: '0.9rem', color: COLOR.text, fontWeight: 500 }}>Amount to Repay</label>
+                <label htmlFor="repay-amount-input" style={{ fontSize: '0.9rem', color: COLOR.text, fontWeight: 500 }}>Amount to Repay</label>
                 <span style={{ fontSize: '0.8rem', color: exceedsBalance ? COLOR.danger : COLOR.muted }}>Wallet: {fmt(walletBalance)}</span>
               </div>
-
               <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
                 {[25, 50, 75, 100].map(pct => (
                   <button key={pct} onClick={() => handlePercent(pct)}
-                    style={{ ...btn.outline, flex: 1, padding: '0.4rem 0', fontSize: '0.8rem', color: COLOR.accent, borderColor: 'rgba(88,166,255,0.3)', background: pct === 100 ? 'rgba(88,166,255,0.1)' : 'transparent' }}>
+                    style={{ ...btn.outline, flex: 1, padding: '0.4rem 0', fontSize: '0.8rem', color: COLOR.accent, borderColor: 'rgba(88,166,255,0.3)', background: pct === 100 ? 'rgba(88,166,255,0.1)' : 'transparent' }}
+                    aria-label={`Set amount to ${pct === 100 ? 'maximum' : pct + ' percent'}`}
+                  >
                     {pct === 100 ? 'MAX' : `${pct}%`}
                   </button>
                 ))}
               </div>
 
               <div style={{ position: 'relative' }}>
-                <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', fontSize: '1.25rem', color: COLOR.muted }}>$</span>
+                <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', fontSize: '1.25rem', color: COLOR.muted }} aria-hidden="true">$</span>
                 <input
+                  id="repay-amount-input"
                   type="number"
                   value={amountStr}
                   onChange={e => setAmountStr(e.target.value)}
                   placeholder="0.00"
+                  aria-invalid={exceedsDebt || exceedsBalance}
+                  aria-describedby={(exceedsDebt || exceedsBalance) ? "repay-error" : undefined}
                   style={{
                     width: '100%',
                     background: COLOR.bg,
@@ -172,8 +184,11 @@ export function RepayModal({ creditLine, walletBalance, onClose, onSuccess }: Re
                   }}
                 />
               </div>
-              {exceedsDebt && <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: COLOR.danger }}>⚠ Amount exceeds total outstanding debt</p>}
-              {exceedsBalance && <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: COLOR.danger }}>⚠ Insufficient wallet balance</p>}
+              {(exceedsDebt || exceedsBalance) && (
+                <p id="repay-error" style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: COLOR.danger }} role="alert">
+                  ⚠ {exceedsDebt ? 'Amount exceeds total outstanding debt' : 'Insufficient wallet balance'}
+                </p>
+              )}
             </div>
 
             <div style={{ marginBottom: '1.5rem' }}>
@@ -191,7 +206,14 @@ export function RepayModal({ creditLine, walletBalance, onClose, onSuccess }: Re
                 <span style={{ fontSize: '0.8rem', color: amount > 0 ? COLOR.success : COLOR.text }}>{newPct}% <span style={{ textDecoration: 'line-through', color: COLOR.muted, marginLeft: 4 }}>{oldPct}%</span></span>
               </div>
 
-              <div style={{ height: 8, background: COLOR.border, borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
+              <div 
+                style={{ height: 8, background: COLOR.border, borderRadius: 4, overflow: 'hidden', position: 'relative' }}
+                role="progressbar"
+                aria-valuenow={newPct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="New utilization preview"
+              >
                 <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: `${oldPct}%`, background: COLOR.danger, opacity: amount > 0 ? 0.3 : 1, transition: 'all 0.4s ease' }} />
                 <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: `${newPct}%`, background: remainingDebt === 0 ? COLOR.success : COLOR.warning, transition: 'all 0.4s ease' }} />
               </div>
@@ -244,7 +266,7 @@ export function RepayModal({ creditLine, walletBalance, onClose, onSuccess }: Re
         {step === 'success' && (
           <div style={{ padding: '2.5rem 1.5rem', textAlign: 'center', animation: 'fadeIn 0.2s ease' }}>
             <div style={{ width: 64, height: 64, background: COLOR.success, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem', animation: 'scaleIn 0.4s ease' }}>
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <polyline points="20 6 9 17 4 12"></polyline>
               </svg>
             </div>

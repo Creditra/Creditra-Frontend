@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useWallet } from '../context/WalletContext';
 import { WalletType } from '../types/wallet';
 import './WalletConnectionModal.css';
@@ -36,7 +37,8 @@ const wallets = [
   }
 ];
 
-export const WalletConnectionModal = ({ isOpen, onClose, onSuccess }: Props) => {
+export const WalletConnectionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
+  const modalRef = useFocusTrap(isOpen);
   const { status, error, connect, clearError } = useWallet();
   const [selectedWallet, setSelectedWallet] = useState<WalletType | null>(null);
 
@@ -58,16 +60,23 @@ export const WalletConnectionModal = ({ isOpen, onClose, onSuccess }: Props) => 
   };
 
   return (
-    <div className="modal-overlay" onClick={handleClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" role="presentation">
+      <div 
+        ref={modalRef}
+        className="relative w-full max-w-md bg-surface border border-border rounded-2xl shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+      >
         <div className="modal-header">
-          <h2>Connect Wallet</h2>
-          <button className="close-btn" onClick={handleClose}>×</button>
+          <h2 id="modal-title">Connect Wallet</h2>
+          <button className="close-btn" onClick={handleClose} aria-label="Close modal">×</button>
         </div>
 
         {status === 'connected' ? (
-          <div className="success-state">
-            <div className="success-icon">✓</div>
+          <div className="success-state" role="status">
+            <div className="success-icon" aria-hidden="true">✓</div>
             <h3>Wallet Connected!</h3>
             <p>You're all set to start using Creditra</p>
           </div>
@@ -100,8 +109,8 @@ export const WalletConnectionModal = ({ isOpen, onClose, onSuccess }: Props) => 
             </div>
 
             {error && (
-              <div className="error-state">
-                <span className="error-icon">⚠</span>
+              <div className="error-state" role="alert">
+                <span className="error-icon" aria-hidden="true">⚠</span>
                 <div>
                   <strong>Connection Failed</strong>
                   <p>{error.message}</p>
@@ -110,7 +119,7 @@ export const WalletConnectionModal = ({ isOpen, onClose, onSuccess }: Props) => 
             )}
 
             <div className="security-note">
-              <span>🔒</span>
+              <span aria-hidden="true">🔒</span>
               <p>We never store your private keys. Your wallet remains secure.</p>
             </div>
           </>
