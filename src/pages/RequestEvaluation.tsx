@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { FormMessage } from '@/components/FormMessage';
 
 type Step = 1 | 2 | 3 | 4 | 5;
 type EvalState = 'idle' | 'running' | 'success' | 'rejected' | 'error';
@@ -162,6 +163,11 @@ export function RequestEvaluation() {
     setStep(5);
   };
 
+  const evaluationErrorMessage =
+    evalState === 'error'
+      ? 'A network error occurred while analyzing your wallet. Please try again.'
+      : '';
+
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem', gap: '1rem', flexWrap: 'wrap' }}>
@@ -275,12 +281,11 @@ export function RequestEvaluation() {
 
         {step === 4 && (
           <div>
-            {evalState === 'error' && (
-              <div style={{ marginBottom: '0.75rem', padding: '0.75rem', borderRadius: 8, border: `1px solid rgba(248,81,73,0.3)`, background: 'rgba(248,81,73,0.1)', color: COLOR.text }}>
-                <strong style={{ color: COLOR.danger }}>Evaluation failed.</strong>
-                <p style={{ margin: '0.35rem 0 0', color: COLOR.muted }}>A network error occurred while analyzing your wallet. Please try again.</p>
-              </div>
-            )}
+            <FormMessage
+              title="Evaluation failed"
+              message={evaluationErrorMessage}
+              tone="alert"
+            />
 
             {evalState === 'success' && result?.approved && (
               <div style={{ display: 'grid', gap: '0.75rem' }}>

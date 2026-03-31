@@ -434,7 +434,33 @@ Focused:  [  Button  ]  ← Blue outline (2px)
 - Modal opens: "Dialog opened: Connect Wallet"
 - Loading: "Connecting to wallet, please wait"
 - Success: "Wallet connected successfully"
-- Error: "Error: [error message]"
+- Field error: "Amount to repay. Repayment amount exceeds available wallet balance."
+- Alert error: "Evaluation failed. A network error occurred while analyzing your wallet. Please try again."
+
+### Form Error Standard
+```
+Field layout:
+[Label]                            [Optional hint]
+[Input / Select / Upload]
+[Reserved error slot: 48-52px min-height]
+
+Inline error:
+[! icon] Error copy in muted body text
+- Background: rgba(248,81,73,0.10)
+- Border: rgba(248,81,73,0.30)
+- Title/icon color: #f85149
+- Radius: 12px
+- Padding: 12px 14px
+- Gap above field: 4px
+
+Top-level alert:
+[! icon] Evaluation failed
+          A network error occurred while analyzing your wallet.
+- Same colors as inline error
+- Padding: 14px 16px
+- Margin below alert: 12px
+- Use role="alert" and connect fields with aria-describedby
+```
 
 ---
 

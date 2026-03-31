@@ -205,3 +205,83 @@ body {
   white-space: nowrap;
   border-width: 0;
 }
+
+.form-field {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.form-field__label {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.9rem;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.form-field__hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.form-message-slot {
+  width: 100%;
+}
+
+.form-message-slot--inline {
+  margin-top: 0.25rem;
+}
+
+.form-message-slot--alert {
+  margin-bottom: 0.75rem;
+}
+
+.form-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  border-radius: 0.75rem;
+  border: 1px solid transparent;
+}
+
+.form-message--inline {
+  padding: 0.75rem 0.875rem;
+}
+
+.form-message--alert {
+  padding: 0.875rem 1rem;
+}
+
+.form-message--error {
+  background: rgba(248, 81, 73, 0.1);
+  border-color: rgba(248, 81, 73, 0.3);
+  color: var(--text);
+}
+
+.form-message__icon {
+  width: 1rem;
+  height: 1rem;
+  color: var(--danger);
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.form-message__content {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.form-message__title {
+  display: block;
+  color: var(--danger);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.form-message__text {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
