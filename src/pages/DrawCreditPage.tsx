@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Clock } from "lucide-react";
 import { CreditLineSelector } from "@/components/CreditLineSelector";
 import { AmountInput } from "@/components/AmountInput";
 import { PreviewSection } from "@/components/PreviewSection";
@@ -68,8 +67,7 @@ export default function DrawCreditPage() {
   return (
     <main className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-2xl">
-        <div className="bg-card rounded-2xl shadow-2xl overflow-hidden border border-border">
-          <div className="p-8 md:p-12">
+        <div className="card card-large" style={{ maxWidth: 'none', margin: 0 }}>
             {step === "select" && (
               <CreditLineSelector
                 creditLines={mockCreditLines}
@@ -105,12 +103,12 @@ export default function DrawCreditPage() {
             )}
 
             {step === "status" && (isLoading || transaction) && (
-              <div className="min-h-[30rem] flex items-center">
+              <>
                 {isLoading && (
-                  <div className="space-y-8 text-center w-full">
+                  <div className="space-y-8 text-center">
                     <div className="flex justify-center">
-                      <div className="bg-blue-500/10 p-8 rounded-full border border-blue-500/30">
-                        <Clock className="w-16 h-16 text-blue-500 animate-pulse" />
+                      <div className="bg-primary/20 p-8 rounded-full">
+                        <div className="w-16 h-16 border-4 border-border border-t-primary rounded-full animate-spin" />
                       </div>
                     </div>
                     <div>
@@ -124,16 +122,13 @@ export default function DrawCreditPage() {
                   </div>
                 )}
                 {transaction && !isLoading && (
-                  <div className="w-full">
-                    <TransactionStatus
-                      transaction={transaction}
-                      onNewDraw={handleNewDraw}
-                    />
-                  </div>
+                  <TransactionStatus
+                    transaction={transaction}
+                    onNewDraw={handleNewDraw}
+                  />
                 )}
-              </div>
+              </>
             )}
-          </div>
         </div>
 
         <div className="text-center mt-8 text-sm text-muted">

@@ -171,13 +171,13 @@
 .error-state strong {
   display: block;
   margin-bottom: 0.10rem;
-  color: #f85149;
+  color: var(--text);
 }
 
 .error-state p {
   margin: 0;
   font-size: 0.85rem;
-  color: var(--muted);
+  color: var(--text);
 }
 
 .success-state {

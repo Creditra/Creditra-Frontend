@@ -9,6 +9,13 @@
   --accent: #58a6ff;
   --success: #3fb950;
   --warning: #d29922;
+  --error: #f85149;
+}
+
+/* Base Focus Styles */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 * {
@@ -77,11 +84,43 @@ body {
   border-radius: 8px;
   padding: 1.5rem;
   margin-bottom: 1rem;
+  transition: border-color 0.2s, transform 0.2s;
+  animation: fadeInUp 0.4s ease both;
+}
+
+.card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 768px) {
+  .card {
+    padding: 1rem;
+  }
+}
+
+.card-large {
+  padding: 2rem;
+}
+
+@media (max-width: 768px) {
+  .card-large {
+    padding: 1.5rem;
+  }
 }
 
 .card h2 {
   margin: 0 0 0.75rem;
   font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.card h2 .icon {
+  font-size: 1.1rem;
 }
 
 .card p {
@@ -100,9 +139,32 @@ body {
 
 .badge.active {
   background: rgba(63, 185, 80, 0.2);
-  color: var(--success);
+  color: var(--text);
 }
 .badge.suspended {
   background: rgba(210, 153, 34, 0.2);
-  color: var(--warning);
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }
