@@ -15,10 +15,12 @@ export const MOCK_CREDIT_LINES: CreditLine[] = [
     nextPaymentDate: '2025-03-01',
     nextPaymentAmount: 3200,
     transactions: [
-      { id: 'T1', type: 'Draw', amount: 50000, date: '2025-02-18', note: 'Equipment purchase' },
-      { id: 'T2', type: 'Repay', amount: 12500, date: '2025-02-10', note: 'Monthly repayment' },
-      { id: 'T3', type: 'Draw', amount: 150000, date: '2025-01-22', note: 'Inventory expansion' },
-      { id: 'T4', type: 'Interest', amount: 1328, date: '2025-02-01', note: 'Monthly interest accrual' },
+      { id: 'TX-001', type: 'Draw', amount: 50000, date: '2025-02-18T10:30:00Z', note: 'Equipment purchase', status: 'Completed', txHash: '0xabc123def456' },
+      { id: 'TX-002', type: 'Repay', amount: 12500, date: '2025-02-10T14:15:00Z', note: 'Monthly repayment', status: 'Completed', txHash: '0xdef789ghi012' },
+      { id: 'TX-003', type: 'Draw', amount: 150000, date: '2025-01-22T09:45:00Z', note: 'Inventory expansion', status: 'Completed', txHash: '0xghi345jkl678' },
+      { id: 'TX-004', type: 'Interest', amount: 1328, date: '2025-02-01T00:00:00Z', note: 'Monthly interest accrual', status: 'Completed' },
+      { id: 'TX-005', type: 'Draw', amount: 25000, date: '2025-01-15T11:20:00Z', note: 'Marketing campaign', status: 'Completed', txHash: '0xmno901pqr234' },
+      { id: 'TX-006', type: 'Repay', amount: 8000, date: '2024-12-20T16:00:00Z', note: 'Emergency repayment', status: 'Completed', txHash: '0xstu567vwx890' },
     ],
     statusHistory: [
       { status: 'Active', date: '2024-03-15', note: 'Line opened and activated' },
@@ -38,9 +40,13 @@ export const MOCK_CREDIT_LINES: CreditLine[] = [
     nextPaymentDate: '2025-03-05',
     nextPaymentAmount: 5100,
     transactions: [
-      { id: 'T5', type: 'Draw', amount: 100000, date: '2025-02-05', note: 'Market expansion' },
-      { id: 'T6', type: 'Repay', amount: 40000, date: '2025-01-28', note: 'Partial repayment' },
-      { id: 'T7', type: 'Interest', amount: 1620, date: '2025-02-01', note: 'Monthly interest' },
+      { id: 'TX-007', type: 'Draw', amount: 100000, date: '2025-02-05T08:30:00Z', note: 'Market expansion', status: 'Completed', txHash: '0xabc111def222' },
+      { id: 'TX-008', type: 'Repay', amount: 40000, date: '2025-01-28T13:45:00Z', note: 'Partial repayment', status: 'Completed', txHash: '0xdef333ghi444' },
+      { id: 'TX-009', type: 'Interest', amount: 1620, date: '2025-02-01T00:00:00Z', note: 'Monthly interest', status: 'Completed' },
+      { id: 'TX-010', type: 'Draw', amount: 75000, date: '2025-01-10T10:00:00Z', note: 'Hiring new staff', status: 'Completed', txHash: '0xghi555jkl666' },
+      { id: 'TX-011', type: 'Repay', amount: 25000, date: '2024-12-15T15:30:00Z', note: 'Quarterly payment', status: 'Completed', txHash: '0xmno777pqr888' },
+      { id: 'TX-012', type: 'Draw', amount: 50000, date: '2024-11-20T09:15:00Z', note: 'Software upgrade', status: 'Completed', txHash: '0xstu999vwx000' },
+      { id: 'TX-013', type: 'Interest', amount: 1450, date: '2025-01-01T00:00:00Z', note: 'Monthly interest', status: 'Completed' },
     ],
     statusHistory: [
       { status: 'Active', date: '2024-06-01', note: 'Line opened' },
@@ -57,8 +63,9 @@ export const MOCK_CREDIT_LINES: CreditLine[] = [
     openedAt: '2023-11-10',
     updatedAt: '2025-01-15T16:45:00Z',
     transactions: [
-      { id: 'T8', type: 'Draw', amount: 45000, date: '2024-12-10', note: 'Operations' },
-      { id: 'T9', type: 'Interest', amount: 413, date: '2025-01-01', note: 'Monthly interest' },
+      { id: 'TX-014', type: 'Draw', amount: 45000, date: '2024-12-10T12:00:00Z', note: 'Operations', status: 'Completed', txHash: '0xaaa111bbb222' },
+      { id: 'TX-015', type: 'Interest', amount: 413, date: '2025-01-01T00:00:00Z', note: 'Monthly interest', status: 'Completed' },
+      { id: 'TX-016', type: 'StatusChange', amount: 0, date: '2025-01-15T16:45:00Z', note: 'Missed payment — suspended', status: 'Completed' },
     ],
     statusHistory: [
       { status: 'Active', date: '2023-11-10', note: 'Line opened' },
@@ -76,8 +83,13 @@ export const MOCK_CREDIT_LINES: CreditLine[] = [
     openedAt: '2023-05-20',
     updatedAt: '2024-11-01T10:00:00Z',
     transactions: [
-      { id: 'T10', type: 'Draw', amount: 75000, date: '2024-03-15', note: 'Full draw' },
-      { id: 'T11', type: 'Fee', amount: 750, date: '2024-11-01', note: 'Default fee applied' },
+      { id: 'TX-017', type: 'Draw', amount: 75000, date: '2024-03-15T14:30:00Z', note: 'Full draw', status: 'Completed', txHash: '0xccc333ddd444' },
+      { id: 'TX-018', type: 'Fee', amount: 750, date: '2024-11-01T10:00:00Z', note: 'Default fee applied', status: 'Completed' },
+      { id: 'TX-019', type: 'StatusChange', amount: 0, date: '2024-09-01T09:00:00Z', note: 'Payment overdue — suspended', status: 'Completed' },
+      { id: 'TX-020', type: 'StatusChange', amount: 0, date: '2024-11-01T10:00:00Z', note: '90+ days overdue — defaulted', status: 'Completed' },
+      { id: 'TX-021', type: 'Interest', amount: 2800, date: '2024-08-01T00:00:00Z', note: 'Interest accrued', status: 'Completed' },
+      { id: 'TX-022', type: 'Interest', amount: 2950, date: '2024-09-01T00:00:00Z', note: 'Interest accrued', status: 'Completed' },
+      { id: 'TX-023', type: 'Interest', amount: 3100, date: '2024-10-01T00:00:00Z', note: 'Interest accrued', status: 'Pending' },
     ],
     statusHistory: [
       { status: 'Active', date: '2023-05-20', note: 'Line opened' },
@@ -96,12 +108,32 @@ export const MOCK_CREDIT_LINES: CreditLine[] = [
     openedAt: '2022-08-01',
     updatedAt: '2024-06-30T12:00:00Z',
     transactions: [
-      { id: 'T12', type: 'Draw', amount: 30000, date: '2022-09-01', note: 'Initial draw' },
-      { id: 'T13', type: 'Repay', amount: 30000, date: '2023-06-15', note: 'Full repayment' },
+      { id: 'TX-024', type: 'Draw', amount: 30000, date: '2022-09-01T10:00:00Z', note: 'Initial draw', status: 'Completed', txHash: '0xeee555fff666' },
+      { id: 'TX-025', type: 'Repay', amount: 30000, date: '2023-06-15T15:00:00Z', note: 'Full repayment', status: 'Completed', txHash: '0xggg777hhh888' },
+      { id: 'TX-026', type: 'StatusChange', amount: 0, date: '2024-06-30T12:00:00Z', note: 'Line closed', status: 'Completed' },
     ],
     statusHistory: [
       { status: 'Active', date: '2022-08-01', note: 'Line opened' },
       { status: 'Closed', date: '2024-06-30', note: 'Fully repaid and closed by borrower' },
+    ],
+  },
+  {
+    id: 'CL-2025-006',
+    name: 'Revolving Credit Line',
+    status: 'Active',
+    limit: 100000,
+    utilized: 0,
+    apr: 7.5,
+    riskScore: 750,
+    collateral: 'USDC Treasury',
+    openedAt: '2025-01-15',
+    updatedAt: '2025-02-20T10:00:00Z',
+    transactions: [
+      { id: 'TX-027', type: 'Draw', amount: 15000, date: '2025-02-15T09:00:00Z', note: 'Initial funding', status: 'Completed', txHash: '0xiii999jjj000' },
+      { id: 'TX-028', type: 'Repay', amount: 15000, date: '2025-02-18T11:30:00Z', note: 'Quick repayment', status: 'Completed', txHash: '0xkkk111lll222' },
+    ],
+    statusHistory: [
+      { status: 'Active', date: '2025-01-15', note: 'Line opened and activated' },
     ],
   },
 ];
