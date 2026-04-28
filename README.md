@@ -16,6 +16,7 @@ It talks to the **creditra-backend** API for risk and credit data, and can be ex
 ## ✨ New: Wallet Connection & Onboarding
 
 **Complete wallet integration with:**
+
 - 🔗 Connect Freighter, Albedo, xBull, or Rabet wallets
 - 👋 First-time user onboarding (3-step flow)
 - ✅ Connection status indicators
@@ -85,6 +86,7 @@ Use `import.meta.env.VITE_API_URL` in the app.
 - **[COMPONENT_SPECS.md](COMPONENT_SPECS.md)** - Design specifications
 - **[VISUAL_STATES.md](VISUAL_STATES.md)** - UI state mockups
 - **[PROJECT_SUMMARY.md](PROJECT_SUMMARY.md)** - Project overview
+- **[SUCCESS_STATE_PATTERNS.md](SUCCESS_STATE_PATTERNS.md)** - Success state UX patterns
 
 ## Merging to remote
 
