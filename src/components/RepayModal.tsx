@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useId } from 'react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { PendingButton } from './PendingButton';
 
 interface RepaymentCreditLine {
   id: string;
@@ -390,9 +391,14 @@ export function RepayModal({
               <button onClick={() => setStep('input')} style={{ ...btn.outline, flex: 1 }}>
                 Back
               </button>
-              <button onClick={handleConfirm} style={{ ...btn.primary, flex: 2 }}>
+              <PendingButton
+                onClick={handleConfirm}
+                pending={false}
+                pendingLabel="Processing..."
+                style={{ ...btn.primary, flex: 2 }}
+              >
                 Confirm Repayment
-              </button>
+              </PendingButton>
             </div>
           </div>
         )}

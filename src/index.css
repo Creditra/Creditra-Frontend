@@ -285,3 +285,36 @@ body {
   font-size: 0.875rem;
   line-height: 1.45;
 }
+
+/* ── Pending Button ─────────────────────────────────────────────────────── */
+/*
+ * .pending-btn wraps any submit/async button.
+ * The spinner is inline-flex so it sits left of the label without shifting width.
+ * min-width is set on the element so the button doesn't resize between states.
+ */
+.pending-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  /* Prevent width change between idle and pending labels */
+  min-width: max-content;
+}
+
+.pending-btn__spinner {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  animation: pending-btn-spin 0.75s linear infinite;
+}
+
+@keyframes pending-btn-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pending-btn__spinner {
+    animation: none;
+    opacity: 0.6;
+  }
+}

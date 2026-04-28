@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { FormMessage } from '@/components/FormMessage';
+import { PendingButton } from '@/components/PendingButton';
 
 type Step = 1 | 2 | 3 | 4 | 5;
 type EvalState = 'idle' | 'running' | 'success' | 'rejected' | 'error';
@@ -246,7 +247,14 @@ export function RequestEvaluation() {
               <button style={btn.ghost} onClick={() => { setRevenueFile(null); setHasIdentityBond(false); }}>Clear</button>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button style={btn.secondary} onClick={() => setStep(1)}>Back</button>
-                <button style={btn.primary} onClick={startEvaluation}>Begin Evaluation</button>
+                <PendingButton
+                  pending={evalState === 'running'}
+                  pendingLabel="Starting..."
+                  onClick={startEvaluation}
+                  style={btn.primary}
+                >
+                  Begin Evaluation
+                </PendingButton>
               </div>
             </div>
           </div>
@@ -332,12 +340,18 @@ export function RequestEvaluation() {
               <button style={btn.secondary} onClick={restartEvaluation}>Try Again</button>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button style={btn.ghost} onClick={() => navigate('/credit-lines')}>Contact Support</button>
-                <button
-                  style={{ ...btn.primary, opacity: evalState === 'success' && result?.approved && agreeTermsPreviewed ? 1 : 0.5, pointerEvents: evalState === 'success' && result?.approved && agreeTermsPreviewed ? 'auto' as const : 'none' }}
+                <PendingButton
+                  pending={false}
+                  pendingLabel="Accepting..."
+                  disabled={!(evalState === 'success' && result?.approved && agreeTermsPreviewed)}
                   onClick={acceptCreditLine}
+                  style={{
+                    ...btn.primary,
+                    opacity: evalState === 'success' && result?.approved && agreeTermsPreviewed ? 1 : 0.5,
+                  }}
                 >
                   Accept Credit Line
-                </button>
+                </PendingButton>
               </div>
             </div>
           </div>

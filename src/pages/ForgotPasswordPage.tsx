@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { PasswordResetRequestData, AuthError } from "../types/auth.types";
+import { PendingButton } from "../components/PendingButton";
 
 export function ForgotPasswordPage() {
   const [formData, setFormData] = useState<PasswordResetRequestData>({
@@ -126,13 +127,14 @@ export function ForgotPasswordPage() {
               />
             </div>
 
-            <button
+            <PendingButton
               type="submit"
-              disabled={loading}
+              pending={loading}
+              pendingLabel="Sending..."
               className="w-full bg-[#58a6ff] hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-3 rounded-lg transition-colors"
             >
-              {loading ? "Sending..." : "Send Reset Link"}
-            </button>
+              Send Reset Link
+            </PendingButton>
           </form>
 
           <div className="mt-6 text-center">
