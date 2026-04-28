@@ -32,7 +32,9 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.35rem 0.75rem;
+  /* min 44px height touch target (WCAG 2.5.5 / Apple HIG) */
+  min-height: 44px;
+  padding: 0.625rem 0.75rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
