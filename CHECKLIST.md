@@ -3,6 +3,7 @@
 ## ✅ Completed Tasks
 
 ### Design Deliverables
+
 - [x] User flow diagram (happy path and error paths)
 - [x] High-fidelity mockups for all states
 - [x] Component specifications
@@ -10,6 +11,7 @@
 - [x] Microcopy guidelines
 
 ### Implementation
+
 - [x] Wallet connection modal component
 - [x] Onboarding flow component
 - [x] Wallet button component
@@ -22,6 +24,7 @@
 - [x] Persistent storage (localStorage)
 
 ### Documentation
+
 - [x] Quick start guide (WALLET_SETUP.md)
 - [x] Technical documentation (WALLET_IMPLEMENTATION.md)
 - [x] User flow diagrams (USER_FLOWS.md)
@@ -35,6 +38,7 @@
 ## 🔄 Next Steps (Before Submission)
 
 ### 1. Test the Implementation
+
 ```bash
 # Start the dev server
 npm run dev
@@ -54,6 +58,7 @@ npm run dev
 - [ ] Test keyboard navigation (Tab, Enter, Escape)
 
 ### 2. Review Documentation
+
 - [ ] Read through WALLET_SETUP.md
 - [ ] Review USER_FLOWS.md diagrams
 - [ ] Check COMPONENT_SPECS.md for completeness
@@ -61,6 +66,7 @@ npm run dev
 - [ ] Read PROJECT_SUMMARY.md
 
 ### 3. Prepare for Real Wallet Integration (Optional)
+
 ```bash
 # Install Freighter SDK
 npm install @stellar/freighter-api
@@ -77,6 +83,7 @@ npm install @albedo-link/intent
 ### 4. Create Submission Package
 
 #### For GitHub Issue
+
 - [ ] Take screenshots of all states:
   - [ ] Disconnected state (Connect Wallet button)
   - [ ] Modal with wallet options
@@ -94,6 +101,7 @@ npm install @albedo-link/intent
   - [ ] Show disconnect functionality
 
 #### Documentation to Highlight
+
 - [ ] Link to WALLET_SETUP.md (quick overview)
 - [ ] Link to USER_FLOWS.md (flow diagrams)
 - [ ] Link to COMPONENT_SPECS.md (design specs)
@@ -106,7 +114,7 @@ npm install @albedo-link/intent
 
 ### GitHub Issue Comment
 
-```markdown
+````markdown
 ## Wallet Connection & Onboarding Flow - Implementation Complete
 
 I've completed the wallet connection and onboarding flow for Creditra Frontend. Here's what's been delivered:
@@ -114,13 +122,23 @@ I've completed the wallet connection and onboarding flow for Creditra Frontend. 
 ### ✅ All Requirements Met
 
 **Must Include:**
+
 - ✅ Wallet connection modal with Freighter & Albedo support
 - ✅ Connection status indicators
 - ✅ First-time user onboarding (3-step flow)
 - ✅ All error states (wallet not found, connection failed, wrong network)
 - ✅ Success state with confirmation
 
+**Accessibility Check:**
+
+- [ ] Keyboard navigation verified
+- [ ] Focus states are visible and logical
+- [ ] Contrast ratios meet WCAG AA
+- [ ] ARIA labels and semantic HTML used
+- [ ] Motion sensitivity (reduced motion) respected
+
 **Should Include:**
+
 - ✅ Loading states during connection
 - ✅ Security tooltips
 - ✅ Disconnect functionality
@@ -163,6 +181,7 @@ I've completed the wallet connection and onboarding flow for Creditra Frontend. 
 npm install
 npm run dev
 ```
+````
 
 See [WALLET_SETUP.md](./WALLET_SETUP.md) for complete setup instructions.
 
@@ -211,6 +230,7 @@ See [WALLET_SETUP.md](./WALLET_SETUP.md) for complete setup instructions.
 ### ✨ Next Steps
 
 To integrate with real wallets:
+
 1. Install `@stellar/freighter-api`
 2. Install `@albedo-link/intent`
 3. Update `src/utils/wallet.ts` with real SDK calls
@@ -219,6 +239,7 @@ To integrate with real wallets:
 ---
 
 Ready for review! Let me know if you need any clarifications or changes.
+
 ```
 
 ---
@@ -323,3 +344,4 @@ If you encounter any issues:
 4. Check console for errors
 
 Good luck with your submission! 🍀
+```
