@@ -293,6 +293,7 @@ src/utils/
 - Focus indicators
 - Clear error messages
 - Status indicators
+- **Reduced motion support**
 
 ---
 

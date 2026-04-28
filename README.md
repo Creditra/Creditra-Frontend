@@ -50,6 +50,22 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173).
 
+## 🛠️ Contributing UI Changes
+
+To maintain high UX quality, all UI changes must pass an accessibility review. Include this checklist in your Pull Request:
+
+```markdown
+### ♿ Accessibility Check
+
+- [ ] Keyboard navigation works (Tab, Enter, Escape)
+- [ ] Focus indicators are clearly visible
+- [ ] Contrast ratios meet WCAG AA (4.5:1)
+- [ ] Semantic HTML and ARIA labels are used
+- [ ] `prefers-reduced-motion` is respected
+```
+
+See the full [Accessibility Checklist](CHECKLIST.md) for detailed guidance.
+
 ### Build for production
 
 ```bash

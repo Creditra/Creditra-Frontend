@@ -131,6 +131,14 @@ I've completed the wallet connection and onboarding flow for Creditra Frontend. 
 - ✅ All error states (wallet not found, connection failed, wrong network)
 - ✅ Success state with confirmation
 
+**Accessibility Check:**
+
+- [ ] Keyboard navigation verified
+- [ ] Focus states are visible and logical
+- [ ] Contrast ratios meet WCAG AA
+- [ ] ARIA labels and semantic HTML used
+- [ ] Motion sensitivity (reduced motion) respected
+
 **Should Include:**
 
 - ✅ Loading states during connection

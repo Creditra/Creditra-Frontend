@@ -224,12 +224,13 @@ These principles are especially important if Creditra handles money, approvals, 
 
 This page should explicitly document accessibility-related behavior, including:
 
-- visible focus states
-- keyboard navigation order
-- screen-reader-friendly status messaging
-- reduced-motion considerations
-- disabled-state clarity
-- sufficient state contrast
+- **Visible Focus States**: High-contrast rings for all interactive elements.
+- **Keyboard Navigation**: Logical tab order; `Escape` key closes modals/popovers.
+- **Screen Reader Support**: Use of `aria-live` for status updates; descriptive `aria-label` for icon buttons.
+- **Reduced Motion**: Avoid rapid movement; respect `prefers-reduced-motion` media query.
+- **Disabled States**: Ensure disabled buttons are identifiable but still readable.
+- **Contrast**: Maintain 4.5:1 ratio for text and 3:1 for non-text UI components.
+- **Touch Targets**: Minimum size of 44x44px for mobile accessibility.
 
 Interaction documentation is one of the best places to capture accessibility behavior because many accessibility problems come from missing state definitions rather than missing colors.
 
