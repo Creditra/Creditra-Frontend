@@ -10,6 +10,8 @@
   --success: #3fb950;
   --warning: #d29922;
   --error: #f85149;
+  --danger: #f85149;
+  --info: #58a6ff;
 }
 
 /* Base Focus Styles */
@@ -253,19 +255,43 @@ body {
   padding: 0.875rem 1rem;
 }
 
+.form-message--danger,
 .form-message--error {
   background: rgba(248, 81, 73, 0.1);
   border-color: rgba(248, 81, 73, 0.3);
   color: var(--text);
 }
 
+.form-message--warning {
+  background: rgba(210, 153, 34, 0.1);
+  border-color: rgba(210, 153, 34, 0.3);
+  color: var(--text);
+}
+
+.form-message--info {
+  background: rgba(88, 166, 255, 0.1);
+  border-color: rgba(88, 166, 255, 0.3);
+  color: var(--text);
+}
+
+.form-message--success {
+  background: rgba(63, 185, 80, 0.1);
+  border-color: rgba(63, 185, 80, 0.3);
+  color: var(--text);
+}
+
 .form-message__icon {
   width: 1rem;
   height: 1rem;
-  color: var(--danger);
   flex-shrink: 0;
   margin-top: 0.125rem;
 }
+
+.form-message--danger .form-message__icon,
+.form-message--error .form-message__icon { color: var(--danger); }
+.form-message--warning .form-message__icon { color: var(--warning); }
+.form-message--info .form-message__icon { color: var(--info); }
+.form-message--success .form-message__icon { color: var(--success); }
 
 .form-message__content {
   display: grid;
@@ -274,10 +300,15 @@ body {
 
 .form-message__title {
   display: block;
-  color: var(--danger);
   font-size: 0.9rem;
   font-weight: 600;
 }
+
+.form-message--danger .form-message__title,
+.form-message--error .form-message__title { color: var(--danger); }
+.form-message--warning .form-message__title { color: var(--warning); }
+.form-message--info .form-message__title { color: var(--info); }
+.form-message--success .form-message__title { color: var(--success); }
 
 .form-message__text {
   margin: 0;
@@ -285,3 +316,4 @@ body {
   font-size: 0.875rem;
   line-height: 1.45;
 }
+

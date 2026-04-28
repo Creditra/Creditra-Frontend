@@ -3,6 +3,7 @@ import type { NotificationCategory, NotificationType } from '../../types/notific
 export const TYPE_ICON: Record<NotificationType, string> = {
   success: '✓',
   error: '✕',
+  danger: '✕',
   warning: '⚠',
   info: 'ℹ',
 };
@@ -23,6 +24,12 @@ export const TYPE_COLOR: Record<NotificationType, { bg: string; border: string; 
     text: '#3fb950',
   },
   error: {
+    bg: 'rgba(248,81,73,0.08)',
+    border: 'rgba(248,81,73,0.3)',
+    icon: '#f85149',
+    text: '#f85149',
+  },
+  danger: {
     bg: 'rgba(248,81,73,0.08)',
     border: 'rgba(248,81,73,0.3)',
     icon: '#f85149',

@@ -1,10 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
-import { useNotifications } from '../../context/NotificationContext';
-import type { Toast } from '../../types/notification';
-import { TYPE_COLOR, TYPE_ICON } from './notificationIcons';
-import './ToastContainer.css';
+import { useEffect, useRef, useState } from "react";
+import { useNotifications } from "../../context/NotificationContext";
+import type { Toast } from "../../types/notification";
+import { TYPE_COLOR, TYPE_ICON } from "./notificationIcons";
+import "./ToastContainer.css";
 
-function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string) => void }) {
+function ToastItem({
+  toast,
+  onDismiss,
+}: {
+  toast: Toast;
+  onDismiss: (id: string) => void;
+}) {
   const [visible, setVisible] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const colors = TYPE_COLOR[toast.type];
@@ -38,13 +44,20 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
 
   return (
     <div
-      className={`toast-item ${visible ? 'toast-enter' : ''} ${leaving ? 'toast-leave' : ''}`}
+      className={`toast-item ${visible ? "toast-enter" : ""} ${leaving ? "toast-leave" : ""}`}
       style={{ borderColor: colors.border }}
       role="alert"
-      aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
+      aria-live={
+        toast.type === "error" || toast.type === "danger"
+          ? "assertive"
+          : "polite"
+      }
     >
       <div className="toast-header">
-        <span className="toast-type-icon" style={{ background: colors.bg, color: colors.icon }}>
+        <span
+          className="toast-type-icon"
+          style={{ background: colors.bg, color: colors.icon }}
+        >
           {TYPE_ICON[toast.type]}
         </span>
         <span className="toast-title">{toast.title}</span>
@@ -61,7 +74,10 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
         <button
           className="toast-action"
           style={{ color: colors.text }}
-          onClick={() => { toast.action!.onClick(); handleDismiss(); }}
+          onClick={() => {
+            toast.action!.onClick();
+            handleDismiss();
+          }}
         >
           {toast.action.label} →
         </button>
@@ -83,7 +99,7 @@ export function ToastContainer() {
 
   return (
     <div className="toast-container" aria-label="Notifications">
-      {toasts.map(toast => (
+      {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onDismiss={dismissToast} />
       ))}
     </div>
