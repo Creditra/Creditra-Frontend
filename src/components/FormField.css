@@ -1,0 +1,120 @@
+/* FormField Component Styles */
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xl);
+}
+
+.form-field__label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text);
+  line-height: var(--lh-small);
+}
+
+.form-field__required {
+  color: var(--error);
+  margin-left: var(--space-xs);
+  font-weight: 600;
+}
+
+.form-field__help {
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: var(--lh-small);
+  margin: 0;
+}
+
+.form-field__input,
+.form-field__textarea {
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.9rem;
+  line-height: var(--lh-body);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  font-family: inherit;
+}
+
+.form-field__textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.form-field__input:hover,
+.form-field__textarea:hover {
+  border-color: var(--accent);
+}
+
+.form-field__input:focus,
+.form-field__textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
+}
+
+.form-field__input--error,
+.form-field__textarea--error {
+  border-color: var(--error);
+}
+
+.form-field__input--error:focus,
+.form-field__textarea--error:focus {
+  box-shadow: 0 0 0 3px rgba(248, 81, 73, 0.1);
+}
+
+.form-field__error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  font-size: 0.85rem;
+  color: var(--error);
+  background: rgba(248, 81, 73, 0.1);
+  border: 1px solid rgba(248, 81, 73, 0.3);
+  border-radius: 6px;
+  line-height: var(--lh-small);
+}
+
+.form-field__error-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* Checkbox and Radio Variants */
+.form-field--checkbox,
+.form-field--radio {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.form-field--checkbox .form-field__input,
+.form-field--radio .form-field__input {
+  width: auto;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.form-field--checkbox .form-field__label,
+.form-field--radio .form-field__label {
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .form-field__input,
+  .form-field__textarea {
+    transition: none;
+  }
+}

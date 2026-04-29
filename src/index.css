@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./components/FormField.css";
 
 :root {
   --bg: #0d1117;

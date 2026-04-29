@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { LoginFormData, AuthError } from "../types/auth.types";
 import { PendingButton } from "../components/PendingButton";
+import { FormField } from "../components/FormField";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -65,45 +66,33 @@ export function LoginPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label
-                htmlFor="emailOrUsername"
-                className="block text-sm font-medium text-gray-500 mb-2"
-              >
-                Email or Username
-              </label>
-              <input
-                id="emailOrUsername"
-                type="text"
-                required
-                value={formData.emailOrUsername}
-                onChange={(e) =>
-                  setFormData({ ...formData, emailOrUsername: e.target.value })
-                }
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                placeholder="Enter your email or username"
-              />
-            </div>
+            <FormField
+              id="emailOrUsername"
+              label="Email or Username"
+              type="text"
+              required
+              error={error?.field === 'emailOrUsername' ? error.message : undefined}
+              inputProps={{
+                value: formData.emailOrUsername,
+                onChange: (e) => setFormData({ ...formData, emailOrUsername: e.target.value }),
+                placeholder: "Enter your email or username",
+                autoComplete: "username"
+              }}
+            />
 
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-gray-500 mb-2"
-              >
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                required
-                value={formData.password}
-                onChange={(e) =>
-                  setFormData({ ...formData, password: e.target.value })
-                }
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                placeholder="Enter your password"
-              />
-            </div>
+            <FormField
+              id="password"
+              label="Password"
+              type="password"
+              required
+              error={error?.field === 'password' ? error.message : undefined}
+              inputProps={{
+                value: formData.password,
+                onChange: (e) => setFormData({ ...formData, password: e.target.value }),
+                placeholder: "Enter your password",
+                autoComplete: "current-password"
+              }}
+            />
 
             <div className="flex items-center justify-between">
               <label className="flex items-center">

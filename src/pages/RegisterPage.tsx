@@ -12,6 +12,7 @@ import {
   getPasswordStrengthText,
 } from "../utils/password-strength";
 import { PendingButton } from "../components/PendingButton";
+import { FormField } from "../components/FormField";
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -115,81 +116,67 @@ export function RegisterPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-gray-500 mb-2"
-              >
-                Email Address
-              </label>
-              <input
-                id="email"
-                type="email"
-                required
-                value={formData.email}
-                onChange={(e) =>
-                  setFormData({ ...formData, email: e.target.value })
-                }
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                placeholder="you@example.com"
-              />
-            </div>
+            <FormField
+              id="email"
+              label="Email Address"
+              type="email"
+              required
+              helpText="We'll never share your email with anyone"
+              error={error?.field === 'email' ? error.message : undefined}
+              inputProps={{
+                value: formData.email,
+                onChange: (e) => setFormData({ ...formData, email: e.target.value }),
+                placeholder: "you@example.com",
+                autoComplete: "email"
+              }}
+            />
 
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-gray-500 mb-2"
-              >
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                required
-                value={formData.password}
-                onChange={(e) => handlePasswordChange(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                placeholder="Create a strong password"
-              />
-              {formData.password && (
-                <div className="mt-2">
-                  <div className="flex gap-1 mb-1">
-                    <div
-                      className={`h-1 flex-1 rounded ${passwordStrength === "weak" || passwordStrength === "medium" || passwordStrength === "strong" ? getPasswordStrengthColor(passwordStrength) : "bg-gray-200"}`}
-                    />
-                    <div
-                      className={`h-1 flex-1 rounded ${passwordStrength === "medium" || passwordStrength === "strong" ? getPasswordStrengthColor(passwordStrength) : "bg-gray-200"}`}
-                    />
-                    <div
-                      className={`h-1 flex-1 rounded ${passwordStrength === "strong" ? getPasswordStrengthColor(passwordStrength) : "bg-gray-200"}`}
-                    />
-                  </div>
-                  <p className="text-xs text-gray-600">
-                    {getPasswordStrengthText(passwordStrength)}
-                  </p>
+            <FormField
+              id="password"
+              label="Password"
+              type="password"
+              required
+              helpText="Must be at least 8 characters with letters and numbers"
+              error={error?.field === 'password' ? error.message : undefined}
+              inputProps={{
+                value: formData.password,
+                onChange: (e) => handlePasswordChange(e.target.value),
+                placeholder: "Create a strong password",
+                autoComplete: "new-password"
+              }}
+            />
+            {formData.password && (
+              <div className="mt-2">
+                <div className="flex gap-1 mb-1">
+                  <div
+                    className={`h-1 flex-1 rounded ${passwordStrength === "weak" || passwordStrength === "medium" || passwordStrength === "strong" ? getPasswordStrengthColor(passwordStrength) : "bg-gray-200"}`}
+                  />
+                  <div
+                    className={`h-1 flex-1 rounded ${passwordStrength === "medium" || passwordStrength === "strong" ? getPasswordStrengthColor(passwordStrength) : "bg-gray-200"}`}
+                  />
+                  <div
+                    className={`h-1 flex-1 rounded ${passwordStrength === "strong" ? getPasswordStrengthColor(passwordStrength) : "bg-gray-200"}`}
+                  />
                 </div>
-              )}
-            </div>
+                <p className="text-xs text-gray-600" aria-live="polite">
+                  {getPasswordStrengthText(passwordStrength)}
+                </p>
+              </div>
+            )}
 
-            <div>
-              <label
-                htmlFor="confirmPassword"
-                className="block text-sm font-medium text-gray-500 mb-2"
-              >
-                Confirm Password
-              </label>
-              <input
-                id="confirmPassword"
-                type="password"
-                required
-                value={formData.confirmPassword}
-                onChange={(e) =>
-                  setFormData({ ...formData, confirmPassword: e.target.value })
-                }
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                placeholder="Re-enter your password"
-              />
-            </div>
+            <FormField
+              id="confirmPassword"
+              label="Confirm Password"
+              type="password"
+              required
+              error={error?.field === 'confirmPassword' ? error.message : undefined}
+              inputProps={{
+                value: formData.confirmPassword,
+                onChange: (e) => setFormData({ ...formData, confirmPassword: e.target.value }),
+                placeholder: "Re-enter your password",
+                autoComplete: "new-password"
+              }}
+            />
 
             <div>
               <label className="flex items-start">

@@ -662,3 +662,302 @@ Desktop: > 1024px
   - Hover: color/background change only
   - Active: `translateY(1px)`
   - Focus-visible: `2px` accent outline with `2px` offset
+
+
+---
+
+## Standardized Form Field Pattern
+
+### Overview
+All form fields across the application follow a unified structure to improve accessibility, reduce cognitive load, and ensure consistent error recovery. This pattern is implemented through the `FormField` component.
+
+### Pattern Structure
+Every form field must include:
+1. **Label**: Programmatically associated with the input via `htmlFor`/`id`
+2. **Required Indicator**: Visual asterisk (*) with `aria-label="required"` for screen readers
+3. **Help Text**: Instructional text linked via `aria-describedby`
+4. **Error Messaging**: High-contrast error messages with `aria-invalid` and `aria-live="polite"`
+
+### Component API
+
+```typescript
+<FormField
+  id="email"                    // Required: unique identifier
+  label="Email Address"         // Required: visible label text
+  type="email"                  // Input type (text, email, password, etc.)
+  required={true}               // Shows asterisk and sets aria-required
+  helpText="We'll never share your email"  // Optional: guidance text
+  error={errors.email}          // Optional: error message string
+  inputProps={{                 // Pass-through props for the input
+    value,
+    onChange,
+    placeholder: "you@example.com",
+    autoComplete: "email"
+  }}
+/>
+```
+
+### Visual Specifications
+
+#### Label
+- Font size: `0.9rem` (14.4px)
+- Font weight: `500`
+- Color: `var(--text)`
+- Line height: `var(--lh-small)` (1.5)
+- Margin bottom: `var(--space-sm)` (0.5rem)
+
+#### Required Indicator
+- Color: `var(--error)`
+- Margin left: `var(--space-xs)` (0.25rem)
+- Font weight: `600`
+- Announced as "required" to screen readers
+
+#### Help Text
+- Font size: `0.85rem` (13.6px)
+- Color: `var(--muted)`
+- Line height: `var(--lh-small)` (1.5)
+- Margin: `0`
+
+#### Input Field
+- Width: `100%`
+- Padding: `0.625rem 0.75rem`
+- Font size: `0.9rem`
+- Line height: `var(--lh-body)` (1.6)
+- Color: `var(--text)`
+- Background: `var(--surface)`
+- Border: `1px solid var(--border)`
+- Border radius: `6px`
+- Transition: `border-color 0.2s ease, box-shadow 0.2s ease`
+
+**Hover State:**
+- Border color: `var(--accent)`
+
+**Focus State:**
+- Outline: `none`
+- Border color: `var(--accent)`
+- Box shadow: `0 0 0 3px rgba(88, 166, 255, 0.1)`
+
+**Error State:**
+- Border color: `var(--error)`
+- Box shadow on focus: `0 0 0 3px rgba(248, 81, 73, 0.1)`
+
+#### Error Message
+- Display: `flex`
+- Align items: `flex-start`
+- Gap: `var(--space-sm)` (0.5rem)
+- Padding: `var(--space-md)` (0.75rem)
+- Font size: `0.85rem`
+- Color: `var(--error)`
+- Background: `rgba(248, 81, 73, 0.1)`
+- Border: `1px solid rgba(248, 81, 73, 0.3)`
+- Border radius: `6px`
+- Line height: `var(--lh-small)` (1.5)
+
+**Error Icon:**
+- Width: `16px`
+- Height: `16px`
+- Flex shrink: `0`
+- Margin top: `1px`
+- `aria-hidden="true"`
+
+### Accessibility Requirements
+
+#### ARIA Attributes
+- `aria-describedby`: Links input to help text and error messages
+- `aria-invalid`: Set to `true` when error is present
+- `aria-required`: Set to `true` for required fields
+- `aria-live="polite"`: On error messages for dynamic announcements
+
+#### Focus Management
+- Keyboard navigation follows logical tab order
+- Focus rings are clearly visible (2px solid accent with 2px offset)
+- Focus states use high-contrast colors
+
+#### Screen Reader Support
+- Labels are programmatically associated with inputs
+- Required indicator is announced as "required"
+- Help text is announced when field receives focus
+- Error messages are announced when they appear
+- Error messages use `role="alert"` implicitly via `aria-live`
+
+### Checkbox and Radio Variants
+
+For checkbox and radio inputs, use the `.form-field--checkbox` or `.form-field--radio` modifier:
+
+```typescript
+<div className="form-field form-field--checkbox">
+  <input
+    id="accept-terms"
+    type="checkbox"
+    checked={accepted}
+    onChange={handleChange}
+    className="form-field__input"
+    aria-describedby="accept-terms-help"
+    aria-required="true"
+  />
+  <label htmlFor="accept-terms" className="form-field__label">
+    I accept the Terms and Conditions
+    <span className="form-field__required" aria-label="required">*</span>
+  </label>
+  <p id="accept-terms-help" className="form-field__help">
+    You must accept to continue
+  </p>
+</div>
+```
+
+**Layout:**
+- Flex direction: `row`
+- Align items: `flex-start`
+- Gap: `var(--space-md)` (0.75rem)
+- Margin bottom: `var(--space-lg)` (1rem)
+
+**Input:**
+- Width: `auto`
+- Margin top: `2px` (aligns with label baseline)
+- Cursor: `pointer`
+
+**Label:**
+- Cursor: `pointer`
+- User select: `none`
+
+### Custom Input Variant
+
+For specialized inputs (file uploads, custom controls), use the `as="custom"` prop:
+
+```typescript
+<FormField
+  id="file-upload"
+  label="Upload Document"
+  helpText="PDF or CSV files only"
+  error={fileError}
+  as="custom"
+>
+  {(props) => (
+    <input
+      {...props}
+      type="file"
+      accept=".pdf,.csv"
+      onChange={handleFileChange}
+    />
+  )}
+</FormField>
+```
+
+The render prop receives:
+- `id`: The field ID
+- `aria-describedby`: Space-separated IDs of help text and error
+- `aria-invalid`: Boolean indicating error state
+- `aria-required`: Boolean indicating required state
+
+### Implementation Locations
+
+The standardized pattern has been applied to:
+
+1. **Authentication Flows**
+   - `LoginPage.tsx`: Email/username and password fields
+   - `RegisterPage.tsx`: Email, password, and confirm password fields
+   - `ForgotPasswordPage.tsx`: Email field
+   - `ResetPasswordPage.tsx`: New password and confirm password fields
+
+2. **Functional Components**
+   - `AmountInput.tsx`: Amount to draw field with custom styling
+   - `RequestEvaluation.tsx`: File upload and checkbox fields
+
+### Validation Guidelines
+
+- Validate on blur for better UX (don't show errors while typing)
+- Clear errors when user starts correcting the field
+- Use field-specific errors when possible (`error?.field === 'email'`)
+- Provide actionable error messages ("Please enter a valid email" not "Invalid input")
+- For password fields, show strength indicators with `aria-live="polite"`
+
+### Testing Checklist
+
+- [ ] Label is programmatically associated with input
+- [ ] Required fields show asterisk and announce "required"
+- [ ] Help text is linked via `aria-describedby`
+- [ ] Error messages appear with `aria-invalid="true"`
+- [ ] Error messages use `aria-live="polite"` for announcements
+- [ ] Focus rings are clearly visible
+- [ ] Keyboard navigation (Tab/Shift+Tab) follows logical order
+- [ ] Screen reader announces label, required status, help text, and errors
+- [ ] Color contrast meets WCAG AA standards (4.5:1 for normal text)
+- [ ] Form can be completed using keyboard only
+
+### Reduced Motion
+
+For users with `prefers-reduced-motion: reduce`:
+- All transitions are disabled
+- Animations are removed
+- Focus changes are instant
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  .form-field__input,
+  .form-field__textarea {
+    transition: none;
+  }
+}
+```
+
+### Code Example: Complete Form
+
+```typescript
+import { useState } from 'react';
+import { FormField } from '@/components/FormField';
+import { PendingButton } from '@/components/PendingButton';
+
+function LoginForm() {
+  const [formData, setFormData] = useState({ email: '', password: '' });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    // Validation and submission logic
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <FormField
+        id="email"
+        label="Email Address"
+        type="email"
+        required
+        helpText="We'll never share your email"
+        error={errors.email}
+        inputProps={{
+          value: formData.email,
+          onChange: (e) => setFormData({ ...formData, email: e.target.value }),
+          placeholder: "you@example.com",
+          autoComplete: "email"
+        }}
+      />
+
+      <FormField
+        id="password"
+        label="Password"
+        type="password"
+        required
+        error={errors.password}
+        inputProps={{
+          value: formData.password,
+          onChange: (e) => setFormData({ ...formData, password: e.target.value }),
+          placeholder: "Enter your password",
+          autoComplete: "current-password"
+        }}
+      />
+
+      <PendingButton
+        type="submit"
+        pending={loading}
+        pendingLabel="Signing in..."
+        className="w-full"
+      >
+        Sign In
+      </PendingButton>
+    </form>
+  );
+}
+```
+
