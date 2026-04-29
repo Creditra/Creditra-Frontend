@@ -10,8 +10,20 @@
   --success: #3fb950;
   --warning: #d29922;
   --error: #f85149;
-  --danger: #f85149;
-  --info: #58a6ff;
+
+  /* Typography Rhythm System */
+  --lh-display: 1.2;
+  --lh-heading: 1.3;
+  --lh-body: 1.6;
+  --lh-small: 1.5;
+
+  /* Spacing Scale */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 0.75rem;
+  --space-lg: 1rem;
+  --space-xl: 1.5rem;
+  --space-2xl: 2rem;
 }
 
 /* Base Focus Styles */
@@ -32,7 +44,32 @@ body {
     sans-serif;
   background: var(--bg);
   color: var(--text);
-  line-height: 1.5;
+  line-height: var(--lh-body);
+}
+
+/* Typography Base Styles */
+h1, h2, h3, h4, h5, h6 {
+  line-height: var(--lh-heading);
+  margin: 0;
+}
+
+p {
+  line-height: var(--lh-body);
+  margin: 0;
+}
+
+/* Text Truncation */
+.text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-truncate-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .app {
@@ -149,7 +186,7 @@ body {
 }
 
 .card h2 {
-  margin: 0 0 0.75rem;
+  margin: 0 0 var(--space-lg);
   font-size: 1.125rem;
   font-weight: 600;
   color: var(--text);
@@ -317,3 +354,35 @@ body {
   line-height: 1.45;
 }
 
+/* ── Pending Button ─────────────────────────────────────────────────────── */
+/*
+ * .pending-btn wraps any submit/async button.
+ * The spinner is inline-flex so it sits left of the label without shifting width.
+ * min-width is set on the element so the button doesn't resize between states.
+ */
+.pending-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  /* Prevent width change between idle and pending labels */
+  min-width: max-content;
+}
+
+.pending-btn__spinner {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  animation: pending-btn-spin 0.75s linear infinite;
+}
+
+@keyframes pending-btn-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pending-btn__spinner {
+    animation: none;
+    opacity: 0.6;
+  }
+}

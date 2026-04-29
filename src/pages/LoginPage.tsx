@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { LoginFormData, AuthError } from "../types/auth.types";
+import { PendingButton } from "../components/PendingButton";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -125,13 +126,14 @@ export function LoginPage() {
               </Link>
             </div>
 
-            <button
+            <PendingButton
               type="submit"
-              disabled={loading}
+              pending={loading}
+              pendingLabel="Signing in..."
               className="w-full bg-[#58a6ff] hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-3 rounded-lg transition-colors"
             >
-              {loading ? "Signing in..." : "Login"}
-            </button>
+              Login
+            </PendingButton>
           </form>
 
           <div className="mt-6 text-center">

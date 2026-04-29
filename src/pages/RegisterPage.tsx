@@ -11,6 +11,7 @@ import {
   getPasswordStrengthColor,
   getPasswordStrengthText,
 } from "../utils/password-strength";
+import { PendingButton } from "../components/PendingButton";
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -219,13 +220,14 @@ export function RegisterPage() {
               </label>
             </div>
 
-            <button
+            <PendingButton
               type="submit"
-              disabled={loading}
+              pending={loading}
+              pendingLabel="Creating Account..."
               className="w-full bg-[#58a6ff] hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-3 rounded-lg transition-colors"
             >
-              {loading ? "Creating Account..." : "Create Account"}
-            </button>
+              Create Account
+            </PendingButton>
           </form>
 
           <div className="mt-6 text-center">

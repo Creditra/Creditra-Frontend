@@ -50,9 +50,10 @@
   color: var(--muted);
   font-size: 1.5rem;
   cursor: pointer;
-  padding: 0;
-  width: 32px;
-  height: 32px;
+  /* min 44×44px touch target (WCAG 2.5.5 / Apple HIG) */
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.5rem;
   display: flex;
   align-items: center;
   justify-content: center;

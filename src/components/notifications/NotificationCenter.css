@@ -77,8 +77,14 @@
   color: #8b949e;
   cursor: pointer;
   font-size: 1rem;
-  padding: 0.25rem;
+  /* min 44×44px touch target (WCAG 2.5.5 / Apple HIG) */
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.625rem;
   border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: color 0.15s, background 0.15s;
 }
 
@@ -87,14 +93,26 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
+.nc-icon-btn:focus-visible,
+.nc-close-btn:focus-visible,
+.nc-text-btn:focus-visible,
+.nc-filter-tab:focus-visible {
+  outline: 2px solid #58a6ff;
+  outline-offset: 2px;
+}
+
 .nc-text-btn {
   background: none;
   border: none;
   color: #58a6ff;
   cursor: pointer;
   font-size: 0.75rem;
-  padding: 0.2rem 0.4rem;
+  /* min 44px height touch target; horizontal padding kept compact */
+  min-height: 44px;
+  padding: 0.625rem 0.5rem;
   border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
   transition: opacity 0.15s;
 }
 
@@ -111,7 +129,14 @@
   cursor: pointer;
   font-size: 1.4rem;
   line-height: 1;
-  padding: 0 0.125rem;
+  /* min 44×44px touch target (WCAG 2.5.5 / Apple HIG) */
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.625rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
   transition: color 0.15s;
 }
 
@@ -176,9 +201,13 @@
   color: #8b949e;
   cursor: pointer;
   font-size: 0.78rem;
-  padding: 0.3rem 0.625rem;
+  /* min 44px height touch target; compact horizontal padding */
+  min-height: 44px;
+  padding: 0.625rem 0.75rem;
   border-radius: 6px;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
   transition: color 0.15s, background 0.15s;
 }
 
@@ -286,7 +315,11 @@
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
-  padding: 0;
+  /* min 44px height touch target; zero horizontal padding to stay inline */
+  min-height: 44px;
+  padding: 0.625rem 0;
+  display: inline-flex;
+  align-items: center;
   transition: opacity 0.15s;
 }
 

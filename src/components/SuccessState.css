@@ -1,0 +1,108 @@
+.success-state-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem;
+  text-align: center;
+  background-color: var(--color-surface, #161b22);
+  border-radius: 12px;
+  max-width: 500px;
+  margin: 2rem auto;
+  box-shadow: var(--shadow-lg);
+  animation: fadeInSlideUp 0.4s ease-out;
+}
+
+.success-icon-wrapper {
+  margin-bottom: 1.5rem;
+}
+
+.success-icon-circle {
+  width: 80px;
+  height: 80px;
+  background-color: rgba(63, 185, 80, 0.1);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-success, #3fb950);
+  animation: scaleInBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.success-checkmark {
+  width: 40px;
+  height: 40px;
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: stroke 0.3s ease-in-out 0.4s forwards;
+}
+
+.success-title {
+  color: var(--color-text-primary, #ffffff);
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.success-content {
+  margin-bottom: 2rem;
+}
+
+.success-description {
+  color: var(--color-text-secondary, #8b949e);
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+  font-size: 1rem;
+}
+
+.success-next-step {
+  background-color: var(--color-bg-secondary, #0d1117);
+  padding: 1rem;
+  border-radius: 8px;
+  text-align: left;
+  border-left: 4px solid var(--color-success, #3fb950);
+}
+
+.success-next-step strong {
+  display: block;
+  color: var(--color-text-primary, #ffffff);
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
+.success-next-step p {
+  color: var(--color-text-secondary, #8b949e);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.success-actions {
+  display: flex;
+  gap: 1rem;
+  width: 100%;
+}
+
+.explorer-link {
+  margin-top: 1.5rem;
+  color: var(--color-accent, #58a6ff);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+@keyframes fadeInSlideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleInBounce {
+  from { transform: scale(0); }
+  to { transform: scale(1); }
+}
+
+@keyframes stroke {
+  to { stroke-dashoffset: 0; }
+}
+
+@media (max-width: 480px) {
+  .success-actions { flex-direction: column; }
+}

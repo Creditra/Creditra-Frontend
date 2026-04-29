@@ -7,6 +7,7 @@ import {
   getPasswordStrengthColor,
   getPasswordStrengthText,
 } from "../utils/password-strength";
+import { PendingButton } from "../components/PendingButton";
 
 export function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -200,13 +201,15 @@ export function ResetPasswordPage() {
               />
             </div>
 
-            <button
+            <PendingButton
               type="submit"
-              disabled={loading || !token}
+              pending={loading}
+              pendingLabel="Resetting..."
+              disabled={!token}
               className="w-full bg-[#58a6ff] hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-3 rounded-lg transition-colors"
             >
-              {loading ? "Resetting..." : "Reset Password"}
-            </button>
+              Reset Password
+            </PendingButton>
           </form>
 
           <div className="mt-6 text-center">

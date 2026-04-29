@@ -43,8 +43,12 @@
   font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
-  padding: 0.2rem 0.5rem;
+  /* min 44px height touch target; compact horizontal padding */
+  min-height: 44px;
+  padding: 0.625rem 0.75rem;
   border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
   transition: opacity 0.15s;
   flex-shrink: 0;
 }
@@ -66,11 +70,24 @@
   cursor: pointer;
   font-size: 1.1rem;
   line-height: 1;
-  padding: 0 0.125rem;
+  /* min 44×44px touch target (WCAG 2.5.5 / Apple HIG) */
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.625rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  border-radius: 4px;
   transition: color 0.15s;
 }
 
 .banner-close:hover {
   color: #e6edf3;
+}
+
+.banner-close:focus-visible,
+.banner-action:focus-visible {
+  outline: 2px solid #58a6ff;
+  outline-offset: 2px;
 }

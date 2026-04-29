@@ -2,6 +2,7 @@ import { CreditLine } from "@/types/draw-credit.types";
 import { AlertCircle } from "lucide-react";
 import { useState } from "react";
 import { CreditLineSummaryBlock } from "@/components/CreditLineSummaryBlock";
+import { PendingButton } from "@/components/PendingButton";
 
 interface ConfirmationStepProps {
   creditLine: CreditLine;
@@ -96,13 +97,15 @@ export function ConfirmationStep({
           Back
         </button>
         <div className="sm:flex-1 space-y-2">
-          <button
+          <PendingButton
             onClick={onConfirm}
-            disabled={!agreedToTerms || isLoading}
+            pending={isLoading}
+            pendingLabel="Processing..."
+            disabled={!agreedToTerms}
             className="w-full py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-500/40 transition-all font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoading ? "Processing..." : "Confirm draw"}
-          </button>
+            Confirm draw
+          </PendingButton>
           {!agreedToTerms && !isLoading && (
             <p className="text-xs text-muted text-center sm:text-right">
               Accept terms to enable confirmation.
