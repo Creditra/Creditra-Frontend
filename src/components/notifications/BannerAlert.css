@@ -15,8 +15,14 @@
 }
 
 @keyframes bannerSlideDown {
-  from { opacity: 0; transform: translateY(-100%); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .banner-icon {
@@ -49,6 +55,12 @@
 
 .banner-action:hover {
   opacity: 0.75;
+}
+
+.banner-action:focus-visible,
+.banner-close:focus-visible {
+  outline: 2px solid rgba(88, 166, 255, 0.9);
+  outline-offset: 2px;
 }
 
 .banner-close {

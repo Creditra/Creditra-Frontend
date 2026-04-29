@@ -20,7 +20,9 @@
   overflow: hidden;
   opacity: 0;
   transform: translateX(24px);
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
@@ -32,7 +34,9 @@
 .toast-item.toast-leave {
   opacity: 0;
   transform: translateX(24px);
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
 }
 
 .toast-header {

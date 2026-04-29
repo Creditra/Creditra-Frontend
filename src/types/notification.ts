@@ -1,4 +1,4 @@
-export type NotificationType = 'success' | 'error' | 'warning' | 'info';
+export type NotificationType = 'success' | 'error' | 'warning' | 'info' | 'danger';
 
 export type NotificationCategory =
   | 'transaction'

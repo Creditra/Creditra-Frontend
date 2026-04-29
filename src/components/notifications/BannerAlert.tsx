@@ -1,6 +1,6 @@
-import { useNotifications } from '../../context/NotificationContext';
-import { TYPE_COLOR, TYPE_ICON } from './notificationIcons';
-import './BannerAlert.css';
+import { useNotifications } from "../../context/NotificationContext";
+import { TYPE_COLOR, TYPE_ICON } from "./notificationIcons";
+import "./BannerAlert.css";
 
 export function BannerAlerts() {
   const { banners, dismissBanner } = useNotifications();
@@ -9,7 +9,7 @@ export function BannerAlerts() {
 
   return (
     <div className="banner-stack">
-      {banners.map(banner => {
+      {banners.map((banner) => {
         const colors = TYPE_COLOR[banner.type];
         return (
           <div
@@ -18,7 +18,11 @@ export function BannerAlerts() {
             style={{ background: colors.bg, borderColor: colors.border }}
             role="alert"
           >
-            <span className="banner-icon" style={{ color: colors.icon }}>
+            <span
+              className="banner-icon"
+              style={{ color: colors.icon }}
+              aria-hidden="true"
+            >
               {TYPE_ICON[banner.type]}
             </span>
             <span className="banner-message">{banner.message}</span>
