@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { formatMoney, getRepayAmountValidation } from '../utils/amountValidation';
 import { PendingButton } from './PendingButton';
 
 interface RepaymentCreditLine {
@@ -89,28 +90,25 @@ export function RepayModal({
 
   const totalDue = creditLine.utilized;
   const accruedInterestEstimate = (creditLine.utilized * (creditLine.apr / 100)) / 12;
-  const amount = parseFloat(amountStr) || 0;
-  const hasEnteredAmount = amountStr.trim() !== '';
+  const validation = getRepayAmountValidation(amountStr, totalDue, walletBalance);
+  const amount = validation.amount;
+  const isInvalid = !validation.isValid;
 
-  const exceedsDebt = amount > totalDue;
-  const exceedsBalance = amount > walletBalance;
-  const amountError = !hasEnteredAmount
-    ? ''
-    : amount <= 0
-      ? 'Enter a repayment amount greater than $0.00.'
-      : exceedsDebt
-        ? 'Repayment amount cannot exceed total outstanding debt.'
-        : exceedsBalance
-          ? 'Repayment amount exceeds available wallet balance.'
-          : '';
-  const isInvalid = !hasEnteredAmount || Boolean(amountError);
-
-  const remainingDebt = Math.max(0, totalDue - amount);
+  const remainingDebt = validation.remainingDebt;
   const oldPct = creditLine.limit === 0 ? 0 : Math.round((creditLine.utilized / creditLine.limit) * 100);
   const newPct = creditLine.limit === 0 ? 0 : Math.round((remainingDebt / creditLine.limit) * 100);
+  const describedBy = `${repayAmountHintId} ${repayAmountConstraintsId} ${repayAmountStatusId}`;
+
+  const toneMeta = {
+    info: { color: '#58a6ff', bg: 'rgba(88,166,255,0.08)', border: 'rgba(88,166,255,0.25)', icon: <Info size={16} aria-hidden="true" /> },
+    success: { color: COLOR.success, bg: 'rgba(63,185,80,0.08)', border: 'rgba(63,185,80,0.25)', icon: <CheckCircle size={16} aria-hidden="true" /> },
+    warning: { color: COLOR.warning, bg: 'rgba(210,153,34,0.08)', border: 'rgba(210,153,34,0.25)', icon: <AlertTriangle size={16} aria-hidden="true" /> },
+    danger: { color: COLOR.danger, bg: 'rgba(248,81,73,0.08)', border: 'rgba(248,81,73,0.25)', icon: <AlertCircle size={16} aria-hidden="true" /> },
+  } as const;
+  const activeTone = toneMeta[validation.feedback.severity];
 
   const handlePercent = (pct: number) => {
-    let target = (totalDue * pct) / 100;
+    let target = (validation.maxRepayAmount * pct) / 100;
     if (target > walletBalance) target = walletBalance;
     setAmountStr(target.toFixed(2));
   };
@@ -200,8 +198,11 @@ export function RepayModal({
             <div style={{ marginBottom: '1.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                 <label htmlFor="repay-amount-input" style={{ fontSize: '0.9rem', color: COLOR.text, fontWeight: 500 }}>Amount to Repay</label>
-                <span style={{ fontSize: '0.8rem', color: exceedsBalance ? COLOR.danger : COLOR.muted }}>Wallet: {fmt(walletBalance)}</span>
+                <span style={{ fontSize: '0.8rem', color: validation.feedback.severity === 'danger' ? COLOR.danger : COLOR.muted }}>Wallet: {fmt(walletBalance)}</span>
               </div>
+              <p id={repayAmountHintId} style={{ margin: '0 0 0.75rem', fontSize: '0.82rem', color: COLOR.muted }}>
+                Enter a repayment amount and we will show the minimum, safe maximum, and reserve guidance inline.
+              </p>
               <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
                 {[25, 50, 75, 100].map(pct => (
                   <button key={pct} onClick={() => handlePercent(pct)}
@@ -221,28 +222,58 @@ export function RepayModal({
                   value={amountStr}
                   onChange={(e) => setAmountStr(e.target.value)}
                   placeholder="0.00"
-                  aria-invalid={exceedsDebt || exceedsBalance}
-                  aria-describedby={(exceedsDebt || exceedsBalance) ? "repay-error" : undefined}
+                  aria-invalid={validation.feedback.severity === 'danger'}
+                  aria-describedby={describedBy}
                   style={{
                     width: '100%',
                     background: COLOR.bg,
-                    border: `1px solid ${amountError ? COLOR.danger : amount > 0 ? COLOR.accent : COLOR.border}`,
+                    border: `1px solid ${validation.feedback.severity === 'danger' ? COLOR.danger : validation.feedback.severity === 'warning' ? COLOR.warning : amount > 0 ? COLOR.accent : COLOR.border}`,
                     borderRadius: 8,
                     padding: '0.75rem 1rem 0.75rem 2rem',
                     color: COLOR.text,
                     fontSize: '1.25rem',
                     fontWeight: 500,
                     outline: 'none',
-                    boxShadow: amount > 0 && !amountError ? '0 0 0 2px rgba(88,166,255,0.1)' : 'none',
+                    boxShadow: amount > 0 && validation.feedback.severity !== 'danger' ? '0 0 0 2px rgba(88,166,255,0.1)' : 'none',
                     transition: 'all 0.2s',
                   }}
                 />
               </div>
-              {(exceedsDebt || exceedsBalance) && (
-                <p id="repay-error" style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: COLOR.danger }} role="alert">
-                  ⚠ {exceedsDebt ? 'Amount exceeds total outstanding debt' : 'Insufficient wallet balance'}
-                </p>
-              )}
+              <div id={repayAmountConstraintsId} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                <div style={{ background: COLOR.bg, border: `1px solid ${COLOR.border}`, borderRadius: 8, padding: '0.65rem 0.75rem' }}>
+                  <p style={{ margin: '0 0 0.2rem', fontSize: '0.68rem', color: COLOR.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Minimum</p>
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: COLOR.text, fontWeight: 600 }}>{formatMoney(validation.minAmount)}</p>
+                </div>
+                <div style={{ background: COLOR.bg, border: `1px solid ${COLOR.border}`, borderRadius: 8, padding: '0.65rem 0.75rem' }}>
+                  <p style={{ margin: '0 0 0.2rem', fontSize: '0.68rem', color: COLOR.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Safe maximum</p>
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: COLOR.text, fontWeight: 600 }}>{formatMoney(validation.maxRepayAmount)}</p>
+                </div>
+                <div style={{ background: COLOR.bg, border: `1px solid ${COLOR.border}`, borderRadius: 8, padding: '0.65rem 0.75rem' }}>
+                  <p style={{ margin: '0 0 0.2rem', fontSize: '0.68rem', color: COLOR.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Reserve target</p>
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: COLOR.text, fontWeight: 600 }}>{formatMoney(validation.recommendedWalletReserve)}</p>
+                </div>
+              </div>
+              <div
+                id={repayAmountStatusId}
+                role={validation.feedback.severity === 'danger' ? 'alert' : 'status'}
+                aria-live="polite"
+                style={{
+                  display: 'flex',
+                  gap: '0.5rem',
+                  alignItems: 'flex-start',
+                  border: `1px solid ${activeTone.border}`,
+                  background: activeTone.bg,
+                  color: activeTone.color,
+                  borderRadius: 8,
+                  padding: '0.75rem',
+                }}
+              >
+                <span style={{ display: 'inline-flex', marginTop: 1 }}>{activeTone.icon}</span>
+                <div>
+                  <p style={{ margin: 0, fontSize: '0.84rem', fontWeight: 600 }}>{validation.feedback.title}</p>
+                  <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', lineHeight: 1.5 }}>{validation.feedback.message}</p>
+                </div>
+              </div>
             </div>
 
             <div style={{ marginBottom: '1.5rem' }}>
