@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { CopyToClipboard } from '../components/CopyToClipboard';
 import { useWallet } from '../context/WalletContext';
 import { MOCK_CREDIT_LINES } from '../data/mockData';
 import type { CreditLineStatus, Transaction } from '../types/creditLine';
@@ -109,7 +110,6 @@ function StatusBadge({ status }: { status: CreditLineStatus }) {
 
 export function Dashboard() {
   const { wallet, status } = useWallet();
-  const [copied, setCopied] = useState(false);
   const creditLines = MOCK_CREDIT_LINES;
 
   // ─── Derived data ────────────────────────────────────────────────────────
@@ -197,15 +197,6 @@ export function Dashboard() {
   const hasUtilized = totalUtilized > 0;
   const isConnected = status === 'connected' && wallet;
 
-  // Copy wallet address to clipboard
-  const copyAddress = () => {
-    if (wallet?.publicKey) {
-      navigator.clipboard.writeText(wallet.publicKey);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
   const truncAddr = wallet?.publicKey
     ? `${wallet.publicKey.slice(0, 6)}...${wallet.publicKey.slice(-4)}`
     : '';
@@ -223,10 +214,14 @@ export function Dashboard() {
           </div>
           {isConnected && (
             <div className="wallet-info">
-              <button className="wallet-address-chip" onClick={copyAddress}>
-                {truncAddr}
-                {copied && <span className="copy-feedback">✓ Copied</span>}
-              </button>
+              <CopyToClipboard
+                value={wallet.publicKey}
+                displayValue={truncAddr}
+                ariaLabel="Copy connected wallet address"
+                variant="surface"
+                className="wallet-address-chip"
+                valueClassName="wallet-address-value"
+              />
               <span className={`network-badge ${wallet.network === 'TESTNET' ? 'testnet' : 'mainnet'}`}>
                 <span className="dot" />
                 {wallet.network === 'TESTNET' ? 'Testnet' : 'Mainnet'}
@@ -259,10 +254,14 @@ export function Dashboard() {
         </div>
         {isConnected && (
           <div className="wallet-info">
-            <button className="wallet-address-chip" onClick={copyAddress}>
-              {truncAddr}
-              {copied && <span className="copy-feedback">✓ Copied</span>}
-            </button>
+            <CopyToClipboard
+              value={wallet.publicKey}
+              displayValue={truncAddr}
+              ariaLabel="Copy connected wallet address"
+              variant="surface"
+              className="wallet-address-chip"
+              valueClassName="wallet-address-value"
+            />
             <span className={`network-badge ${wallet.network === 'TESTNET' ? 'testnet' : 'mainnet'}`}>
               <span className="dot" />
               {wallet.network === 'TESTNET' ? 'Testnet' : 'Mainnet'}

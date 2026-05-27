@@ -218,6 +218,24 @@ Recommended principles:
 - responsive: the UI should acknowledge user input quickly
 - trustworthy: status, risk, and feedback should never feel ambiguous
 
+## Copy To Clipboard Pattern
+
+Creditra should use one shared copy interaction across wallet addresses and transaction identifiers.
+
+Pattern rules:
+
+- Always show a visible `Copy` label so the affordance is discoverable without hover.
+- Place the copy icon after the label in every instance.
+- Use a real `button` for the action and keep it keyboard accessible.
+- Keep the copied value visible next to the action, whether the value is truncated or full-length.
+- Replace `Copy` with `Copied` for 2 seconds after activation, then revert automatically.
+- Use a polite live region so assistive technology users hear the success state.
+
+Implementation reference:
+
+- Reusable component: `src/components/CopyToClipboard.tsx`
+- Clipboard helper: `src/utils/clipboard.ts`
+
 These principles are especially important if Creditra handles money, approvals, requests, or sensitive account actions.
 
 ## Accessibility Expectations

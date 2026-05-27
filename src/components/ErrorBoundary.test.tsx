@@ -1,4 +1,5 @@
-/// <reference types="vitest" />import { render, screen } from "@testing-library/react";
+/// <reference types="vitest" />
+import { render, screen } from "@testing-library/react";
 import { BrowserRouter } from "react-router-dom";
 import { vi } from "vitest";
 import { ErrorBoundary } from "./ErrorBoundary";

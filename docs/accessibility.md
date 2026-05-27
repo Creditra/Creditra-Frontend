@@ -26,6 +26,7 @@ Use the most specific HTML tag for its purpose.
 - Use `aria-label` for buttons containing only icons.
 - Use `aria-expanded` and `aria-haspopup` for dropdown triggers.
 - Ensure all images have `alt` attributes (empty `alt=""` for decorative ones).
+- Copy actions must use a real `button`, expose a descriptive `aria-label`, and announce success through a polite live region.
 
 ### 3. Focus Management
 - Implement focus trapping in all modals using a standardized utility.
@@ -95,3 +96,11 @@ Use `min-width` / `min-height` rather than fixed `width` / `height` so the eleme
 - `nc-badge` / `notif-bell-badge` — decorative count badges, not interactive.
 - `status-badge` / `status-dot` — informational only, not interactive.
 - Progress bars and utilization bars — not interactive.
+
+## Copy To Clipboard Standard
+
+- Use the shared `CopyToClipboard` component for wallet addresses and transaction hashes.
+- Keep the copy affordance discoverable by rendering a visible `Copy` label with the icon placed after the label.
+- Preserve keyboard activation with the native `button` element and keep focus styling visible.
+- Show success feedback as `Copied` for 2 seconds, then return to `Copy`.
+- When the copied value is not fully visible, provide a specific `aria-label` such as `Copy connected wallet address` or `Copy transaction hash for TX-001`.

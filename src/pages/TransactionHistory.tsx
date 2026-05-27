@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { CopyToClipboard } from '../components/CopyToClipboard';
 import { MOCK_CREDIT_LINES } from '../data/mockData';
 import type { TransactionType, TransactionStatus, CreditLineStatus } from '../types/creditLine';
 import { COLOR, fmt, fmtDate, fmtDateTime } from '../utils/tokens';
@@ -123,15 +124,22 @@ function TransactionRow({ tx, expanded, onToggle }: {
                 </td>
                 <td className="tx-hash">
                     {tx.txHash ? (
-                        <a
-                            href={`https://stellar.expert/tx/${tx.txHash}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="tx-hash-link"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            {tx.txHash.slice(0, 8)}...{tx.txHash.slice(-6)}
-                        </a>
+                        <div className="tx-hash-actions">
+                            <a
+                                href={`https://stellar.expert/tx/${tx.txHash}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="tx-hash-link"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {tx.txHash.slice(0, 8)}...{tx.txHash.slice(-6)}
+                            </a>
+                            <CopyToClipboard
+                                value={tx.txHash}
+                                ariaLabel={`Copy transaction hash for ${tx.id}`}
+                                stopPropagation
+                            />
+                        </div>
                     ) : (
                         <span className="tx-hash-muted">—</span>
                     )}
@@ -182,7 +190,7 @@ function TransactionRow({ tx, expanded, onToggle }: {
                                     {tx.txHash && (
                                         <div className="tx-detail-item full-width">
                                             <span className="label">Transaction Hash</span>
-                                            <span className="value">
+                                            <div className="value tx-detail-hash">
                                                 <a
                                                     href={`https://stellar.expert/tx/${tx.txHash}`}
                                                     target="_blank"
@@ -191,7 +199,11 @@ function TransactionRow({ tx, expanded, onToggle }: {
                                                 >
                                                     {tx.txHash}
                                                 </a>
-                                            </span>
+                                                <CopyToClipboard
+                                                    value={tx.txHash}
+                                                    ariaLabel={`Copy full transaction hash for ${tx.id}`}
+                                                />
+                                            </div>
                                         </div>
                                     )}
                                 </div>

@@ -41,7 +41,6 @@ export function AmountInput({
 
   const numAmount = parseFloat(amount) || 0;
   const isValid = numAmount > 0 && numAmount <= creditLine.available;
-  const hasNoAvailability = creditLine.available <= 0;
   const describedBy = error ? `${helperId} ${errorId}` : helperId;
 
   return (

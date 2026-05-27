@@ -1,6 +1,6 @@
 // src/pages/ResetPasswordPage.tsx
 import { useState, useEffect } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { PasswordStrength, AuthError } from "../types/auth.types";
 import {
   calculatePasswordStrength,
@@ -11,7 +11,6 @@ import { PendingButton } from "../components/PendingButton";
 import { FormField } from "../components/FormField";
 
 export function ResetPasswordPage() {
-  const navigate = useNavigate();
   const location = useLocation();
   const [token, setToken] = useState<string | null>(null);
   const [formData, setFormData] = useState({

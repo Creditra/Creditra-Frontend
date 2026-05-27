@@ -349,6 +349,12 @@
     min-width: 120px;
 }
 
+.tx-hash-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
 .tx-hash-link {
     font-size: 0.75rem;
     font-family: monospace;
@@ -430,6 +436,13 @@
 .tx-detail-item .value {
     font-size: 0.875rem;
     color: var(--text);
+}
+
+.tx-detail-hash {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
 }
 
 .tx-hash-full {

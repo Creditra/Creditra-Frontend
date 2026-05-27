@@ -31,31 +31,13 @@
 }
 
 .wallet-address-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  /* min 44px height touch target (WCAG 2.5.5 / Apple HIG) */
-  min-height: 44px;
-  padding: 0.625rem 0.75rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
   font-size: 0.8rem;
   font-family: monospace;
-  color: var(--muted);
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
+  max-width: 100%;
 }
 
-.wallet-address-chip:hover {
-  border-color: var(--accent);
+.wallet-address-value {
   color: var(--text);
-}
-
-.wallet-address-chip .copy-feedback {
-  font-size: 0.7rem;
-  color: var(--success);
-  font-family: system-ui;
 }
 
 .network-badge {
