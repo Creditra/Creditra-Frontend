@@ -635,3 +635,33 @@
     grid-column: auto;
   }
 }
+
+/* ─── Accessibility: Screen Reader Only ─────────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ─── Skeleton Alignments and CLS Prevention ────────────────────────────────── */
+.summary-card.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 114px;
+}
+
+.cl-preview-item {
+  min-height: 57px;
+}
+
+.activity-item {
+  min-height: 48px;
+}
+

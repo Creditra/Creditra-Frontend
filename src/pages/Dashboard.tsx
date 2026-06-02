@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { CopyToClipboard } from '../components/CopyToClipboard';
 import { StatusBadge } from '../components/StatusBadge';
@@ -11,6 +11,7 @@ import {
   getUtilizationLevel, utilizationPct,
 } from '../utils/tokens';
 import './Dashboard.css';
+import { Skeleton } from '../components/Skeleton';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -100,6 +101,15 @@ function RiskGauge({ score, trend, lastUpdated }: {
 export function Dashboard() {
   const { wallet, status } = useWallet();
   const creditLines = MOCK_CREDIT_LINES;
+
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, []);
 
   // ─── Derived data ────────────────────────────────────────────────────────
 
@@ -208,7 +218,7 @@ export function Dashboard() {
 
   // ─── Empty State ─────────────────────────────────────────────────────────
 
-  if (!hasLines) {
+  if (!loading && !hasLines) {
     return (
       <>
         {/* Header */}
@@ -255,7 +265,11 @@ export function Dashboard() {
   // ─── Main Dashboard ──────────────────────────────────────────────────────
 
   return (
-    <>
+    <div role="status" aria-live="polite" aria-busy={loading} className="dashboard-root">
+      <span className="sr-only">
+        {loading ? 'Loading dashboard' : 'Dashboard loaded'}
+      </span>
+
       {/* Header */}
       <div className="dashboard-header">
         <div>
@@ -286,25 +300,47 @@ export function Dashboard() {
       </div>
 
       {/* Summary Cards */}
-      <div className="summary-cards">
-        <div className="summary-card">
-          <div className="glow" style={{ background: COLOR.accent }} />
-          <p className="label">Total Credit Limit</p>
-          <p className="value" style={{ color: COLOR.accent }}>{fmt(totalLimit)}</p>
-          <p className="sub">Across {activeLinesOnly.length} active line{activeLinesOnly.length !== 1 ? 's' : ''}</p>
-        </div>
-        <div className="summary-card">
-          <div className="glow" style={{ background: UTIL_COLOR[overallLevel] }} />
-          <p className="label">Total Utilized</p>
-          <p className="value" style={{ color: UTIL_COLOR[overallLevel] }}>{fmt(totalUtilized)}</p>
-          <p className="sub">{overallPct}% of total limit</p>
-        </div>
-        <div className="summary-card">
-          <div className="glow" style={{ background: COLOR.success }} />
-          <p className="label">Available Credit</p>
-          <p className="value" style={{ color: COLOR.success }}>{fmt(totalAvailable)}</p>
-          <p className="sub">Ready to draw</p>
-        </div>
+      <div className="summary-cards" aria-busy={loading}>
+        {loading ? (
+          <>
+            <div className="summary-card skeleton-card">
+              <Skeleton style={{ width: '60%', height: '14px', marginBottom: '16px', borderRadius: '4px' }} />
+              <Skeleton style={{ width: '80%', height: '32px', marginBottom: '12px', borderRadius: '4px' }} />
+              <Skeleton style={{ width: '40%', height: '12px', borderRadius: '4px' }} />
+            </div>
+            <div className="summary-card skeleton-card">
+              <Skeleton style={{ width: '60%', height: '14px', marginBottom: '16px', borderRadius: '4px' }} />
+              <Skeleton style={{ width: '80%', height: '32px', marginBottom: '12px', borderRadius: '4px' }} />
+              <Skeleton style={{ width: '40%', height: '12px', borderRadius: '4px' }} />
+            </div>
+            <div className="summary-card skeleton-card">
+              <Skeleton style={{ width: '60%', height: '14px', marginBottom: '16px', borderRadius: '4px' }} />
+              <Skeleton style={{ width: '80%', height: '32px', marginBottom: '12px', borderRadius: '4px' }} />
+              <Skeleton style={{ width: '40%', height: '12px', borderRadius: '4px' }} />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="summary-card">
+              <div className="glow" style={{ background: COLOR.accent }} />
+              <p className="label">Total Credit Limit</p>
+              <p className="value" style={{ color: COLOR.accent }}>{fmt(totalLimit)}</p>
+              <p className="sub">Across {activeLinesOnly.length} active line{activeLinesOnly.length !== 1 ? 's' : ''}</p>
+            </div>
+            <div className="summary-card">
+              <div className="glow" style={{ background: UTIL_COLOR[overallLevel] }} />
+              <p className="label">Total Utilized</p>
+              <p className="value" style={{ color: UTIL_COLOR[overallLevel] }}>{fmt(totalUtilized)}</p>
+              <p className="sub">{overallPct}% of total limit</p>
+            </div>
+            <div className="summary-card">
+              <div className="glow" style={{ background: COLOR.success }} />
+              <p className="label">Available Credit</p>
+              <p className="value" style={{ color: COLOR.success }}>{fmt(totalAvailable)}</p>
+              <p className="sub">Ready to draw</p>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Main Grid */}
@@ -345,51 +381,117 @@ export function Dashboard() {
           </div>
 
           {/* Risk Score */}
-          <div className="card" style={{ animationDelay: '0.15s' }}>
+          <div className="card" style={{ animationDelay: '0.15s' }} aria-busy={loading}>
             <h2><span className="icon">🛡️</span> Risk Score</h2>
-            <RiskGauge
-              score={avgRiskScore}
-              trend="improving"
-              lastUpdated={activeLinesOnly[0]?.updatedAt ?? new Date().toISOString()}
-            />
+            {loading ? (
+              <div className="risk-gauge-container">
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100px', width: '160px', marginBottom: '0.75rem' }}>
+                  <Skeleton style={{ width: '80px', height: '80px', borderRadius: '50%' }} />
+                </div>
+                <div className="risk-meta" style={{ width: '100%' }}>
+                  <div className="risk-meta-item" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <Skeleton style={{ width: '40px', height: '10px', marginBottom: '6px', borderRadius: '2px' }} />
+                    <Skeleton style={{ width: '60px', height: '14px', borderRadius: '2px' }} />
+                  </div>
+                  <div className="risk-meta-item" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <Skeleton style={{ width: '60px', height: '10px', marginBottom: '6px', borderRadius: '2px' }} />
+                    <Skeleton style={{ width: '50px', height: '14px', borderRadius: '2px' }} />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <RiskGauge
+                score={avgRiskScore}
+                trend="improving"
+                lastUpdated={activeLinesOnly[0]?.updatedAt ?? new Date().toISOString()}
+              />
+            )}
           </div>
 
           {/* Active Credit Lines Preview */}
-          <div className="card" style={{ animationDelay: '0.2s' }}>
+          <div className="card" style={{ animationDelay: '0.2s' }} aria-busy={loading}>
             <h2>
               <span className="icon">💳</span> Active Credit Lines
-              <span style={{ marginLeft: 'auto', fontSize: '0.75rem', fontWeight: 400, color: COLOR.muted }}>
-                {activeLines.length} line{activeLines.length !== 1 ? 's' : ''}
-              </span>
+              {!loading && (
+                <span style={{ marginLeft: 'auto', fontSize: '0.75rem', fontWeight: 400, color: COLOR.muted }}>
+                  {activeLines.length} line{activeLines.length !== 1 ? 's' : ''}
+                </span>
+              )}
             </h2>
 
-            {activeLines.slice(0, 3).map(cl => {
-              const pct = utilizationPct(cl.utilized, cl.limit);
-              const level = getUtilizationLevel(cl.utilized, cl.limit);
-              return (
-                <div key={cl.id} className="cl-preview-item">
+            {loading ? (
+              <>
+                <div className="cl-preview-item">
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
-                      <p className="cl-preview-name">{cl.name}</p>
-                      <StatusBadge status={cl.status} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                      <Skeleton style={{ width: '100px', height: '14px', borderRadius: '2px' }} />
+                      <Skeleton style={{ width: '50px', height: '14px', borderRadius: '4px' }} />
                     </div>
-                    <p className="cl-preview-id">{cl.id}</p>
+                    <Skeleton style={{ width: '120px', height: '10px', borderRadius: '2px' }} />
                   </div>
-                  <div className="cl-preview-right">
-                    <div className="cl-preview-amount">
-                      {fmt(cl.utilized)} <span style={{ color: COLOR.muted, fontWeight: 400, fontSize: '0.75rem' }}>/ {fmt(cl.limit)}</span>
-                    </div>
-                    <div className="cl-preview-bar">
-                      <div className="cl-preview-bar-fill" style={{ width: `${pct}%`, background: UTIL_COLOR[level] }} />
-                    </div>
+                  <div className="cl-preview-right" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.4rem' }}>
+                    <Skeleton style={{ width: '80px', height: '14px', borderRadius: '2px' }} />
+                    <Skeleton style={{ width: '60px', height: '6px', borderRadius: '2px' }} />
                   </div>
                 </div>
-              );
-            })}
+                <div className="cl-preview-item">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                      <Skeleton style={{ width: '80px', height: '14px', borderRadius: '2px' }} />
+                      <Skeleton style={{ width: '50px', height: '14px', borderRadius: '4px' }} />
+                    </div>
+                    <Skeleton style={{ width: '100px', height: '10px', borderRadius: '2px' }} />
+                  </div>
+                  <div className="cl-preview-right" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.4rem' }}>
+                    <Skeleton style={{ width: '70px', height: '14px', borderRadius: '2px' }} />
+                    <Skeleton style={{ width: '50px', height: '6px', borderRadius: '2px' }} />
+                  </div>
+                </div>
+                <div className="cl-preview-item">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                      <Skeleton style={{ width: '90px', height: '14px', borderRadius: '2px' }} />
+                      <Skeleton style={{ width: '50px', height: '14px', borderRadius: '4px' }} />
+                    </div>
+                    <Skeleton style={{ width: '110px', height: '10px', borderRadius: '2px' }} />
+                  </div>
+                  <div className="cl-preview-right" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.4rem' }}>
+                    <Skeleton style={{ width: '60px', height: '14px', borderRadius: '2px' }} />
+                    <Skeleton style={{ width: '40px', height: '6px', borderRadius: '2px' }} />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                {activeLines.slice(0, 3).map(cl => {
+                  const pct = utilizationPct(cl.utilized, cl.limit);
+                  const level = getUtilizationLevel(cl.utilized, cl.limit);
+                  return (
+                    <div key={cl.id} className="cl-preview-item">
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+                          <p className="cl-preview-name">{cl.name}</p>
+                          <StatusBadge status={cl.status} />
+                        </div>
+                        <p className="cl-preview-id">{cl.id}</p>
+                      </div>
+                      <div className="cl-preview-right">
+                        <div className="cl-preview-amount">
+                          {fmt(cl.utilized)} <span style={{ color: COLOR.muted, fontWeight: 400, fontSize: '0.75rem' }}>/ {fmt(cl.limit)}</span>
+                        </div>
+                        <div className="cl-preview-bar">
+                          <div className="cl-preview-bar-fill" style={{ width: `${pct}%`, background: UTIL_COLOR[level] }} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
 
-            <Link to="/credit-lines" className="view-all-link">
-              View all credit lines →
-            </Link>
+                <Link to="/credit-lines" className="view-all-link">
+                  View all credit lines →
+                </Link>
+              </>
+            )}
           </div>
         </div>
 
@@ -454,10 +556,37 @@ export function Dashboard() {
           </div>
 
           {/* Recent Activity */}
-          <div className="card" style={{ animationDelay: '0.18s' }}>
+          <div className="card" style={{ animationDelay: '0.18s' }} aria-busy={loading}>
             <h2><span className="icon">📝</span> Recent Activity</h2>
 
-            {recentActivity.length === 0 ? (
+            {loading ? (
+              <>
+                <div className="activity-item">
+                  <Skeleton className="activity-icon" style={{ borderRadius: '6px' }} />
+                  <div className="activity-content" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    <Skeleton style={{ width: '120px', height: '14px', borderRadius: '2px' }} />
+                    <Skeleton style={{ width: '180px', height: '10px', borderRadius: '2px' }} />
+                  </div>
+                  <Skeleton style={{ width: '60px', height: '14px', marginLeft: 'auto', borderRadius: '2px' }} />
+                </div>
+                <div className="activity-item">
+                  <Skeleton className="activity-icon" style={{ borderRadius: '6px' }} />
+                  <div className="activity-content" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    <Skeleton style={{ width: '100px', height: '14px', borderRadius: '2px' }} />
+                    <Skeleton style={{ width: '150px', height: '10px', borderRadius: '2px' }} />
+                  </div>
+                  <Skeleton style={{ width: '50px', height: '14px', marginLeft: 'auto', borderRadius: '2px' }} />
+                </div>
+                <div className="activity-item">
+                  <Skeleton className="activity-icon" style={{ borderRadius: '6px' }} />
+                  <div className="activity-content" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    <Skeleton style={{ width: '140px', height: '14px', borderRadius: '2px' }} />
+                    <Skeleton style={{ width: '160px', height: '10px', borderRadius: '2px' }} />
+                  </div>
+                  <Skeleton style={{ width: '70px', height: '14px', marginLeft: 'auto', borderRadius: '2px' }} />
+                </div>
+              </>
+            ) : recentActivity.length === 0 ? (
               <p style={{ color: COLOR.muted, fontSize: '0.8rem', textAlign: 'center', padding: '1.5rem 0' }}>
                 No transactions yet
               </p>
@@ -511,6 +640,6 @@ export function Dashboard() {
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }
