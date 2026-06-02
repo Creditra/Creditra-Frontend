@@ -1,5 +1,6 @@
 import { CreditLine } from "@/types/draw-credit.types";
 import { DollarSign, TrendingUp } from "lucide-react";
+import { formatMoney } from "@/utils/amountValidation";
 
 interface PreviewSectionProps {
   creditLine: CreditLine;
@@ -7,31 +8,45 @@ interface PreviewSectionProps {
 }
 
 export function PreviewSection({ creditLine, amount }: PreviewSectionProps) {
+  const utilizedBalance = creditLine.limit - creditLine.available;
+  const safeAmount = Math.max(amount, 0);
+  // Mock pricing keeps the UX explicit until backend quote fields are available.
+  const fee = safeAmount > 0 ? Math.round(safeAmount * 0.01 * 100) / 100 : 0;
+  const apr = 12.5;
+  const estimatedMonthlyInterest =
+    safeAmount > 0 ? Math.round(((safeAmount * apr) / 100 / 12) * 100) / 100 : 0;
+  const newBalance = utilizedBalance + safeAmount + fee;
   const newUtilization = Math.round(
-    ((creditLine.limit - creditLine.available + amount) / creditLine.limit) *
-      100,
+    (newBalance / creditLine.limit) * 100,
   );
+  const remainingAvailable = Math.max(creditLine.limit - newBalance, 0);
 
   return (
     <div className="space-y-6">
-      <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide">
-        Summary
-      </h3>
+      <header>
+        <p className="text-xs font-semibold uppercase text-muted">Step 3</p>
+        <h2 className="mt-1 text-lg font-semibold text-foreground">
+          Preview draw
+        </h2>
+        <p className="mt-1 text-sm text-muted">
+          Review estimated costs and projected balance before confirming.
+        </p>
+      </header>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-blue-500/10 p-4 rounded-xl border border-blue-500/30 shadow-lg shadow-blue-500/5">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4 shadow-lg shadow-blue-500/5">
           <div className="flex items-start justify-between">
             <div>
               <p className="text-xs text-muted font-medium mb-2">Draw Amount</p>
               <p className="text-2xl font-bold text-blue-400">
-                ${amount.toLocaleString()}
+                {formatMoney(safeAmount)}
               </p>
             </div>
             <DollarSign className="w-5 h-5 text-blue-500 shrink-0" />
           </div>
         </div>
 
-        <div className="bg-green-500/10 p-4 rounded-xl border border-green-500/30 shadow-lg shadow-green-500/5">
+        <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 shadow-lg shadow-green-500/5">
           <div className="flex items-start justify-between">
             <div>
               <p className="text-xs text-muted font-medium mb-2">
@@ -45,6 +60,33 @@ export function PreviewSection({ creditLine, amount }: PreviewSectionProps) {
           </div>
         </div>
       </div>
+
+      <dl className="grid gap-3 text-sm sm:grid-cols-2">
+        <div className="rounded-lg border border-border bg-background/60 p-3">
+          <dt className="text-muted">Estimated fee</dt>
+          <dd className="mt-1 font-semibold text-foreground">
+            {formatMoney(fee)}
+          </dd>
+        </div>
+        <div className="rounded-lg border border-border bg-background/60 p-3">
+          <dt className="text-muted">Estimated monthly interest</dt>
+          <dd className="mt-1 font-semibold text-foreground">
+            {formatMoney(estimatedMonthlyInterest)}
+          </dd>
+        </div>
+        <div className="rounded-lg border border-border bg-background/60 p-3">
+          <dt className="text-muted">New balance</dt>
+          <dd className="mt-1 font-semibold text-foreground">
+            {formatMoney(newBalance)}
+          </dd>
+        </div>
+        <div className="rounded-lg border border-border bg-background/60 p-3">
+          <dt className="text-muted">Available after draw</dt>
+          <dd className="mt-1 font-semibold text-foreground">
+            {formatMoney(remainingAvailable)}
+          </dd>
+        </div>
+      </dl>
 
       <div className="space-y-2">
         <div className="flex justify-between text-sm">

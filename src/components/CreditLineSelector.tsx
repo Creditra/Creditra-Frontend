@@ -1,5 +1,6 @@
 import { CreditLine } from "@/types/draw-credit.types";
 import { AlertCircle, ChevronRight } from "lucide-react";
+import { formatMoney } from "@/utils/amountValidation";
 
 interface CreditLineSelectorProps {
   creditLines: CreditLine[];
@@ -13,7 +14,11 @@ export function CreditLineSelector({
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-3xl font-bold text-foreground">
+        <p className="text-sm font-semibold uppercase text-muted">Step 1</p>
+        <h2
+          id="select-credit-line-heading"
+          className="mt-1 text-2xl font-bold text-foreground sm:text-3xl"
+        >
           Select Credit Line
         </h2>
         <p className="text-muted mt-2">
@@ -25,31 +30,29 @@ export function CreditLineSelector({
           <button
             key={line.id}
             onClick={() => onSelect(line)}
-            className="w-full text-left p-5 border-2 border-border rounded-xl hover:border-blue-400 hover:bg-surface hover:shadow-lg hover:shadow-blue-500/20 transition-all duration-200 group"
-            aria-label={`Select ${line.name} credit line, available balance ${line.available.toLocaleString()} dollars`}
+            className="group w-full rounded-lg border-2 border-border p-5 text-left transition-all duration-200 hover:border-blue-400 hover:bg-surface hover:shadow-lg hover:shadow-blue-500/20"
+            aria-label={`Select ${line.name} credit line, available balance ${formatMoney(line.available)}`}
           >
-            <div className="flex items-start justify-between">
+            <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
-                <div className="font-semibold text-foreground text-lg mb-3">
+                <div className="mb-3 text-lg font-semibold text-foreground">
                   {line.name}
                 </div>
-                <div className="flex items-center gap-6 mb-3 flex-wrap">
+                <div className="mb-3 grid gap-3 sm:grid-cols-3">
                   <div className="text-sm">
-                    <span className="text-muted">Available:</span>
-                    <span className="font-semibold text-foreground ml-2">
-                      ${line.available.toLocaleString()}
+                    <span className="block text-muted">Available</span>
+                    <span className="mt-1 block font-semibold text-foreground">
+                      {formatMoney(line.available)}
                     </span>
                   </div>
                   <div className="text-sm">
-                    <span className="text-muted">Utilization:</span>
-                    <span
-                      className={`font-semibold ml-2 ${line.utilization > 80 ? "text-yellow-500" : "text-foreground"}`}
-                    >
+                    <span className="block text-muted">Utilization</span>
+                    <span className={`mt-1 block font-semibold ${line.utilization > 80 ? "text-yellow-500" : "text-foreground"}`}>
                       {line.utilization}%
                     </span>
                   </div>
                   {line.utilization > 80 && (
-                    <div className="flex items-center gap-1 text-yellow-500 text-sm" role="status">
+                    <div className="flex items-center gap-1 text-sm text-yellow-500" role="status">
                       <AlertCircle className="w-4 h-4" aria-hidden="true" />
                       <span>High utilization</span>
                     </div>

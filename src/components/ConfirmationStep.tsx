@@ -3,12 +3,14 @@ import { AlertCircle } from "lucide-react";
 import { useState } from "react";
 import { CreditLineSummaryBlock } from "@/components/CreditLineSummaryBlock";
 import { PendingButton } from "@/components/PendingButton";
+import { formatMoney } from "@/utils/amountValidation";
 
 interface ConfirmationStepProps {
   creditLine: CreditLine;
   amount: number;
   onConfirm: () => void;
   onBack: () => void;
+  onCancel: () => void;
   isLoading?: boolean;
 }
 
@@ -17,18 +19,37 @@ export function ConfirmationStep({
   amount,
   onConfirm,
   onBack,
+  onCancel,
   isLoading = false,
 }: ConfirmationStepProps) {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const utilizedBalance = creditLine.limit - creditLine.available;
+  const safeAmount = Math.max(amount, 0);
+  // Keep these estimates visible until a signed quote is returned by the API.
+  const fee = safeAmount > 0 ? Math.round(safeAmount * 0.01 * 100) / 100 : 0;
+  const apr = 12.5;
+  const estimatedMonthlyInterest =
+    safeAmount > 0 ? Math.round(((safeAmount * apr) / 100 / 12) * 100) / 100 : 0;
+  const newBalance = utilizedBalance + safeAmount + fee;
+  const remainingAvailable = Math.max(creditLine.limit - newBalance, 0);
   const newUtilization = Math.round(
-    ((creditLine.limit - creditLine.available + amount) / creditLine.limit) *
-      100,
+    (newBalance / creditLine.limit) * 100,
   );
+  const isDrawDisabled = !agreedToTerms || isLoading;
+  const disabledHelperText = !agreedToTerms
+    ? "Accept the authorization terms to enable the Draw button."
+    : "Submitting your draw request. Please wait.";
 
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-3xl font-bold text-foreground">Review & Confirm</h2>
+        <p className="text-sm font-semibold uppercase text-muted">Step 4</p>
+        <h2
+          id="confirm-draw-heading"
+          className="mt-1 text-2xl font-bold text-foreground sm:text-3xl"
+        >
+          Review and confirm
+        </h2>
         <p className="text-muted mt-2">
           Confirm your draw details before submitting.
         </p>
@@ -37,26 +58,60 @@ export function ConfirmationStep({
       <CreditLineSummaryBlock creditLine={creditLine} amount={amount} />
 
       <div className="space-y-4">
-        <div className="bg-surface p-5 rounded-xl border border-border space-y-4">
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-muted font-medium">Draw Amount</span>
-            <span className="text-2xl font-bold text-foreground">
-              ${amount.toLocaleString()}
-            </span>
+        <div className="rounded-lg border border-border bg-surface p-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <p className="text-sm text-muted font-medium">Draw amount</p>
+              <p className="mt-1 text-3xl font-bold text-foreground">
+                {formatMoney(safeAmount)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-background/60 p-3">
+              <p className="text-sm text-muted font-medium">Estimated fee</p>
+              <p className="mt-1 font-semibold text-foreground">
+                {formatMoney(fee)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-background/60 p-3">
+              <p className="text-sm text-muted font-medium">
+                Estimated monthly interest
+              </p>
+              <p className="mt-1 font-semibold text-foreground">
+                {formatMoney(estimatedMonthlyInterest)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-background/60 p-3">
+              <p className="text-sm text-muted font-medium">New balance</p>
+              <p className="mt-1 font-semibold text-foreground">
+                {formatMoney(newBalance)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-background/60 p-3">
+              <p className="text-sm text-muted font-medium">
+                Available after draw
+              </p>
+              <p className="mt-1 font-semibold text-foreground">
+                {formatMoney(remainingAvailable)}
+              </p>
+            </div>
           </div>
-          <div className="flex justify-between items-center border-t border-border pt-4">
-            <span className="text-sm text-muted font-medium">Current Utilization</span>
-            <span className="text-sm font-semibold text-foreground">
-              {creditLine.utilization}%
-            </span>
-          </div>
-          <div className="flex justify-between items-center border-t border-border pt-4">
-            <span className="text-sm text-muted font-medium">After Draw</span>
-            <span
-              className={`text-sm font-semibold ${newUtilization > 80 ? "text-yellow-500" : "text-foreground"}`}
-            >
-              {newUtilization}%
-            </span>
+          <div className="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
+            <div className="flex justify-between gap-4 text-sm">
+              <span className="text-muted font-medium">
+                Current utilization
+              </span>
+              <span className="font-semibold text-foreground">
+                {creditLine.utilization}%
+              </span>
+            </div>
+            <div className="flex justify-between gap-4 text-sm">
+              <span className="text-muted font-medium">After draw</span>
+              <span
+                className={`font-semibold ${newUtilization > 80 ? "text-yellow-500" : "text-foreground"}`}
+              >
+                {newUtilization}%
+              </span>
+            </div>
           </div>
           {newUtilization > 80 && (
             <div className="flex items-start gap-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 mt-4">
@@ -75,7 +130,7 @@ export function ConfirmationStep({
         </div>
       </div>
 
-      <label className="flex items-start gap-3 cursor-pointer p-4 bg-surface rounded-lg hover:bg-border transition-colors border border-border">
+      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-surface p-4 transition-colors hover:bg-border">
         <input
           type="checkbox"
           checked={agreedToTerms}
@@ -88,29 +143,46 @@ export function ConfirmationStep({
         </span>
       </label>
 
-      <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
-        <button
-          onClick={onBack}
-          disabled={isLoading}
-          className="sm:flex-1 py-3 px-4 border-2 border-border text-foreground rounded-lg hover:bg-surface transition-colors font-semibold disabled:opacity-50"
-        >
-          Back
-        </button>
-        <div className="sm:flex-1 space-y-2">
-          <PendingButton
-            onClick={onConfirm}
-            pending={isLoading}
-            pendingLabel="Processing..."
-            disabled={!agreedToTerms}
-            className="w-full py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-500/40 transition-all font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+      <div className="sticky bottom-0 z-10 -mx-6 border-t border-border bg-surface/95 px-6 py-4 backdrop-blur sm:-mx-8 sm:px-8">
+        <div className="flex flex-col-reverse gap-3 sm:flex-row">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isLoading}
+            className="rounded-lg border-2 border-border px-4 py-3 font-semibold text-foreground transition-colors hover:bg-background disabled:opacity-50 sm:w-auto"
           >
-            Confirm draw
-          </PendingButton>
-          {!agreedToTerms && !isLoading && (
-            <p className="text-xs text-muted text-center sm:text-right">
-              Accept terms to enable confirmation.
-            </p>
-          )}
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onBack}
+            disabled={isLoading}
+            className="rounded-lg border-2 border-border px-4 py-3 font-semibold text-foreground transition-colors hover:bg-background disabled:opacity-50 sm:w-auto"
+          >
+            Back
+          </button>
+          <div className="space-y-2 sm:ml-auto sm:min-w-64">
+            <PendingButton
+              type="button"
+              onClick={onConfirm}
+              pending={isLoading}
+              pendingLabel="Processing draw..."
+              disabled={isDrawDisabled}
+              className="w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white transition-all hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50"
+              aria-describedby={isDrawDisabled ? "draw-disabled-helper" : undefined}
+            >
+              Draw
+            </PendingButton>
+            {isDrawDisabled && (
+              <p
+                id="draw-disabled-helper"
+                className="text-center text-xs text-muted sm:text-right"
+                role="status"
+              >
+                {disabledHelperText}
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </div>

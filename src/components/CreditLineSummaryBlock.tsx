@@ -1,4 +1,5 @@
 import { CreditLine } from "@/types/draw-credit.types";
+import { formatMoney } from "@/utils/amountValidation";
 
 interface CreditLineSummaryBlockProps {
   creditLine: CreditLine;
@@ -27,19 +28,19 @@ export function CreditLineSummaryBlock({
         <div className="rounded-lg border border-border bg-background/60 p-3">
           <p className="text-muted">Limit</p>
           <p className="text-base font-semibold text-foreground mt-1">
-            ${creditLine.limit.toLocaleString()}
+            {formatMoney(creditLine.limit)}
           </p>
         </div>
         <div className="rounded-lg border border-border bg-background/60 p-3">
           <p className="text-muted">Utilized</p>
           <p className="text-base font-semibold text-foreground mt-1">
-            ${projectedUtilized.toLocaleString()}
+            {formatMoney(projectedUtilized)}
           </p>
         </div>
         <div className="rounded-lg border border-border bg-background/60 p-3">
           <p className="text-muted">Available</p>
           <p className="text-base font-semibold text-foreground mt-1">
-            ${projectedAvailable.toLocaleString()}
+            {formatMoney(projectedAvailable)}
           </p>
         </div>
       </div>
