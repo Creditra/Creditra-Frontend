@@ -1,7 +1,11 @@
 import { CreditLine } from "@/types/draw-credit.types";
 import { AlertCircle, AlertTriangle, CheckCircle, Info } from "lucide-react";
 import { useState, useEffect } from "react";
-import { formatMoney, getDrawAmountValidation } from "../utils/amountValidation";
+import {
+  formatMoney,
+  getDrawAmountValidation,
+} from "../utils/amountValidation";
+import { FormMessage } from "./FormMessage";
 
 interface AmountInputProps {
   creditLine: CreditLine;
@@ -19,6 +23,7 @@ export function AmountInput({
   const [amount, setAmount] = useState("");
   const inputId = "draw-amount-input";
   const helperId = "draw-amount-helper";
+  const errorId = "draw-amount-error";
   const constraintsId = "draw-amount-constraints";
   const statusId = "draw-amount-status";
 
@@ -27,14 +32,52 @@ export function AmountInput({
     onAmountChange(numAmount);
   }, [amount, onAmountChange]);
 
-  const handlePreset = (percent: number) => {
-    const preset = Math.floor((creditLine.available * percent) / 100);
-    setAmount(preset.toString());
+  // Compute validation state using the validation function
+  const validation = getDrawAmountValidation(amount, creditLine);
+  const numAmount = validation.amount;
+  const hasError = validation.feedback.severity === "danger";
+  const isValid = validation.isValid;
+
+  // Build aria-describedby: always include helper, add error message ID if there's an error
+  const describedByIds = [helperId];
+  if (hasError) {
+    describedByIds.push(errorId);
+  }
+  const describedBy = describedByIds.join(" ");
+
+  // Map validation severity to FormMessage type
+  const getMessageType = (): "success" | "danger" | "warning" | "info" => {
+    switch (validation.feedback.severity) {
+      case "success":
+        return "success";
+      case "danger":
+        return "danger";
+      case "warning":
+        return "warning";
+      case "info":
+      default:
+        return "info";
+    }
   };
 
-  const numAmount = parseFloat(amount) || 0;
-  const isValid = numAmount > 0 && numAmount <= creditLine.available;
-  const describedBy = error ? `${helperId} ${errorId}` : helperId;
+  // Determine input border styling based on validation state
+  const getInputStateClass = (): string => {
+    if (hasError) {
+      return "border-error ring-1 ring-error/30 focus-within:border-error focus-within:ring-error/50";
+    }
+    if (validation.feedback.severity === "success") {
+      return "border-success ring-1 ring-success/30 focus-within:border-success focus-within:ring-success/50";
+    }
+    if (validation.feedback.severity === "warning") {
+      return "border-warning ring-1 ring-warning/30 focus-within:border-warning focus-within:ring-warning/50";
+    }
+    return "border-border focus-within:border-accent focus-within:ring-1 focus-within:ring-accent/30";
+  };
+
+  // Handle "Max" button click - set amount to available credit
+  const handleMaxClick = () => {
+    setAmount(creditLine.available.toString());
+  };
 
   return (
     <div className="space-y-8">
@@ -44,15 +87,33 @@ export function AmountInput({
       </div>
 
       <div className="space-y-3">
-        <label htmlFor={inputId} className="block text-sm font-medium text-foreground">
+        <label
+          htmlFor={inputId}
+          className="block text-sm font-medium text-foreground"
+        >
           Amount to Draw
-          <span className="text-error ml-1" aria-label="required">*</span>
+          <span className="text-error ml-1" aria-label="required">
+            *
+          </span>
         </label>
+
+        {/* Helper text explaining the input */}
         <p id={helperId} className="text-sm text-muted">
-          Enter the amount you wish to draw from your available credit. Constraints appear inline as you type.
+          Enter the amount you wish to draw from your available credit.
+          Available limit:{" "}
+          <span className="font-semibold text-foreground">
+            {formatMoney(creditLine.available)}
+          </span>
         </p>
-        <div className={`flex items-center gap-2 bg-surface p-4 rounded-xl border-2 overflow-hidden transition-colors ${inputStateClassName}`}>
-          <span className="text-3xl font-bold text-foreground flex-shrink-0" aria-hidden="true">
+
+        {/* Input field with border styling based on validation state */}
+        <div
+          className={`flex items-center gap-2 bg-surface p-4 rounded-xl border-2 overflow-hidden transition-colors ${getInputStateClass()}`}
+        >
+          <span
+            className="text-3xl font-bold text-foreground flex-shrink-0"
+            aria-hidden="true"
+          >
             $
           </span>
           <input
@@ -65,39 +126,62 @@ export function AmountInput({
             min={validation.minAmount}
             max={creditLine.available}
             required
-            aria-invalid={validation.feedback.severity === "danger"}
+            aria-invalid={hasError}
             aria-describedby={describedBy}
             aria-required="true"
           />
+          {/* Max button for quick-fill with accessible label */}
+          <button
+            onClick={handleMaxClick}
+            className="px-3 py-2 text-sm font-semibold text-accent hover:bg-accent/10 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface flex-shrink-0"
+            aria-label="Set amount to maximum available credit"
+            type="button"
+          >
+            Max
+          </button>
         </div>
+
+        {/* Constraint boxes showing min, available, and reserve */}
         <div id={constraintsId} className="grid gap-2 sm:grid-cols-3">
           <div className="rounded-lg border border-border bg-background/60 px-3 py-2">
-            <p className="text-[11px] uppercase tracking-wide text-muted">Minimum</p>
-            <p className="text-sm font-semibold text-foreground">{formatMoney(validation.minAmount)}</p>
+            <p className="text-[11px] uppercase tracking-wide text-muted">
+              Minimum
+            </p>
+            <p className="text-sm font-semibold text-foreground">
+              {formatMoney(validation.minAmount)}
+            </p>
           </div>
           <div className="rounded-lg border border-border bg-background/60 px-3 py-2">
-            <p className="text-[11px] uppercase tracking-wide text-muted">Available limit</p>
-            <p className="text-sm font-semibold text-foreground">{formatMoney(validation.maxAmount)}</p>
+            <p className="text-[11px] uppercase tracking-wide text-muted">
+              Available limit
+            </p>
+            <p className="text-sm font-semibold text-foreground">
+              {formatMoney(validation.maxAmount)}
+            </p>
           </div>
           <div className="rounded-lg border border-border bg-background/60 px-3 py-2">
-            <p className="text-[11px] uppercase tracking-wide text-muted">Reserve target</p>
-            <p className="text-sm font-semibold text-foreground">{formatMoney(validation.recommendedReserve)}</p>
+            <p className="text-[11px] uppercase tracking-wide text-muted">
+              Reserve target
+            </p>
+            <p className="text-sm font-semibold text-foreground">
+              {formatMoney(validation.recommendedReserve)}
+            </p>
           </div>
         </div>
-        <div
-          id={statusId}
-          className={`flex items-start gap-2 rounded-lg border px-3 py-3 text-sm ${currentTone.border} ${currentTone.bg} ${currentTone.text}`}
-          role={validation.feedback.severity === "danger" ? "alert" : "status"}
-          aria-live="polite"
-        >
-          {currentTone.icon}
-          <div>
-            <p className="font-semibold">{validation.feedback.title}</p>
-            <p className="mt-1">{validation.feedback.message}</p>
-          </div>
-        </div>
+
+        {/* Inline validation message - displayed only when there's content */}
+        <FormMessage
+          id={errorId}
+          title={validation.feedback.title}
+          message={validation.feedback.message}
+          type={getMessageType()}
+          tone="inline"
+          reserveSpace={true}
+          minHeight={60}
+        />
       </div>
 
+      {/* Quick presets for percentage-based amounts */}
       <div>
         <p className="text-sm font-semibold text-foreground mb-3">
           Quick preset
@@ -106,9 +190,14 @@ export function AmountInput({
           {[25, 50, 75, 100].map((percent) => (
             <button
               key={percent}
-              onClick={() => handlePreset(percent)}
-              className="py-2 px-3 border-2 border-border rounded-lg hover:border-blue-400 hover:bg-surface hover:shadow-md hover:shadow-blue-500/20 transition-all text-foreground font-medium text-sm"
-              aria-label={`Set amount to ${percent} percent`}
+              onClick={() =>
+                setAmount(
+                  Math.floor((creditLine.available * percent) / 100).toString(),
+                )
+              }
+              className="py-2 px-3 border-2 border-border rounded-lg hover:border-blue-400 hover:bg-surface hover:shadow-md hover:shadow-blue-500/20 transition-all text-foreground font-medium text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              aria-label={`Set amount to ${percent} percent of available credit`}
+              type="button"
             >
               {percent}%
             </button>
@@ -116,6 +205,7 @@ export function AmountInput({
         </div>
       </div>
 
+      {/* Summary display showing available, requested, and remaining */}
       <div className="bg-surface p-5 rounded-xl border border-border space-y-3 shadow-lg shadow-blue-500/5">
         <div className="flex justify-between text-sm">
           <span className="text-muted">Available:</span>
@@ -131,23 +221,28 @@ export function AmountInput({
         </div>
         <div className="flex justify-between text-sm border-t border-border pt-3">
           <span className="text-muted">Remaining:</span>
-          <span className={`font-semibold ${validation.remainingCredit < validation.recommendedReserve ? "text-amber-400" : "text-foreground"}`}>
+          <span
+            className={`font-semibold ${validation.remainingCredit < validation.recommendedReserve && numAmount > 0 ? "text-amber-400" : "text-foreground"}`}
+          >
             {formatMoney(validation.remainingCredit)}
           </span>
         </div>
       </div>
 
+      {/* Action buttons */}
       <div className="flex gap-3 pt-4">
         <button
           onClick={onBack}
           className="flex-1 py-3 px-4 border-2 border-border text-foreground rounded-lg hover:bg-surface transition-colors font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          type="button"
         >
           Back
         </button>
         <button
           onClick={() => onNext(numAmount)}
-          disabled={!validation.isValid}
+          disabled={!isValid}
           className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-500/40 transition-all font-semibold disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          type="button"
         >
           Continue
         </button>
