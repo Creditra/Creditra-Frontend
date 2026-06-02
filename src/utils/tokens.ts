@@ -21,11 +21,11 @@ export const UTIL_COLOR: Record<UtilizationLevel, string> = {
   high: COLOR.danger,
 };
 
-export const STATUS_COLOR: Record<CreditLineStatus, { bg: string; color: string }> = {
-  Active: { bg: 'rgba(63,185,80,0.2)', color: COLOR.text },
-  Suspended: { bg: 'rgba(210,153,34,0.2)', color: COLOR.text },
-  Defaulted: { bg: 'rgba(248,81,73,0.15)', color: COLOR.text },
-  Closed: { bg: 'rgba(139,148,158,0.15)', color: COLOR.text },
+export const STATUS_COLOR: Record<CreditLineStatus, { bg: string; color: string; border: string }> = {
+  Active: { bg: 'rgba(63,185,80,0.16)', color: '#8ee99d', border: 'rgba(63,185,80,0.44)' },
+  Suspended: { bg: 'rgba(210,153,34,0.16)', color: '#f0c96a', border: 'rgba(210,153,34,0.46)' },
+  Defaulted: { bg: 'rgba(248,81,73,0.14)', color: '#ffb0aa', border: 'rgba(248,81,73,0.46)' },
+  Closed: { bg: 'rgba(139,148,158,0.16)', color: '#c4ccd6', border: 'rgba(139,148,158,0.42)' },
 };
 
 export const RISK_COLOR = (score: number) =>

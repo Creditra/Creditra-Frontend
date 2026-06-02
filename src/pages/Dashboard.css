@@ -552,25 +552,6 @@
   box-shadow: 0 4px 16px rgba(88, 166, 255, 0.3);
 }
 
-/* ─── Status Badge (dashboard version) ──────────────────────────────────────── */
-
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0.15rem 0.45rem;
-  border-radius: 4px;
-  font-size: 0.7rem;
-  font-weight: 500;
-}
-
-.status-badge .dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  display: inline-block;
-}
-
 /* ─── Animations ────────────────────────────────────────────────────────────── */
 
 @keyframes fadeInUp {

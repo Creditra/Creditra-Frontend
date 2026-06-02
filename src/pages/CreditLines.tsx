@@ -1,24 +1,13 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { StatusBadge } from '../components/StatusBadge';
 import { MOCK_CREDIT_LINES } from '../data/mockData';
 import type { CreditLineStatus, SortField, SortDirection } from '../types/creditLine';
 import {
-  COLOR, UTIL_COLOR, STATUS_COLOR,
+  COLOR, UTIL_COLOR,
   fmt, fmtDate, getUtilizationLevel, utilizationPct,
 } from '../utils/tokens';
 import './CreditLines.css';
-
-// ─── Status Badge ─────────────────────────────────────────────────────────────
-
-function StatusBadge({ status }: { status: CreditLineStatus }) {
-  const { bg, color } = STATUS_COLOR[status];
-  return (
-    <span className="cl-status-badge" style={{ background: bg, color }}>
-      <span className="dot" style={{ background: color }} />
-      {status}
-    </span>
-  );
-}
 
 // ─── Credit Line Card ────────────────────────────────────────────────────────
 

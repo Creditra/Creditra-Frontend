@@ -1,0 +1,26 @@
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: var(--lh-small);
+  white-space: nowrap;
+}
+
+.status-badge__cue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.55rem;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}

@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { CopyToClipboard } from '../components/CopyToClipboard';
+import { StatusBadge } from '../components/StatusBadge';
 import { useWallet } from '../context/WalletContext';
 import { MOCK_CREDIT_LINES } from '../data/mockData';
-import type { CreditLineStatus, Transaction } from '../types/creditLine';
+import type { Transaction } from '../types/creditLine';
 import {
-  COLOR, UTIL_COLOR, STATUS_COLOR,
+  COLOR, UTIL_COLOR,
   fmt, fmtDate,
   getUtilizationLevel, utilizationPct,
 } from '../utils/tokens';
@@ -91,18 +92,6 @@ function RiskGauge({ score, trend, lastUpdated }: {
         </div>
       </div>
     </div>
-  );
-}
-
-// ─── Status Badge ─────────────────────────────────────────────────────────────
-
-function StatusBadge({ status }: { status: CreditLineStatus }) {
-  const { bg, color } = STATUS_COLOR[status];
-  return (
-    <span className="status-badge" style={{ background: bg, color }}>
-      <span className="dot" style={{ background: color }} />
-      {status}
-    </span>
   );
 }
 

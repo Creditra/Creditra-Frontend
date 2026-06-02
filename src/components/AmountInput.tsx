@@ -33,8 +33,40 @@ export function AmountInput({
   };
 
   const numAmount = parseFloat(amount) || 0;
-  const isValid = numAmount > 0 && numAmount <= creditLine.available;
-  const describedBy = error ? `${helperId} ${errorId}` : helperId;
+  const validation = getDrawAmountValidation(amount, creditLine);
+  const toneBySeverity = {
+    info: {
+      bg: "bg-blue-500/10",
+      border: "border-blue-400/30",
+      text: "text-blue-100",
+      icon: <Info className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />,
+      input: "border-border focus-within:border-blue-400",
+    },
+    success: {
+      bg: "bg-emerald-500/10",
+      border: "border-emerald-400/30",
+      text: "text-emerald-100",
+      icon: <CheckCircle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />,
+      input: "border-emerald-400/60",
+    },
+    warning: {
+      bg: "bg-amber-500/10",
+      border: "border-amber-400/30",
+      text: "text-amber-100",
+      icon: <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />,
+      input: "border-amber-400/60",
+    },
+    danger: {
+      bg: "bg-red-500/10",
+      border: "border-red-400/30",
+      text: "text-red-100",
+      icon: <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />,
+      input: "border-red-400/70",
+    },
+  };
+  const currentTone = toneBySeverity[validation.feedback.severity];
+  const inputStateClassName = currentTone.input;
+  const describedBy = `${helperId} ${constraintsId} ${statusId}`;
 
   return (
     <div className="space-y-8">

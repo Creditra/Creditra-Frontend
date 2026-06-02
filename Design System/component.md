@@ -141,6 +141,30 @@ Recommended semantic usage:
 - `success`: confirmation or positive follow-up actions
 - `link`: lightweight inline or tertiary navigation action
 
+### 3a. Status Badge
+
+The shared engineering component is `src/components/StatusBadge.tsx`. Use it anywhere a credit line status is shown instead of styling page-local badges.
+
+Supported statuses:
+
+- `Active`
+- `Suspended`
+- `Defaulted`
+- `Closed`
+
+Usage:
+
+```tsx
+<StatusBadge status={line.status} />
+```
+
+Accessibility requirements:
+
+- status colors must come from `STATUS_COLOR` in `src/utils/tokens.ts`
+- each text color must meet at least 4.5:1 contrast against its tinted badge background
+- the badge must include the visible status text and a non-color cue in the leading mark
+- do not rely on color alone to distinguish Active, Suspended, Defaulted, and Closed
+
 ### 4. Heading
 
 The `Heading` group appears to define text blocks for section titles rather than raw typography tokens.

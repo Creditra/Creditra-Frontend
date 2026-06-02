@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { AlertCircle, AlertTriangle, CheckCircle, Info } from 'lucide-react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { formatMoney, getRepayAmountValidation } from '../utils/amountValidation';
 import { PendingButton } from './PendingButton';
@@ -93,6 +94,9 @@ export function RepayModal({
   const validation = getRepayAmountValidation(amountStr, totalDue, walletBalance);
   const amount = validation.amount;
   const isInvalid = !validation.isValid;
+  const repayAmountHintId = 'repay-amount-hint';
+  const repayAmountConstraintsId = 'repay-amount-constraints';
+  const repayAmountStatusId = 'repay-amount-status';
 
   const remainingDebt = validation.remainingDebt;
   const oldPct = creditLine.limit === 0 ? 0 : Math.round((creditLine.utilized / creditLine.limit) * 100);
