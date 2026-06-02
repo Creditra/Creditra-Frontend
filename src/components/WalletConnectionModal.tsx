@@ -1,129 +1,296 @@
-import React, { useState } from 'react';
-import { useFocusTrap } from '../hooks/useFocusTrap';
-import { useWallet } from '../context/WalletContext';
-import { WalletType } from '../types/wallet';
+/**
+ * WalletConnectionModal.tsx
+ *
+ * Accessible wallet connection dialog with:
+ * - Focus trap (Tab cycles within modal, Shift+Tab cycles backwards)
+ * - Escape key closes modal
+ * - Return focus to trigger button on close
+ * - Background content marked inert
+ * - Body scroll locked while open
+ * - Mobile bottom sheet with safe-area insets
+ * - Visual differentiation of detected vs undetected wallets
+ * - ARIA: role="dialog", aria-modal="true", aria-labelledby
+ *
+ * WCAG 2.1 AA: 2.1.2 (No Keyboard Trap), 2.4.3 (Focus Order),
+ *              4.1.2 (Name, Role, Value), 1.4.1 (Use of Color)
+ */
+
+import React, { useRef, useCallback, useState, useEffect } from 'react';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
+import { useInertBackdrop } from '@/hooks/useInertBackdrop';
 import './WalletConnectionModal.css';
 
-interface Props {
-  isOpen: boolean;
-  onClose: () => void;
-  onSuccess?: () => void;
+// Wallet provider definitions
+export type WalletProvider = 'freighter' | 'albedo' | 'xbull' | 'rabet';
+
+interface WalletOption {
+  id: WalletProvider;
+  name: string;
+  icon: string;
+  description: string;
+  installUrl: string;
 }
 
-const wallets = [
+const WALLET_OPTIONS: WalletOption[] = [
   {
-    type: 'freighter' as WalletType,
+    id: 'freighter',
     name: 'Freighter',
+    icon: '/assets/wallets/freighter.svg',
     description: 'Browser extension wallet for Stellar',
-    iconUrl: 'https://stellar.creit.tech/wallet-icons/freighter.svg'
+    installUrl: 'https://www.freighter.app',
   },
   {
-    type: 'albedo' as WalletType,
+    id: 'albedo',
     name: 'Albedo',
+    icon: '/assets/wallets/albedo.svg',
     description: 'Web-based Stellar wallet',
-    iconUrl: 'https://stellar.creit.tech/wallet-icons/albedo.svg'
+    installUrl: 'https://albedo.link',
   },
   {
-    type: 'xbull' as WalletType,
+    id: 'xbull',
     name: 'xBull',
-    description: 'Mobile and browser wallet',
-    iconUrl: 'https://stellar.creit.tech/wallet-icons/xbull.svg'
+    icon: '/assets/wallets/xbull.svg',
+    description: 'Mobile and desktop Stellar wallet',
+    installUrl: 'https://xbull.app',
   },
   {
-    type: 'rabet' as WalletType,
+    id: 'rabet',
     name: 'Rabet',
-    description: 'Browser extension wallet',
-    iconUrl: 'https://stellar.creit.tech/wallet-icons/rabet.svg'
-  }
+    icon: '/assets/wallets/rabet.svg',
+    description: 'Stellar wallet for desktop',
+    installUrl: 'https://rabet.io',
+  },
 ];
 
-export const WalletConnectionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
-  const modalRef = useFocusTrap(isOpen);
-  const { status, error, connect, clearError } = useWallet();
-  const [selectedWallet, setSelectedWallet] = useState<WalletType | null>(null);
+interface WalletConnectionModalProps {
+  /** Whether the modal is visible */
+  isOpen: boolean;
+  /** Callback to close the modal */
+  onClose: () => void;
+  /** Callback when a wallet is selected */
+  onConnect: (provider: WalletProvider) => void;
+  /** Ref to the trigger button that opened the modal (for return focus) */
+  triggerRef?: React.RefObject<<HTMLElement | null>;
+  /** Currently detected/available wallets */
+  detectedWallets?: WalletProvider[];
+}
 
+/**
+ * WalletConnectionModal
+ *
+ * Primary entry point for wallet selection. Implemented as a fully accessible
+ * dialog with focus trapping, inert backdrop, and mobile-safe bottom sheet layout.
+ */
+export const WalletConnectionModal: React.FC<<WalletConnectionModalProps> = ({
+  isOpen,
+  onClose,
+  onConnect,
+  triggerRef,
+  detectedWallets = [],
+}) => {
+  const [connectingId, setConnectingId] = useState<<WalletProvider | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const modalId = 'wallet-connection-modal';
+
+  // Close handler with error reset
+  const handleClose = useCallback(() => {
+    setError(null);
+    setConnectingId(null);
+    onClose();
+  }, [onClose]);
+
+  // Wallet selection handler
+  const handleWalletSelect = useCallback(
+    async (provider: WalletProvider) => {
+      setError(null);
+      setConnectingId(provider);
+
+      try {
+        await onConnect(provider);
+        handleClose();
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : `Failed to connect to ${provider}. Please try again.`
+        );
+        setConnectingId(null);
+      }
+    },
+    [onConnect, handleClose]
+  );
+
+  // Install handler for undetected wallets
+  const handleInstall = useCallback((wallet: WalletOption) => {
+    window.open(wallet.installUrl, '_blank', 'noopener,noreferrer');
+  }, []);
+
+  // Accessibility hooks
+  const containerRef = useFocusTrap({
+    isActive: isOpen,
+    triggerRef,
+    onEscape: handleClose,
+  });
+
+  useBodyScrollLock({ isLocked: isOpen });
+  useInertBackdrop({ isInert: isOpen, modalId });
+
+  // Don't render if not open
   if (!isOpen) return null;
 
-  const handleConnect = async (type: WalletType) => {
-    setSelectedWallet(type);
-    await connect(type);
-    if (status === 'connected') {
-      onSuccess?.();
-      setTimeout(onClose, 1500);
-    }
-  };
-
-  const handleClose = () => {
-    clearError();
-    setSelectedWallet(null);
-    onClose();
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" role="presentation">
-      <div 
-        ref={modalRef}
-        className="relative w-full max-w-md bg-surface border border-border rounded-2xl shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
+    <div
+      id={modalId}
+      className="wallet-modal-portal"
+      aria-hidden="false"
+    >
+      {/* Backdrop overlay */}
+      <div
+        className="wallet-modal-backdrop"
+        onClick={handleClose}
+        aria-hidden="true"
+      />
+
+      {/* Dialog container */}
+      <div
+        ref={containerRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="modal-title"
+        aria-labelledby="wallet-modal-title"
+        aria-describedby="wallet-modal-description"
+        className="wallet-modal-dialog"
       >
-        <div className="modal-header">
-          <h2 id="modal-title">Connect Wallet</h2>
-          <button className="close-btn" onClick={handleClose} aria-label="Close modal">×</button>
+        {/* Header */}
+        <div className="wallet-modal-header">
+          <h2 id="wallet-modal-title" className="wallet-modal-title">
+            Connect Wallet
+          </h2>
+          <p id="wallet-modal-description" className="wallet-modal-description">
+            Select a wallet to connect to Creditra
+          </p>
+          <button
+            className="wallet-modal-close"
+            onClick={handleClose}
+            aria-label="Close wallet connection dialog"
+            type="button"
+          >
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         </div>
 
-        {status === 'connected' ? (
-          <div className="success-state" role="status">
-            <div className="success-icon" aria-hidden="true">✓</div>
-            <h3>Wallet Connected!</h3>
-            <p>You're all set to start using Creditra</p>
+        {/* Error message */}
+        {error && (
+          <div
+            className="wallet-modal-error"
+            role="alert"
+            aria-live="polite"
+          >
+            {error}
           </div>
-        ) : (
-          <>
-            <p className="modal-description">
-              Choose a wallet to connect to Creditra. Your wallet will be used to access credit lines on Stellar.
-            </p>
-
-            <div className="wallet-list">
-              {wallets.map((wallet) => (
-                <button
-                  key={wallet.type}
-                  className={`wallet-card ${selectedWallet === wallet.type ? 'loading' : ''}`}
-                  onClick={() => handleConnect(wallet.type)}
-                  disabled={status === 'connecting'}
-                >
-                  <div className="wallet-icon">
-                    <img src={wallet.iconUrl} alt={wallet.name} />
-                  </div>
-                  <div className="wallet-info">
-                    <h3>{wallet.name}</h3>
-                    <p>{wallet.description}</p>
-                  </div>
-                  {status === 'connecting' && selectedWallet === wallet.type && (
-                    <div className="spinner"></div>
-                  )}
-                </button>
-              ))}
-            </div>
-
-            {error && (
-              <div className="error-state" role="alert">
-                <span className="error-icon" aria-hidden="true">⚠</span>
-                <div>
-                  <strong>Connection Failed</strong>
-                  <p>{error.message}</p>
-                </div>
-              </div>
-            )}
-
-            <div className="security-note">
-              <span aria-hidden="true">🔒</span>
-              <p>We never store your private keys. Your wallet remains secure.</p>
-            </div>
-          </>
         )}
+
+        {/* Wallet options list */}
+        <ul className="wallet-modal-list" role="listbox" aria-label="Available wallet providers">
+          {WALLET_OPTIONS.map((wallet) => {
+            const isDetected = detectedWallets.includes(wallet.id);
+            const isConnecting = connectingId === wallet.id;
+            const isDisabled = connectingId !== null && !isConnecting;
+
+            return (
+              <li key={wallet.id} role="none">
+                <button
+                  className={`wallet-option ${isDetected ? 'wallet-option--detected' : 'wallet-option--undetected'}`}
+                  onClick={() =>
+                    isDetected ? handleWalletSelect(wallet.id) : handleInstall(wallet)
+                  }
+                  disabled={isDisabled}
+                  aria-label={
+                    isDetected
+                      ? `Connect with ${wallet.name}${isConnecting ? ', connecting' : ''}`
+                      : `Install ${wallet.name} wallet`
+                  }
+                  aria-describedby={`wallet-status-${wallet.id}`}
+                  type="button"
+                >
+                  {/* Icon */}
+                  <div className="wallet-option-icon" aria-hidden="true">
+                    <img
+                      src={wallet.icon}
+                      alt=""
+                      width="40"
+                      height="40"
+                      loading="lazy"
+                    />
+                  </div>
+
+                  {/* Info */}
+                  <div className="wallet-option-info">
+                    <span className="wallet-option-name">{wallet.name}</span>
+                    <span className="wallet-option-description">
+                      {wallet.description}
+                    </span>
+                    <span
+                      id={`wallet-status-${wallet.id}`}
+                      className={`wallet-option-status ${isDetected ? 'wallet-option-status--detected' : 'wallet-option-status--undetected'}`}
+                    >
+                      {isDetected ? (
+                        <>
+                          <span className="status-dot" aria-hidden="true" />
+                          Detected
+                        </>
+                      ) : (
+                        <>
+                          <span className="status-icon" aria-hidden="true">⬇</span>
+                          Install to connect
+                        </>
+                      )}
+                    </span>
+                  </div>
+
+                  {/* Action indicator */}
+                  <span className="wallet-option-action" aria-hidden="true">
+                    {isConnecting ? (
+                      <span className="wallet-option-spinner" />
+                    ) : isDetected ? (
+                      '→'
+                    ) : (
+                      '↗'
+                    )}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+
+        {/* Footer note */}
+        <div className="wallet-modal-footer">
+          <p className="wallet-modal-note">
+            New to Stellar?{' '}
+            <a
+              href="https://stellar.org/wallets"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="wallet-modal-link"
+            >
+              Learn about wallets
+            </a>
+          </p>
+        </div>
       </div>
     </div>
   );
