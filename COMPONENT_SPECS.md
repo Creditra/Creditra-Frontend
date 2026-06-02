@@ -2,6 +2,7 @@
 
 ## Design System
 
+
 ### Color Palette
 ```css
 --bg: #0d1117           /* Main background */
