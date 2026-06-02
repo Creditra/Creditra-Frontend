@@ -138,22 +138,30 @@ export function Dashboard() {
 
   // Notifications
   const notifications = useMemo(() => {
-    const notes: { icon: string; text: string; bg: string; time?: string }[] = [];
+    const notes: { icon: string; content: React.ReactNode; type: 'info' | 'warning' | 'danger'; time?: string }[] = [];
 
     creditLines.forEach(cl => {
       if (cl.status === 'Suspended') {
         notes.push({
           icon: '⚠️',
-          text: `<strong>${cl.name}</strong> has been suspended. Make a repayment to restore access.`,
-          bg: 'rgba(210,153,34,0.08)',
+          content: (
+            <>
+              <strong>{cl.name}</strong> has been suspended. Make a repayment to restore access.
+            </>
+          ),
+          type: 'warning',
           time: cl.updatedAt,
         });
       }
       if (cl.status === 'Defaulted') {
         notes.push({
           icon: '🚨',
-          text: `<strong>${cl.name}</strong> is in default (90+ days overdue). Contact support immediately.`,
-          bg: 'rgba(248,81,73,0.08)',
+          content: (
+            <>
+              <strong>{cl.name}</strong> is in default (90+ days overdue). Contact support immediately.
+            </>
+          ),
+          type: 'danger',
           time: cl.updatedAt,
         });
       }
@@ -162,8 +170,12 @@ export function Dashboard() {
         if (util >= 0.75) {
           notes.push({
             icon: '📊',
-            text: `<strong>${cl.name}</strong> utilization is at ${Math.round(util * 100)}%. Consider a repayment.`,
-            bg: 'rgba(210,153,34,0.08)',
+            content: (
+              <>
+                <strong>{cl.name}</strong> utilization is at {Math.round(util * 100)}%. Consider a repayment.
+              </>
+            ),
+            type: 'warning',
           });
         }
         if (cl.nextPaymentDate) {
@@ -171,8 +183,12 @@ export function Dashboard() {
           if (daysUntil > 0 && daysUntil <= 7) {
             notes.push({
               icon: '🗓️',
-              text: `Payment of <strong>${fmt(cl.nextPaymentAmount ?? 0)}</strong> due in ${daysUntil} day${daysUntil !== 1 ? 's' : ''} for ${cl.name}.`,
-              bg: 'rgba(88,166,255,0.08)',
+              content: (
+                <>
+                  Payment of <strong>{fmt(cl.nextPaymentAmount ?? 0)}</strong> due in {daysUntil} day{daysUntil !== 1 ? 's' : ''} for {cl.name}.
+                </>
+              ),
+              type: 'info',
             });
           }
         }
@@ -475,13 +491,16 @@ export function Dashboard() {
               <h2><span className="icon">🔔</span> Alerts</h2>
 
               {notifications.map((note, i) => (
-                <div key={i} className="notification-item" style={{ background: note.bg }}>
-                  <span className="notification-icon">{note.icon}</span>
+                <div 
+                  key={i} 
+                  className={`notification-item notification-item--${note.type}`}
+                  role={note.type === 'danger' ? 'alert' : 'status'}
+                >
+                  <span className="notification-icon" aria-hidden="true">{note.icon}</span>
                   <div>
-                    <div
-                      className="notification-text"
-                      dangerouslySetInnerHTML={{ __html: note.text }}
-                    />
+                    <div className="notification-text">
+                      {note.content}
+                    </div>
                     {note.time && (
                       <div className="notification-time">{relativeTime(note.time)}</div>
                     )}

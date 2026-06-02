@@ -488,6 +488,18 @@
   margin-bottom: 0;
 }
 
+.notification-item--info {
+  background: rgba(88, 166, 255, 0.08);
+}
+
+.notification-item--warning {
+  background: rgba(210, 153, 34, 0.08);
+}
+
+.notification-item--danger {
+  background: rgba(248, 81, 73, 0.08);
+}
+
 .notification-icon {
   font-size: 1rem;
   flex-shrink: 0;
