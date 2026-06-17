@@ -3,6 +3,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { WalletProvider } from "./context/WalletContext";
 import { WalletButton } from "./components/WalletButton";
 import DrawCreditPage from "./pages/DrawCreditPage";
+import CreditLines from "./pages/CreditLines";
 import { TransactionHistory } from "./pages/TransactionHistory";
 import { RequestEvaluation } from "./pages/RequestEvaluation";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -55,60 +56,36 @@ function App() {
                 <NavLink
                   to="/"
                   end
-                  children={({ isActive }) => (
-                    <a
-                      href="/"
-                      className={
-                        isActive ? "header-nav-link active" : "header-nav-link"
-                      }
-                      aria-current={isActive ? "page" : undefined}
-                    >
-                      Dashboard
-                    </a>
-                  )}
-                />
+                  className={({ isActive }) =>
+                    isActive ? "header-nav-link active" : "header-nav-link"
+                  }
+                >
+                  Dashboard
+                </NavLink>
                 <NavLink
                   to="/transactions"
-                  children={({ isActive }) => (
-                    <a
-                      href="/transactions"
-                      className={
-                        isActive ? "header-nav-link active" : "header-nav-link"
-                      }
-                      aria-current={isActive ? "page" : undefined}
-                    >
-                      Transactions
-                    </a>
-                  )}
-                />
+                  className={({ isActive }) =>
+                    isActive ? "header-nav-link active" : "header-nav-link"
+                  }
+                >
+                  Transactions
+                </NavLink>
                 <NavLink
                   to="/credit-lines"
-                  children={({ isActive }) => (
-                    <a
-                      href="/credit-lines"
-                      className={
-                        isActive ? "header-nav-link active" : "header-nav-link"
-                      }
-                      aria-current={isActive ? "page" : undefined}
-                    >
-                      Credit Lines
-                    </a>
-                  )}
-                />
+                  className={({ isActive }) =>
+                    isActive ? "header-nav-link active" : "header-nav-link"
+                  }
+                >
+                  Credit Lines
+                </NavLink>
                 <NavLink
                   to="/open-credit"
-                  children={({ isActive }) => (
-                    <a
-                      href="/open-credit"
-                      className={
-                        isActive ? "header-nav-link active" : "header-nav-link"
-                      }
-                      aria-current={isActive ? "page" : undefined}
-                    >
-                      Open Credit Line
-                    </a>
-                  )}
-                />
+                  className={({ isActive }) =>
+                    isActive ? "header-nav-link active" : "header-nav-link"
+                  }
+                >
+                  Open Credit Line
+                </NavLink>
               </nav>
               <WalletButton />
             </header>
@@ -116,6 +93,7 @@ function App() {
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/transactions" element={<TransactionHistory />} />
+                <Route path="/credit-lines" element={<CreditLines />} />
                 <Route path="/draw-credit" element={<DrawCreditPage />} />
                 <Route
                   path="/draw-credit/success"

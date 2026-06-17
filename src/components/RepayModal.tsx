@@ -86,7 +86,7 @@ export function RepayModal({
   onSuccess,
 }: RepayModalProps) {
   const [step, setStep] = useState<ModalStep>('input');
-  const modalRef = useFocusTrap(true);
+  const modalRef = useFocusTrap({ isActive: true, onEscape: onClose });
   const [amountStr, setAmountStr] = useState('');
 
   const totalDue = creditLine.utilized;

@@ -5,7 +5,7 @@ import { OnboardingFlow } from './OnboardingFlow';
 import './WalletButton.css';
 
 export const WalletButton = () => {
-  const { wallet, status, disconnect } = useWallet();
+  const { wallet, status, connect, disconnect } = useWallet();
   const [showModal, setShowModal] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -19,6 +19,11 @@ export const WalletButton = () => {
     if (!hasCompletedOnboarding) {
       setShowOnboarding(true);
     }
+  };
+
+  const handleWalletConnect = async (provider: Parameters<typeof connect>[0]) => {
+    await connect(provider);
+    handleSuccess();
   };
 
   const handleDisconnect = () => {
@@ -71,7 +76,7 @@ export const WalletButton = () => {
       <WalletConnectionModal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
-        onSuccess={handleSuccess}
+        onConnect={handleWalletConnect}
       />
       <OnboardingFlow
         isOpen={showOnboarding}

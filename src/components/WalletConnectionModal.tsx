@@ -15,7 +15,7 @@
  *              4.1.2 (Name, Role, Value), 1.4.1 (Use of Color)
  */
 
-import React, { useRef, useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import { useInertBackdrop } from '@/hooks/useInertBackdrop';

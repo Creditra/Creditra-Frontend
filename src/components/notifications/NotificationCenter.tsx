@@ -40,7 +40,7 @@ export function NotificationCenter() {
 
   const [activeFilter, setActiveFilter] = useState<NotificationCategory | 'all'>('all');
   const [showPrefs, setShowPrefs] = useState(false);
-  const panelRef = useFocusTrap(isPanelOpen);
+  const panelRef = useFocusTrap({ isActive: isPanelOpen });
 
   const filtered = filterByCategory(activeFilter);
 

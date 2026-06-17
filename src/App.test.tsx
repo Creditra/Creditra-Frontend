@@ -1,19 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import "@testing-library/jest-dom";
 import App from "./App";
-import * as router from "react-router-dom";
-
-// Mock react-router-dom to avoid actual routing in tests
-vi.mock("react-router-dom", async () => {
-  const actual = await vi.importActual("react-router-dom");
-  return {
-    ...actual,
-    BrowserRouter: ({ children }: { children: React.ReactNode }) => (
-      <div>{children}</div>
-    ),
-  };
-});
 
 describe("App Navigation Header", () => {
   beforeEach(() => {
@@ -37,18 +25,22 @@ describe("App Navigation Header", () => {
   it("renders all four navigation links with correct text", () => {
     render(<App />);
 
-    expect(screen.getByText("Dashboard")).toBeInTheDocument();
-    expect(screen.getByText("Transactions")).toBeInTheDocument();
-    expect(screen.getByText("Credit Lines")).toBeInTheDocument();
-    expect(screen.getByText("Open Credit Line")).toBeInTheDocument();
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "Dashboard" }))
+      .toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: "Transactions" }))
+      .toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: "Credit Lines" }))
+      .toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: "Open Credit Line" }))
+      .toBeInTheDocument();
   });
 
   it("applies header-nav-link class to all navigation links", () => {
     render(<App />);
 
-    const navLinks = screen.getAllByRole("link", {
-      name: /dashboard|transactions|credit lines|open credit line/i,
-    });
+    const nav = screen.getByRole("navigation");
+    const navLinks = within(nav).getAllByRole("link");
 
     navLinks.forEach((link) => {
       expect(link).toHaveClass("header-nav-link");
@@ -58,10 +50,17 @@ describe("App Navigation Header", () => {
   it("renders navigation links with proper href attributes", () => {
     render(<App />);
 
-    const dashboardLink = screen.getByText("Dashboard").closest("a");
-    const transactionLink = screen.getByText("Transactions").closest("a");
-    const creditLineLink = screen.getByText("Credit Lines").closest("a");
-    const openCreditLink = screen.getByText("Open Credit Line").closest("a");
+    const nav = screen.getByRole("navigation");
+    const dashboardLink = within(nav).getByRole("link", { name: "Dashboard" });
+    const transactionLink = within(nav).getByRole("link", {
+      name: "Transactions",
+    });
+    const creditLineLink = within(nav).getByRole("link", {
+      name: "Credit Lines",
+    });
+    const openCreditLink = within(nav).getByRole("link", {
+      name: "Open Credit Line",
+    });
 
     expect(dashboardLink).toHaveAttribute("href", "/");
     expect(transactionLink).toHaveAttribute("href", "/transactions");
@@ -125,9 +124,8 @@ describe("App Navigation Active State (requires integration test)", () => {
     // Actual aria-current testing requires non-mocked router
     render(<App />);
 
-    const navLinks = screen.getAllByRole("link", {
-      name: /dashboard|transactions|credit lines|open credit line/i,
-    });
+    const nav = screen.getByRole("navigation");
+    const navLinks = within(nav).getAllByRole("link");
 
     // Verify all nav links exist and have the proper class for active styling
     expect(navLinks.length).toBeGreaterThanOrEqual(4);
@@ -151,7 +149,8 @@ describe("App Styling and Accessibility", () => {
   it("applies correct CSS classes for navigation styling", () => {
     render(<App />);
 
-    const dashboardLink = screen.getByText("Dashboard").closest("a");
+    const nav = screen.getByRole("navigation");
+    const dashboardLink = within(nav).getByRole("link", { name: "Dashboard" });
     expect(dashboardLink).toHaveClass("header-nav-link");
 
     // Additional classes may be applied when active (requires router context)

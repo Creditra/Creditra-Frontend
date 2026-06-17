@@ -376,7 +376,8 @@ export function TransactionHistory() {
     const selectedDatePreset = DATE_FILTER_OPTIONS.find(
       (option) => option.value === dateRange,
     );
-    const cutoffTime = selectedDatePreset?.days
+    const cutoffTime =
+      selectedDatePreset && "days" in selectedDatePreset
       ? Date.now() - selectedDatePreset.days * 24 * 60 * 60 * 1000
       : null;
 

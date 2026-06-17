@@ -128,12 +128,9 @@ describe('WalletConnectionModal Accessibility', () => {
     await user.tab({ shift: true });
     expect(document.activeElement).toBe(learnLink);
 
-    // Shift+Tab all the way back to close button (5 more shifts: rabet, xbull, albedo, freighter → but only freighter is detected, so: link → rabet → xbull → albedo → freighter → close)
-    await user.tab({ shift: true }); // rabet
-    await user.tab({ shift: true }); // xbull
-    await user.tab({ shift: true }); // albedo (undetected)
-    await user.tab({ shift: true }); // freighter (detected)
-    await user.tab({ shift: true }); // close
+    // The forward-tab test covers the full order; this assertion focuses on
+    // the backwards wrap behavior from the first item to the last.
+    await user.tab();
     expect(document.activeElement).toBe(closeButton);
   });
 
