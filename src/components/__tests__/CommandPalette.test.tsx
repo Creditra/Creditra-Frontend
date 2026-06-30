@@ -5,9 +5,10 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { CommandPalette } from '../CommandPalette';
 
-// Suppress DOM side-effects from hooks under test
-vi.mock('@/hooks/useBodyScrollLock', () => ({ useBodyScrollLock: vi.fn() }));
-vi.mock('@/hooks/useInertBackdrop',  () => ({ useInertBackdrop:  vi.fn() }));
+// Suppress DOM side-effects from hooks under test.
+// Paths must match how CommandPalette.tsx resolves them (relative from src/hooks).
+vi.mock('../../hooks/useBodyScrollLock', () => ({ useBodyScrollLock: vi.fn() }));
+vi.mock('../../hooks/useInertBackdrop',  () => ({ useInertBackdrop:  vi.fn() }));
 
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async (importActual) => {

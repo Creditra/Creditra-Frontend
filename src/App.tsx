@@ -20,6 +20,8 @@ import { LinkedAccounts } from "./pages/LinkedAccounts";
 import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
 import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatchBanner";
 import { Header } from "./layouts/Header";
+import { SessionTimeoutBanner } from "./components/SessionTimeoutBanner";
+import { NotificationPreferences } from "./pages/NotificationPreferences";
 
 const isEditableTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) return false;

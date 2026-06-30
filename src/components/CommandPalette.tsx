@@ -17,13 +17,15 @@ export interface CommandItem {
 }
 
 const DEFAULT_ITEMS: CommandItem[] = [
-  { id: 'nav-dashboard',    label: 'Dashboard',              icon: '🏠', action: '/',               description: 'Go to Dashboard' },
-  { id: 'nav-transactions', label: 'Transactions',           icon: '📋', action: '/transactions',   description: 'View transaction history' },
-  { id: 'nav-credit-lines', label: 'Credit Lines',           icon: '💳', action: '/credit-lines',   description: 'Manage your credit lines' },
-  { id: 'nav-open-credit',  label: 'Request Evaluation',     icon: '📝', action: '/open-credit',    description: 'Apply for a new credit line' },
-  { id: 'nav-draw-credit',  label: 'Draw',                   icon: '⬇️',  action: '/draw-credit',   description: 'Draw from a credit line' },
-  { id: 'nav-auctions',     label: 'Dutch Auctions',         icon: '🔨', action: '/dutch-auctions', description: 'View active auctions' },
-  { id: 'nav-help',         label: 'Help Center',            icon: '❓', action: '/help',           description: 'Browse help articles' },
+  { id: 'nav-dashboard',              label: 'Dashboard',                  icon: '🏠', action: '/',                          description: 'Go to Dashboard' },
+  { id: 'nav-transactions',           label: 'Transactions',               icon: '📋', action: '/transactions',              description: 'View transaction history' },
+  { id: 'nav-credit-lines',           label: 'Credit Lines',               icon: '💳', action: '/credit-lines',              description: 'Manage your credit lines' },
+  { id: 'nav-open-credit',            label: 'Request Evaluation',         icon: '📝', action: '/open-credit',               description: 'Apply for a new credit line' },
+  { id: 'nav-draw-credit',            label: 'Draw',                       icon: '⬇️',  action: '/draw-credit',              description: 'Draw from a credit line' },
+  { id: 'nav-auctions',               label: 'Dutch Auctions',             icon: '🔨', action: '/dutch-auctions',            description: 'View active auctions' },
+  { id: 'nav-linked-accounts',        label: 'Linked Accounts',            icon: '🔗', action: '/linked-accounts',           description: 'Manage linked bank accounts' },
+  { id: 'nav-notification-prefs',     label: 'Notification Preferences',   icon: '🔔', action: '/notification-preferences',  description: 'Manage notification settings' },
+  { id: 'nav-help',                   label: 'Help Center',                icon: '❓', action: '/help',                      description: 'Browse help articles' },
 ];
 
 function normalize(s: string) {
