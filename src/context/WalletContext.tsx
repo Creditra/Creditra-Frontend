@@ -187,6 +187,12 @@ interface WalletContextType {
    * On failure: status transitions to `'error'`.
    */
   stayConnected: () => Promise<void>;
+  /**
+   * `true` when the session is within `SESSION_WARN_BEFORE_MS` of expiry.
+   * Consumed by `SessionTimeoutBanner` to show the pre-disconnect warning.
+   * Resets to `false` when `stayConnected()` succeeds or `disconnect()` is called.
+   */
+  sessionTimeoutWarning: boolean;
   refreshBalance: () => Promise<void>;
   setDropdownOpen: (open: boolean) => void;
   balances: BalanceInfo[] | null;
@@ -222,6 +228,7 @@ export const WalletProvider = ({
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [error, setError] = useState<WalletError | null>(null);
   const [reconnectTimedOut, setReconnectTimedOut] = useState(false);
+  const [sessionTimeoutWarning, setSessionTimeoutWarning] = useState(false);
   // Initialised from `localStorage` via the safe wrapper so the very first
   // render reflects whether the user opted in on a previous session.
   const [isRemembered, setIsRemembered] = useState<boolean>(() => isWalletRemembered());
@@ -514,6 +521,7 @@ export const WalletProvider = ({
         dismissReconnectBanner,
         retryReconnect,
         stayConnected,
+        sessionTimeoutWarning,
         balances,
         lastUpdated,
         refreshBalance,

@@ -1,0 +1,314 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`auth snapshot — auto-reconnect lifecycle > connected state after successful auto-reconnect matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": true,
+  "reconnectTimedOut": false,
+  "status": "connected",
+  "wallet": {
+    "network": "PUBLIC",
+    "publicKey": "GAUTHSNAP000FREIGHTER0000000000000000000000000000000001",
+    "type": "freighter",
+  },
+}
+`;
+
+exports[`auth snapshot — auto-reconnect lifecycle > error state after failed auto-reconnect matches snapshot 1`] = `
+{
+  "error": {
+    "message": "Extension refused.",
+    "type": "connection_failed",
+  },
+  "isRemembered": true,
+  "reconnectTimedOut": false,
+  "status": "error",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — auto-reconnect lifecycle > reconnectTimedOut=true state matches snapshot (timeout fires before connect resolves) 1`] = `
+{
+  "error": null,
+  "isRemembered": true,
+  "reconnectTimedOut": true,
+  "status": "reconnecting",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — auto-reconnect lifecycle > reconnecting state matches snapshot (pending connect) 1`] = `
+{
+  "error": null,
+  "isRemembered": true,
+  "reconnectTimedOut": false,
+  "status": "reconnecting",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — connect error variants > error state for connection_failed matches snapshot 1`] = `
+{
+  "error": {
+    "message": "Extension refused.",
+    "type": "connection_failed",
+  },
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "error",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — connect error variants > error state for not_found matches snapshot 1`] = `
+{
+  "error": {
+    "message": "Freighter not installed.",
+    "type": "not_found",
+  },
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "error",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — connect error variants > error state for user_rejected matches snapshot 1`] = `
+{
+  "error": {
+    "message": "User cancelled.",
+    "type": "user_rejected",
+  },
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "error",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — connect error variants > error state for wrong_network matches snapshot 1`] = `
+{
+  "error": {
+    "message": "Switch to Stellar mainnet.",
+    "type": "wrong_network",
+  },
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "error",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — connect error variants > require_auth: remember flag is NOT persisted on connect failure 1`] = `
+{
+  "error": {
+    "message": "Extension refused.",
+    "type": "connection_failed",
+  },
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "error",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — disconnect > disconnected state after explicit disconnect matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "disconnected",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — dismissReconnectBanner > state after dismissing the timeout banner matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": true,
+  "reconnectTimedOut": false,
+  "status": "reconnecting",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — forgetRememberedChoice > forgetRememberedChoice on a fresh (disconnected) provider matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "disconnected",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — forgetRememberedChoice > state after forgetRememberedChoice on a connected wallet matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "connected",
+  "wallet": {
+    "network": "PUBLIC",
+    "publicKey": "GAUTHSNAP000FREIGHTER0000000000000000000000000000000001",
+    "type": "freighter",
+  },
+}
+`;
+
+exports[`auth snapshot — initial state > disconnected state with no stored wallet matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "disconnected",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — initial state > initial state with stored wallet but no remember flag matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "disconnected",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — retryReconnect > no-op state when retryReconnect is called with no stored wallet matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "disconnected",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — retryReconnect > reconnecting state immediately after retryReconnect matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": true,
+  "reconnectTimedOut": false,
+  "status": "reconnecting",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — stayConnected > connected state is preserved after successful stayConnected matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "connected",
+  "wallet": {
+    "network": "PUBLIC",
+    "publicKey": "GAUTHSNAP000FREIGHTER0000000000000000000000000000000001",
+    "type": "freighter",
+  },
+}
+`;
+
+exports[`auth snapshot — stayConnected > error state after failed stayConnected matches snapshot 1`] = `
+{
+  "error": {
+    "message": "Extension refused.",
+    "type": "connection_failed",
+  },
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "error",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — stayConnected > stayConnected is no-op when no wallet is connected matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "disconnected",
+  "wallet": null,
+}
+`;
+
+exports[`auth snapshot — user-initiated connect > connected state after albedo connect matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "connected",
+  "wallet": {
+    "network": "PUBLIC",
+    "publicKey": "GAUTHSNAP000ALBEDO00000000000000000000000000000000000002",
+    "type": "albedo",
+  },
+}
+`;
+
+exports[`auth snapshot — user-initiated connect > connected state after freighter connect matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "connected",
+  "wallet": {
+    "network": "PUBLIC",
+    "publicKey": "GAUTHSNAP000FREIGHTER0000000000000000000000000000000001",
+    "type": "freighter",
+  },
+}
+`;
+
+exports[`auth snapshot — user-initiated connect > connected+not-remembered state after connect({remember:false}) matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "connected",
+  "wallet": {
+    "network": "PUBLIC",
+    "publicKey": "GAUTHSNAP000FREIGHTER0000000000000000000000000000000001",
+    "type": "freighter",
+  },
+}
+`;
+
+exports[`auth snapshot — user-initiated connect > connected+not-remembered state when remember option is omitted matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "connected",
+  "wallet": {
+    "network": "PUBLIC",
+    "publicKey": "GAUTHSNAP000FREIGHTER0000000000000000000000000000000001",
+    "type": "freighter",
+  },
+}
+`;
+
+exports[`auth snapshot — user-initiated connect > connected+remembered state after connect({remember:true}) matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": true,
+  "reconnectTimedOut": false,
+  "status": "connected",
+  "wallet": {
+    "network": "PUBLIC",
+    "publicKey": "GAUTHSNAP000FREIGHTER0000000000000000000000000000000001",
+    "type": "freighter",
+  },
+}
+`;
+
+exports[`auth snapshot — user-initiated connect > connecting state (in-flight) matches snapshot 1`] = `
+{
+  "error": null,
+  "isRemembered": false,
+  "reconnectTimedOut": false,
+  "status": "connecting",
+  "wallet": null,
+}
+`;

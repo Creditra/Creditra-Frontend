@@ -1,0 +1,207 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`wallet auth snapshot — MRU list > clearMRU removes the MRU list 1`] = `[]`;
+
+exports[`wallet auth snapshot — MRU list > getRecentWalletOrder drops unsupported wallet types 1`] = `
+[
+  "freighter",
+  "albedo",
+]
+`;
+
+exports[`wallet auth snapshot — MRU list > getRecentWalletOrder returns empty array when no MRU is stored 1`] = `[]`;
+
+exports[`wallet auth snapshot — MRU list > getRecentWalletOrder returns single wallet after recordRecentWallet 1`] = `
+[
+  "freighter",
+]
+`;
+
+exports[`wallet auth snapshot — MRU list > getRecentWalletOrder returns wallets in MRU order (last is most recent) 1`] = `
+[
+  "freighter",
+  "albedo",
+  "xbull",
+]
+`;
+
+exports[`wallet auth snapshot — MRU list > getRecentWalletOrder sanitizes corrupt data (drops non-string entries) 1`] = `
+[
+  "freighter",
+  "albedo",
+]
+`;
+
+exports[`wallet auth snapshot — MRU list > recordRecentWallet caps the MRU list at 8 entries 1`] = `
+[
+  "xbull",
+  "rabet",
+  "freighter",
+  "albedo",
+]
+`;
+
+exports[`wallet auth snapshot — MRU list > recordRecentWallet deduplicates: same wallet twice promotes it to end 1`] = `
+[
+  "albedo",
+  "freighter",
+]
+`;
+
+exports[`wallet auth snapshot — connectWallet error shapes > throws connection_failed error when extension method throws 1`] = `
+{
+  "message": "User closed prompt",
+  "type": "connection_failed",
+}
+`;
+
+exports[`wallet auth snapshot — connectWallet error shapes > throws not_found error when extension is missing 1`] = `
+{
+  "message": "Freighter wallet not found. Please install the extension.",
+  "type": "not_found",
+}
+`;
+
+exports[`wallet auth snapshot — connectWallet error shapes > throws wrong_network error when freighter reports unsupported network 1`] = `
+{
+  "message": "Please switch to Stellar network in your wallet.",
+  "type": "wrong_network",
+}
+`;
+
+exports[`wallet auth snapshot — connectWallet success shapes > returns WalletInfo for albedo on successful connect 1`] = `
+{
+  "network": "PUBLIC",
+  "publicKey": "GWALLETSNAP0ALBEDO00000000000000000000000000000000000002",
+  "type": "albedo",
+}
+`;
+
+exports[`wallet auth snapshot — connectWallet success shapes > returns WalletInfo for freighter on successful connect 1`] = `
+{
+  "network": "PUBLIC",
+  "publicKey": "GWALLETSNAP0FREIGHTER0000000000000000000000000000000001",
+  "type": "freighter",
+}
+`;
+
+exports[`wallet auth snapshot — connectWallet success shapes > returns WalletInfo for rabet on successful connect 1`] = `
+{
+  "network": "PUBLIC",
+  "publicKey": "GRABET0000000000000000000000000000000000000000000000004",
+  "type": "rabet",
+}
+`;
+
+exports[`wallet auth snapshot — connectWallet success shapes > returns WalletInfo for xbull on successful connect 1`] = `
+{
+  "network": "PUBLIC",
+  "publicKey": "GXBULL0000000000000000000000000000000000000000000000003",
+  "type": "xbull",
+}
+`;
+
+exports[`wallet auth snapshot — disconnectWallet cleanup > disconnectWallet clears all wallet keys but preserves unrelated keys 1`] = `
+{
+  "remembered": false,
+  "storedWallet": null,
+  "unrelated": "preserved",
+}
+`;
+
+exports[`wallet auth snapshot — disconnectWallet cleanup > disconnectWallet clears the remember flag 1`] = `false`;
+
+exports[`wallet auth snapshot — disconnectWallet cleanup > disconnectWallet is safe to call multiple times 1`] = `
+{
+  "remembered": false,
+  "storedWallet": null,
+}
+`;
+
+exports[`wallet auth snapshot — edge cases > getRecentWalletOrder returns empty array when stored value is not an array 1`] = `[]`;
+
+exports[`wallet auth snapshot — edge cases > isWalletRemembered returns false when stored value is malformed 1`] = `false`;
+
+exports[`wallet auth snapshot — edge cases > recordRecentWallet with unsupported type is a no-op 1`] = `
+[
+  "freighter",
+]
+`;
+
+exports[`wallet auth snapshot — edge cases > saveWalletPreference with null publicKey is stored as-is (no validation) 1`] = `
+{
+  "network": "PUBLIC",
+  "publicKey": "",
+  "type": "freighter",
+}
+`;
+
+exports[`wallet auth snapshot — isWalletInstalled > returns false for all wallets when no extensions are installed 1`] = `
+{
+  "albedo": false,
+  "freighter": false,
+  "rabet": false,
+  "xbull": false,
+}
+`;
+
+exports[`wallet auth snapshot — isWalletInstalled > returns true for multiple wallets when multiple extensions are present 1`] = `
+{
+  "albedo": true,
+  "freighter": true,
+  "rabet": false,
+  "xbull": true,
+}
+`;
+
+exports[`wallet auth snapshot — isWalletInstalled > returns true only for albedo when window.albedo is present 1`] = `
+{
+  "albedo": true,
+  "freighter": false,
+  "rabet": false,
+  "xbull": false,
+}
+`;
+
+exports[`wallet auth snapshot — isWalletInstalled > returns true only for freighter when window.freighter is present 1`] = `
+{
+  "albedo": false,
+  "freighter": true,
+  "rabet": false,
+  "xbull": false,
+}
+`;
+
+exports[`wallet auth snapshot — persist and retrieve wallet info > getStoredWallet prefers the current key over the legacy key 1`] = `
+{
+  "network": "PUBLIC",
+  "publicKey": "GWALLETSNAP0FREIGHTER0000000000000000000000000000000001",
+  "type": "freighter",
+}
+`;
+
+exports[`wallet auth snapshot — persist and retrieve wallet info > getStoredWallet reads from legacy key when current key is missing 1`] = `
+{
+  "network": "PUBLIC",
+  "publicKey": "GWALLETSNAP0ALBEDO00000000000000000000000000000000000002",
+  "type": "albedo",
+}
+`;
+
+exports[`wallet auth snapshot — persist and retrieve wallet info > getStoredWallet returns null when no wallet is stored 1`] = `null`;
+
+exports[`wallet auth snapshot — persist and retrieve wallet info > getStoredWallet returns the stored wallet after saveWalletPreference 1`] = `
+{
+  "network": "PUBLIC",
+  "publicKey": "GWALLETSNAP0FREIGHTER0000000000000000000000000000000001",
+  "type": "freighter",
+}
+`;
+
+exports[`wallet auth snapshot — remember flag > isWalletRemembered returns false after setWalletRemembered(false) 1`] = `false`;
+
+exports[`wallet auth snapshot — remember flag > isWalletRemembered returns false when no flag is stored 1`] = `false`;
+
+exports[`wallet auth snapshot — remember flag > isWalletRemembered returns true after setWalletRemembered(true) 1`] = `true`;
+
+exports[`wallet auth snapshot — remember flag > setWalletRemembered(false) removes the key from localStorage 1`] = `false`;
