@@ -217,14 +217,14 @@ describe('RepaymentVisualizer — responsive breakpoints', () => {
   it('section wrapper has responsive padding classes', () => {
     render(<RepaymentVisualizer {...BASE} />);
     const section = screen.getByRole('region', { name: 'Repayment plan visualizer' });
-    expect(section).toHaveClass('p-4', 'sm:p-5', 'md:p-6');
+    expect(section).toHaveClass('p-4', 'sm:p-5', 'md:p-6', 'lg:p-8');
   });
 
   it('header uses responsive flex layout', () => {
     render(<RepaymentVisualizer {...BASE} />);
     const heading = screen.getByText('Repayment Plan');
     const header = heading.parentElement;
-    expect(header).toHaveClass('flex', 'flex-col', 'sm:flex-row', 'sm:justify-between');
+    expect(header).toHaveClass('flex', 'flex-col', 'sm:flex-row', 'sm:justify-between', 'mb-4', 'sm:mb-6', 'lg:mb-8', 'gap-1', 'sm:gap-4', 'lg:gap-6');
   });
 
   it('legend uses responsive flex layout', () => {
@@ -232,7 +232,15 @@ describe('RepaymentVisualizer — responsive breakpoints', () => {
     // Find legend container via text
     const legendItem = screen.getAllByText(/Principal remaining/i)[0];
     const legendWrapper = legendItem.parentElement;
-    expect(legendWrapper).toHaveClass('flex', 'flex-wrap', 'gap-3', 'sm:gap-4');
+    expect(legendWrapper).toHaveClass('flex', 'flex-wrap', 'gap-3', 'sm:gap-4', 'lg:gap-6', 'mt-3', 'sm:mt-4', 'lg:mt-6', 'text-xs', 'lg:text-sm');
+  });
+
+  it('tooltip uses responsive padding and min-width', () => {
+    render(<RepaymentVisualizer {...BASE} />);
+    const svg = screen.getByRole('img');
+    fireEvent.mouseMove(svg, { clientX: 100, clientY: 100 });
+    const tooltip = screen.getByRole('status');
+    expect(tooltip).toHaveClass('p-2', 'sm:p-3', 'lg:p-4', 'min-w-[140px]', 'sm:min-w-[160px]', 'lg:min-w-[200px]', 'text-xs', 'lg:text-sm');
   });
 
   it('visible table wrapper has responsive negative margin for bleed', () => {

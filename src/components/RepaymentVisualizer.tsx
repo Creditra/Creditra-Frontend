@@ -284,7 +284,7 @@ function TooltipBubble({ data }: { data: TooltipData }) {
     <div
       role="status"
       aria-live="polite"
-      className="p-2 sm:p-3 text-xs min-w-[140px] sm:min-w-[160px]"
+      className="p-2 sm:p-3 lg:p-4 text-xs lg:text-sm min-w-[140px] sm:min-w-[160px] lg:min-w-[200px]"
       style={{
         background: 'var(--surface-raised, #1c2230)',
         border: `1px solid var(--border, ${COLOR.border})`,
@@ -370,7 +370,7 @@ function SRTable({ schedule, caption }: SRTableProps) {
 function Legend() {
   return (
     <div
-      className="flex flex-wrap gap-3 sm:gap-4 mt-3 sm:mt-4 text-xs"
+      className="flex flex-wrap gap-3 sm:gap-4 lg:gap-6 mt-3 sm:mt-4 lg:mt-6 text-xs lg:text-sm"
       style={{ color: `var(--muted, ${COLOR.muted})` }}
       aria-hidden="true"
     >
@@ -559,14 +559,14 @@ export function RepaymentVisualizer({
   return (
     <section
       aria-label="Repayment plan visualizer"
-      className="p-4 sm:p-5 md:p-6"
+      className="p-4 sm:p-5 md:p-6 lg:p-8"
       style={{
         background: `var(--surface, ${COLOR.surface})`,
         border: `1px solid var(--border, ${COLOR.border})`,
         borderRadius: 10,
       }}
     >
-      <header className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1 sm:gap-4">
+      <header className="mb-4 sm:mb-6 lg:mb-8 flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1 sm:gap-4 lg:gap-6">
         <h2
           style={{
             fontSize: '1rem',
