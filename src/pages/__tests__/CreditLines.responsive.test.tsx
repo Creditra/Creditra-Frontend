@@ -1,14 +1,25 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 import CreditLines from '../CreditLines';
 
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 function renderPage() {
-  return render(
+  const result = render(
     <BrowserRouter>
       <CreditLines />
     </BrowserRouter>,
   );
+  // Advance past the 600 ms isLoading skeleton so tests see real content
+  act(() => { vi.advanceTimersByTime(700); });
+  return result;
 }
 
 /**

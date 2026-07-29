@@ -405,7 +405,7 @@ export function RepaymentSchedule({
           {title}
         </h2>
         <span
-          className="rs-schedule__total-count"
+          className="rs-schedule__total-count tabular-nums"
           aria-label={`${stats.totalCount} scheduled ${
             stats.totalCount === 1 ? 'installment' : 'installments'
           }`}
@@ -418,24 +418,25 @@ export function RepaymentSchedule({
       <div className="rs-schedule__summary" role="status" aria-live="polite">
         <div className="rs-schedule__summary-item">
           <span className="rs-schedule__summary-label">Paid to date</span>
-          <span className="rs-schedule__summary-value rs-schedule__summary-value--paid">
+          {/* tabular-nums: prevent digit-width wobble as totals change (issue #573) */}
+          <span className="rs-schedule__summary-value rs-schedule__summary-value--paid tabular-nums">
             {fmt(stats.paidTotal)}
           </span>
         </div>
         <div className="rs-schedule__summary-item">
           <span className="rs-schedule__summary-label">Remaining</span>
-          <span className="rs-schedule__summary-value">{fmt(stats.remainingTotal)}</span>
+          <span className="rs-schedule__summary-value tabular-nums">{fmt(stats.remainingTotal)}</span>
         </div>
         <div className="rs-schedule__summary-item">
           <span className="rs-schedule__summary-label">Upcoming</span>
-          <span className="rs-schedule__summary-value">
+          <span className="rs-schedule__summary-value tabular-nums">
             {stats.upcomingCount}
           </span>
         </div>
         <div className="rs-schedule__summary-item">
           <span className="rs-schedule__summary-label">Overdue</span>
           <span
-            className={`rs-schedule__summary-value${
+            className={`rs-schedule__summary-value tabular-nums${
               stats.overdueCount > 0 ? ' rs-schedule__summary-value--alert' : ''
             }`}
           >
@@ -511,7 +512,8 @@ export function RepaymentSchedule({
                   </span>
                 </div>
                 <div className="rs-schedule__row-mid">
-                  <span className="rs-schedule__line-name">
+                  {/* aria-hidden: line name is already in the parent li's aria-label */}
+                  <span className="rs-schedule__line-name" aria-hidden="true">
                     {entry.lineName ?? '—'}
                   </span>
                   {entry.note && (
@@ -519,8 +521,9 @@ export function RepaymentSchedule({
                   )}
                 </div>
                 <div className="rs-schedule__row-bot">
+                  {/* tabular-nums: keeps amounts column-stable as values vary (issue #573) */}
                   <span
-                    className="rs-schedule__amount"
+                    className="rs-schedule__amount tabular-nums"
                     aria-label={`Total ${fmt(entry.amount)}`}
                   >
                     {fmt(entry.amount)}
@@ -531,13 +534,13 @@ export function RepaymentSchedule({
                   >
                     <span className="rs-schedule__split-piece">
                       <span className="rs-schedule__split-label">Principal</span>
-                      <span className="rs-schedule__split-value">
+                      <span className="rs-schedule__split-value tabular-nums">
                         {fmt(entry.principal)}
                       </span>
                     </span>
                     <span className="rs-schedule__split-piece">
                       <span className="rs-schedule__split-label">Interest</span>
-                      <span className="rs-schedule__split-value">
+                      <span className="rs-schedule__split-value tabular-nums">
                         {fmt(entry.interest)}
                       </span>
                     </span>

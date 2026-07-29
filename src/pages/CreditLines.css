@@ -717,6 +717,7 @@
 
 @media (prefers-reduced-motion: reduce) {
     .cl-card {
+        animation: none;
         transition: none;
     }
 
@@ -729,9 +730,62 @@
         transition: none;
     }
 
+    .cl-filter-group select {
+        transition: none;
+    }
+
+    .cl-sort-dir {
+        transition: none;
+    }
+
+    .cl-primary-btn {
+        transition: none;
+    }
+
+    .cl-action-btn {
+        transition: none;
+    }
+
     .cl-empty {
         animation: none;
     }
+}
+
+/*
+ * ─── In-app reduced-motion override ─────────────────────────────────────────
+ *
+ * Mirrors the @media (prefers-reduced-motion: reduce) block above.
+ * The [data-motion="reduced"] attribute is set on the page root by
+ * ReducedMotionContext when the user toggles the in-app preference,
+ * regardless of the OS-level setting. Uses !important so this always
+ * beats future base-style additions.
+ *
+ * WCAG 2.4.11: These rules intentionally do NOT strip the focus indicator
+ * on .cl-card because .cl-card:focus-visible owns the keyboard focus ring.
+ */
+[data-motion="reduced"] .cl-card {
+    animation: none !important;
+    transition: none !important;
+}
+
+[data-motion="reduced"] .cl-card:hover {
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+[data-motion="reduced"] .cl-util-fill {
+    transition: none !important;
+}
+
+[data-motion="reduced"] .cl-filter-group select,
+[data-motion="reduced"] .cl-sort-dir,
+[data-motion="reduced"] .cl-primary-btn,
+[data-motion="reduced"] .cl-action-btn {
+    transition: none !important;
+}
+
+[data-motion="reduced"] .cl-empty {
+    animation: none !important;
 }
 
 @media (forced-colors: active) {

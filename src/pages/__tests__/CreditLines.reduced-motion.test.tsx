@@ -92,13 +92,18 @@ function stubMatchMediaWithListener(initialMatches: boolean) {
 }
 
 function renderPage() {
-  return render(
+  vi.useFakeTimers();
+  const result = render(
     <ReducedMotionProvider>
       <MemoryRouter>
         <CreditLines />
       </MemoryRouter>
     </ReducedMotionProvider>,
   );
+  // Advance past the 600 ms isLoading skeleton so tests see real content
+  act(() => { vi.advanceTimersByTime(700); });
+  vi.useRealTimers();
+  return result;
 }
 
 /**
