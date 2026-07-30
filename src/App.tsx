@@ -37,7 +37,7 @@ import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatc
 import { Header } from "./layouts/Header";
 import CreditLineCompare from "./pages/CreditLineCompare";
 import { TermsBanner } from "./components/TermsBanner";
-import CollateralSwap from "./pages/CollateralSwap";
+import { ToastContainer } from "./components/ToastContainer";
 
 const isEditableTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) return false;
@@ -280,6 +280,19 @@ function App() {
                         read useLocation().  Renders a sr-only polite status
                         region for screen-reader route announcements. */}
                     <RouteAnnouncer />
+
+                    {/*
+                     * Centralized accessible toast queue.
+                     * Fixed-position overlay at top-right of viewport.
+                     * Renders inside NotificationProvider so it can consume
+                     * useNotifications(). Does NOT need routing context, so it
+                     * lives here rather than inside <Routes>.
+                     *
+                     * WCAG: role="status" + aria-live="polite" on the outer
+                     * container, individual items use role="status" or
+                     * role="alert" per severity (SC 4.1.3 Status Messages).
+                     */}
+                    <ToastContainer />
                   </div>
                   </RouteHeadProvider>
                 </BrowserRouter>
