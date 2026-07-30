@@ -2,26 +2,29 @@
 
 .breadcrumb {
   width: 100%;
+  overflow: hidden;
 }
 
 .breadcrumb__list {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0;
   list-style: none;
   margin: 0;
   padding: 0;
   font-size: var(--text-sm, 0.875rem);
+  min-width: 0;
 }
 
 .breadcrumb__item {
   display: inline-flex;
   align-items: center;
   min-width: 0;
+  overflow: hidden;
 }
 
-.breadcrumb__separator {
+.breadcrumb__sep {
   margin: 0 var(--space-2, 0.5rem);
   color: var(--muted, #8b949e);
   user-select: none;
@@ -51,7 +54,7 @@
   outline-offset: 2px;
 }
 
-.breadcrumb__text {
+.breadcrumb__label {
   color: var(--muted, #8b949e);
   max-width: 260px;
   overflow: hidden;
@@ -60,7 +63,7 @@
   padding: var(--space-1, 0.25rem) var(--space-2, 0.5rem);
 }
 
-.breadcrumb__text--current {
+.breadcrumb__label--current {
   color: var(--text, #e6edf3);
   font-weight: 600;
 }
@@ -69,7 +72,7 @@
 
 @media (max-width: 480px) {
   .breadcrumb__link,
-  .breadcrumb__text {
+  .breadcrumb__label {
     max-width: 140px;
   }
 }

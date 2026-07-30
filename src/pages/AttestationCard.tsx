@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import { Breadcrumb } from '../components/Breadcrumb';
+import './AttestationCard.css';
 
 export interface AttestationCardProps {
   /** The attestation title displayed in the card header. */
