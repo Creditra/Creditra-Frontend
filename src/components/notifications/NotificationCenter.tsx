@@ -309,7 +309,7 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
           <div className="nc-header-left">
             <span className="nc-title">Notifications</span>
             {unreadCount > 0 && (
-              <span className="nc-badge" aria-label={`${unreadCount} unread`}>
+              <span className="nc-badge tabular-nums" aria-label={`${unreadCount} unread`}>
                 {unreadCount}
               </span>
             )}
@@ -420,7 +420,7 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
                     <div className="nc-item-header">
                       <span className="nc-item-title">{n.title}</span>
                       <time
-                        className="nc-item-time"
+                        className="nc-item-time tabular-nums"
                         dateTime={n.timestamp}
                         aria-label={`Received ${relativeTime(n.timestamp)}`}
                       >

@@ -369,6 +369,22 @@ describe('NotificationCenter', () => {
     expect(area.querySelector('.nc-drag-handle')).not.toBeNull();
   });
 
+  // ── Tabular numerals ──────────────────────────────────────────────────
+
+  it('badge applies tabular-nums class for aligned digits', () => {
+    renderCenter({ open: true, notifications: [makeNotif()] });
+    const badge = document.querySelector('.nc-badge');
+    expect(badge).not.toBeNull();
+    expect(badge).toHaveClass('tabular-nums');
+  });
+
+  it('notification timestamp applies tabular-nums class for aligned digits', () => {
+    renderCenter({ open: true, notifications: [makeNotif({ title: 'With time' })] });
+    const time = document.querySelector('.nc-item-time');
+    expect(time).not.toBeNull();
+    expect(time).toHaveClass('tabular-nums');
+  });
+
 });
 
 // ─── Tests: NotificationBell ─────────────────────────────────────────────────

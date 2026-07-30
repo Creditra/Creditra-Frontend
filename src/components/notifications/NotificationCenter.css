@@ -116,6 +116,7 @@
   color: var(--bg, #0d1117);
   font-size: 0.7rem;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
   padding: 0.1rem 0.4rem;
   border-radius: 10px;
   min-width: 18px;
@@ -357,6 +358,7 @@
 
 .nc-item-time {
   font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
   color: var(--muted, #8b949e);
   flex-shrink: 0;
 }
