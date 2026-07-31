@@ -54,8 +54,8 @@ export function LandingHero({
       </div>
 
       <div className="landing-hero__content">
-        <h1 className="landing-hero__title">{title}</h1>
-        <p className="landing-hero__subtitle">{subtitle}</p>
+        <h1 className="landing-hero__title tabular-nums">{title}</h1>
+        <p className="landing-hero__subtitle tabular-nums">{subtitle}</p>
         {(cta || secondaryCta) && (
           <div className="landing-hero__actions">
             {cta && <div className="landing-hero__cta">{cta}</div>}
