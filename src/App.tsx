@@ -17,6 +17,7 @@ import { KycDrawer, KycTriggerButton } from "./components/KycDrawer";
 import { NetworkMismatchBanner } from "./components/NetworkMismatchBanner";
 import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
 import DrawCreditPage from "./pages/DrawCreditPage";
+import CollateralSwap from "./pages/CollateralSwap";
 import CreditLines from "./pages/CreditLines";
 import { TransactionHistory } from "./pages/TransactionHistory";
 import { RequestEvaluation } from "./pages/RequestEvaluation";

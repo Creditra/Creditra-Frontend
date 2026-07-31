@@ -184,6 +184,7 @@ public `LandingPage` exist as components, ready to be wired into the route tree.
 | [`docs/UX_RATIONALE.md`](docs/UX_RATIONALE.md) | Why each major flow looks the way it does — alternatives considered |
 | [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) | LCP/INP/CLS budgets, code-splitting, bundle budgets per route |
 | [`docs/TESTING.md`](docs/TESTING.md) | Test pyramid, coverage status, how to run each tier |
+| [`docs/TOAST_QUEUE.md`](docs/TOAST_QUEUE.md) | Centralized accessible toast queue: API, ARIA semantics, visible behaviour |
 | [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Conventional commits, branch model, review checklist |
 | [`Design System/`](Design%20System/) | Figma source-of-truth references for tokens, components, alerts, interaction |
 

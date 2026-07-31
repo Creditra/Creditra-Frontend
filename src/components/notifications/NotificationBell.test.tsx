@@ -83,7 +83,7 @@ describe('NotificationBell', () => {
 
   // 3
   it('applies bell-pulse class when a new high-priority notification arrives', () => {
-    const { rerender } = renderBell([high('hp-1')]);
+    renderBell([high('hp-1')]);
     const btn = screen.getByRole('button');
     expect(btn).toHaveClass('bell-pulse');
   });
@@ -100,6 +100,39 @@ describe('NotificationBell', () => {
     const btn = screen.getByRole('button');
     expect(btn).toHaveClass('bell-pulse');
 
+    await act(async () => vi.advanceTimersByTime(700));
+    expect(btn).not.toHaveClass('bell-pulse');
+  });
+
+  // 5b — regression: a notifications mutation mid-animation (e.g. markAsRead
+  // or another arrival) must NOT cancel the in-flight pulse timer, or
+  // `.bell-pulse` would stick on forever.
+  it('clears the pulse even when notifications change mid-animation (sticky-pulse regression)', async () => {
+    let addToast!: ReturnType<typeof useNotifications>['addToast'];
+    function Harness() {
+      addToast = useNotifications().addToast;
+      return <NotificationBell />;
+    }
+    render(
+      <NotificationProvider>
+        <Seeder notifications={[high('hp-1')]} />
+        <Harness />
+      </NotificationProvider>,
+    );
+    const btn = screen.getByRole('button');
+    expect(btn).toHaveClass('bell-pulse');
+
+    // Trigger a `notifications` array change while the pulse is active.
+    act(() => {
+      addToast({
+        type: 'info',
+        title: 'Info',
+        message: 'Another arrival.',
+        saveToHistory: true,
+      });
+    });
+
+    // The original 650 ms timer must still fire and clear the pulse.
     await act(async () => vi.advanceTimersByTime(700));
     expect(btn).not.toHaveClass('bell-pulse');
   });
