@@ -51,7 +51,7 @@ import { NotificationWidget } from './components/notifications/NotificationWidge
 
 ### `NotificationBell`
 
-`React.forwardRef<HTMLButtonElement>` — no props. Forwards its ref to the parent for the `triggerRef` handshake.
+`React.forwardRef<HTMLButtonElement, { label?: string }>` — forwards its ref to the parent for the `triggerRef` handshake. Optional `label` prop overrides the accessible name (default `"Notifications"`); when unread it becomes `"{label} — N unread"`. Plays a one-shot `.bell-pulse` ring when a new danger/error notification arrives (disabled under `prefers-reduced-motion: reduce`).
 
 ### `NotificationCenter`
 
@@ -134,7 +134,7 @@ npx vitest run src/components/__tests__/NotificationCenter.test.tsx
 | Suite | Tests |
 |---|---|
 | NotificationCenter | 27 |
-| NotificationBell | 7 |
+| NotificationBell | 9 |
 | NotificationWidget | 3 |
 
 **NotificationCenter** — panel visibility (open/closed aria-hidden), ARIA attrs, dismiss via ×/backdrop/Escape, "Mark all read" enabled/disabled state, "Clear all" presence, mark-all-read mutation, clear-all mutation, prefs panel show/hide, prefs aria-expanded, 6 filter tabs, default tab selection, tab click selection, empty state, article rendering, aria-label, unread dot, click-to-mark-read, action button callback, drag handle DOM presence.

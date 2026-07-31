@@ -217,7 +217,9 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     if (!isPanelOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.shiftKey && e.key === 'r' && unreadCount > 0) {
+      // Shift+R produces e.key === 'R' (uppercase) — normalise so the
+      // shortcut works regardless of caps-lock / shift-modifier casing.
+      if (e.shiftKey && e.key.toLowerCase() === 'r' && unreadCount > 0) {
         e.preventDefault();
         handleMarkAllAsRead();
       }
