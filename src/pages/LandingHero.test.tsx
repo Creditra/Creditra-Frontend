@@ -49,4 +49,12 @@ describe('LandingHero', () => {
     );
     expect(container.querySelector('header')).toBeInTheDocument();
   });
+
+  it('applies tabular-nums to title and subtitle for numeric alignment', () => {
+    render(<LandingHero title="$1,234.56" subtitle="0% APR — 5.0% fee" />);
+    const title = screen.getByRole('heading', { level: 1 });
+    const subtitle = document.querySelector('.landing-hero__subtitle');
+    expect(title.className).toMatch(/tabular-nums/);
+    expect(subtitle?.className).toMatch(/tabular-nums/);
+  });
 });
