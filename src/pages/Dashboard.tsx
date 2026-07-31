@@ -303,7 +303,7 @@ export function Dashboard() {
       <>
         <LiveRegion 
           message={announcement} 
-          aria-live={status === 'error' ? 'assertive' : 'polite'} 
+          politeness={status === 'error' ? 'assertive' : 'polite'} 
         />
         <div className="dashboard-header">
           <div>
@@ -365,7 +365,7 @@ export function Dashboard() {
     >
       <LiveRegion 
         message={announcement} 
-        aria-live={status === 'error' ? 'assertive' : 'polite'} 
+        politeness={status === 'error' ? 'assertive' : 'polite'} 
       />
 
       <div className="dashboard-header">
