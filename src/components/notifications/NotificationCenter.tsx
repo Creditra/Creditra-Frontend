@@ -133,21 +133,6 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     };
   }, []);
 
-  // Keyboard shortcut: Shift+R to mark all as read when panel is open
-  useEffect(() => {
-    if (!isPanelOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.shiftKey && e.key === 'r' && unreadCount > 0) {
-        e.preventDefault();
-        handleMarkAllAsRead();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isPanelOpen, unreadCount, handleMarkAllAsRead]);
-
   const filtered = filterByCategory(activeFilter);
   const dragStartY = useRef<number | null>(null);
   const panelElRef = useRef<HTMLDivElement | null>(null);
@@ -222,6 +207,25 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     markAllAsRead();
     announce(count);
   }, [notifications, unreadCount, addToast, dismissToast, undoRead, markAllAsRead, announce]);
+
+  // Keyboard shortcut: Shift+R to mark all as read when panel is open.
+  // Declared after handleMarkAllAsRead so the dependency array below can
+  // reference it without hitting the temporal-dead-zone ReferenceError
+  // (the callback is a const useCallback, so it must be initialized before
+  // this effect's deps are evaluated during render).
+  useEffect(() => {
+    if (!isPanelOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.shiftKey && e.key === 'r' && unreadCount > 0) {
+        e.preventDefault();
+        handleMarkAllAsRead();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isPanelOpen, unreadCount, handleMarkAllAsRead]);
 
   const handleClearAll = useCallback(() => {
     const prior = [...notifications];

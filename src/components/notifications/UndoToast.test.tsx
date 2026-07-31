@@ -48,7 +48,7 @@ function renderWithUndo() {
     <NotificationProvider>
       <ToastContainer />
       <div>
-        <button type="button" aria-label="Open panel">Dummy opener</button>
+        <OpenPanelHarness />
         <NotificationCenter />
       </div>
     </NotificationProvider>,
