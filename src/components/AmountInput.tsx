@@ -19,7 +19,7 @@ import { Skeleton } from "./Skeleton";
 const STEP_AMOUNT = 100;
 
 const stepClasses =
-  "flex items-center justify-center min-w-[44px] min-h-[44px] w-11 h-11 rounded-lg border border-border bg-background/60 text-foreground hover:bg-surface hover:border-accent/50 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-40 disabled:cursor-not-allowed shrink-0";
+  "flex items-center justify-center min-w-[44px] min-h-[44px] w-10 h-10 xs:w-11 xs:h-11 rounded-lg border border-border bg-background/60 text-foreground hover:bg-surface hover:border-accent/50 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-40 disabled:cursor-not-allowed shrink-0";
 
 const STEP_ICON_CLASS = "h-4 w-4 stroke-[2.5]";
 
@@ -86,7 +86,7 @@ export function AmountInputSkeleton() {
       {/* Quick amount presets skeleton */}
       <div>
         <Skeleton width="100px" height="1.25rem" className="rounded-md mb-3" />
-        <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+        <div className="grid grid-cols-2 xs:grid-cols-4 gap-1.5 sm:gap-2">
           {[25, 50, 75, 100].map((percent) => (
             <Skeleton key={percent} height="44px" className="rounded-lg min-h-[44px]" />
           ))}
@@ -110,9 +110,9 @@ export function AmountInputSkeleton() {
       </div>
 
       {/* Action buttons skeleton */}
-      <div className="flex flex-col-reverse sm:flex-row gap-2.5 sm:gap-3 pt-4">
-        <Skeleton height="44px" className="w-full sm:flex-1 rounded-lg min-h-[44px]" />
-        <Skeleton height="44px" className="w-full sm:flex-1 rounded-lg min-h-[44px]" />
+      <div className="flex flex-col xs:flex-row gap-2.5 sm:gap-3 pt-4">
+        <Skeleton height="44px" className="w-full xs:flex-1 rounded-lg min-h-[44px]" />
+        <Skeleton height="44px" className="w-full xs:flex-1 rounded-lg min-h-[44px]" />
       </div>
     </div>
   );
@@ -286,7 +286,7 @@ export function AmountInput({
 
         {/* Input field container polished for narrow (<=375px) mobile viewports */}
         <div
-          className={`flex flex-wrap sm:flex-nowrap items-center gap-1.5 sm:gap-3 bg-surface p-2.5 sm:p-4 rounded-xl border-2 overflow-hidden transition-colors ${inputStateClassName}`}
+          className={`flex flex-wrap xs:flex-nowrap items-center gap-1.5 sm:gap-3 bg-surface p-2.5 sm:p-4 rounded-xl border-2 overflow-hidden transition-colors ${inputStateClassName}`}
         >
           <div className="flex items-center gap-1 sm:gap-2 flex-1 min-w-[120px] max-w-full">
             <button
@@ -401,7 +401,7 @@ export function AmountInput({
         <p className="text-xs sm:text-sm font-semibold text-foreground mb-2 sm:mb-3 leading-[var(--lh-body)]">
           Quick amount
         </p>
-        <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+        <div className="grid grid-cols-2 xs:grid-cols-4 gap-1.5 sm:gap-2">
           {[25, 50, 75, 100].map((percent) => (
             <button
               key={percent}
@@ -445,10 +445,10 @@ export function AmountInput({
       </div>
 
       {/* Action buttons stacked vertically on <=375px mobile, horizontal on sm+ */}
-      <div className="flex flex-col-reverse sm:flex-row gap-2.5 sm:gap-3 pt-3 sm:pt-4">
+      <div className="flex flex-col xs:flex-row gap-2.5 sm:gap-3 pt-3 sm:pt-4">
         <button
           onClick={onBack}
-          className="w-full sm:flex-1 py-3 px-4 border-2 border-border text-foreground rounded-lg hover:bg-surface transition-colors font-semibold text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px] flex items-center justify-center"
+          className="w-full xs:w-auto py-3 px-4 border-2 border-border text-foreground rounded-lg hover:bg-surface transition-colors font-semibold text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px] flex items-center justify-center"
           type="button"
         >
           Back
@@ -456,7 +456,7 @@ export function AmountInput({
         <button
           onClick={() => onNext(numAmount)}
           disabled={!isValid}
-          className="w-full sm:flex-1 py-3 px-4 bg-accent text-background rounded-lg hover:bg-accent/90 transition-all font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px] flex items-center justify-center"
+          className="w-full xs:w-auto py-3 px-4 bg-accent text-background rounded-lg hover:bg-accent/90 transition-all font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px] flex items-center justify-center"
           type="button"
         >
           Continue
