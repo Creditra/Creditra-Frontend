@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { LiveRegion } from '../components/LiveRegion';
 
 export interface AmountConfirmProps {
   /** The monetary amount to confirm (USD). */
@@ -48,6 +49,7 @@ export function AmountConfirm({
 }: AmountConfirmProps) {
   const [typed, setTyped] = useState('');
   const [error, setError] = useState('');
+  const [srAnnouncement, setSrAnnouncement] = useState('');
   const formattedAmount = `$${amount.toLocaleString()}`;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -58,9 +60,11 @@ export function AmountConfirm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (typed.trim() === String(amount)) {
+      setSrAnnouncement(`Amount confirmed: ${formattedAmount}`);
       onConfirm();
     } else {
       setError(`Please type exactly "${amount}" to confirm.`);
+      setSrAnnouncement(`Amount does not match. Please type exactly ${amount} to confirm.`);
     }
   };
 
@@ -123,6 +127,7 @@ export function AmountConfirm({
           {confirmLabel}
         </button>
       </div>
+      <LiveRegion message={srAnnouncement} politeness="polite" />
     </form>
   );
 }

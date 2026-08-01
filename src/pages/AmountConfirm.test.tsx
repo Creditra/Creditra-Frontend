@@ -66,4 +66,34 @@ describe('AmountConfirm', () => {
     );
     expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
   });
+
+  // ─── LiveRegion tests ────────────────────────────────────────────────────
+
+  it('renders a LiveRegion with sr-only class for SR announcements', () => {
+    render(<AmountConfirm amount={5000} onConfirm={vi.fn()} />);
+    const liveRegion = document.querySelector('[role="status"]');
+    expect(liveRegion).toBeInTheDocument();
+    expect(liveRegion).toHaveClass('sr-only');
+    expect(liveRegion).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('announces confirmation message when amount matches', () => {
+    render(<AmountConfirm amount={5000} onConfirm={vi.fn()} />);
+    const input = screen.getByLabelText(/Type the amount to confirm/i);
+    fireEvent.change(input, { target: { value: '5000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    const liveRegion = document.querySelector('[role="status"]');
+    expect(liveRegion).toHaveTextContent('Amount confirmed: $5,000');
+  });
+
+  it('announces error message when amount does not match', () => {
+    render(<AmountConfirm amount={5000} onConfirm={vi.fn()} />);
+    const input = screen.getByLabelText(/Type the amount to confirm/i);
+    fireEvent.change(input, { target: { value: '4999' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    const liveRegion = document.querySelector('[role="status"]');
+    expect(liveRegion).toHaveTextContent(
+      /Amount does not match.*type exactly 5000/i,
+    );
+  });
 });
