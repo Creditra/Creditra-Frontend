@@ -54,10 +54,7 @@
   border-color: rgba(88, 166, 255, 0.5);
 }
 
-.apr-breakdown__toggle:focus-visible {
-  outline: 2px solid #58a6ff;
-  outline-offset: 2px;
-}
+
 
 .apr-breakdown__toggle:active {
   background-color: rgba(88, 166, 255, 0.25);
@@ -210,10 +207,7 @@
   color: #58a6ff;
 }
 
-.apr-breakdown__component-expand:focus-visible {
-  outline: 2px solid #58a6ff;
-  outline-offset: 1px;
-}
+
 
 .apr-breakdown__component-expand[aria-expanded="true"] {
   background-color: rgba(88, 166, 255, 0.12);
