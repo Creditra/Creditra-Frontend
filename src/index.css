@@ -6,6 +6,8 @@
 @import "./styles/patterns.css";
 @import "./components/FormField.css";
 @import "./styles/themes/high-contrast.css"; // High‑contrast overrides
+@import "./styles/print.css";        // Print media — hides chrome, expands collapsibles, formats for paper
+@import "./styles/print-settings.css"; // Print media — SettingsAccount-specific print styles
 :root,
 .theme-default {
   --bg: #0d1117;
