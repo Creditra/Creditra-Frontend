@@ -70,7 +70,7 @@ describe("AmountInput Narrow Mobile Viewport (<=375px) Layout", () => {
     const backBtn = screen.getByRole("button", { name: /back/i });
     const actionsContainer = backBtn.parentElement;
 
-    expect(actionsContainer?.className).toContain("flex-col-reverse");
-    expect(actionsContainer?.className).toContain("sm:flex-row");
+    expect(actionsContainer?.className).toContain("flex-col");
+    expect(actionsContainer?.className).toContain("xs:flex-row");
   });
 });
