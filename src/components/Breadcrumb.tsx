@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 export interface BreadcrumbItem {
   label: string;
   to?: string;
+  /** Optional href — alias for `to` for compatibility. */
+  href?: string;
 }
 
 export interface BreadcrumbProps {
@@ -10,8 +12,24 @@ export interface BreadcrumbProps {
   items: BreadcrumbItem[];
   /** Maximum visible items before middle-ellipsis kicks in. Default 4. */
   maxVisible?: number;
+  /** Maximum label length before middle-ellipsis truncation. Default 30. */
+  ellipsisThreshold?: number;
   /** Additional CSS class names. */
   className?: string;
+}
+
+/**
+ * Truncate a string with a middle ellipsis when it exceeds `maxLen`.
+ *
+ * Example: middleEllipsis('ABCDEFGHIJKLMNOP', 8) → 'ABCD…NOP'
+ */
+export function middleEllipsis(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+
+  // Reserve one character for the ellipsis
+  const headLen = Math.ceil((maxLen - 1) / 2);
+  const tailLen = Math.floor((maxLen - 1) / 2);
+  return text.slice(0, headLen) + '\u2026' + text.slice(-tailLen);
 }
 
 /**
@@ -20,6 +38,9 @@ export interface BreadcrumbProps {
  * When `items.length > maxVisible`, the middle items collapse into a single
  * "…" <li> that is `aria-hidden` but replaced by a screen-reader-only "… more"
  * label so assistive technology users understand there are hidden items.
+ *
+ * Individual labels longer than `ellipsisThreshold` are truncated with a
+ * middle-ellipsis and the full text is provided via `title`.
  *
  * WCAG 2.1 AA:
  * - Renders inside a `<nav>` with `aria-label="Breadcrumb"`.
@@ -30,6 +51,7 @@ export interface BreadcrumbProps {
 export function Breadcrumb({
   items,
   maxVisible = 4,
+  ellipsisThreshold = 30,
   className = '',
 }: BreadcrumbProps) {
   if (items.length === 0) return null;
@@ -61,21 +83,39 @@ export function Breadcrumb({
             );
           }
 
+          const displayLabel =
+            item.label.length > ellipsisThreshold
+              ? middleEllipsis(item.label, ellipsisThreshold)
+              : item.label;
+
+          const needsTitle = item.label.length > ellipsisThreshold;
+          const linkTarget = item.to || item.href;
+
           return (
             <li key={item.label} className="breadcrumb__item">
               {isLast ? (
                 <span
                   className="breadcrumb__label breadcrumb__label--current"
                   aria-current="page"
+                  title={needsTitle ? item.label : undefined}
                 >
-                  {item.label}
+                  {displayLabel}
                 </span>
-              ) : item.to ? (
-                <Link to={item.to} className="breadcrumb__link">
-                  {item.label}
+              ) : linkTarget ? (
+                <Link
+                  to={linkTarget}
+                  className="breadcrumb__link"
+                  title={needsTitle ? item.label : undefined}
+                >
+                  {displayLabel}
                 </Link>
               ) : (
-                <span className="breadcrumb__label">{item.label}</span>
+                <span
+                  className="breadcrumb__label"
+                  title={needsTitle ? item.label : undefined}
+                >
+                  {displayLabel}
+                </span>
               )}
               {!isLast && (
                 <span className="breadcrumb__sep" aria-hidden="true">
