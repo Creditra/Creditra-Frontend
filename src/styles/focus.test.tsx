@@ -316,6 +316,36 @@ describe('OnboardingFlow — focus-visible rules (FWC26)', () => {
   });
 });
 
+describe('AprBreakdown — focus-visible rules (FWC26 / issue #835)', () => {
+  const cssPath = resolve(__dirname, '../styles/focus.css');
+  const css = readFileSync(cssPath, 'utf-8');
+
+  it('defines AprBreakdown-scoped toggle button focus rule', () => {
+    expect(css).toContain('.apr-breakdown__toggle:focus-visible');
+  });
+
+  it('defines AprBreakdown-scoped component expand button focus rule', () => {
+    expect(css).toContain('.apr-breakdown__component-expand:focus-visible');
+  });
+
+  it('uses shared focus-ring tokens in AprBreakdown rules', () => {
+    const abBlockStart = css.indexOf('AprBreakdown interactive elements');
+    expect(abBlockStart).toBeGreaterThan(-1);
+    const abBlock = css.slice(abBlockStart);
+    expect(abBlock).toContain('--focus-ring-width');
+    expect(abBlock).toContain('--focus-ring-color');
+    expect(abBlock).toContain('--focus-ring-offset');
+    expect(abBlock).toContain('!important');
+  });
+
+  it('defines toggle button border-radius', () => {
+    const abBlockStart = css.indexOf('AprBreakdown interactive elements');
+    expect(abBlockStart).toBeGreaterThan(-1);
+    const abBlock = css.slice(abBlockStart);
+    expect(abBlock).toContain('border-radius: var(--radius-md, 6px)');
+  });
+});
+
 describe('RepayPage — focus-visible rules (FWC26 / issue #512)', () => {
   const cssPath = resolve(__dirname, '../styles/focus.css');
   const css = readFileSync(cssPath, 'utf-8');

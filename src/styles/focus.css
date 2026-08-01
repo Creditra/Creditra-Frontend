@@ -341,6 +341,39 @@
   border-radius: var(--radius-sm, 4px);
 }
 
+/* ── AprBreakdown interactive elements ───────────────────────────────────── */
+/*
+  GrantFox FWC26 (Stellar Wave) — "Visible focus outline on keyboard-only
+  nav for AprBreakdown" requirement (issue #835).
+
+  Every interactive element inside the AprBreakdown component that is
+  reachable via Tab must show a visible focus ring on keyboard navigation
+  (:focus-visible).
+
+  Covered here:
+    .apr-breakdown__toggle              — "Explain APR" toggle button
+    .apr-breakdown__component-expand    — Per-component expand/collapse button
+
+  All rules use :focus-visible so mouse/touch interactions are unaffected.
+  All colours reference design tokens so they respond to [data-contrast="high"].
+*/
+
+.apr-breakdown__toggle:focus-visible,
+.apr-breakdown__component-expand:focus-visible {
+  outline: var(--focus-ring-width, 2px) solid
+    var(--focus-ring-color, var(--accent, #58a6ff)) !important;
+  outline-offset: var(--focus-ring-offset, 3px) !important;
+  box-shadow: none !important;
+}
+
+.apr-breakdown__toggle:focus-visible {
+  border-radius: var(--radius-md, 6px);
+}
+
+.apr-breakdown__component-expand:focus-visible {
+  border-radius: var(--radius-sm, 4px);
+}
+
 /* ── RepayPage interactive elements ──────────────────────────────────────── */
 /*
   GrantFox FWC26 (Stellar Wave) — "Visible focus outline on keyboard-only
