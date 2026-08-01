@@ -44,9 +44,18 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error("Uncaught error:", error, errorInfo);
   }
 
+  /**
+   * Resets the error state so the boundary re-renders its children.
+   * Useful for "Try Again" / retry actions that should attempt to
+   * recover without a full page reload.
+   */
+  public resetError = (): void => {
+    this.setState({ hasError: false, error: undefined });
+  };
+
   public render() {
     if (this.state.hasError) {
-      return <ErrorPage error={this.state.error} />;
+      return <ErrorPage error={this.state.error} onRetry={this.resetError} />;
     }
 
     return this.props.children;
@@ -55,9 +64,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
 interface ErrorPageProps {
   error?: Error;
+  /** Called when the user clicks "Try Again" — resets the error boundary
+   *  so the component subtree re-renders without a full page reload. */
+  onRetry?: () => void;
 }
 
-function ErrorPage({ error }: ErrorPageProps) {
+function ErrorPage({ error, onRetry }: ErrorPageProps) {
   const handleGoBack = () => {
     window.history.back();
   };
@@ -83,8 +95,17 @@ function ErrorPage({ error }: ErrorPageProps) {
           </p>
         )}
         <div className="error-actions">
+          {onRetry && (
+            <button
+              className="error-btn error-btn-primary"
+              onClick={onRetry}
+              aria-label="Try again to render the content"
+            >
+              Try Again
+            </button>
+          )}
           <button
-            className="error-btn error-btn-primary"
+            className="error-btn error-btn-secondary"
             onClick={handleGoBack}
             aria-label="Go back to previous page"
           >

@@ -28,6 +28,7 @@ import type {
   ScheduleRow,
 } from "@/components/RepaymentVisualizer";
 import { LiveRegion } from "@/components/LiveRegion";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 /**
  * Derives the SR announcement text from a loading-state transition.
@@ -64,7 +65,9 @@ export default function RepaymentVisualizerPage(props: RepaymentVisualizerProps)
   return (
     <>
       <LiveRegion message={pageAnnouncement} politeness="polite" />
-      <RepaymentVisualizer {...props} />
+      <ErrorBoundary>
+        <RepaymentVisualizer {...props} />
+      </ErrorBoundary>
     </>
   );
 }
