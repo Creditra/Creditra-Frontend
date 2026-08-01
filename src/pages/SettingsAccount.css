@@ -168,3 +168,45 @@
 [data-motion="reduced"] .settings-account__panel {
   transition: none !important;
 }
+
+/* ── Print media ─────────────────────────────────────────────────────────── */
+
+@media print {
+  /* Hide interactive chrome */
+  .settings-account__toggle {
+    display: none !important;
+  }
+
+  .settings-account__chevron {
+    display: none !important;
+  }
+
+  /* Expand all collapsible panels so their content is fully visible on paper */
+  .settings-account__panel,
+  .settings-account__panel--expanded {
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    transition: none !important;
+  }
+
+  /* Keep the panel-inner visible without padding issues */
+  .settings-account__panel-inner {
+    padding: 0 var(--space-5) var(--space-5) var(--space-5);
+    display: block !important;
+  }
+
+  /* Ensure section headings and labels print in dark ink */
+  .settings-account__title,
+  .settings-account__description,
+  .settings-account__toggle-label {
+    color: #000 !important;
+  }
+
+  /* Clean up card borders and backgrounds for paper */
+  .settings-account__collapsible {
+    border: 1px solid #ccc !important;
+    background: #fff !important;
+    break-inside: avoid;
+  }
+}
