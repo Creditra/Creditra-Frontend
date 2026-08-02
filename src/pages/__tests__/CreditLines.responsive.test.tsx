@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import CreditLines from '../CreditLines';
@@ -218,6 +218,41 @@ describe('CreditLines — Responsive breakpoint audit (v7)', () => {
           'Past installments and upcoming payments across your credit lines.',
         ),
       ).toBeInTheDocument();
+    });
+  });
+
+  // ─── Responsive campaign image (GrantFox FWC26 / #848) ──────────────────
+
+  describe('responsive campaign image (GrantFox FWC26 / #848)', () => {
+    it('renders the campaign hero image with accessible alt text', async () => {
+      renderPage();
+      const image = await waitFor(() => screen.getByAltText(/Credit Lines campaign banner/i));
+      expect(image).toBeInTheDocument();
+    });
+
+    it('includes responsive srcset attribute with multiple width candidates', async () => {
+      renderPage();
+      const image = await waitFor(() => screen.getByAltText(/Credit Lines campaign banner/i)) as HTMLImageElement;
+      const srcset = image.getAttribute('srcset');
+      expect(srcset).toBeTruthy();
+      expect(srcset).toContain('480w');
+      expect(srcset).toContain('768w');
+      expect(srcset).toContain('1200w');
+    });
+
+    it('configures sizes attribute for responsive layout breakpoints', async () => {
+      renderPage();
+      const image = await waitFor(() => screen.getByAltText(/Credit Lines campaign banner/i)) as HTMLImageElement;
+      const sizes = image.getAttribute('sizes');
+      expect(sizes).toBeTruthy();
+      expect(sizes).toContain('100vw');
+      expect(sizes).toContain('60vw');
+    });
+
+    it('provides a default fallback src attribute', async () => {
+      renderPage();
+      const image = await waitFor(() => screen.getByAltText(/Credit Lines campaign banner/i)) as HTMLImageElement;
+      expect(image.getAttribute('src')).toContain('/assets/images/stellar-wave-md.jpg');
     });
   });
 });

@@ -646,6 +646,23 @@ export default function CreditLines({ defaultLoading = true }: { defaultLoading?
         </div>
       </div>
 
+      {/* GrantFox FWC26 campaign — responsive hero image with srcset
+         * so mobile devices download lower-resolution variants (480w / 768w)
+         * rather than desktop-sized assets (1200w), satisfying issue #848. */}
+      <div className="cl-hero-image" role="img" aria-label="Credit Lines campaign banner">
+        <img
+          src="/assets/images/stellar-wave-md.jpg"
+          srcSet="/assets/images/stellar-wave-sm.jpg 480w, /assets/images/stellar-wave-md.jpg 768w, /assets/images/stellar-wave-lg.jpg 1200w"
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 1200px"
+          alt="Credit Lines campaign banner — GrantFox FWC26"
+          width={1200}
+          height={240}
+          className="cl-hero-img"
+          loading="eager"
+          decoding="async"
+        />
+      </div>
+
       <div aria-live="polite" className="sr-only">
         {filteredAndSorted.length} credit line{filteredAndSorted.length !== 1 ? 's' : ''} found
         {statusFilter !== "all" ? ` with status ${statusFilter}` : ""}
