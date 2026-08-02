@@ -14,6 +14,7 @@ import {
 } from "../utils/amountValidation";
 import { FormMessage } from "./FormMessage";
 import { KbdHint } from "./KbdHint";
+import { PendingButton } from "./PendingButton";
 import { Skeleton } from "./Skeleton";
 
 const STEP_AMOUNT = 100;
@@ -29,6 +30,8 @@ export interface AmountInputProps {
   onNext?: (amount: number) => void;
   onBack?: () => void;
   isLoading?: boolean;
+  /** When true, the Continue button shows a spinner and all inputs are disabled. */
+  isSubmitting?: boolean;
 }
 
 export function AmountInputSkeleton() {
@@ -124,6 +127,7 @@ export function AmountInput({
   onNext,
   onBack,
   isLoading = false,
+  isSubmitting = false,
 }: AmountInputProps) {
   const [amount, setAmount] = useState("");
   const [pasteAnnouncement, setPasteAnnouncement] = useState("");
@@ -245,7 +249,7 @@ export function AmountInput({
   const describedBy = `${helperId} ${constraintsId} ${statusId}${hasError ? ` ${errorId}` : ""}`;
 
   return (
-    <div className="space-y-6 sm:space-y-8 max-w-full overflow-hidden">
+    <div className="space-y-6 sm:space-y-8 max-w-full overflow-hidden" aria-busy={isSubmitting || undefined}>
       <div>
         <h2 className="text-xl sm:text-3xl font-bold text-foreground leading-[var(--lh-heading)] tracking-tight">
           Enter Amount
@@ -291,7 +295,7 @@ export function AmountInput({
           <div className="flex items-center gap-1 sm:gap-2 flex-1 min-w-[120px] max-w-full">
             <button
               onClick={() => handleStep("down")}
-              disabled={numAmount <= 0}
+              disabled={numAmount <= 0 || isSubmitting}
               className={stepClasses}
               aria-label="Decrease amount"
               aria-controls={inputId}
@@ -314,7 +318,8 @@ export function AmountInput({
               onPaste={handlePaste}
               onKeyDown={handleKeyDown}
               ref={inputRef}
-              className="text-base sm:text-2xl font-bold bg-transparent outline-none flex-1 text-foreground placeholder:text-muted/50 min-w-0 tabular-nums amount leading-[var(--lh-display)]"
+              disabled={isSubmitting}
+              className="text-base sm:text-2xl font-bold bg-transparent outline-none flex-1 text-foreground placeholder:text-muted/50 min-w-0 tabular-nums amount leading-[var(--lh-display)] disabled:opacity-40"
               min={validation.minAmount}
               max={creditLine.available}
               step={STEP_AMOUNT}
@@ -325,7 +330,7 @@ export function AmountInput({
             />
             <button
               onClick={() => handleStep("up")}
-              disabled={numAmount >= creditLine.available}
+              disabled={numAmount >= creditLine.available || isSubmitting}
               className={stepClasses}
               aria-label="Increase amount"
               aria-controls={inputId}
@@ -338,7 +343,8 @@ export function AmountInput({
           {/* Max button for quick-fill with 44x44px minimum tap target */}
           <button
             onClick={handleMaxClick}
-            className="px-2.5 sm:px-3 py-2 text-xs sm:text-sm font-semibold text-accent hover:bg-accent/10 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center self-center"
+            disabled={isSubmitting}
+            className="px-2.5 sm:px-3 py-2 text-xs sm:text-sm font-semibold text-accent hover:bg-accent/10 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center self-center disabled:opacity-40 disabled:cursor-not-allowed"
             aria-label="Set amount to maximum available credit"
             type="button"
           >
@@ -410,7 +416,8 @@ export function AmountInput({
                   Math.floor((creditLine.available * percent) / 100).toString(),
                 )
               }
-              className="py-2 px-1.5 sm:px-3 border-2 border-border rounded-lg hover:border-accent hover:bg-surface transition-all text-foreground font-medium text-xs sm:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px] flex items-center justify-center"
+              disabled={isSubmitting}
+              className="py-2 px-1.5 sm:px-3 border-2 border-border rounded-lg hover:border-accent hover:bg-surface transition-all text-foreground font-medium text-xs sm:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px] flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
               aria-label={`Set amount to ${percent} percent of available credit`}
               type="button"
             >
@@ -448,19 +455,22 @@ export function AmountInput({
       <div className="flex flex-col-reverse sm:flex-row gap-2.5 sm:gap-3 pt-3 sm:pt-4">
         <button
           onClick={onBack}
-          className="w-full sm:flex-1 py-3 px-4 border-2 border-border text-foreground rounded-lg hover:bg-surface transition-colors font-semibold text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px] flex items-center justify-center"
+          disabled={isSubmitting}
+          className="w-full sm:flex-1 py-3 px-4 border-2 border-border text-foreground rounded-lg hover:bg-surface transition-colors font-semibold text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px] flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
           type="button"
         >
           Back
         </button>
-        <button
+        <PendingButton
+          pending={isSubmitting}
+          pendingLabel="Processing…"
           onClick={() => onNext(numAmount)}
           disabled={!isValid}
           className="w-full sm:flex-1 py-3 px-4 bg-accent text-background rounded-lg hover:bg-accent/90 transition-all font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px] flex items-center justify-center"
           type="button"
         >
           Continue
-        </button>
+        </PendingButton>
       </div>
     </div>
   );
