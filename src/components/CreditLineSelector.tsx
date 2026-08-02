@@ -20,6 +20,7 @@
 import { CreditLine } from "@/types/draw-credit.types";
 import { AlertCircle, ChevronRight } from "lucide-react";
 import { formatMoney } from "@/utils/amountValidation";
+import { HelpPopover } from "@/components/HelpPopover";
 
 interface CreditLineSelectorProps {
   /** Credit lines the user is eligible to draw from. */
@@ -92,6 +93,11 @@ export function CreditLineSelector({
                       <div>
                         <span className="dc-credit-line-item__label">
                           Available:
+                          <HelpPopover
+                            term="Available"
+                            definition="The amount you can currently draw from this credit line. It equals your total credit limit minus any outstanding balance and pending transactions."
+                            placement="top"
+                          />
                         </span>
                         <span className="dc-credit-line-item__value tabular-nums">
                           ${line.available.toLocaleString()}
@@ -101,6 +107,11 @@ export function CreditLineSelector({
                       <div>
                         <span className="dc-credit-line-item__label">
                           Utilization:
+                          <HelpPopover
+                            term="Utilization"
+                            definition="The percentage of your total credit limit currently in use. Lower utilization (under 30%) is generally better for your credit health and may lead to better rates."
+                            placement="top"
+                          />
                         </span>
                         <span
                           className={`num-tabular ${
