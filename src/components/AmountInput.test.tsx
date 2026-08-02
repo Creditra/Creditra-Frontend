@@ -717,4 +717,106 @@ describe("AmountInput", () => {
     expect(screen.getByText("↑ / ↓")).toBeInTheDocument();
     expect(screen.getByText("Adjust amount")).toBeInTheDocument();
   });
+
+  describe("Optimistic UI (isSubmitting)", () => {
+    it("shows a spinner and 'Processing…' label on the Continue button when isSubmitting is true", () => {
+      render(
+        <AmountInput
+          creditLine={creditLine}
+          onAmountChange={vi.fn()}
+          onNext={vi.fn()}
+          onBack={vi.fn()}
+          isSubmitting={true}
+        />,
+      );
+
+      // Enter a valid amount so Continue is enabled
+      const input = screen.getByRole("spinbutton", { name: /draw amount/i });
+      fireEvent.change(input, { target: { value: "10000" } });
+
+      const continueBtn = screen.getByRole("button", { name: /processing/i });
+      expect(continueBtn).toBeInTheDocument();
+      expect(continueBtn).toBeDisabled();
+      expect(continueBtn).toHaveAttribute("aria-busy", "true");
+      expect(continueBtn.querySelector(".pending-btn__spinner")).toBeInTheDocument();
+    });
+
+    it("shows normal Continue label when not submitting", () => {
+      render(
+        <AmountInput
+          creditLine={creditLine}
+          onAmountChange={vi.fn()}
+          onNext={vi.fn()}
+          onBack={vi.fn()}
+          isSubmitting={false}
+        />,
+      );
+
+      const input = screen.getByRole("spinbutton", { name: /draw amount/i });
+      fireEvent.change(input, { target: { value: "10000" } });
+
+      expect(screen.getByRole("button", { name: /continue/i })).toBeInTheDocument();
+      expect(screen.queryByText(/processing/i)).not.toBeInTheDocument();
+    });
+
+    it("disables all interactive elements when isSubmitting is true", () => {
+      render(
+        <AmountInput
+          creditLine={creditLine}
+          onAmountChange={vi.fn()}
+          onNext={vi.fn()}
+          onBack={vi.fn()}
+          isSubmitting={true}
+        />,
+      );
+
+      const input = screen.getByRole("spinbutton", { name: /draw amount/i });
+      expect(input).toBeDisabled();
+
+      const decreaseBtn = screen.getByRole("button", { name: /decrease amount/i });
+      expect(decreaseBtn).toBeDisabled();
+
+      const increaseBtn = screen.getByRole("button", { name: /increase amount/i });
+      expect(increaseBtn).toBeDisabled();
+
+      const maxBtn = screen.getByRole("button", { name: /set amount to maximum/i });
+      expect(maxBtn).toBeDisabled();
+
+      const backBtn = screen.getByRole("button", { name: /back/i });
+      expect(backBtn).toBeDisabled();
+
+      const presetBtns = screen.getAllByRole("button", { name: /percent/i });
+      presetBtns.forEach((btn) => expect(btn).toBeDisabled());
+    });
+
+    it("sets aria-busy on the root container when isSubmitting is true", () => {
+      const { container } = render(
+        <AmountInput
+          creditLine={creditLine}
+          onAmountChange={vi.fn()}
+          onNext={vi.fn()}
+          onBack={vi.fn()}
+          isSubmitting={true}
+        />,
+      );
+
+      const root = container.querySelector("div[aria-busy='true']");
+      expect(root).toBeInTheDocument();
+    });
+
+    it("omits aria-busy on root container when isSubmitting is false", () => {
+      const { container } = render(
+        <AmountInput
+          creditLine={creditLine}
+          onAmountChange={vi.fn()}
+          onNext={vi.fn()}
+          onBack={vi.fn()}
+          isSubmitting={false}
+        />,
+      );
+
+      const root = container.querySelector("div[aria-busy='true']");
+      expect(root).not.toBeInTheDocument();
+    });
+  });
 });
