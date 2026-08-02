@@ -284,6 +284,7 @@
     .cl-row-select input        — per-card compare checkboxes
     [aria-haspopup="true"]      — CreditLineRowMenu 3-dot trigger (belt-and-suspenders
                                   fallback in case Tailwind utilities aren't active)
+    .cl-row-menu-item           — CreditLineRowMenu dropdown action items
 */
 
 .cl-primary-btn:focus-visible,
@@ -291,7 +292,15 @@
 .cl-card:focus-visible,
 .cl-filters select:focus-visible,
 .cl-row-select input:focus-visible,
-.cl-card [aria-haspopup="true"]:focus-visible {
+.cl-card [aria-haspopup="true"]:focus-visible,
+.cl-row-menu-item:focus-visible {
+  outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #58a6ff);
+  outline-offset: var(--focus-ring-offset, 3px);
+  border-radius: var(--focus-ring-radius, 6px);
+}
+
+/* Ensure the selected compare checkbox label gets a ring too */
+.cl-row-select:focus-within {
   outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #58a6ff);
   outline-offset: var(--focus-ring-offset, 3px);
   border-radius: var(--focus-ring-radius, 6px);
