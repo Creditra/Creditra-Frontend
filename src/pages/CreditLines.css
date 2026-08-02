@@ -456,6 +456,24 @@
     padding: 0 1.25rem 1.25rem;
 }
 
+/* ─── Hero Image (GrantFox FWC26 Campaign) ──────────────────────────────── */
+
+.cl-hero-image {
+    margin-bottom: 1.5rem;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+}
+
+.cl-hero-img {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 240px;
+    object-fit: cover;
+}
+
 .cl-action-btn {
     flex: 1;
     padding: 0.5rem 1rem;
