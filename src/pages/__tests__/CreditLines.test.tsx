@@ -118,6 +118,24 @@ describe('CreditLines page', () => {
     expect(card?.textContent).toMatch(/Opened/);
   });
 
+  it('renders hover-preview card with health factor breakdown on each credit line card', () => {
+    renderPage();
+    // Each card should have a hidden health factor preview region
+    const previewRegions = screen.getAllByRole('region', { hidden: true });
+    const healthPreviews = previewRegions.filter((r) =>
+      r.getAttribute('aria-label')?.startsWith('Health factor preview for'),
+    );
+    expect(healthPreviews.length).toBeGreaterThanOrEqual(3);
+    // Each preview should contain health factor details
+    healthPreviews.forEach((preview) => {
+      expect(preview.textContent).toMatch(/Health Factor/);
+      expect(preview.textContent).toMatch(/Safe|Caution|At risk/);
+      expect(preview.textContent).toMatch(/Limit/);
+      expect(preview.textContent).toMatch(/Utilized/);
+      expect(preview.textContent).toMatch(/Available/);
+    });
+  });
+
   describe("skeleton loading state", () => {
     beforeEach(() => {
       vi.useFakeTimers();

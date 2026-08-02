@@ -16,10 +16,13 @@ import type {
   SortDirection,
 } from "../types/creditLine";
 import type { CollateralAsset } from "../types/collateral";
+import { PreviewCard } from '../components/PreviewCard';
 import {
   HealthFactorChart,
   buildHealthHistory,
   deriveHealthFactor,
+  healthBand,
+  healthBandLabel,
 } from '../components/HealthFactorChart';
 import {
   COLOR,
@@ -80,7 +83,7 @@ function CreditLineCard({
 
   return (
     <div
-      className={`cl-card status-${line.status.toLowerCase()}${isDefaulted ? " cl-row--defaulted" : ""} focus-ring`}
+      className={`cl-card status-${line.status.toLowerCase()}${isDefaulted ? " cl-row--defaulted" : ""} preview-card-trigger focus-ring`}
       aria-label={
         isDefaulted ? `Credit line ${line.id} is defaulted` : undefined
       }
@@ -192,12 +195,51 @@ function CreditLineCard({
 
         {(() => {
           const hf = deriveHealthFactor(line.limit, line.utilized);
+          const band = healthBand(hf);
           return (
-            <HealthFactorChart
-              lineName={line.name}
-              current={hf}
-              data={buildHealthHistory(hf)}
-            />
+            <PreviewCard
+              preview={
+                <div className="hf-preview-card">
+                  <div className="hf-preview-card__header">
+                    <span className="hf-preview-card__label">Health Factor</span>
+                    <span className={`hf-preview-card__value hf-preview-card__value--${band}`}>
+                      {hf.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="hf-preview-card__band">
+                    <span className={`hf-preview-card__band-badge hf-preview-card__band-badge--${band}`}>
+                      {healthBandLabel(band)}
+                    </span>
+                  </div>
+                  <div className="hf-preview-card__divider" />
+                  <div className="hf-preview-card__metrics">
+                    <div className="hf-preview-card__metric">
+                      <span className="hf-preview-card__metric-label">Limit</span>
+                      <span className="hf-preview-card__metric-value">{fmt(line.limit)}</span>
+                    </div>
+                    <div className="hf-preview-card__metric">
+                      <span className="hf-preview-card__metric-label">Utilized</span>
+                      <span className="hf-preview-card__metric-value">{fmt(line.utilized)}</span>
+                    </div>
+                    <div className="hf-preview-card__metric">
+                      <span className="hf-preview-card__metric-label">Available</span>
+                      <span className="hf-preview-card__metric-value">{fmt(line.limit - line.utilized)}</span>
+                    </div>
+                  </div>
+                  <div className="hf-preview-card__divider" />
+                  <div className="hf-preview-card__formula">
+                    HF = Limit ÷ Utilized = {fmt(line.limit)} ÷ {fmt(line.utilized)} = {hf.toFixed(2)}
+                  </div>
+                </div>
+              }
+              ariaLabel={`Health factor preview for ${line.name}`}
+            >
+              <HealthFactorChart
+                lineName={line.name}
+                current={hf}
+                data={buildHealthHistory(hf)}
+              />
+            </PreviewCard>
           );
         })()}
 
