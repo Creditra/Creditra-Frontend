@@ -970,6 +970,22 @@
   min-height: 114px;
 }
 
+/* ─── Credit Summary Skeleton ────────────────────────────────────────────────── */
+
+.credit-summary-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-1) 0;
+}
+
+.credit-summary-skeleton-util {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
 .cl-preview-item {
   /*
    * min-height matches the final .cl-preview-item rendered height:

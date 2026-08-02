@@ -414,67 +414,19 @@ export function Dashboard() {
         {status === 'loading' ? (
           <>
             <div className="summary-card skeleton-card">
-              <Skeleton
-                style={{
-                  width: "60%",
-                  height: "var(--space-3)",
-                  marginBottom: "var(--space-4)",
-                  borderRadius: "var(--radius-sm)",
-                }}
-              />
-              <Skeleton
-                style={{
-                  width: "80%",
-                  height: "var(--space-8)",
-                  marginBottom: "var(--space-3)",
-                  borderRadius: "var(--radius-sm)",
-                }}
-              />
-              <Skeleton
-                style={{ width: "40%", height: "var(--space-3)", borderRadius: "var(--radius-sm)" }}
-              />
+              <Skeleton width="60%" height="var(--space-3)" shape="rounded" style={{ marginBottom: "var(--space-4)" }} />
+              <Skeleton width="80%" height="var(--space-8)" shape="rounded" style={{ marginBottom: "var(--space-3)" }} />
+              <Skeleton width="40%" height="var(--space-3)" shape="rounded" />
             </div>
             <div className="summary-card skeleton-card">
-              <Skeleton
-                style={{
-                  width: "60%",
-                  height: "var(--space-3)",
-                  marginBottom: "var(--space-4)",
-                  borderRadius: "var(--radius-sm)",
-                }}
-              />
-              <Skeleton
-                style={{
-                  width: "80%",
-                  height: "var(--space-8)",
-                  marginBottom: "var(--space-3)",
-                  borderRadius: "var(--radius-sm)",
-                }}
-              />
-              <Skeleton
-                style={{ width: "40%", height: "var(--space-3)", borderRadius: "var(--radius-sm)" }}
-              />
+              <Skeleton width="60%" height="var(--space-3)" shape="rounded" style={{ marginBottom: "var(--space-4)" }} />
+              <Skeleton width="80%" height="var(--space-8)" shape="rounded" style={{ marginBottom: "var(--space-3)" }} />
+              <Skeleton width="40%" height="var(--space-3)" shape="rounded" />
             </div>
             <div className="summary-card skeleton-card">
-              <Skeleton
-                style={{
-                  width: "60%",
-                  height: "var(--space-3)",
-                  marginBottom: "var(--space-4)",
-                  borderRadius: "var(--radius-sm)",
-                }}
-              />
-              <Skeleton
-                style={{
-                  width: "80%",
-                  height: "var(--space-8)",
-                  marginBottom: "var(--space-3)",
-                  borderRadius: "var(--radius-sm)",
-                }}
-              />
-              <Skeleton
-                style={{ width: "40%", height: "var(--space-3)", borderRadius: "var(--radius-sm)" }}
-              />
+              <Skeleton width="60%" height="var(--space-3)" shape="rounded" style={{ marginBottom: "var(--space-4)" }} />
+              <Skeleton width="80%" height="var(--space-8)" shape="rounded" style={{ marginBottom: "var(--space-3)" }} />
+              <Skeleton width="40%" height="var(--space-3)" shape="rounded" />
             </div>
           </>
         ) : (
@@ -538,7 +490,7 @@ export function Dashboard() {
 
       <div className="dashboard-grid">
         <div>
-          <div className="card" style={animDelay({ animationDelay: "0.1s" })}>
+          <div className="card" style={animDelay({ animationDelay: "0.1s" })} aria-busy={status === 'loading'}>
             <h2>
               <span className="icon">📊</span> Credit Summary
               {status === 'success' && (
@@ -549,6 +501,29 @@ export function Dashboard() {
                 />
               )}
             </h2>
+            {status === 'loading' ? (
+              <div className="credit-summary-skeleton">
+                <div className="credit-summary-skeleton-util">
+                  <Skeleton width="60px" height={10} shape="rounded" />
+                  <Skeleton width="100%" height={8} shape="rounded" style={{ marginTop: "var(--space-1)" }} />
+                </div>
+                <div className="credit-breakdown">
+                  <div className="credit-breakdown-item">
+                    <Skeleton width={40} height={10} shape="rounded" />
+                    <Skeleton width={60} height={20} shape="rounded" style={{ marginTop: "var(--space-1)" }} />
+                  </div>
+                  <div className="credit-breakdown-item">
+                    <Skeleton width={40} height={10} shape="rounded" />
+                    <Skeleton width={50} height={20} shape="rounded" style={{ marginTop: "var(--space-1)" }} />
+                  </div>
+                  <div className="credit-breakdown-item">
+                    <Skeleton width={40} height={10} shape="rounded" />
+                    <Skeleton width={55} height={20} shape="rounded" style={{ marginTop: "var(--space-1)" }} />
+                  </div>
+                </div>
+              </div>
+            ) : (
+            <>
             <div className="util-bar-container">
               <div className="util-bar-header">
                 <span style={{ color: COLOR.muted }}>Utilization</span>
@@ -601,6 +576,8 @@ export function Dashboard() {
                 </p>
               </div>
             </div>
+            </>
+          )}
           </div>
 
           {/* Risk Score */}
