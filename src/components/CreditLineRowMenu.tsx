@@ -83,7 +83,7 @@ export function CreditLineRowMenu({
               setIsOpen(false);
               if (onRepay) onRepay();
             }}
-            className="flex w-full items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-accent/10 hover:text-accent transition-colors text-left"
+            className="focus-ring cl-row-menu-item flex w-full items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-accent/10 hover:text-accent transition-colors text-left"
             role="menuitem"
           >
             <ArrowUpCircle className="w-4 h-4" />
@@ -94,7 +94,7 @@ export function CreditLineRowMenu({
           <Link
             to={`/draw-credit?line=${lineId}`}
             onClick={() => setIsOpen(false)}
-            className="flex w-full items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-accent/10 hover:text-accent transition-colors"
+            className="focus-ring cl-row-menu-item flex w-full items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-accent/10 hover:text-accent transition-colors"
             role="menuitem"
           >
             <ArrowDownCircle className="w-4 h-4" />
@@ -109,7 +109,7 @@ export function CreditLineRowMenu({
                 if (frozen && onUnfreeze) onUnfreeze(lineId);
                 else if (!frozen && onFreeze) onFreeze(lineId);
               }}
-              className="flex w-full items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-accent/10 hover:text-accent transition-colors text-left"
+              className="focus-ring cl-row-menu-item flex w-full items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-accent/10 hover:text-accent transition-colors text-left"
               role="menuitem"
             >
               <Snowflake className="w-4 h-4" />
@@ -123,7 +123,7 @@ export function CreditLineRowMenu({
               setIsOpen(false);
               if (onSchedule) onSchedule(lineId);
             }}
-            className="flex w-full items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-accent/10 hover:text-accent transition-colors text-left"
+            className="focus-ring cl-row-menu-item flex w-full items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-accent/10 hover:text-accent transition-colors text-left"
             role="menuitem"
           >
             <Calendar className="w-4 h-4" />
@@ -136,7 +136,7 @@ export function CreditLineRowMenu({
               setIsOpen(false);
               if (onDetails) onDetails(lineId);
             }}
-            className="flex w-full items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-accent/10 hover:text-accent transition-colors text-left"
+            className="focus-ring cl-row-menu-item flex w-full items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-accent/10 hover:text-accent transition-colors text-left"
             role="menuitem"
           >
             <Info className="w-4 h-4" />

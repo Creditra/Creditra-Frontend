@@ -63,6 +63,14 @@ describe('focus.css — CreditLines (#691) coverage', () => {
     expect(css).toContain('.cl-card [aria-haspopup="true"]:focus-visible');
   });
 
+  it('defines a focus-visible rule for the row-menu dropdown items', () => {
+    expect(css).toContain('.cl-row-menu-item:focus-visible');
+  });
+
+  it('defines a focus-within rule for the compare checkbox label', () => {
+    expect(css).toContain('.cl-row-select:focus-within');
+  });
+
   it('uses :focus-visible, never bare :focus, for these rules', () => {
     for (const selector of ['.cl-primary-btn', '.cl-sort-dir', '.cl-card']) {
       const bareFocus = new RegExp(`\\${selector}:focus(?!-visible)\\b`);
