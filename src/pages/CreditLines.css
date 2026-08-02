@@ -740,3 +740,111 @@
     }
 }
 
+/* ─── Health Factor Preview Card ──────────────────────────────────────────── */
+
+.hf-preview-card {
+    min-width: 200px;
+}
+
+.hf-preview-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.hf-preview-card__label {
+    font-size: var(--text-xs, 0.75rem);
+    font-weight: 600;
+    color: var(--muted, #8b949e);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.hf-preview-card__value {
+    font-size: var(--text-lg, 1.125rem);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+.hf-preview-card__value--safe {
+    color: var(--success, #3fb950);
+}
+
+.hf-preview-card__value--caution {
+    color: var(--warning, #d29922);
+}
+
+.hf-preview-card__value--risk {
+    color: var(--danger, #f85149);
+}
+
+.hf-preview-card__band {
+    margin-bottom: 0.5rem;
+}
+
+.hf-preview-card__band-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--radius-full, 9999px);
+    font-size: var(--text-xs, 0.75rem);
+    font-weight: 500;
+    line-height: 1;
+}
+
+.hf-preview-card__band-badge--safe {
+    background: rgba(63, 185, 80, 0.16);
+    color: var(--success, #3fb950);
+    border: 1px solid rgba(63, 185, 80, 0.35);
+}
+
+.hf-preview-card__band-badge--caution {
+    background: rgba(210, 153, 34, 0.16);
+    color: var(--warning, #d29922);
+    border: 1px solid rgba(210, 153, 34, 0.35);
+}
+
+.hf-preview-card__band-badge--risk {
+    background: rgba(248, 81, 73, 0.16);
+    color: var(--danger, #f85149);
+    border: 1px solid rgba(248, 81, 73, 0.35);
+}
+
+.hf-preview-card__divider {
+    height: 1px;
+    background: var(--border, #30363d);
+    margin: 0.5rem 0;
+}
+
+.hf-preview-card__metrics {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.hf-preview-card__metric {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: var(--text-xs, 0.75rem);
+}
+
+.hf-preview-card__metric-label {
+    color: var(--muted, #8b949e);
+}
+
+.hf-preview-card__metric-value {
+    color: var(--text, #e6edf3);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+}
+
+.hf-preview-card__formula {
+    font-size: 0.7rem;
+    color: var(--muted, #8b949e);
+    line-height: 1.3;
+    font-variant-numeric: tabular-nums;
+}
+
