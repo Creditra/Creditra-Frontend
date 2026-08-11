@@ -109,6 +109,7 @@ export default function AutopayPage() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [cancelAnnouncement, setCancelAnnouncement] = useState('');
 
   // ─── Derived ──────────────────────────────────────────────────────────────
@@ -130,6 +131,7 @@ export default function AutopayPage() {
         return next;
       });
       setSubmitted(false);
+      setSubmitError(null);
     },
     [],
   );
@@ -150,10 +152,20 @@ export default function AutopayPage() {
         return;
       }
       setSubmitting(true);
-      // Simulate async submission
-      await new Promise(resolve => setTimeout(resolve, 1200));
-      setSubmitting(false);
-      setSubmitted(true);
+      setSubmitted(true); // optimistic success — show it before the request settles
+      setSubmitError(null);
+      try {
+        // Simulate async submission
+        await new Promise(resolve => setTimeout(resolve, 1200));
+      } catch {
+        // Revert the optimistic success and surface the error instead.
+        setSubmitted(false);
+        setSubmitError(
+          'We couldn’t activate autopay. Check your connection and try again.',
+        );
+      } finally {
+        setSubmitting(false);
+      }
     },
     [form],
   );
@@ -162,6 +174,7 @@ export default function AutopayPage() {
     setForm(EMPTY_FORM);
     setErrors({});
     setSubmitted(false);
+    setSubmitError(null);
     setCancelAnnouncement('Autopay schedule cleared.');
     // Clear the announcement after it has been read
     setTimeout(() => setCancelAnnouncement(''), 4000);
@@ -216,6 +229,20 @@ export default function AutopayPage() {
         </div>
       )}
 
+      {/* ── Error banner (replaces success on optimistic revert) ──────────── */}
+      {submitError && (
+        <div
+          className="autopay-page__error-banner"
+          role="alert"
+          aria-live="assertive"
+        >
+          <span className="autopay-page__error-icon" aria-hidden="true">
+            ❌
+          </span>
+          <span>{submitError}</span>
+        </div>
+      )}
+
       <div className="autopay-page__layout">
         {/* ── Form column ─────────────────────────────────────────────────── */}
         <div className="autopay-page__form-col">
@@ -231,25 +258,21 @@ export default function AutopayPage() {
               onSubmit={handleSubmit}
               noValidate
               aria-label="Autopay schedule configuration"
+              aria-busy={submitting || undefined}
             >
               {/* Amount */}
               <FormField
                 id="autopay-amount"
+                name="autopay-amount"
                 label="Payment Amount"
                 type="number"
                 required
                 helpText="Amount to deduct on each scheduled date."
                 error={errors.amount}
-                inputProps={{
-                  value: form.amount,
-                  onChange: e => handleChange('amount', e.target.value),
-                  placeholder: '0.00',
-                  min: '0.01',
-                  max: '1000000',
-                  step: '0.01',
-                  autoComplete: 'off',
-                  className: 'form-field__input',
-                }}
+                value={form.amount}
+                onChange={val => handleChange('amount', val)}
+                placeholder="0.00"
+                autoComplete="off"
               />
 
               {/* Frequency — custom render so the <select> gets the same
@@ -290,51 +313,27 @@ export default function AutopayPage() {
               {/* Start date */}
               <FormField
                 id="autopay-start"
+                name="autopay-start"
                 label="Start Date"
                 type="text"
                 required
                 helpText="The date of your first automatic payment."
                 error={errors.startDate}
-                as="custom"
-              >
-                {({ id, 'aria-describedby': describedBy, 'aria-invalid': invalid, 'aria-required': req }) => (
-                  <input
-                    id={id}
-                    type="date"
-                    value={form.startDate}
-                    min={todayISO()}
-                    onChange={e => handleChange('startDate', e.target.value)}
-                    required
-                    aria-required={req}
-                    aria-describedby={describedBy}
-                    aria-invalid={invalid}
-                    className={`form-field__input${invalid ? ' form-field__input--error' : ''}`}
-                  />
-                )}
-              </FormField>
+                value={form.startDate}
+                onChange={val => handleChange('startDate', val)}
+              />
 
               {/* End date (optional) */}
               <FormField
                 id="autopay-end"
+                name="autopay-end"
                 label="End Date"
                 type="text"
                 helpText="Leave blank for an open-ended schedule."
                 error={errors.endDate}
-                as="custom"
-              >
-                {({ id, 'aria-describedby': describedBy, 'aria-invalid': invalid }) => (
-                  <input
-                    id={id}
-                    type="date"
-                    value={form.endDate}
-                    min={form.startDate || todayISO()}
-                    onChange={e => handleChange('endDate', e.target.value)}
-                    aria-describedby={describedBy}
-                    aria-invalid={invalid}
-                    className={`form-field__input${invalid ? ' form-field__input--error' : ''}`}
-                  />
-                )}
-              </FormField>
+                value={form.endDate}
+                onChange={val => handleChange('endDate', val)}
+              />
 
               {/* Actions */}
               <div className="autopay-page__actions">
@@ -350,6 +349,7 @@ export default function AutopayPage() {
                 <button
                   type="button"
                   onClick={handleCancel}
+                  disabled={submitting}
                   className="autopay-page__btn autopay-page__btn--cancel"
                   aria-label="Cancel autopay — clears the current schedule"
                 >
