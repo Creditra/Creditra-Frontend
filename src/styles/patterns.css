@@ -11,7 +11,8 @@
  *   2. RepayPage utilization progress bars (.rp-progress-*)
  *   3. RepayPage feedback severity banners (.rp-severity-*)
  *   4. RepaymentVisualizer legend swatches (.rv-legend-swatch*)
- *   5. Forced-colors (Windows High Contrast) overrides
+ *   5. Transaction History status badges (.tx-status-pattern--*)
+ *   6. Forced-colors (Windows High Contrast) overrides
  */
 
 /* ─── 1. Credit-line status cards ─────────────────────────────────────────── */

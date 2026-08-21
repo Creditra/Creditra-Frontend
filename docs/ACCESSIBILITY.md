@@ -132,10 +132,33 @@ input value drives the visible suggestion list immediately. The committed search
 joins the existing AND-filter chain (type × date × amount × credit-line × status × search).
 
 `prefers-reduced-motion`: the listbox slide-in animation is suppressed via a
-`@media (prefers-reduced-motion: reduce)` block in `TransactionHistory.css`.### Status badges and gauges
+`@media (prefers-reduced-motion: reduce)` block in `TransactionHistory.css`.
+
+### Status badges and gauges
 
 - `StatusBadge` pairs a tinted pill with a single-letter glyph (`A | ! | X | C`). Color is never the sole signal.
+- Transaction History status badges pair their existing color tint with subtle geometry: dots for `Completed`, diagonal stripes for `Pending`, and crosshatching for `Failed`. Each badge also exposes its status through visible text, `data-status`, and an `aria-label`.
+- The transaction patterns are defined in `src/styles/patterns.css`, remain visible at responsive sizes, and include explicit `forced-colors` overrides for Windows High Contrast mode.
 - Risk gauge uses `<text>` SVG nodes for the score and a separate `<text>` for the trend arrow (`▲ | ▼ | ─`) plus the trend word as a sibling element so screen readers don't miss it.
+
+#### Transaction History patterns (#821)
+
+Transaction status chips now combine their existing color tint with subtle texture
+patterns so `Completed`, `Pending`, and `Failed` remain distinguishable for users
+with color-vision deficiencies and in monochrome views. The implementation is
+distributed across:
+
+- `src/styles/patterns.css`: dot, diagonal-stripe, crosshatch, and forced-colors
+  pattern definitions.
+- `src/pages/TransactionHistory.tsx`: status-specific pattern classes plus
+  `data-status` and `aria-label` metadata.
+- `src/pages/TransactionHistory.test.tsx`: focused assertions for the pattern
+  classes and semantic status metadata.
+
+Automated verification: the focused Transaction History suite passes all 72 tests,
+and the modified TypeScript files report no diagnostics. Manual DevTools color
+simulation and lint require a locally available browser and ESLint installation;
+they were not available in this validation run.
 
 ### Pattern fills beyond colour (Dashboard v7, #565)
 

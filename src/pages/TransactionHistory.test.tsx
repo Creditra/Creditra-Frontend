@@ -867,6 +867,20 @@ describe("TransactionHistory", () => {
         expect(hasPattern).toBe(true);
       });
     });
+
+    it("status badges expose a semantic status label independent of color", () => {
+      const { container } = renderTransactionHistory();
+      const badges = container.querySelectorAll<HTMLElement>(".tx-status-badge");
+
+      badges.forEach((badge) => {
+        const status = badge.dataset.status;
+        expect(status).toBeDefined();
+        expect(badge).toHaveAttribute(
+          "aria-label",
+          `Transaction status: ${status}`,
+        );
+      });
+    });
   });
 
   describe("Aria-live announcements (v7)", () => {

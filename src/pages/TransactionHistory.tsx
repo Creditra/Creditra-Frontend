@@ -301,6 +301,8 @@ function TransactionRow({
         <td className="tx-status">
           <span
             className={`tx-status-badge ${STATUS_PATTERNS[tx.status]}`}
+            data-status={tx.status}
+            aria-label={`Transaction status: ${tx.status}`}
             style={{
               background: STATUS_COLORS[tx.status].bg,
               color: STATUS_COLORS[tx.status].color,

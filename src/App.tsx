@@ -31,9 +31,10 @@ import { SettingsAccount } from "./pages/SettingsAccount";
 import { Theme } from "./pages/settings/Theme";
 import { LinkedAccounts } from "./pages/LinkedAccounts";
 import AgingTagPage from "./pages/AgingTag";
-import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
+import CollateralSwap from "./pages/CollateralSwap";
+// import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
 import { SessionTimeoutBanner } from "./components/SessionTimeoutBanner";
-import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatchBanner";
+// import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatchBanner";
 import { Header } from "./layouts/Header";
 import CreditLineCompare from "./pages/CreditLineCompare";
 import { TermsBanner } from "./components/TermsBanner";
@@ -49,6 +50,11 @@ const isEditableTarget = (target: EventTarget | null) => {
     tagName === "select"
   );
 };
+
+function ScrollRestoration() {
+  useScrollRestoration();
+  return null;
+}
 
 /**
  * Application root.
@@ -95,9 +101,6 @@ function App() {
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const paletteTriggerRef = useRef<HTMLElement | null>(null);
 
-  // Restore scroll position on route navigation.
-  useScrollRestoration();
-
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       // Cmd+K / Ctrl+K → toggle command palette
@@ -136,6 +139,7 @@ function App() {
             <KycProvider>
               <NotificationProvider>
                 <BrowserRouter>
+                  <ScrollRestoration />
                   <RouteHeadProvider>
                     <div className="app">
                       <header className="header">
