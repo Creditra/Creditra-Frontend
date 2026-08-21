@@ -139,15 +139,30 @@ export function ToastContainer() {
 
   return (
     /*
-     * role="log" marks this region as an ordered sequence of status
-     * messages so AT users can revisit the list without losing their
-     * reading position (WCAG 4.1.3).
+     * role="status" + aria-live="polite" = WCAG 4.1.3 Status Messages.
+     *
+     * Why "status" rather than "log"?
+     * - role="log" implies an ordered, scrollable history buffer (chat logs,
+     *   event feeds). Toasts are transient, ephemeral one-shots that disappear
+     *   after a few seconds — they are not a persistent sequence a user would
+     *   scroll through, so "log" is semantically wrong.
+     * - role="status" paired with aria-live="polite" tells AT: "politely
+     *   announce the current contents of this region when idle". That is
+     *   exactly the right contract for a toast queue.
+     * - aria-atomic="true" requests that the whole region is re-read as a
+     *   unit when it changes; this prevents AT from announcing only the
+     *   newly added child and missing context.
+     *
+     * Individual ToastItems carry their own role ("status" or "alert") for
+     * per-toast granularity. The container role serves as the ARIA landmark
+     * and the aggregate live-region root.
      */
     <div
       className="toast-container"
-      role="log"
-      aria-label="Notifications"
+      role="status"
       aria-live="polite"
+      aria-atomic="true"
+      aria-label="Notifications"
     >
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onDismiss={dismissToast} />

@@ -124,10 +124,22 @@ describe('ToastContainer', () => {
 
   // ─── Container role ────────────────────────────────────────────────────────
 
-  it('wraps all toasts in a log region labelled "Notifications"', () => {
+  /**
+   * The inner ToastContainer uses role="status" (not "log") because toasts
+   * are ephemeral one-shot messages, not a persistent scrollable history.
+   * role="log" implies an ordered, revisitable buffer (chat logs, event feeds).
+   * See: https://www.w3.org/TR/wai-aria-1.2/#status
+   */
+  it('wraps all toasts in a status region labelled "Notifications"', () => {
     renderWithProvider(<TestHarness />);
-    const log = screen.getByRole('log', { name: /notifications/i });
-    expect(log).toBeInTheDocument();
+    const statusRegion = screen.getByRole('status', { name: /notifications/i });
+    expect(statusRegion).toBeInTheDocument();
+  });
+
+  it('does NOT use role="log" on the container (toasts are not a persistent log)', () => {
+    renderWithProvider(<TestHarness />);
+    const logRegion = document.querySelector('[role="log"]');
+    expect(logRegion).not.toBeInTheDocument();
   });
 
   // ─── Dismiss ───────────────────────────────────────────────────────────────

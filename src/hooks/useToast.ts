@@ -21,10 +21,19 @@ interface ToastOptions {
  * const toast = useToast();
  * toast.success('Repayment sent', 'Your payment is being processed.');
  * toast.error('Connection failed', 'Could not reach the Stellar network.');
+ * toast.danger('Access denied', 'Your session has expired.');
  * ```
  *
- * Returns the toast id from each helper so callers can dismiss programmatically
+ * All helpers return the toast id so callers can dismiss programmatically
  * via `toast.dismiss(id)` when needed.
+ *
+ * Severity semantics:
+ * - `success` / `info` / `warning` — polite announcements (role="status").
+ * - `error` / `danger` — assertive interruptions (role="alert"). Use these
+ *   sparingly; they immediately interrupt AT users.
+ *   `danger` vs `error`: both render identically (same red token). Prefer
+ *   `danger` for destructive-action confirmations and security events;
+ *   prefer `error` for unexpected system failures.
  */
 export function useToast() {
   const { addToast, dismissToast } = useNotifications();
@@ -53,11 +62,24 @@ export function useToast() {
     [addToast],
   );
 
+  /**
+   * Assertive (role="alert") toast for destructive actions or security
+   * events. Shares the same red design token as `error` but is
+   * semantically distinct: "danger" = intended but severe consequence;
+   * "error" = unexpected system failure.
+   */
+  const danger = useCallback(
+    (title: string, message: string, opts?: ToastOptions) =>
+      addToast({ type: 'danger', title, message, ...opts }),
+    [addToast],
+  );
+
   return {
     success,
     error,
     warning,
     info,
+    danger,
     dismiss: dismissToast,
   };
 }
