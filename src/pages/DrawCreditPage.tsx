@@ -43,6 +43,7 @@ import { KbdHint } from "@/components/KbdHint";
 import { LiveRegion } from "@/components/LiveRegion";
 import { CreditLine, DrawStep, Transaction } from "@/types/draw-credit.types";
 import { mockCreditLines } from "@/lib/draw-credit-mock-data";
+import { normalizeCreditLineAvailability } from "@/lib/credit-line-availability";
 import { WhyApr } from "@/components/WhyApr";
 import { DrawSummaryBar } from "@/components/DrawSummaryBar";
 import { useDrawWizardMicroProgress } from "@/hooks/useDrawWizardMicroProgress";
@@ -78,7 +79,11 @@ export default function DrawCreditPage() {
     routeTransaction ? "status" : draftState?.step ?? "select",
   );
   const [selectedCreditLine, setSelectedCreditLine] =
-    useState<CreditLine | null>(draftState?.selectedCreditLine ?? null);
+    useState<CreditLine | null>(
+      draftState?.selectedCreditLine
+        ? normalizeCreditLineAvailability(draftState.selectedCreditLine)
+        : null,
+    );
   const [amount, setAmount] = useState(draftState?.amount ?? 0);
 
   useEffect(() => {
@@ -111,7 +116,10 @@ export default function DrawCreditPage() {
   const { isReducedMotionActive } = useReducedMotion();
 
   const handleSelectCreditLine = (creditLine: CreditLine) => {
-    setSelectedCreditLine(creditLine);
+    // Derive draw availability from the authoritative utilization at the
+    // wizard boundary (issue #931) so stale or inconsistent `available`
+    // values can never leak into the amount step.
+    setSelectedCreditLine(normalizeCreditLineAvailability(creditLine));
     setAmount(0);
     setConfirmationAcknowledged(false);
     setStep("amount");
