@@ -278,6 +278,15 @@ describe('ariallive-v7 – SR live region', () => {
     const region = screen.getByTestId('live-region');
     expect(region.textContent).toMatch(/new repayment/i);
   });
+
+  it('announces a validation error to the live region when an invalid amount is entered', () => {
+    render$(['/repay?line=CL-TEST-001']);
+    const input = screen.getByRole('spinbutton', { name: /amount to repay/i });
+    // Entering an amount exceeding the utilized amount (85000)
+    fireEvent.change(input, { target: { value: '999999' } });
+    const region = screen.getByTestId('live-region');
+    expect(region.textContent).toMatch(/Error:/i);
+  });
 });
 
 // ── tokens-v7: Design-token usage ────────────────────────────────────────────

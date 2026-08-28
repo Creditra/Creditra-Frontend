@@ -245,6 +245,13 @@ export default function RepayPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [step, selectedLine, isInvalid, amount, isConfirmDisabled, handleBack, suggestedAmount, walletBalance]);
 
+  // Task ariallive-v7: announce validation errors to screen readers
+  useEffect(() => {
+    if (validation?.feedback.severity === 'danger' && validation.feedback.message) {
+      setSrAnnouncement(`Error: ${validation.feedback.message}`);
+    }
+  }, [validation?.feedback.message, validation?.feedback.severity]);
+
   if (!selectedLine) {
     return (
     <div className="repay-page mx-auto max-w-2xl space-y-6 px-4 py-8">
@@ -849,7 +856,7 @@ export default function RepayPage() {
         />
       )}
 
-      <LiveRegion>{srAnnouncement}</LiveRegion>
+      <LiveRegion message={srAnnouncement} />
     </div>
   );
 }
