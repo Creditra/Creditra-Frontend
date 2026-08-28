@@ -24,6 +24,7 @@ describe('NetworkMismatchBanner', () => {
     vi.mocked(useWallet).mockReturnValue({
       wallet: null,
       status: 'disconnected',
+      refreshWalletIdentity: vi.fn(),
     } as any);
 
     const { container } = render(<NetworkMismatchBanner />);
@@ -34,6 +35,7 @@ describe('NetworkMismatchBanner', () => {
     vi.mocked(useWallet).mockReturnValue({
       wallet: { type: 'freighter', network: 'TESTNET', publicKey: 'GXXX' },
       status: 'connected',
+      refreshWalletIdentity: vi.fn(),
     } as any);
 
     const { container } = render(<NetworkMismatchBanner />);
@@ -44,6 +46,7 @@ describe('NetworkMismatchBanner', () => {
     vi.mocked(useWallet).mockReturnValue({
       wallet: { type: 'freighter', network: 'PUBLIC', publicKey: 'GXXX' },
       status: 'connected',
+      refreshWalletIdentity: vi.fn(),
     } as any);
     vi.mocked(isSwitchSupported).mockReturnValue(true);
 
@@ -57,6 +60,7 @@ describe('NetworkMismatchBanner', () => {
     vi.mocked(useWallet).mockReturnValue({
       wallet: { type: 'freighter', network: 'PUBLIC', publicKey: 'GXXX' },
       status: 'connected',
+      refreshWalletIdentity: vi.fn(),
     } as any);
     vi.mocked(isSwitchSupported).mockReturnValue(true);
 
@@ -71,6 +75,7 @@ describe('NetworkMismatchBanner', () => {
     vi.mocked(useWallet).mockReturnValue({
       wallet: { type: 'albedo', network: 'PUBLIC', publicKey: 'GXXX' },
       status: 'connected',
+      refreshWalletIdentity: vi.fn(),
     } as any);
     vi.mocked(isSwitchSupported).mockReturnValue(false);
 
@@ -85,6 +90,7 @@ describe('NetworkMismatchBanner', () => {
     vi.mocked(useWallet).mockReturnValue({
       wallet: { type: 'freighter', network: 'PUBLIC', publicKey: 'GXXX' },
       status: 'connected',
+      refreshWalletIdentity: vi.fn(),
     } as any);
     vi.mocked(isSwitchSupported).mockReturnValue(true);
 
@@ -103,6 +109,7 @@ describe('NetworkMismatchBanner', () => {
     vi.mocked(useWallet).mockReturnValue({
       wallet: { type: 'freighter', network: 'PUBLIC', publicKey: 'GXXX' },
       status: 'connected',
+      refreshWalletIdentity: vi.fn(),
     } as any);
     vi.mocked(isSwitchSupported).mockReturnValue(true);
     vi.mocked(switchNetwork).mockResolvedValue(undefined);
@@ -115,5 +122,51 @@ describe('NetworkMismatchBanner', () => {
     });
     
     expect(switchNetwork).toHaveBeenCalledWith('freighter', 'TESTNET');
+  });
+
+  // #961 — after a successful network switch, the app must pull the wallet's
+  // new identity into context (which is what actually invalidates any data,
+  // like balances, cached against the old network). Before this fix the
+  // banner called switchNetwork() and stopped, leaving wallet.network (and
+  // anything derived from it) stale until some unrelated action happened to
+  // refetch it.
+  it('refreshes wallet identity after a successful network switch', async () => {
+    const refreshWalletIdentity = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(useWallet).mockReturnValue({
+      wallet: { type: 'freighter', network: 'PUBLIC', publicKey: 'GXXX' },
+      status: 'connected',
+      refreshWalletIdentity,
+    } as any);
+    vi.mocked(isSwitchSupported).mockReturnValue(true);
+    vi.mocked(switchNetwork).mockResolvedValue(undefined);
+
+    render(<NetworkMismatchBanner />);
+
+    const btn = screen.getByRole('button', { name: /switch network/i });
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+
+    expect(refreshWalletIdentity).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call refreshWalletIdentity when switchNetwork itself fails', async () => {
+    const refreshWalletIdentity = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(useWallet).mockReturnValue({
+      wallet: { type: 'freighter', network: 'PUBLIC', publicKey: 'GXXX' },
+      status: 'connected',
+      refreshWalletIdentity,
+    } as any);
+    vi.mocked(isSwitchSupported).mockReturnValue(true);
+    vi.mocked(switchNetwork).mockRejectedValue(new Error('User rejected'));
+
+    render(<NetworkMismatchBanner />);
+
+    const btn = screen.getByRole('button', { name: /switch network/i });
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+
+    expect(refreshWalletIdentity).not.toHaveBeenCalled();
   });
 });

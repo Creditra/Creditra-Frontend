@@ -58,6 +58,39 @@
  *     Re-pings the wallet to verify liveness and resets the session clock.
  *     On success: sessionTimeoutWarning → false, full session timer restarts.
  *     On failure: transitions to 'error' state (same as a failed connect).
+ *
+ * Cache invalidation on account / network switch (#961)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * `balances` / `lastUpdated` are derived data keyed to a specific
+ * `(type, publicKey, network)` identity, not to "whichever wallet happens to
+ * be connected right now." Three things enforce that invariant:
+ *
+ *   1. A `walletIdentityKey(wallet)` comparison in a `useEffect` that fires on
+ *      every `wallet` change (from *any* code path — connect, auto-reconnect,
+ *      retryReconnect, stayConnected, refreshWalletIdentity, or disconnecting
+ *      to `null`). Whenever the identity actually changes, `balances` and
+ *      `lastUpdated` are cleared synchronously, in the same render as the new
+ *      wallet — there is no frame where stale numbers are shown next to a new
+ *      identity. This is centralized in one effect instead of duplicated in
+ *      every setter, so no future code path that changes `wallet` can forget
+ *      to invalidate the cache.
+ *
+ *   2. `fetchBalances()` snapshots the identity it was fetching *for* and
+ *      discards the response if the identity has since changed by the time
+ *      the network request resolves. Without this, switching accounts while
+ *      a balance fetch for the *previous* account is still in flight could
+ *      let that stale response land after the switch and overwrite the new
+ *      account's (correct, possibly still-empty) balances with the old
+ *      account's numbers.
+ *
+ *   3. `refreshWalletIdentity()` re-derives the wallet's current
+ *      `publicKey`/`network` from the extension without going through the
+ *      `connecting`/`reconnecting` UI states. This exists because some wallet
+ *      actions (e.g. `switchNetwork()` in `NetworkMismatchBanner`) change the
+ *      extension's state out from under the app — nothing else in this file
+ *      would otherwise notice the identity changed, and (1) never fires.
+ *
+ * exported for tests: `walletIdentityKey`
  */
 
 import {
@@ -109,6 +142,18 @@ export const SESSION_WARN_BEFORE_MS = 60_000;
 interface BalanceInfo {
   asset: string; // e.g., 'XLM' or asset_code
   balance: string;
+}
+
+/**
+ * Stable identity string for a `WalletInfo`, used to detect account or
+ * network switches. `null` wallet → `null` key (disconnected has no identity
+ * to compare against). Two different wallet *types* connected to the same
+ * public key are treated as different identities on purpose — different
+ * extensions could report the same address in different network contexts.
+ */
+export function walletIdentityKey(wallet: WalletInfo | null): string | null {
+  if (!wallet) return null;
+  return `${wallet.type}:${wallet.publicKey}:${wallet.network}`;
 }
 
 /** Optional second-arg bag for `connect()`. */
@@ -193,6 +238,17 @@ interface WalletContextType {
    */
   stayConnected: () => Promise<void>;
   refreshBalance: () => Promise<void>;
+  /**
+   * Re-derive the wallet's current `publicKey`/`network` from the extension
+   * without a `connecting`/`reconnecting` UI transition. Use this after an
+   * out-of-band identity change the app didn't initiate itself — e.g. after
+   * `switchNetwork()` succeeds, or before trusting cached data if the
+   * extension's active account may have changed. No-ops when disconnected.
+   * If the identity did change, this also clears `balances`/`lastUpdated`
+   * (see the cache-invalidation notes above) — callers do not need to clear
+   * those separately.
+   */
+  refreshWalletIdentity: () => Promise<void>;
   setDropdownOpen: (open: boolean) => void;
   balances: BalanceInfo[] | null;
   lastUpdated: Date | null;
@@ -469,8 +525,42 @@ export const WalletProvider = ({
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const pollInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Tracks the identity `balances`/`lastUpdated` currently belong to, so the
+  // invalidation effect below can tell "the wallet changed" apart from
+  // "the wallet object was replaced with an equivalent one" (e.g. a
+  // successful `stayConnected()` re-ping of the same account).
+  const balancesIdentityRef = useRef<string | null>(null);
+
+  // ── Cache invalidation on account / network switch (#961) ──────────────────
+  //
+  // Runs after every render where `wallet`'s identity changed — regardless of
+  // which function changed it (connect, auto-reconnect, retryReconnect,
+  // stayConnected, refreshWalletIdentity, or disconnect setting it to null).
+  // Centralizing the check here means no future caller of `setWallet` can
+  // forget to invalidate the cache.
+  useEffect(() => {
+    const currentKey = walletIdentityKey(wallet);
+    if (balancesIdentityRef.current === currentKey) return;
+
+    if (balancesIdentityRef.current !== null) {
+      // Only warn when there was a previous identity — the very first mount
+      // (previous = null) is not a "switch". Never log the key itself: it
+      // contains the public key, which we keep out of logs on principle
+      // even though it isn't a secret.
+      console.warn('[WalletContext] Wallet identity changed — clearing cached balances.');
+    }
+    balancesIdentityRef.current = currentKey;
+    setBalances(null);
+    setLastUpdated(null);
+  }, [wallet]);
+
   const fetchBalances = async () => {
     if (!wallet?.publicKey) return;
+    // Snapshot which identity this fetch is *for*. If the wallet changes
+    // before the request resolves, the response belongs to an identity we've
+    // already invalidated and must not be applied — see the module doc
+    // comment's point (2).
+    const fetchIdentity = walletIdentityKey(wallet);
     try {
       const networkUrl =
         wallet.network === 'public'
@@ -478,6 +568,12 @@ export const WalletProvider = ({
           : 'https://horizon-testnet.stellar.org';
       const response = await fetch(`${networkUrl}/accounts/${wallet.publicKey}`);
       const data = await response.json();
+
+      if (balancesIdentityRef.current !== fetchIdentity) {
+        console.warn('[WalletContext] Discarding balance response for a stale wallet identity.');
+        return;
+      }
+
       const bal: BalanceInfo[] = data.balances.map((b: { asset_type: string; asset_code: string; balance: string }) => ({
         asset: b.asset_type === 'native' ? 'XLM' : b.asset_code,
         balance: b.balance,
@@ -486,6 +582,7 @@ export const WalletProvider = ({
       setLastUpdated(new Date());
     } catch (e) {
       console.error('Failed to fetch balances', e);
+      if (balancesIdentityRef.current !== fetchIdentity) return;
       setBalances(null);
     }
   };
@@ -493,6 +590,29 @@ export const WalletProvider = ({
   const refreshBalance = async () => {
     await fetchBalances();
   };
+
+  /**
+   * Re-derive the connected wallet's current identity from the extension.
+   * Deliberately does not touch `status` — this is a quiet background check,
+   * not a user-facing connect/reconnect. If the extension reports a
+   * different `publicKey` or `network` than what's in context, `wallet` is
+   * updated, which triggers the invalidation effect above and clears the
+   * (now-stale) cached balances. If the check itself fails (e.g. the
+   * extension is momentarily unreachable), the existing wallet state is left
+   * untouched — a quiet identity refresh should never be able to disconnect
+   * an otherwise-healthy session.
+   */
+  const refreshWalletIdentity = useCallback(async () => {
+    if (!wallet) return;
+    try {
+      const fresh = await connectWallet(wallet.type);
+      if (walletIdentityKey(fresh) !== walletIdentityKey(wallet)) {
+        setWallet(fresh);
+      }
+    } catch (e) {
+      console.error('Failed to refresh wallet identity', e);
+    }
+  }, [wallet]);
 
   const setDropdownOpen = (open: boolean) => {
     if (open) {
@@ -531,6 +651,7 @@ export const WalletProvider = ({
         balances,
         lastUpdated,
         refreshBalance,
+        refreshWalletIdentity,
         setDropdownOpen,
       }}
     >

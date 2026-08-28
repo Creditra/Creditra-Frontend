@@ -56,15 +56,22 @@ function WalletContextConsumer() {
     disconnect,
     forgetRememberedChoice,
     connect,
+    balances,
+    lastUpdated,
+    refreshBalance,
+    refreshWalletIdentity,
   } = useWallet();
 
   return (
     <div>
       <span data-testid="status">{status}</span>
       <span data-testid="wallet">{wallet?.publicKey ?? 'null'}</span>
+      <span data-testid="wallet-network">{wallet?.network ?? 'null'}</span>
       <span data-testid="error">{error?.type ?? 'null'}</span>
       <span data-testid="reconnect-timed-out">{String(reconnectTimedOut)}</span>
       <span data-testid="is-remembered">{String(isRemembered)}</span>
+      <span data-testid="balances">{balances ? balances.map((b) => `${b.asset}:${b.balance}`).join(',') : 'null'}</span>
+      <span data-testid="last-updated">{lastUpdated ? 'set' : 'null'}</span>
       <button data-testid="dismiss-btn" onClick={dismissReconnectBanner}>
         Dismiss
       </button>
@@ -91,6 +98,12 @@ function WalletContextConsumer() {
         onClick={() => connect('albedo', { remember: false })}
       >
         Connect with remember=false
+      </button>
+      <button data-testid="refresh-balance-btn" onClick={() => { refreshBalance(); }}>
+        Refresh balance
+      </button>
+      <button data-testid="refresh-identity-btn" onClick={() => { refreshWalletIdentity(); }}>
+        Refresh identity
       </button>
     </div>
   );
@@ -502,5 +515,164 @@ describe('WalletContext — auto-reconnect', () => {
     expect(consoleSpy).not.toHaveBeenCalledWith(
       expect.stringContaining('unmounted'),
     );
+  });
+});
+
+// ─── #961 — cache invalidation after account or network switching ───────────
+
+describe('WalletContext — cache invalidation on account/network switch (#961)', () => {
+  const ACCOUNT_A = { type: 'freighter' as const, publicKey: 'GAAA111', network: 'PUBLIC' };
+  const ACCOUNT_B = { type: 'freighter' as const, publicKey: 'GBBB222', network: 'PUBLIC' };
+
+  function mockBalancesFetch(asset: string, balance: string) {
+    return vi.fn().mockResolvedValue({
+      json: async () => ({
+        balances: [{ asset_type: asset === 'XLM' ? 'native' : 'credit_alphanum4', asset_code: asset, balance }],
+      }),
+    });
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('clears balances when connecting a different account than the one previously connected', async () => {
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_A);
+    (global.fetch as any) = mockBalancesFetch('XLM', '100');
+
+    renderProvider();
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+    expect(screen.getByTestId('wallet').textContent).toBe(ACCOUNT_A.publicKey);
+
+    // Populate the cache the way the dropdown normally would.
+    await act(async () => { screen.getByTestId('refresh-balance-btn').click(); });
+    await flushPromises();
+    expect(screen.getByTestId('balances').textContent).toBe('XLM:100');
+    expect(screen.getByTestId('last-updated').textContent).toBe('set');
+
+    // Disconnect, then connect a *different* account.
+    await act(async () => { screen.getByTestId('disconnect-btn').click(); });
+    expect(screen.getByTestId('balances').textContent).toBe('null');
+    expect(screen.getByTestId('last-updated').textContent).toBe('null');
+
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_B);
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+
+    expect(screen.getByTestId('wallet').textContent).toBe(ACCOUNT_B.publicKey);
+    // Account A's balances must never be visible under Account B's identity.
+    expect(screen.getByTestId('balances').textContent).toBe('null');
+    expect(screen.getByTestId('last-updated').textContent).toBe('null');
+  });
+
+  it('does not clear balances when the same identity is reconfirmed (stayConnected-style refresh)', async () => {
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue(ACCOUNT_A);
+    (global.fetch as any) = mockBalancesFetch('XLM', '100');
+
+    renderProvider();
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+    await act(async () => { screen.getByTestId('refresh-balance-btn').click(); });
+    await flushPromises();
+    expect(screen.getByTestId('balances').textContent).toBe('XLM:100');
+
+    // Re-derive the identity via refreshWalletIdentity — connectWallet
+    // resolves with the *same* account, so this must be a no-op for the
+    // balance cache (a naive "always clear on any wallet update" approach
+    // would wrongly wipe it here).
+    await act(async () => { screen.getByTestId('refresh-identity-btn').click(); });
+    await flushPromises();
+
+    expect(screen.getByTestId('balances').textContent).toBe('XLM:100');
+  });
+
+  it('refreshWalletIdentity picks up an out-of-band network switch and clears stale balances', async () => {
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_A);
+    (global.fetch as any) = mockBalancesFetch('XLM', '100');
+
+    renderProvider();
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+    await act(async () => { screen.getByTestId('refresh-balance-btn').click(); });
+    await flushPromises();
+    expect(screen.getByTestId('wallet-network').textContent).toBe('PUBLIC');
+    expect(screen.getByTestId('balances').textContent).toBe('XLM:100');
+
+    // Simulate switchNetwork() having changed the extension's active
+    // network out from under the app — the next connectWallet() call
+    // (as refreshWalletIdentity performs) now reports TESTNET.
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce({
+      ...ACCOUNT_A,
+      network: 'TESTNET',
+    });
+
+    await act(async () => { screen.getByTestId('refresh-identity-btn').click(); });
+    await flushPromises();
+
+    expect(screen.getByTestId('wallet-network').textContent).toBe('TESTNET');
+    // The PUBLIC-network balance must not survive under the TESTNET identity.
+    expect(screen.getByTestId('balances').textContent).toBe('null');
+    expect(screen.getByTestId('last-updated').textContent).toBe('null');
+  });
+
+  it('refreshWalletIdentity leaves wallet state untouched when the identity check itself fails', async () => {
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_A);
+    renderProvider();
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+
+    vi.spyOn(walletUtils, 'connectWallet').mockRejectedValueOnce({
+      type: 'connection_failed',
+      message: 'Extension unavailable',
+    });
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await act(async () => { screen.getByTestId('refresh-identity-btn').click(); });
+    await flushPromises();
+
+    // A failed background identity check must not disconnect an otherwise
+    // healthy session, and must not flip status to 'error'.
+    expect(screen.getByTestId('status').textContent).toBe('connected');
+    expect(screen.getByTestId('wallet').textContent).toBe(ACCOUNT_A.publicKey);
+    expect(consoleErrorSpy).toHaveBeenCalled();
+  });
+
+  it('discards a balance response that resolves after the wallet has already switched accounts', async () => {
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_A);
+
+    let resolveFetch!: (v: any) => void;
+    const pendingFetch = new Promise((res) => { resolveFetch = res; });
+    (global.fetch as any) = vi.fn().mockReturnValueOnce(pendingFetch);
+
+    renderProvider();
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+
+    // Kick off a balance fetch for Account A, but do not let it resolve yet.
+    act(() => { screen.getByTestId('refresh-balance-btn').click(); });
+    await flushPromises();
+    expect(screen.getByTestId('balances').textContent).toBe('null'); // still in flight
+
+    // Switch to Account B *before* Account A's fetch resolves.
+    await act(async () => { screen.getByTestId('disconnect-btn').click(); });
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_B);
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+    expect(screen.getByTestId('wallet').textContent).toBe(ACCOUNT_B.publicKey);
+
+    // Now let Account A's stale fetch resolve.
+    await act(async () => {
+      resolveFetch({ json: async () => ({ balances: [{ asset_type: 'native', asset_code: 'XLM', balance: '100' }] }) });
+    });
+    await flushPromises();
+
+    // Account A's late-arriving balance must never appear under Account B.
+    expect(screen.getByTestId('wallet').textContent).toBe(ACCOUNT_B.publicKey);
+    expect(screen.getByTestId('balances').textContent).toBe('null');
   });
 });
