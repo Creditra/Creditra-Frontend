@@ -14,8 +14,6 @@ import { NotificationProvider } from "./context/NotificationContext";
 import { WalletButton } from "./components/WalletButton";
 import { QuickRepayTrigger } from "./components/QuickRepayTrigger";
 import { KycDrawer, KycTriggerButton } from "./components/KycDrawer";
-import { NetworkMismatchBanner } from "./components/NetworkMismatchBanner";
-import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
 import DrawCreditPage from "./pages/DrawCreditPage";
 import CreditLines from "./pages/CreditLines";
 import { TransactionHistory } from "./pages/TransactionHistory";
@@ -31,9 +29,7 @@ import { SettingsAccount } from "./pages/SettingsAccount";
 import { Theme } from "./pages/settings/Theme";
 import { LinkedAccounts } from "./pages/LinkedAccounts";
 import AgingTagPage from "./pages/AgingTag";
-import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
 import { SessionTimeoutBanner } from "./components/SessionTimeoutBanner";
-import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatchBanner";
 import { Header } from "./layouts/Header";
 import CreditLineCompare from "./pages/CreditLineCompare";
 import { TermsBanner } from "./components/TermsBanner";
@@ -237,7 +233,7 @@ function App() {
                         <Route path="/" element={<Dashboard />} />
                         <Route path="/transactions" element={<TransactionHistory />} />
                         <Route path="/credit-lines" element={<CreditLines />} />
-                        <Route path="/credit-lines/compare" element={<CreditLineCompare />} />
+                        <Route path="/compare-credit-lines" element={<CreditLineCompare />} />
                         <Route path="/help" element={<HelpCenter />} />
                         <Route path="/draw-credit" element={<DrawCreditPage />} />
                         <Route

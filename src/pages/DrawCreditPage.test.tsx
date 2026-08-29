@@ -665,6 +665,104 @@ describe("DrawCreditPage — keyboard shortcut hints", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Tests — duplicate submission guard (issue #932)
+// ---------------------------------------------------------------------------
+
+describe("DrawCreditPage — duplicate submission guard", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("double-clicking Confirm creates exactly one transaction", async () => {
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.9);
+    const { user } = setup();
+    await goToConfirmStep(user);
+    fireEvent.click(screen.getByRole("checkbox"));
+
+    const confirmBtn = screen.getByRole("button", { name: /confirm draw/i });
+
+    vi.useFakeTimers();
+    await act(async () => {
+      // Two activations in the same tick, before the network delay elapses —
+      // the second must be rejected by the in-flight guard.
+      fireEvent.click(confirmBtn);
+      fireEvent.click(confirmBtn);
+      vi.advanceTimersByTime(2000);
+    });
+
+    // Exactly one submission reaches the simulated network and produces a
+    // single transaction result.
+    expect(randomSpy).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("heading", { name: /draw successful/i }),
+    ).toBeInTheDocument();
+
+    vi.useRealTimers();
+    randomSpy.mockRestore();
+  });
+
+  it("ArrowRight during an in-flight submission does not create a second draw", async () => {
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.9);
+    const { user } = setup();
+    await goToConfirmStep(user);
+    fireEvent.click(screen.getByRole("checkbox"));
+
+    vi.useFakeTimers();
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: /confirm draw/i }),
+      );
+      // Repeated keyboard activation (holding →) must not double-submit.
+      fireEvent.keyDown(document.body, {
+        key: "ArrowRight",
+        code: "ArrowRight",
+      });
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(randomSpy).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("heading", { name: /draw successful/i }),
+    ).toBeInTheDocument();
+
+    vi.useRealTimers();
+    randomSpy.mockRestore();
+  });
+
+  it("a failed submission releases the guard so a fresh draw can start", async () => {
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.1);
+    const { user } = setup();
+    await goToConfirmStep(user);
+    fireEvent.click(screen.getByRole("checkbox"));
+
+    vi.useFakeTimers();
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: /confirm draw/i }),
+      );
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(
+      screen.getByRole("heading", { name: /draw failed/i }),
+    ).toBeInTheDocument();
+
+    vi.useRealTimers();
+
+    // The in-flight flag was released in `finally`, so the wizard can reset.
+    await user.click(
+      screen.getByRole("button", { name: /make another draw/i }),
+    );
+
+    expect(
+      screen.getByRole("heading", { name: /select credit line/i }),
+    ).toBeInTheDocument();
+
+    randomSpy.mockRestore();
+  });
+});
+
 describe("DrawCreditPage — responsive breakpoint audit", () => {
   const cssPath = join(dirname(fileURLToPath(import.meta.url)), "../index.css");
   const css = readFileSync(cssPath, "utf-8");

@@ -17,6 +17,7 @@ import {
   requiresRepayConfirmation,
 } from '@/utils/amountValidation';
 import { suggestRepayAmount } from '@/utils/suggestRepay';
+import { computeMonthlyAccruedInterest } from '@/utils/currency';
 import {
   isTypedAmountMatch,
   TypedAmountConfirmField,
@@ -366,6 +367,12 @@ export default function RepayPage() {
   const oldPct = Math.round((selectedLine.utilized / selectedLine.limit) * 100);
   const remainingDebt = validation?.remainingDebt ?? selectedLine.utilized;
   const newPct = Math.round((remainingDebt / selectedLine.limit) * 100);
+  const accruedInterest = computeMonthlyAccruedInterest(
+    selectedLine.utilized,
+    selectedLine.apr,
+  );
+  const interestPortion = Math.min(amount, accruedInterest);
+  const principalPortion = Math.max(0, amount - interestPortion);
 
   return (
     <div className="repay-page mx-auto max-w-4xl px-4 py-6 sm:py-8">
@@ -719,6 +726,29 @@ export default function RepayPage() {
                   <div className="flex items-center justify-between text-sm border-t border-border pt-3">
                     <span className="text-muted">Auto-schedule</span>
                     <span className="font-semibold text-accent">Monthly</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-surface p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-foreground">Repayment Allocation</p>
+                <span className="text-xs text-muted">{selectedLine.apr}% APR</span>
+              </div>
+              <div className="mt-3 space-y-2 text-sm">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-muted">Principal reduction</span>
+                  <span className="font-semibold text-foreground num-tabular">
+                    {formatMoney(principalPortion)}
+                  </span>
+                </div>
+                {accruedInterest > 0 && (
+                  <div className="flex items-center justify-between gap-4 border-t border-border pt-2">
+                    <span className="text-muted">Accrued interest paid</span>
+                    <span className="font-semibold text-foreground num-tabular">
+                      {formatMoney(interestPortion)}
+                    </span>
                   </div>
                 )}
               </div>
