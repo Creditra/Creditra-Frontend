@@ -5,7 +5,8 @@
 @import "./styles/safe-area.css";
 @import "./styles/patterns.css";
 @import "./components/FormField.css";
-@import "./styles/themes/high-contrast.css"; // High‑contrast overrides
+/* High-contrast overrides */
+@import "./styles/themes/high-contrast.css";
 :root,
 .theme-default {
   --bg: #0d1117;
