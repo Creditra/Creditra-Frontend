@@ -40,6 +40,7 @@ vi.mock('../context/WalletContext', () => ({
 vi.mock('../utils/storage', () => ({
   readJson: vi.fn((_key: string, fallback: unknown) => fallback),
   writeJson: vi.fn(),
+  removeKey: vi.fn(),
 }));
 
 vi.mock('../data/mockData', () => ({

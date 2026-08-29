@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { AlertCircle, AlertTriangle, CheckCircle, Info, ArrowLeft } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CheckCircle, Info, ArrowLeft, RefreshCw, X } from 'lucide-react';
 import { Skeleton } from '@/components/Skeleton';
 import { PayoffProjection } from '@/components/PayoffProjection';
 import { RepaymentVisualizer } from '@/components/RepaymentVisualizer';
@@ -26,6 +26,12 @@ import { RepayPreviewModal } from '@/components/RepayPreviewModal';
 import { CopyToClipboard } from '@/components/CopyToClipboard';
 import { MOCK_CREDIT_LINES } from '@/data/mockData';
 import { motionClasses, useReducedMotion } from '@/context/ReducedMotionContext';
+import {
+  saveRepayDraft,
+  loadRepayDraft,
+  clearRepayDraft,
+  type RepayDraftState,
+} from '@/state/repayDraft';
 import './RepayPage.css';
 
 type RepayStep = 'input' | 'review';
@@ -87,6 +93,17 @@ export default function RepayPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const preselectedId = searchParams.get('line');
+
+  // ── Draft recovery state ──────────────────────────────────────────────
+  const [recoveredDraft, setRecoveredDraft] = useState<RepayDraftState | null>(null);
+  const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false);
+  const draftLoadedRef = useRef(false);
+  // Guard: set to true inside handleConfirm/handleNewRepay to prevent the
+  // persist useEffect from re-saving a draft after clearRepayDraft() runs.
+  // React Router's navigate() can trigger a synchronous re-render via the
+  // router context (outside React 18 batching), causing the persist effect
+  // to fire with the old step before setStep('success') is applied.
+  const draftClearedRef = useRef(false);
 
   const [step, setStep] = useState<RepayStep>('input');
   const [selectedId, setSelectedId] = useState<string>(preselectedId ?? '');
@@ -170,6 +187,8 @@ export default function RepayPage() {
   };
 
   const handleConfirm = () => {
+    draftClearedRef.current = true;
+    clearRepayDraft();
     navigate('/repay/success', {
       state: {
         amount,
@@ -189,6 +208,8 @@ export default function RepayPage() {
   };
 
   const handleNewRepay = () => {
+    draftClearedRef.current = true;
+    clearRepayDraft();
     setAmountStr('');
     setIsAutoSchedule(false);
     setStep('input');
@@ -205,6 +226,71 @@ export default function RepayPage() {
       navigate(-1);
     }
   }, [step, preselectedId, navigate]);
+
+  // ── Draft recovery handlers ──────────────────────────────────────────
+  const handleRestoreDraft = useCallback(() => {
+    if (!recoveredDraft) return;
+    setSelectedId(recoveredDraft.creditLineId);
+    setAmountStr(recoveredDraft.amountStr);
+    setConfirmAmountStr(recoveredDraft.confirmAmountStr);
+    setIsAutoSchedule(recoveredDraft.isAutoSchedule);
+    setStep(recoveredDraft.step);
+    setShowRecoveryPrompt(false);
+    setRecoveredDraft(null);
+    setSrAnnouncement(
+      `Restored repayment draft: ${formatMoney(parseFloat(recoveredDraft.amountStr) || 0)} on ${recoveredDraft.creditLineId}.`,
+    );
+  }, [recoveredDraft]);
+
+  const handleDismissDraft = useCallback(() => {
+    clearRepayDraft();
+    setShowRecoveryPrompt(false);
+    setRecoveredDraft(null);
+    setSrAnnouncement('Previous repayment draft discarded.');
+  }, []);
+
+  // ── Initial draft recovery check ──────────────────────────────────────
+  useEffect(() => {
+    if (draftLoadedRef.current) return;
+    draftLoadedRef.current = true;
+
+    const draft = loadRepayDraft();
+    if (draft && !preselectedId) {
+      // Only show recovery prompt when the user hasn't navigated with a
+      // specific credit line preselected (which implies a fresh intent).
+      setRecoveredDraft(draft);
+      setShowRecoveryPrompt(true);
+    }
+  }, [preselectedId]);
+
+  // ── Persist draft on state changes ────────────────────────────────────
+  useEffect(() => {
+    // When the user confirms or starts a new repayment, ensure the draft
+    // is cleared.  This acts as a safety net: even if clearRepayDraft()
+    // ran in the event handler, React Router's navigate() can trigger an
+    // intermediate render that re-persists the draft before the step
+    // state update is applied.
+    if (step === 'success') {
+      clearRepayDraft();
+      return;
+    }
+    // Don't persist if the draft was just intentionally cleared
+    // (handleConfirm / handleNewRepay).
+    if (draftClearedRef.current) return;
+
+    // Don't save during loading or after cancel.
+    if (isLoading || !selectedId) return;
+    // Don't save empty amounts on the input step.
+    if (step === 'input' && !amountStr) return;
+
+    saveRepayDraft({
+      step,
+      creditLineId: selectedId,
+      amountStr,
+      confirmAmountStr,
+      isAutoSchedule,
+    });
+  }, [step, selectedId, amountStr, confirmAmountStr, isAutoSchedule, isLoading]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -265,6 +351,52 @@ export default function RepayPage() {
           Back
           <KbdHint keys={['Esc']} className="ml-1" />
         </button>
+
+      {/* ── Recovery prompt banner (credit line picker view) ──────── */}
+      {showRecoveryPrompt && recoveredDraft && (
+        <div
+          className="mb-4 flex items-start gap-3 rounded-lg border border-accent/40 bg-accent/10 p-4"
+          role="alert"
+          aria-live="polite"
+          data-testid="repay-recovery-prompt"
+        >
+          <RefreshCw className="mt-0.5 h-5 w-5 shrink-0 text-accent" aria-hidden="true" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-foreground">
+              Recover interrupted repayment?
+            </p>
+            <p className="mt-1 text-xs text-muted">
+              You have a saved repayment draft for credit line{' '}
+              <span className="font-medium text-foreground">{recoveredDraft.creditLineId}</span>
+              {' '}—{' '}
+              <span className="font-medium text-foreground num-tabular">
+                {formatMoney(parseFloat(recoveredDraft.amountStr) || 0)}
+              </span>
+              . Saved {new Date(recoveredDraft.savedAt).toLocaleTimeString()}.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={handleRestoreDraft}
+                className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-background transition-all hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                data-testid="repay-recovery-restore"
+              >
+                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                Resume
+              </button>
+              <button
+                type="button"
+                onClick={handleDismissDraft}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition-all hover:bg-border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                data-testid="repay-recovery-dismiss"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+                Start fresh
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
         <header className="mt-4">
           <p className="text-xs font-semibold uppercase text-muted">Repay Credit</p>
@@ -381,6 +513,52 @@ export default function RepayPage() {
           <KbdHint keys={['Esc']} />
         </span>
       </button>
+
+      {/* ── Recovery prompt banner ────────────────────────────────────── */}
+      {showRecoveryPrompt && recoveredDraft && (
+        <div
+          className="mb-4 flex items-start gap-3 rounded-lg border border-accent/40 bg-accent/10 p-4"
+          role="alert"
+          aria-live="polite"
+          data-testid="repay-recovery-prompt"
+        >
+          <RefreshCw className="mt-0.5 h-5 w-5 shrink-0 text-accent" aria-hidden="true" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-foreground">
+              Recover interrupted repayment?
+            </p>
+            <p className="mt-1 text-xs text-muted">
+              You have a saved repayment draft for credit line{' '}
+              <span className="font-medium text-foreground">{recoveredDraft.creditLineId}</span>
+              {' '}—{' '}
+              <span className="font-medium text-foreground num-tabular">
+                {formatMoney(parseFloat(recoveredDraft.amountStr) || 0)}
+              </span>
+              . Saved {new Date(recoveredDraft.savedAt).toLocaleTimeString()}.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={handleRestoreDraft}
+                className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-background transition-all hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                data-testid="repay-recovery-restore"
+              >
+                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                Resume
+              </button>
+              <button
+                type="button"
+                onClick={handleDismissDraft}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground transition-all hover:bg-border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                data-testid="repay-recovery-dismiss"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+                Start fresh
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-6">
         <header className="space-y-2">
