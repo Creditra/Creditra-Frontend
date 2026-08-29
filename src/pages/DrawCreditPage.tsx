@@ -44,6 +44,7 @@ import { LiveRegion } from "@/components/LiveRegion";
 import { CreditLine, DrawStep, Transaction } from "@/types/draw-credit.types";
 import { mockCreditLines } from "@/lib/draw-credit-mock-data";
 import { normalizeCreditLineAvailability } from "@/lib/credit-line-availability";
+import { getDrawAmountValidation } from "@/utils/amountValidation";
 import { WhyApr } from "@/components/WhyApr";
 import { DrawSummaryBar } from "@/components/DrawSummaryBar";
 import { useDrawWizardMicroProgress } from "@/hooks/useDrawWizardMicroProgress";
@@ -95,6 +96,14 @@ export default function DrawCreditPage() {
   }, [step, selectedCreditLine, amount]);
 
   const [isLoading, setIsLoading] = useState(false);
+  /**
+   * Concurrent submission guard (issue #932). The ref is flipped to `true`
+   * synchronously inside `handleConfirm`, so a duplicate activation — a
+   * double-click on the Confirm button, or a repeated ArrowRight key-down that
+   * lands before React re-renders the status step — is rejected
+   * deterministically instead of issuing a second draw.
+   */
+  const isSubmittingRef = useRef(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const helpTriggerRef = useRef<HTMLButtonElement>(null);
   const [isWhyAprOpen, setIsWhyAprOpen] = useState(false);
@@ -131,30 +140,55 @@ export default function DrawCreditPage() {
   };
 
   const handleConfirm = async () => {
+    const line = selectedCreditLine;
+
+    // Reject any activation while a submission is already in flight, even one
+    // that reaches this handler before React flushes the pending state.
+    if (isSubmittingRef.current) return;
+
+    // State-transition invariant: only the confirm step may submit, and it
+    // requires a credit line and a positive amount.
+    if (step !== "confirm" || !line || amount <= 0) return;
+
+    // Submit-time validation (defense in depth). The amount step guards user
+    // input, but re-validating here ensures an out-of-bounds amount restored
+    // from a wizard draft can never be silently submitted.
+    const validation = getDrawAmountValidation(String(amount), line);
+    if (!validation.isValid) return;
+
+    isSubmittingRef.current = true;
     setIsLoading(true);
     setStep("status");
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    try {
+      // Simulate API call
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    const succeeded = Math.random() > 0.2;
-    const newTransaction: Transaction = {
-      id: `TXN-${Date.now()}`,
-      creditLineId: selectedCreditLine!.id,
-      amount,
-      status: succeeded ? "success" : "error",
-      message: succeeded ? undefined : "Insufficient funds available",
-      timestamp: new Date(),
-    };
+      const succeeded = Math.random() > 0.2;
+      const newTransaction: Transaction = {
+        id: `TXN-${Date.now()}`,
+        creditLineId: line.id,
+        amount,
+        status: succeeded ? "success" : "error",
+        message: succeeded ? undefined : "Insufficient funds available",
+        timestamp: new Date(),
+      };
 
-    setTransaction(newTransaction);
-    setIsLoading(false);
-    setStep("status");
+      setTransaction(newTransaction);
+      setIsLoading(false);
+      setStep("status");
 
-    if (newTransaction.status === "success") {
-      navigate("/draw-credit/success", {
-        replace: true,
-        state: { transaction: newTransaction },
-      });
+      if (newTransaction.status === "success") {
+        navigate("/draw-credit/success", {
+          replace: true,
+          state: { transaction: newTransaction },
+        });
+      }
+    } finally {
+      // Always release the lock (success, failure, or throw) so a later draw
+      // attempt — e.g. after a failed submission or "Make Another Draw" — is
+      // never blocked by a stale in-flight flag.
+      isSubmittingRef.current = false;
     }
   };
 
