@@ -34,6 +34,7 @@ import { Header } from "./layouts/Header";
 import CreditLineCompare from "./pages/CreditLineCompare";
 import { TermsBanner } from "./components/TermsBanner";
 import { ToastContainer } from "./components/ToastContainer";
+import { OfflineBanner } from "./components/OfflineBanner";
 
 const isEditableTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) return false;
@@ -227,9 +228,10 @@ function App() {
                         non-blocking; only visible when reconnect takes > 8 s. */}
                     <WalletReconnectBanner />
                     <main className="main">
-                      <TermsBanner />
-                      <NetworkMismatchBanner />
-                      <Routes>
+                    <TermsBanner />
+                    <NetworkMismatchBanner />
+                    <OfflineBanner />
+                    <Routes>
                         <Route path="/" element={<Dashboard />} />
                         <Route path="/transactions" element={<TransactionHistory />} />
                         <Route path="/credit-lines" element={<CreditLines />} />

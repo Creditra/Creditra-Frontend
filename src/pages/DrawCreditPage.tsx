@@ -45,6 +45,8 @@ import { CreditLine, DrawStep, Transaction } from "@/types/draw-credit.types";
 import { mockCreditLines } from "@/lib/draw-credit-mock-data";
 import { normalizeCreditLineAvailability } from "@/lib/credit-line-availability";
 import { getDrawAmountValidation } from "@/utils/amountValidation";
+import { offlineMutation } from "@/utils/offline";
+import { useOnline } from "@/hooks/useOnline";
 import { WhyApr } from "@/components/WhyApr";
 import { DrawSummaryBar } from "@/components/DrawSummaryBar";
 import { useDrawWizardMicroProgress } from "@/hooks/useDrawWizardMicroProgress";
@@ -73,6 +75,7 @@ function isFocusedOnInput(): boolean {
 export default function DrawCreditPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { queueAction } = useOnline();
   const routeTransaction = location.state?.transaction as Transaction | undefined;
   const draftState = routeTransaction ? null : loadDraft();
 
@@ -139,6 +142,8 @@ export default function DrawCreditPage() {
     setStep("confirm");
   };
 
+  const [isOfflineBlocked, setIsOfflineBlocked] = useState(false);
+
   const handleConfirm = async () => {
     const line = selectedCreditLine;
 
@@ -159,37 +164,55 @@ export default function DrawCreditPage() {
     isSubmittingRef.current = true;
     setIsLoading(true);
     setStep("status");
+    setIsOfflineBlocked(false);
 
+    // Guard the mutation: when offline, never fabricate a success. The
+    // draw is queued for retry on reconnect and a clear error surfaces.
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await offlineMutation({
+        fn: async () => {
+          // Simulate API call
+          await new Promise((resolve) => setTimeout(resolve, 2000));
 
-      const succeeded = Math.random() > 0.2;
-      const newTransaction: Transaction = {
-        id: `TXN-${Date.now()}`,
-        creditLineId: line.id,
-        amount,
-        status: succeeded ? "success" : "error",
-        message: succeeded ? undefined : "Insufficient funds available",
-        timestamp: new Date(),
-      };
+          const succeeded = Math.random() > 0.2;
+          const newTransaction: Transaction = {
+            id: `TXN-${Date.now()}`,
+            creditLineId: line.id,
+            amount,
+            status: succeeded ? "success" : "error",
+            message: succeeded ? undefined : "Insufficient funds available",
+            timestamp: new Date(),
+          };
 
-      setTransaction(newTransaction);
+          setTransaction(newTransaction);
+          setIsLoading(false);
+          setStep("status");
+
+          if (newTransaction.status === "success") {
+            navigate("/draw-credit/success", {
+              replace: true,
+              state: { transaction: newTransaction },
+            });
+          }
+        },
+        onOffline: () => {
+          queueAction(() => {
+            void handleConfirm();
+          }, 'draw-confirm');
+        },
+        offlineMessage:
+          "You are offline, so your draw cannot be processed yet. It has been queued and will be submitted when your connection is restored.",
+      });
+    } catch {
       setIsLoading(false);
-      setStep("status");
-
-      if (newTransaction.status === "success") {
-        navigate("/draw-credit/success", {
-          replace: true,
-          state: { transaction: newTransaction },
-        });
-      }
-    } finally {
-      // Always release the lock (success, failure, or throw) so a later draw
-      // attempt — e.g. after a failed submission or "Make Another Draw" — is
-      // never blocked by a stale in-flight flag.
-      isSubmittingRef.current = false;
+      setIsOfflineBlocked(true);
     }
+    // Always release the lock (success, offline-block, or throw) so a later
+    // draw attempt — e.g. after reconnecting and flushing the queue, a failed
+    // submission, or "Make Another Draw" — is never blocked by a stale flag.
+    // Note: dedup via the 'draw-confirm' key still prevents double-submission
+    // when the user re-triggers while offline.
+    isSubmittingRef.current = false;
   };
 
   const handleNewDraw = () => {
@@ -360,7 +383,7 @@ export default function DrawCreditPage() {
             </>
           )}
 
-          {step === "status" && (isLoading || transaction) && (
+          {step === "status" && (isLoading || transaction || isOfflineBlocked) && (
             <>
               {isLoading && (
                 <div
@@ -418,6 +441,30 @@ export default function DrawCreditPage() {
                       Your draw request is being processed.
                     </p>
                   </div>
+                </div>
+              )}
+              {isOfflineBlocked && !isLoading && (
+                <div
+                  className="dc-step"
+                  role="alert"
+                  aria-live="assertive"
+                >
+                  <h2 className="dc-step__title">You're offline</h2>
+                  <p className="dc-step__subtitle">
+                    Your draw cannot be processed while offline. It has been
+                    queued and will be submitted automatically when your
+                    connection is restored.
+                  </p>
+                  <button
+                    type="button"
+                    className="focus-ring dc-step__back-btn"
+                    onClick={() => {
+                      setIsOfflineBlocked(false);
+                      setStep("confirm");
+                    }}
+                  >
+                    Back to review
+                  </button>
                 </div>
               )}
               {transaction && !isLoading && (

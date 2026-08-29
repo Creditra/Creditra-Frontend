@@ -19,6 +19,7 @@ describe('OfflineBanner', () => {
       isOnline: true,
       queueAction: vi.fn(),
       checkOnlineStatus: mockCheckOnlineStatus,
+      queuedActionCount: 0,
     });
 
     const { container } = render(<OfflineBanner />);
@@ -30,6 +31,7 @@ describe('OfflineBanner', () => {
       isOnline: false,
       queueAction: vi.fn(),
       checkOnlineStatus: mockCheckOnlineStatus,
+      queuedActionCount: 0,
     });
 
     render(<OfflineBanner />);
@@ -43,6 +45,7 @@ describe('OfflineBanner', () => {
       isOnline: false,
       queueAction: vi.fn(),
       checkOnlineStatus: mockCheckOnlineStatus,
+      queuedActionCount: 0,
     });
 
     render(<OfflineBanner />);
@@ -59,6 +62,7 @@ describe('OfflineBanner', () => {
       isOnline,
       queueAction: vi.fn(),
       checkOnlineStatus: mockCheckOnlineStatus,
+      queuedActionCount: 0,
     }));
 
     const { rerender } = render(<OfflineBanner />);

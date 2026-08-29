@@ -16,6 +16,8 @@ import {
   getRepayAmountValidation,
   requiresRepayConfirmation,
 } from '@/utils/amountValidation';
+import { offlineMutation } from '@/utils/offline';
+import { useOnline } from '@/hooks/useOnline';
 import { suggestRepayAmount } from '@/utils/suggestRepay';
 import { computeMonthlyAccruedInterest } from '@/utils/currency';
 import {
@@ -87,6 +89,7 @@ const SEVERITY_CONFIG = {
 export default function RepayPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { queueAction } = useOnline();
   const preselectedId = searchParams.get('line');
 
   const [step, setStep] = useState<RepayStep>('input');
@@ -97,6 +100,7 @@ export default function RepayPage() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [isOfflineBlocked, setIsOfflineBlocked] = useState(false);
   // Task ariallive-v7: centralised SR announcement for step transitions and
   // validation feedback.  The LiveRegion component renders this via
   // aria-live="polite" so screen readers pick it up without focus moves.
@@ -171,22 +175,36 @@ export default function RepayPage() {
   };
 
   const handleConfirm = () => {
-    navigate('/repay/success', {
-      state: {
-        amount,
-        creditLineName: selectedLine.name,
-        creditLineId: selectedLine.id,
-        transactionId: `TXN-${Date.now()}`,
-        remainingDebt,
-        limit: selectedLine.limit,
-        apr: selectedLine.apr,
-        nextPaymentAmount: selectedLine.nextPaymentAmount,
-        timestamp: new Date().toISOString(),
+    // Guard the repayment mutation: when offline we never fabricate a
+    // success. The payment is queued for submission on reconnect and an
+    // explicit offline error is shown instead.
+    void offlineMutation({
+      fn: async () => {
+        navigate('/repay/success', {
+          state: {
+            amount,
+            creditLineName: selectedLine.name,
+            creditLineId: selectedLine.id,
+            transactionId: `TXN-${Date.now()}`,
+            remainingDebt,
+            limit: selectedLine.limit,
+            apr: selectedLine.apr,
+            nextPaymentAmount: selectedLine.nextPaymentAmount,
+            timestamp: new Date().toISOString(),
+          },
+        });
+        setStep('success');
+        setSrAnnouncement(`Payment successful! You repaid ${formatMoney(amount)}.`);
       },
+      onOffline: () => {
+        queueAction(() => {
+          handleConfirm();
+        }, 'repay-confirm');
+        setIsOfflineBlocked(true);
+      },
+      offlineMessage:
+        'You are offline, so this repayment cannot be processed yet. It has been queued and will be submitted when your connection is restored.',
     });
-    setStep('success');
-    // Announce payment success immediately so SR users don't need to explore.
-    setSrAnnouncement(`Payment successful! You repaid ${formatMoney(amount)}.`);
   };
 
   const handleNewRepay = () => {
@@ -691,6 +709,20 @@ export default function RepayPage() {
 
         {step === 'review' && (
           <div className="space-y-6">
+            {isOfflineBlocked && (
+              <div
+                className="rounded-lg border border-error bg-error/10 p-4 text-sm text-error"
+                role="alert"
+                aria-live="assertive"
+              >
+                <p className="font-semibold">You're offline</p>
+                <p className="mt-0.5">
+                  This repayment cannot be processed while offline. It has been
+                  queued and will be submitted automatically when your
+                  connection is restored.
+                </p>
+              </div>
+            )}
             <div className="rounded-lg border border-border bg-surface p-6 text-center">
               <p className="text-sm text-muted">You are about to repay</p>
               <div className="mt-2 flex items-center justify-center gap-2">
