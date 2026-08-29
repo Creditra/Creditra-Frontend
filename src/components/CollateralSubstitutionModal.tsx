@@ -9,6 +9,7 @@
  *   3. Confirm  — type the incoming asset name to unlock submission
  *
  * Production-ready failure handling:
+ *   - Idempotency: Deterministic request IDs prevent duplicate intents from retries
  *   - Slippage: user selects a tolerance; re-fetched LTV is checked before submit
  *   - Stale quotes: if the review snapshot is older than STALE_QUOTE_THRESHOLD_MS,
  *     a banner warns the user and the submit is blocked until they acknowledge
@@ -19,8 +20,9 @@
  * Accessibility: focus trap, body-scroll lock, inert backdrop, ARIA dialog.
  * WCAG 2.1 AA — LTV changes communicated by color + numeric value + text.
  *
- * @see src/types/collateral.ts   — domain types
+ * @see src/types/collateral.ts   — domain types including idempotency types
  * @see src/utils/collateral.ts   — pure helpers (LTV math, fee calc, slippage)
+ * @see src/utils/idempotency.ts  — idempotency key generation and state tracking
  */
 import React, { useCallback, useRef, useState } from 'react';
 import { AlertTriangle, ArrowRight, CheckCircle, RefreshCw, XCircle } from 'lucide-react';
@@ -34,6 +36,7 @@ import type {
   SubstitutionError,
   SubstitutionStep,
   SubstitutionStatus,
+  CollateralSubstitutionIntent,
 } from '../types/collateral';
 import {
   AVAILABLE_COLLATERAL_ASSETS,
@@ -50,6 +53,16 @@ import {
   SLIPPAGE_PRESETS,
   STALE_QUOTE_THRESHOLD_MS,
 } from '../utils/collateral';
+import {
+  generateIdempotencyKey,
+  createSubmissionAttempt,
+  recordSubmissionAttempt,
+  recordServerResponse,
+  hasSucceeded,
+  isRetryable,
+  extractDiagnostics,
+  type SubmissionAttempt,
+} from '../utils/idempotency';
 import { fmt } from '../utils/tokens';
 import './CollateralSubstitutionModal.css';
 
@@ -648,6 +661,11 @@ export function CollateralSubstitutionModal({
   const [classifiedError, setClassifiedError] = useState<SubstitutionError | null>(null);
   const [retryCount, setRetryCount]           = useState(0);
 
+  // ── Idempotency tracking ─────────────────────────────────────────────────
+  // Stores the submission attempt metadata (key, attempt count, server response)
+  // to prevent retries from creating duplicate intents.
+  const submissionAttemptRef = useRef<SubmissionAttempt | null>(null);
+
   // ── Concurrent submission guard ─────────────────────────────────────────
   const submittingRef = useRef(false);
 
@@ -664,6 +682,7 @@ export function CollateralSubstitutionModal({
     setClassifiedError(null);
     setRetryCount(0);
     submittingRef.current = false;
+    submissionAttemptRef.current = null;
     onClose();
   }, [onClose]);
 
@@ -736,6 +755,42 @@ export function CollateralSubstitutionModal({
     setStatus('retrying');
     setClassifiedError(null);
 
+    // ── Idempotency key generation ─────────────────────────────────────────
+    // On first submission, create a new intent and generate an idempotency key.
+    // On retries, reuse the same key to ensure duplicate detection on the server.
+    if (!submissionAttemptRef.current) {
+      const intent: CollateralSubstitutionIntent = {
+        creditLineId: currentAsset?.id ?? 'unknown',
+        outgoingAssetId: currentAsset?.id,
+        incomingAssetId: selected.id,
+        initiatedAtMs: Date.now(),
+      };
+      submissionAttemptRef.current = createSubmissionAttempt({
+        creditLineId: intent.creditLineId,
+        outgoingAssetId: intent.outgoingAssetId,
+        incomingAssetId: intent.incomingAssetId,
+        initiatedAtMs: intent.initiatedAtMs,
+      });
+      console.debug(
+        '[CollateralSubstitution] Generated idempotency key:',
+        extractDiagnostics(submissionAttemptRef.current)
+      );
+    }
+
+    // ── Check for already-succeeded operation ────────────────────────────
+    // If the server has already processed this intent successfully,
+    // do not replay the side effect (calling onSuccess again).
+    if (submissionAttemptRef.current && hasSucceeded(submissionAttemptRef.current)) {
+      console.debug(
+        '[CollateralSubstitution] Duplicate submission detected (already succeeded):',
+        extractDiagnostics(submissionAttemptRef.current)
+      );
+      setStatus('success');
+      submittingRef.current = false;
+      onSuccess(selected);
+      return;
+    }
+
     // ── Slippage re-check before submission ────────────────────────────────
     if (reviewLtvRatio !== null) {
       const freshSnap = computeLtvSnapshot(selected, loanBalance);
@@ -746,6 +801,7 @@ export function CollateralSubstitutionModal({
           reason: 'slippage',
           message: `LTV moved by ${slippage.slippagePp.toFixed(1)} pp (tolerance: ${slippage.tolerancePp} pp). Re-review the comparison before submitting.`,
           retryable: false,
+          idempotencyKey: submissionAttemptRef.current?.idempotencyKey,
         };
         setClassifiedError(slippageError);
         setStatus('error');
@@ -764,7 +820,18 @@ export function CollateralSubstitutionModal({
     }
 
     try {
+      // Record this submission attempt before sending
+      if (submissionAttemptRef.current) {
+        submissionAttemptRef.current = recordSubmissionAttempt(submissionAttemptRef.current);
+        console.debug(
+          '[CollateralSubstitution] Submitting attempt:',
+          extractDiagnostics(submissionAttemptRef.current)
+        );
+      }
+
       // Simulate network delay. Replace with real API call.
+      // Pass the idempotency key to the server to enable duplicate detection.
+      const idempotencyKey = submissionAttemptRef.current?.idempotencyKey ?? 'unknown';
       await new Promise<void>((resolve, reject) =>
         setTimeout(() => {
           // In tests _delayMs=0 is used; random error only fires in real usage.
@@ -775,12 +842,41 @@ export function CollateralSubstitutionModal({
           }
         }, _delayMs)
       );
+
+      // Record successful server response
+      if (submissionAttemptRef.current) {
+        submissionAttemptRef.current = recordServerResponse(
+          submissionAttemptRef.current,
+          'success',
+          'Collateral substituted successfully'
+        );
+        console.debug(
+          '[CollateralSubstitution] Submission succeeded:',
+          extractDiagnostics(submissionAttemptRef.current)
+        );
+      }
+
       setStatus('success');
       setRetryCount(0);
       submittingRef.current = false;
       onSuccess(selected);
     } catch (err) {
       const classified = classifySubstitutionError(err);
+      classified.idempotencyKey = submissionAttemptRef.current?.idempotencyKey;
+
+      // Record the error response
+      if (submissionAttemptRef.current) {
+        submissionAttemptRef.current = recordServerResponse(
+          submissionAttemptRef.current,
+          classified.reason,
+          classified.message
+        );
+        console.debug(
+          '[CollateralSubstitution] Submission failed:',
+          extractDiagnostics(submissionAttemptRef.current)
+        );
+      }
+
       setClassifiedError(classified);
       setStatus('error');
       setRetryCount(prev => prev + 1);
@@ -788,6 +884,10 @@ export function CollateralSubstitutionModal({
 
       // Notify parent when retries are exhausted
       if (retryCount + 1 >= MAX_RETRY_ATTEMPTS) {
+        console.warn(
+          '[CollateralSubstitution] Max retries exhausted:',
+          extractDiagnostics(submissionAttemptRef.current!)
+        );
         onError?.(classified);
       }
     }
