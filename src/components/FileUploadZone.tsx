@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { FormMessage } from './FormMessage';
+import { offlineMutation } from '../utils/offline';
+import { useOnline } from '../hooks/useOnline';
 import './FileUploadZone.css';
 
 interface FileUploadItem {
@@ -26,6 +28,7 @@ export function FileUploadZone({
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const zoneRef = useRef<HTMLDivElement>(null);
+  const { queueAction } = useOnline();
 
   const formatSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
@@ -63,18 +66,31 @@ export function FileUploadZone({
         updateItem(item.id, { progress: i });
       }
 
-      // Actual fetch attempt (mocked)
-      const formData = new FormData();
-      formData.append('file', item.file);
-      
-      // We use a mock endpoint or a dummy request
-      const response = await fetch('/api/mock-upload', {
-        method: 'POST',
-        body: formData,
-        signal: controller.signal,
-      }).catch(() => ({ ok: true })); // Mock success since endpoint doesn't exist
+      // Guard the actual mutation. Previously a fake `.catch(() => ({ ok: true }))`
+      // fabricated success on any failure; now the upload never claims to have
+      // succeeded when no confirmation was received.
+      await offlineMutation({
+        fn: async () => {
+          const formData = new FormData();
+          formData.append('file', item.file);
 
-      if (!response.ok) throw new Error('Upload failed');
+          const response = await fetch('/api/mock-upload', {
+            method: 'POST',
+            body: formData,
+            signal: controller.signal,
+          });
+
+          if (controller.signal.aborted) throw new Error('Upload cancelled');
+          if (!response.ok) throw new Error('Upload failed');
+        },
+        onOffline: () => {
+          queueAction(() => {
+            uploadFile(item);
+          }, `upload-${item.id}`);
+        },
+        offlineMessage:
+          'You are offline. Upload queued and will retry when you reconnect.',
+      });
 
       updateItem(item.id, { status: 'success', progress: 100 });
     } catch (e: any) {

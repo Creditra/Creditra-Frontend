@@ -19,6 +19,7 @@ describe('Header', () => {
       isOnline: true,
       queueAction: vi.fn(),
       checkOnlineStatus: vi.fn(),
+      queuedActionCount: 0,
     });
   });
 

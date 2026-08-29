@@ -1,14 +1,19 @@
 /**
  * Linked Accounts Service
- * 
+ *
  * API integration for managing external account links (Google, GitHub, etc.).
  * All functions return promises and throw typed errors on failure.
- * 
+ *
  * In production, these would call real API endpoints. For now, they simulate
  * backend behavior with localStorage persistence and realistic timing.
+ *
+ * Offline safety: reads use readCache via localStorage (works offline natively),
+ * mutations are guarded by offlineMutation so they never fake success when
+ * the browser is offline.
  */
 
 import { readJson, writeJson } from '../utils/storage';
+import { offlineMutation } from '../utils/offline';
 import type {
   LinkedAccount,
   AccountProvider,
@@ -61,33 +66,37 @@ export async function fetchLinkedAccounts(): Promise<LinkedAccount[]> {
  * @throws Error if provider is already linked or request fails
  */
 export async function initiateLinkAccount(request: LinkAccountRequest): Promise<LinkAccountResponse> {
-  await delay(400);
-  
-  // Check if provider is already linked
-  const existing = readJson<LinkedAccount[]>(STORAGE_KEY, []);
-  const alreadyLinked = existing.find(
-    acc => acc.provider === request.provider && acc.status === 'connected'
-  );
-  
-  if (alreadyLinked) {
-    const error: AccountLinkError = {
-      code: 'already_linked',
-      message: `${PROVIDER_INFO[request.provider].name} account is already linked`,
-    };
-    throw error;
-  }
-  
-  // Generate state token for CSRF protection
-  const state = `${request.provider}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-  
-  // Store pending state
-  writeJson('creditra:oauth-state', { state, provider: request.provider, timestamp: Date.now() });
-  
-  // Return mock OAuth URL (in production, this would be the real provider URL)
-  return {
-    authUrl: `/oauth/${request.provider}?state=${state}&redirect=${encodeURIComponent(request.redirectUrl || '/linked-accounts')}`,
-    state,
-  };
+  return offlineMutation({
+    fn: async () => {
+      await delay(400);
+
+      // Check if provider is already linked
+      const existing = readJson<LinkedAccount[]>(STORAGE_KEY, []);
+      const alreadyLinked = existing.find(
+        acc => acc.provider === request.provider && acc.status === 'connected'
+      );
+
+      if (alreadyLinked) {
+        const error: AccountLinkError = {
+          code: 'already_linked',
+          message: `${PROVIDER_INFO[request.provider].name} account is already linked`,
+        };
+        throw error;
+      }
+
+      // Generate state token for CSRF protection
+      const state = `${request.provider}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+      // Store pending state
+      writeJson('creditra:oauth-state', { state, provider: request.provider, timestamp: Date.now() });
+
+      // Return mock OAuth URL (in production, this would be the real provider URL)
+      return {
+        authUrl: `/oauth/${request.provider}?state=${state}&redirect=${encodeURIComponent(request.redirectUrl || '/linked-accounts')}`,
+        state,
+      };
+    },
+  });
 }
 
 /**
@@ -98,48 +107,52 @@ export async function initiateLinkAccount(request: LinkAccountRequest): Promise<
  * @throws Error if verification fails or account cannot be linked
  */
 export async function completeOAuthLink(request: CompleteOAuthRequest): Promise<LinkedAccount> {
-  await delay(MOCK_API_DELAY);
-  
-  // Verify state token
-  const storedState = readJson<{ state: string; provider: string; timestamp: number } | null>('creditra:oauth-state', null);
-  
-  if (!storedState || storedState.state !== request.state || storedState.provider !== request.provider) {
-    const error: AccountLinkError = {
-      code: 'auth_failed',
-      message: 'Invalid OAuth state. Please try again.',
-    };
-    throw error;
-  }
-  
-  // Check if state is expired (10 minutes)
-  if (Date.now() - storedState.timestamp > 10 * 60 * 1000) {
-    const error: AccountLinkError = {
-      code: 'token_expired',
-      message: 'OAuth session expired. Please try again.',
-    };
-    throw error;
-  }
-  
-  // Create new linked account
-  const newAccount: LinkedAccount = {
-    id: `${request.provider}-${Date.now()}`,
-    provider: request.provider,
-    status: 'connected',
-    displayName: `${PROVIDER_INFO[request.provider].name} User`, // In production, from OAuth
-    externalId: `user-${Math.random().toString(36).substring(7)}@${request.provider}.com`,
-    connectedAt: new Date().toISOString(),
-    lastVerified: new Date().toISOString(),
-  };
-  
-  // Save to storage
-  const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
-  accounts.push(newAccount);
-  writeJson(STORAGE_KEY, accounts);
-  
-  // Clean up OAuth state
-  writeJson('creditra:oauth-state', null);
-  
-  return newAccount;
+  return offlineMutation({
+    fn: async () => {
+      await delay(MOCK_API_DELAY);
+
+      // Verify state token
+      const storedState = readJson<{ state: string; provider: string; timestamp: number } | null>('creditra:oauth-state', null);
+
+      if (!storedState || storedState.state !== request.state || storedState.provider !== request.provider) {
+        const error: AccountLinkError = {
+          code: 'auth_failed',
+          message: 'Invalid OAuth state. Please try again.',
+        };
+        throw error;
+      }
+
+      // Check if state is expired (10 minutes)
+      if (Date.now() - storedState.timestamp > 10 * 60 * 1000) {
+        const error: AccountLinkError = {
+          code: 'token_expired',
+          message: 'OAuth session expired. Please try again.',
+        };
+        throw error;
+      }
+
+      // Create new linked account
+      const newAccount: LinkedAccount = {
+        id: `${request.provider}-${Date.now()}`,
+        provider: request.provider,
+        status: 'connected',
+        displayName: `${PROVIDER_INFO[request.provider].name} User`, // In production, from OAuth
+        externalId: `user-${Math.random().toString(36).substring(7)}@${request.provider}.com`,
+        connectedAt: new Date().toISOString(),
+        lastVerified: new Date().toISOString(),
+      };
+
+      // Save to storage
+      const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
+      accounts.push(newAccount);
+      writeJson(STORAGE_KEY, accounts);
+
+      // Clean up OAuth state
+      writeJson('creditra:oauth-state', null);
+
+      return newAccount;
+    },
+  });
 }
 
 /**
@@ -150,18 +163,22 @@ export async function completeOAuthLink(request: CompleteOAuthRequest): Promise<
  * @throws Error if account not found or disconnection fails
  */
 export async function disconnectAccount(accountId: string): Promise<void> {
-  await delay(600);
-  
-  const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
-  const accountIndex = accounts.findIndex(acc => acc.id === accountId);
-  
-  if (accountIndex === -1) {
-    throw new Error('Account not found');
-  }
-  
-  // Mark as disconnected instead of deleting for audit trail
-  accounts[accountIndex].status = 'disconnected';
-  writeJson(STORAGE_KEY, accounts);
+  return offlineMutation({
+    fn: async () => {
+      await delay(600);
+
+      const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
+      const accountIndex = accounts.findIndex(acc => acc.id === accountId);
+
+      if (accountIndex === -1) {
+        throw new Error('Account not found');
+      }
+
+      // Mark as disconnected instead of deleting for audit trail
+      accounts[accountIndex].status = 'disconnected';
+      writeJson(STORAGE_KEY, accounts);
+    },
+  });
 }
 
 /**
@@ -172,17 +189,21 @@ export async function disconnectAccount(accountId: string): Promise<void> {
  * @throws Error if account not found or reconnection fails
  */
 export async function reconnectAccount(accountId: string): Promise<LinkAccountResponse> {
-  await delay(400);
-  
-  const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
-  const account = accounts.find(acc => acc.id === accountId);
-  
-  if (!account) {
-    throw new Error('Account not found');
-  }
-  
-  // Initiate new OAuth flow for this provider
-  return initiateLinkAccount({ provider: account.provider });
+  return offlineMutation({
+    fn: async () => {
+      await delay(400);
+
+      const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
+      const account = accounts.find(acc => acc.id === accountId);
+
+      if (!account) {
+        throw new Error('Account not found');
+      }
+
+      // Initiate new OAuth flow for this provider
+      return initiateLinkAccount({ provider: account.provider });
+    },
+  });
 }
 
 /**
@@ -193,31 +214,35 @@ export async function reconnectAccount(accountId: string): Promise<LinkAccountRe
  * @throws Error if verification fails
  */
 export async function verifyAccount(accountId: string): Promise<LinkedAccount> {
-  await delay(1000);
-  
-  const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
-  const accountIndex = accounts.findIndex(acc => acc.id === accountId);
-  
-  if (accountIndex === -1) {
-    throw new Error('Account not found');
-  }
-  
-  // Update last verified timestamp
-  accounts[accountIndex].lastVerified = new Date().toISOString();
-  
-  // Simulate random verification failure (10% chance)
-  if (Math.random() < 0.1) {
-    accounts[accountIndex].status = 'error';
-    accounts[accountIndex].error = {
-      code: 'provider_error',
-      message: 'Unable to verify account. The token may have been revoked.',
-      timestamp: new Date().toISOString(),
-    };
-  } else {
-    accounts[accountIndex].status = 'connected';
-    delete accounts[accountIndex].error;
-  }
-  
-  writeJson(STORAGE_KEY, accounts);
-  return accounts[accountIndex];
+  return offlineMutation({
+    fn: async () => {
+      await delay(1000);
+
+      const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
+      const accountIndex = accounts.findIndex(acc => acc.id === accountId);
+
+      if (accountIndex === -1) {
+        throw new Error('Account not found');
+      }
+
+      // Update last verified timestamp
+      accounts[accountIndex].lastVerified = new Date().toISOString();
+
+      // Simulate random verification failure (10% chance)
+      if (Math.random() < 0.1) {
+        accounts[accountIndex].status = 'error';
+        accounts[accountIndex].error = {
+          code: 'provider_error',
+          message: 'Unable to verify account. The token may have been revoked.',
+          timestamp: new Date().toISOString(),
+        };
+      } else {
+        accounts[accountIndex].status = 'connected';
+        delete accounts[accountIndex].error;
+      }
+
+      writeJson(STORAGE_KEY, accounts);
+      return accounts[accountIndex];
+    },
+  });
 }

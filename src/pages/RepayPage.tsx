@@ -16,7 +16,10 @@ import {
   getRepayAmountValidation,
   requiresRepayConfirmation,
 } from '@/utils/amountValidation';
+import { offlineMutation } from '@/utils/offline';
+import { useOnline } from '@/hooks/useOnline';
 import { suggestRepayAmount } from '@/utils/suggestRepay';
+import { computeMonthlyAccruedInterest } from '@/utils/currency';
 import {
   isTypedAmountMatch,
   TypedAmountConfirmField,
@@ -92,6 +95,7 @@ const SEVERITY_CONFIG = {
 export default function RepayPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { queueAction } = useOnline();
   const preselectedId = searchParams.get('line');
 
   // ── Draft recovery state ──────────────────────────────────────────────
@@ -113,6 +117,7 @@ export default function RepayPage() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [isOfflineBlocked, setIsOfflineBlocked] = useState(false);
   // Task ariallive-v7: centralised SR announcement for step transitions and
   // validation feedback.  The LiveRegion component renders this via
   // aria-live="polite" so screen readers pick it up without focus moves.
@@ -201,10 +206,15 @@ export default function RepayPage() {
         nextPaymentAmount: selectedLine.nextPaymentAmount,
         timestamp: new Date().toISOString(),
       },
+      onOffline: () => {
+        queueAction(() => {
+          handleConfirm();
+        }, 'repay-confirm');
+        setIsOfflineBlocked(true);
+      },
+      offlineMessage:
+        'You are offline, so this repayment cannot be processed yet. It has been queued and will be submitted when your connection is restored.',
     });
-    setStep('success');
-    // Announce payment success immediately so SR users don't need to explore.
-    setSrAnnouncement(`Payment successful! You repaid ${formatMoney(amount)}.`);
   };
 
   const handleNewRepay = () => {
@@ -498,6 +508,12 @@ export default function RepayPage() {
   const oldPct = Math.round((selectedLine.utilized / selectedLine.limit) * 100);
   const remainingDebt = validation?.remainingDebt ?? selectedLine.utilized;
   const newPct = Math.round((remainingDebt / selectedLine.limit) * 100);
+  const accruedInterest = computeMonthlyAccruedInterest(
+    selectedLine.utilized,
+    selectedLine.apr,
+  );
+  const interestPortion = Math.min(amount, accruedInterest);
+  const principalPortion = Math.max(0, amount - interestPortion);
 
   return (
     <div className="repay-page mx-auto max-w-4xl px-4 py-6 sm:py-8">
@@ -862,6 +878,20 @@ export default function RepayPage() {
 
         {step === 'review' && (
           <div className="space-y-6">
+            {isOfflineBlocked && (
+              <div
+                className="rounded-lg border border-error bg-error/10 p-4 text-sm text-error"
+                role="alert"
+                aria-live="assertive"
+              >
+                <p className="font-semibold">You're offline</p>
+                <p className="mt-0.5">
+                  This repayment cannot be processed while offline. It has been
+                  queued and will be submitted automatically when your
+                  connection is restored.
+                </p>
+              </div>
+            )}
             <div className="rounded-lg border border-border bg-surface p-6 text-center">
               <p className="text-sm text-muted">You are about to repay</p>
               <div className="mt-2 flex items-center justify-center gap-2">
@@ -897,6 +927,29 @@ export default function RepayPage() {
                   <div className="flex items-center justify-between text-sm border-t border-border pt-3">
                     <span className="text-muted">Auto-schedule</span>
                     <span className="font-semibold text-accent">Monthly</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-surface p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-foreground">Repayment Allocation</p>
+                <span className="text-xs text-muted">{selectedLine.apr}% APR</span>
+              </div>
+              <div className="mt-3 space-y-2 text-sm">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-muted">Principal reduction</span>
+                  <span className="font-semibold text-foreground num-tabular">
+                    {formatMoney(principalPortion)}
+                  </span>
+                </div>
+                {accruedInterest > 0 && (
+                  <div className="flex items-center justify-between gap-4 border-t border-border pt-2">
+                    <span className="text-muted">Accrued interest paid</span>
+                    <span className="font-semibold text-foreground num-tabular">
+                      {formatMoney(interestPortion)}
+                    </span>
                   </div>
                 )}
               </div>
