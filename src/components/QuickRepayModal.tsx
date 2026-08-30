@@ -89,7 +89,7 @@ export function QuickRepayModal({
   const [step, setStep] = useState<'confirm' | 'pending' | 'success'>('confirm');
   
   const modalRef = useFocusTrap({
-    isActive: step !== 'success',
+    isActive: true,
     triggerRef,
     onEscape: step !== 'pending' ? onClose : undefined,
   });
@@ -100,10 +100,16 @@ export function QuickRepayModal({
     } else if (step === 'success') {
       document.body.style.overflow = '';
     }
+    // Manage focus across step states to prevent focus dropping to body
+    if (step !== 'confirm') {
+      requestAnimationFrame(() => {
+        modalRef.current?.focus();
+      });
+    }
     return () => {
       document.body.style.overflow = '';
     };
-  }, [step]);
+  }, [step, modalRef]);
 
   const totalDue = creditLine.utilized;
   const validation = getRepayAmountValidation(amountStr, totalDue, walletBalance);
@@ -148,6 +154,7 @@ export function QuickRepayModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="quick-repay-title"
+        tabIndex={-1}
       >
         <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${COLOR.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
@@ -160,7 +167,7 @@ export function QuickRepayModal({
               </p>
             )}
           </div>
-          {step !== 'pending' && <button onClick={onClose} style={{ ...btn.ghost, padding: '0.4rem', borderRadius: 4 }} aria-label="Close modal">✕</button>}
+          {step !== 'pending' && <button className="focus-ring" onClick={onClose} style={{ ...btn.ghost, padding: '0.4rem', borderRadius: 4 }} aria-label="Close modal">✕</button>}
         </div>
 
         {step === 'confirm' && (
@@ -178,7 +185,7 @@ export function QuickRepayModal({
               <label htmlFor="quick-repay-amount" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: COLOR.text, fontWeight: 500 }}>Repayment amount</label>
               <div style={{ position: 'relative' }}>
                 <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', fontSize: '1.25rem', color: COLOR.muted }} aria-hidden="true">$</span>
-                <input
+                <input className="focus-ring"
                   id="quick-repay-amount"
                   type="number"
                   value={amountStr}
@@ -246,7 +253,7 @@ export function QuickRepayModal({
               />
             )}
 
-            <button
+            <button className="focus-ring"
               onClick={handleConfirm}
               disabled={isConfirmDisabled}
               style={{
@@ -296,7 +303,7 @@ export function QuickRepayModal({
             <p style={{ margin: '0 0 1.5rem', fontSize: '0.9rem', color: COLOR.muted }}>
               Your transaction was successful.
             </p>
-            <button onClick={handleCloseComplete} style={{ ...btn.primary, width: '100%' }}>
+            <button className="focus-ring" onClick={handleCloseComplete} style={{ ...btn.primary, width: '100%' }}>
               Back to Dashboard
             </button>
           </div>

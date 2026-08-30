@@ -112,12 +112,22 @@ export function RepayModal({
   const [isRepayAllLocked, setIsRepayAllLocked] = useState(false);
   const [repayAllLockAnnouncement, setRepayAllLockAnnouncement] = useState('');
   const amountInputRef = useRef<HTMLInputElement>(null);
+  const copyButtonRef = useRef<HTMLButtonElement>(null);
+  const [txHash, setTxHash] = useState('');
+  const [txTimestamp, setTxTimestamp] = useState('');
+  const [copyMessage, setCopyMessage] = useState('');
 
   useEffect(() => {
     if (step === 'review') {
       setConfirmAmountStr('');
     }
-  }, [step]);
+    // Manage focus across step states to prevent focus dropping to body
+    if (step !== 'input') {
+      requestAnimationFrame(() => {
+        modalRef.current?.focus();
+      });
+    }
+  }, [step, modalRef]);
 
   const principalBalance = creditLine.utilized;
   const accruedInterest = computeMonthlyAccruedInterest(
@@ -236,6 +246,7 @@ export function RepayModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="repay-modal-title"
+        tabIndex={-1}
       >
 
         {/* Header */}
@@ -250,7 +261,7 @@ export function RepayModal({
               </p>
             )}
           </div>
-          {step !== 'pending' && <button onClick={onClose} style={{ ...btn.ghost, padding: '0.4rem', borderRadius: 4 }} aria-label="Close modal">✕</button>}
+          {step !== 'pending' && <button className="focus-ring" onClick={onClose} style={{ ...btn.ghost, padding: '0.4rem', borderRadius: 4 }} aria-label="Close modal">✕</button>}
         </div>
 
         {step === 'input' && (
@@ -300,7 +311,7 @@ export function RepayModal({
               </p>
               <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
                 {[25, 50, 75, 100].map(pct => (
-                  <button key={pct} onClick={() => handlePercent(pct)}
+                  <button className="focus-ring" key={pct} onClick={() => handlePercent(pct)}
                     style={{ ...btn.outline, flex: 1, padding: '0.4rem 0', fontSize: '0.8rem', color: COLOR.accent, borderColor: 'rgba(88,166,255,0.3)', background: pct === 100 ? 'rgba(88,166,255,0.1)' : 'transparent' }}
                     aria-label={`Set amount to ${pct === 100 ? 'maximum' : pct + ' percent'}`}
                   >
@@ -324,7 +335,7 @@ export function RepayModal({
                     placeholder="0.00"
                     aria-invalid={validation.feedback.severity === 'danger'}
                     aria-describedby={`${describedBy}${isRepayAllLocked ? ' repay-all-lock-status' : ''}`}
-                    className={`repay-modal-input${isRepayAllLocked ? ' repay-modal-input--locked' : ''}`}
+                    className={`focus-ring repay-modal-input${isRepayAllLocked ? ' repay-modal-input--locked' : ''}`}
                     style={{
                       width: '100%',
                       background: COLOR.bg,
@@ -342,7 +353,7 @@ export function RepayModal({
                 {isRepayAllLocked ? (
                   <button
                     type="button"
-                    className="repay-modal-edit-btn"
+                    className="focus-ring repay-modal-edit-btn"
                     onClick={handleUnlockRepayAll}
                     aria-label="Unlock and edit amount"
                     data-testid="repay-all-edit"
@@ -352,7 +363,7 @@ export function RepayModal({
                 ) : (
                   <button
                     type="button"
-                    className="repay-modal-repay-all-btn"
+                    className="focus-ring repay-modal-repay-all-btn"
                     onClick={handleRepayAll}
                     disabled={fullPayoff <= 0}
                     aria-label={`Repay all ${fmt(fullPayoff)} including accrued interest`}
@@ -459,7 +470,7 @@ export function RepayModal({
             </div>
 
             <div style={{ display: 'grid', gap: '0.75rem' }}>
-              <button
+              <button className="focus-ring"
                 onClick={handleReview}
                 disabled={isInvalid}
                 style={{
@@ -471,7 +482,7 @@ export function RepayModal({
               >
                 Review Repayment
               </button>
-              <button
+              <button className="focus-ring"
                 ref={helpTriggerRef}
                 type="button"
                 onClick={() => setIsHelpOpen(true)}
@@ -572,7 +583,7 @@ export function RepayModal({
                 </label>
                 <div style={{ position: 'relative' }}>
                   <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', fontSize: '1.25rem', color: COLOR.muted }} aria-hidden="true">$</span>
-                  <input
+                  <input className="focus-ring"
                     id="confirm-repay-amount"
                     type="number"
                     value={confirmAmountStr}
@@ -601,13 +612,13 @@ export function RepayModal({
             )}
 
             <div style={{ display: 'flex', gap: '1rem' }}>
-              <button onClick={() => setStep('input')} style={{ ...btn.outline, flex: 1 }}>
+              <button className="focus-ring" onClick={() => setStep('input')} style={{ ...btn.outline, flex: 1 }}>
                 Back
               </button>
               <div style={{ flex: 2, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                <PendingButton
+                <PendingButton className="focus-ring"
                   onClick={handleConfirm}
-                  pending={false}
+                  pending={step === 'pending'}
                   pendingLabel="Processing..."
                   disabled={isConfirmDisabled}
                   aria-disabled={isConfirmDisabled || undefined}
@@ -622,7 +633,7 @@ export function RepayModal({
                 </PendingButton>
               </div>
             </div>
-            <button
+            <button className="focus-ring"
               ref={helpTriggerRef}
               type="button"
               onClick={() => setIsHelpOpen(true)}
@@ -719,7 +730,7 @@ export function RepayModal({
               </p>
             </div>
 
-            <button onClick={handleCloseComplete} style={{ ...btn.primary, width: '100%' }}>
+            <button className="focus-ring" onClick={handleCloseComplete} style={{ ...btn.primary, width: '100%' }}>
               Back to Dashboard
             </button>
           </div>

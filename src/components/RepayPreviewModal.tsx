@@ -96,7 +96,7 @@ export function RepayPreviewModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const modalRef = useFocusTrap({
-    isActive: isOpen && !isSubmitting,
+    isActive: isOpen,
     triggerRef,
     onEscape: !isSubmitting ? onClose : undefined,
   });
