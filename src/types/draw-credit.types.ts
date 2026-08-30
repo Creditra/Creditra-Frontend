@@ -38,7 +38,7 @@ export interface Transaction {
   id: string;
   creditLineId: string;
   amount: number;
-  status: "pending" | "success" | "error";
+  status: "pending" | "success" | "error" | "stale";
   message?: string;
   timestamp?: Date;
 }

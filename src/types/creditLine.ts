@@ -26,7 +26,7 @@ export type UtilizationLevel = 'low' | 'medium' | 'high';
 export type TransactionType = 'Draw' | 'Repay' | 'Fee' | 'Interest' | 'StatusChange';
 
 /** Settlement state of an on-chain transaction surfaced to the UI. */
-export type TransactionStatus = 'Completed' | 'Pending' | 'Failed';
+export type TransactionStatus = 'Completed' | 'Pending' | 'Failed' | 'Stale';
 
 /**
  * Canonical ledger entry shape. Mirrors what the backend indexer returns;

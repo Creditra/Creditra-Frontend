@@ -471,6 +471,18 @@ export default function DrawCreditPage() {
                 <TransactionStatus
                   transaction={transaction}
                   onNewDraw={handleNewDraw}
+                  onRefresh={async () => {
+                    setIsLoading(true);
+                    try {
+                      // Simulate network ledger status check
+                      await new Promise(r => setTimeout(r, 1500));
+                      setTransaction(prev => 
+                        prev ? { ...prev, status: Math.random() > 0.5 ? 'success' : 'error' } : null
+                      );
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }}
                 />
               )}
             </>

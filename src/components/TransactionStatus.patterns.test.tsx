@@ -47,6 +47,7 @@ const BASE: Omit<Transaction, "status" | "message"> = {
 const pending: Transaction = { ...BASE, status: "pending" };
 const success: Transaction = { ...BASE, status: "success" };
 const error: Transaction = { ...BASE, status: "error", message: "Insufficient funds" };
+const stale: Transaction = { ...BASE, status: "stale" };
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
 
@@ -139,7 +140,27 @@ describe("TransactionStatus — pattern fills (WCAG 1.4.1)", () => {
     });
   });
 
-  // ─── 4. data-status attribute ──────────────────────────────────────────────
+  
+  // ─── 3.5 Stale ─────────────────────────────────────────────────────────────
+  describe("stale status", () => {
+    it("3.5a. icon-bg carries the colour-tint class (dc-status-icon-bg--accent)", () => {
+      render(<TransactionStatus transaction={stale} onNewDraw={() => {}} />);
+      expect(getIconBg("stale")).toHaveClass("dc-status-icon-bg--accent");
+    });
+
+    it("3.5b. icon-bg carries the geometry-pattern class (dc-status-icon-bg--pattern-pending)", () => {
+      render(<TransactionStatus transaction={stale} onNewDraw={() => {}} />);
+      expect(getIconBg("stale")).toHaveClass("dc-status-icon-bg--pattern-pending");
+    });
+
+    it("3.5c. renders the refresh button when onRefresh is provided", () => {
+      const { unmount } = render(<TransactionStatus transaction={stale} onNewDraw={() => {}} onRefresh={() => {}} />);
+      expect(screen.getByRole("button", { name: /refresh status/i })).toBeInTheDocument();
+      unmount();
+    });
+  });
+
+// ─── 4. data-status attribute ──────────────────────────────────────────────
 
   describe("data-status attribute", () => {
     it("4a. pending transaction sets data-status='pending'", () => {
@@ -155,6 +176,11 @@ describe("TransactionStatus — pattern fills (WCAG 1.4.1)", () => {
     it("4c. error transaction sets data-status='error'", () => {
       render(<TransactionStatus transaction={error} onNewDraw={() => {}} />);
       expect(document.querySelector("[data-status='error']")).toBeInTheDocument();
+    });
+
+    it("4d. stale transaction sets data-status='stale'", () => {
+      render(<TransactionStatus transaction={stale} onNewDraw={() => {}} />);
+      expect(document.querySelector("[data-status='stale']")).toBeInTheDocument();
     });
   });
 
@@ -199,6 +225,11 @@ describe("TransactionStatus — pattern fills (WCAG 1.4.1)", () => {
       const errorNoMsg: Transaction = { ...BASE, status: "error" };
       render(<TransactionStatus transaction={errorNoMsg} onNewDraw={() => {}} />);
       expect(screen.getByText(/an error occurred/i)).toBeInTheDocument();
+    });
+
+    it("6f. stale renders 'Status Unknown' heading", () => {
+      render(<TransactionStatus transaction={stale} onNewDraw={() => {}} />);
+      expect(screen.getByRole("heading", { name: /status unknown/i })).toBeInTheDocument();
     });
   });
 
