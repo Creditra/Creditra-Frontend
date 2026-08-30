@@ -1,61 +1,50 @@
-
-import { useState, useEffect } from 'react';
+import React from 'react';
 import type { DutchAuction } from '../types/dutchAuction';
 import { COLOR, fmt } from '../utils/tokens';
 import { PendingButton } from './PendingButton';
+import { useLedgerTime } from '../hooks/useLedgerTime';
 
 interface DutchAuctionCardProps {
   auction: DutchAuction;
   onPurchase?: (auctionId: string, price: number) => void;
 }
 
-const calculateCurrentPrice = (auction: DutchAuction): number => {
-  const now = Date.now();
+const calculateCurrentPrice = (auction: DutchAuction, now: number): number => {
   const start = new Date(auction.startTime).getTime();
   const end = new Date(auction.endTime).getTime();
-  
+
   if (now < start) return auction.startPrice;
   if (now > end) return auction.floorPrice;
-  
+
   const elapsed = now - start;
   const total = end - start;
   const progress = elapsed / total;
-  
+
   return auction.startPrice - progress * (auction.startPrice - auction.floorPrice);
 };
 
-const formatTimeLeft = (endTime: string): string => {
-  const now = Date.now();
+const formatTimeLeft = (endTime: string, now: number): string => {
   const end = new Date(endTime).getTime();
   const diff = end - now;
-  
+
   if (diff <= 0) return 'Ended';
-  
+
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
-  
+
   const h = hours;
   const m = minutes % 60;
   const s = seconds % 60;
-  
+
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
 export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onPurchase }) => {
-  const [currentPrice, setCurrentPrice] = useState(calculateCurrentPrice(auction));
-  const [timeLeft, setTimeLeft] = useState(formatTimeLeft(auction.endTime));
+  const { now, isSynced } = useLedgerTime();
 
-  useEffect(() => {
-    if (auction.status !== 'Active') return;
-
-    const interval = setInterval(() => {
-      setCurrentPrice(calculateCurrentPrice(auction));
-      setTimeLeft(formatTimeLeft(auction.endTime));
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [auction]);
+  const currentPrice = calculateCurrentPrice(auction, now);
+  const timeLeft = formatTimeLeft(auction.endTime, now);
 
   return (
     <div className="card" style={{ padding: '1rem', marginBottom: '1rem' }}>
@@ -69,6 +58,8 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
             borderRadius: '8px',
             objectFit: 'cover',
             border: `1px solid ${COLOR.border}`,
+            opacity: isSynced ? 1 : 0.7,
+            transition: 'opacity 0.3s ease'
           }}
         />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -87,12 +78,12 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
                 borderRadius: '4px',
                 fontSize: '0.75rem',
                 fontWeight: 500,
-                background: auction.status === 'Active' 
-                  ? 'rgba(63,185,80,0.16)' 
+                background: auction.status === 'Active'
+                  ? 'rgba(63,185,80,0.16)'
                   : auction.status === 'Completed'
                   ? 'rgba(88,166,255,0.16)'
                   : 'rgba(248,81,73,0.16)',
-                color: auction.status === 'Active' 
+                color: auction.status === 'Active'
                   ? '#8ee99d'
                   : auction.status === 'Completed'
                   ? '#58a6ff'
@@ -127,7 +118,7 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
             {auction.status === 'Active' && (
               <div>
                 <p style={{ margin: 0, color: COLOR.muted, fontSize: '0.75rem' }}>
-                  Time Left
+                  {isSynced ? 'Time Left' : 'Time Left (Syncing...)'}
                 </p>
                 <p style={{ margin: 0, color: COLOR.warning, fontSize: '1rem', fontWeight: 600 }}>
                   {timeLeft}
@@ -161,4 +152,3 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
     </div>
   );
 };
-
