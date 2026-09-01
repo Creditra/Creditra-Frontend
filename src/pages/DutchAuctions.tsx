@@ -1,23 +1,38 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { DutchAuctionCard } from '../components/DutchAuctionCard';
 import { EmptyState } from '@/components/EmptyState';
 import { NoDataGraph } from '@/components/illustrations';
 import { MOCK_DUTCH_AUCTIONS } from '../data/mockDutchAuctions';
+import { computeEffectiveStatus } from '../types/dutchAuction';
 import { COLOR } from '../utils/tokens';
 
 export const DutchAuctions: React.FC = () => {
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
+  const purchaseInFlightRef = useRef<Set<string>>(new Set());
 
   const filteredAuctions = MOCK_DUTCH_AUCTIONS.filter(auction => {
-    if (filter === 'active') return auction.status === 'Active';
-    if (filter === 'completed') return auction.status === 'Completed' || auction.status === 'Cancelled';
+    const effectiveStatus = computeEffectiveStatus(auction);
+    if (filter === 'active') return effectiveStatus === 'Active';
+    if (filter === 'completed') return effectiveStatus === 'Completed' || effectiveStatus === 'Cancelled';
     return true;
   });
 
-  const handlePurchase = (auctionId: string, price: number) => {
-    alert(`Purchased auction ${auctionId} for ${price} USD!`);
-  };
+  const handlePurchase = useCallback(async (auctionId: string, price: number) => {
+    if (purchaseInFlightRef.current.has(auctionId)) {
+      return;
+    }
+
+    purchaseInFlightRef.current.add(auctionId);
+    try {
+      await new Promise<void>((resolve) => {
+        alert(`Purchased auction ${auctionId} for ${price} USD!`);
+        resolve();
+      });
+    } finally {
+      purchaseInFlightRef.current.delete(auctionId);
+    }
+  }, []);
 
   return (
     <div style={{ padding: '1rem' }}>
@@ -85,4 +100,3 @@ export const DutchAuctions: React.FC = () => {
     </div>
   );
 };
-

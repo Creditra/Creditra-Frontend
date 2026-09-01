@@ -33,3 +33,31 @@ export interface DutchAuction {
   finalPrice?: number;
 }
 
+/**
+ * Compute the effective status of an auction at a given point in time,
+ * accounting for clock-based close races.
+ *
+ * If the recorded status is already terminal (Completed / Cancelled), it is
+ * returned as-is. Otherwise the current wall-clock is compared against
+ * `endTime`: once the deadline passes the auction is treated as Completed
+ * even if the stored status still reads Active.
+ *
+ * This prevents stale "Active" states and action buttons from lingering
+ * after the auction has logically closed.
+ */
+export function computeEffectiveStatus(
+  auction: DutchAuction,
+  nowMs: number = Date.now(),
+): DutchAuctionStatus {
+  if (auction.status === 'Completed' || auction.status === 'Cancelled') {
+    return auction.status;
+  }
+
+  const endTimeMs = new Date(auction.endTime).getTime();
+  if (nowMs >= endTimeMs) {
+    return 'Completed';
+  }
+
+  return 'Active';
+}
+

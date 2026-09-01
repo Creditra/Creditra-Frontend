@@ -1,6 +1,7 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { DutchAuction } from '../types/dutchAuction';
+import { computeEffectiveStatus } from '../types/dutchAuction';
 import { COLOR, fmt } from '../utils/tokens';
 import { PendingButton } from './PendingButton';
 
@@ -45,17 +46,47 @@ const formatTimeLeft = (endTime: string): string => {
 export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onPurchase }) => {
   const [currentPrice, setCurrentPrice] = useState(calculateCurrentPrice(auction));
   const [timeLeft, setTimeLeft] = useState(formatTimeLeft(auction.endTime));
+  const [effectiveStatus, setEffectiveStatus] = useState(() =>
+    computeEffectiveStatus(auction),
+  );
+  const [isPurchasing, setIsPurchasing] = useState(false);
+  const purchaseAttemptRef = useRef(0);
 
   useEffect(() => {
-    if (auction.status !== 'Active') return;
+    if (effectiveStatus !== 'Active') return;
 
     const interval = setInterval(() => {
+      const now = Date.now();
       setCurrentPrice(calculateCurrentPrice(auction));
       setTimeLeft(formatTimeLeft(auction.endTime));
+
+      const status = computeEffectiveStatus(auction, now);
+      setEffectiveStatus(status);
+
+      if (status !== 'Active') {
+        clearInterval(interval);
+      }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [auction]);
+  }, [auction, effectiveStatus]);
+
+  const handlePurchase = useCallback(async () => {
+    if (effectiveStatus !== 'Active' || isPurchasing) return;
+
+    const attemptId = ++purchaseAttemptRef.current;
+    setIsPurchasing(true);
+
+    try {
+      await onPurchase?.(auction.id, currentPrice);
+    } finally {
+      if (purchaseAttemptRef.current === attemptId) {
+        setIsPurchasing(false);
+      }
+    }
+  }, [effectiveStatus, isPurchasing, onPurchase, auction.id, currentPrice]);
+
+  const isEnded = effectiveStatus === 'Completed' || effectiveStatus === 'Cancelled';
 
   return (
     <div className="card" style={{ padding: '1rem', marginBottom: '1rem' }}>
@@ -87,19 +118,19 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
                 borderRadius: '4px',
                 fontSize: '0.75rem',
                 fontWeight: 500,
-                background: auction.status === 'Active' 
-                  ? 'rgba(63,185,80,0.16)' 
-                  : auction.status === 'Completed'
+                background: effectiveStatus === 'Active'
+                  ? 'rgba(63,185,80,0.16)'
+                  : effectiveStatus === 'Completed'
                   ? 'rgba(88,166,255,0.16)'
                   : 'rgba(248,81,73,0.16)',
-                color: auction.status === 'Active' 
+                color: effectiveStatus === 'Active'
                   ? '#8ee99d'
-                  : auction.status === 'Completed'
+                  : effectiveStatus === 'Completed'
                   ? '#58a6ff'
                   : '#ffb0aa',
               }}
             >
-              {auction.status}
+              {effectiveStatus}
             </div>
           </div>
 
@@ -113,7 +144,7 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
                 Current Price
               </p>
               <p style={{ margin: 0, color: COLOR.accent, fontSize: '1.25rem', fontWeight: 600 }}>
-                {auction.status === 'Active' ? fmt(currentPrice) : auction.finalPrice ? fmt(auction.finalPrice) : '-'}
+                {effectiveStatus === 'Active' ? fmt(currentPrice) : auction.finalPrice ? fmt(auction.finalPrice) : '-'}
               </p>
             </div>
             <div>
@@ -124,7 +155,7 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
                 {fmt(auction.startPrice)} / {fmt(auction.floorPrice)}
               </p>
             </div>
-            {auction.status === 'Active' && (
+            {effectiveStatus === 'Active' && (
               <div>
                 <p style={{ margin: 0, color: COLOR.muted, fontSize: '0.75rem' }}>
                   Time Left
@@ -134,7 +165,7 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
                 </p>
               </div>
             )}
-            {auction.status === 'Completed' && auction.winner && (
+            {effectiveStatus === 'Completed' && auction.winner && (
               <div>
                 <p style={{ margin: 0, color: COLOR.muted, fontSize: '0.75rem' }}>
                   Winner
@@ -146,14 +177,28 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
             )}
           </div>
 
-          {auction.status === 'Active' && (
+          {effectiveStatus === 'Active' && (
             <div style={{ marginTop: '1rem' }}>
               <PendingButton
-                onClick={() => onPurchase?.(auction.id, currentPrice)}
+                pending={isPurchasing}
+                pendingLabel="Processing purchase…"
+                onClick={handlePurchase}
                 style={{ width: '100%' }}
               >
                 Purchase Now for {fmt(currentPrice)}
               </PendingButton>
+            </div>
+          )}
+
+          {isEnded && auction.status === 'Active' && (
+            <div
+              style={{ marginTop: '1rem' }}
+              role="status"
+              aria-live="polite"
+            >
+              <p style={{ margin: 0, color: COLOR.muted, fontSize: '0.85rem' }}>
+                This auction has ended.
+              </p>
             </div>
           )}
         </div>
@@ -161,4 +206,3 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
     </div>
   );
 };
-
