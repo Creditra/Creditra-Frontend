@@ -7,6 +7,10 @@ import {
   TypedAmountConfirmField,
   isTypedAmountMatch,
 } from './TypedAmountConfirm';
+import { useTransactionPreflight } from '../hooks/useTransactionPreflight';
+import { TransactionConfirmationSummary } from './TransactionConfirmationSummary';
+import { EXPECTED_NETWORK } from '../utils/wallet';
+import type { WalletInfo, ConnectionStatus } from '../types/wallet';
 
 interface RepaymentCreditLine {
   id: string;
@@ -14,6 +18,8 @@ interface RepaymentCreditLine {
   limit: number;
   utilized: number;
   apr: number;
+  borrowerAddress?: string;
+  account?: string;
 }
 
 interface QuickRepayModalProps {
@@ -23,6 +29,10 @@ interface QuickRepayModalProps {
   onClose: () => void;
   onSuccess: (amount: number) => void;
   triggerRef?: React.RefObject<HTMLElement | null>;
+  expectedNetwork?: string;
+  expectedAccount?: string;
+  walletOverride?: WalletInfo | null;
+  statusOverride?: ConnectionStatus;
 }
 
 const COLOR = {
@@ -83,6 +93,10 @@ export function QuickRepayModal({
   onClose,
   onSuccess,
   triggerRef,
+  expectedNetwork,
+  expectedAccount,
+  walletOverride,
+  statusOverride,
 }: QuickRepayModalProps) {
   const [amountStr, setAmountStr] = useState(initialAmount || '');
   const [confirmAmountStr, setConfirmAmountStr] = useState('');
@@ -92,6 +106,27 @@ export function QuickRepayModal({
     isActive: true,
     triggerRef,
     onEscape: step !== 'pending' ? onClose : undefined,
+  });
+
+  const {
+    preflight,
+    canSign,
+    isSwitching,
+    switchError,
+    handleSwitchNetwork,
+    executeSafeSubmit,
+    acknowledgeIdentityChange,
+  } = useTransactionPreflight({
+    expectedNetwork: expectedNetwork || EXPECTED_NETWORK,
+    expectedAccount: expectedAccount || creditLine.borrowerAddress || creditLine.account,
+    walletOverride,
+    statusOverride,
+    onExecuteTransaction: () => {
+      setStep('pending');
+      setTimeout(() => {
+        setStep('success');
+      }, 2000);
+    },
   });
 
   useEffect(() => {
@@ -130,13 +165,10 @@ export function QuickRepayModal({
 
   const needsConfirm = requiresRepayConfirmation(amount);
   const isConfirmDisabled =
-    isInvalid || (needsConfirm && !isTypedAmountMatch(confirmAmountStr, amount));
+    isInvalid || (needsConfirm && !isTypedAmountMatch(confirmAmountStr, amount)) || !canSign || isSwitching;
 
   const handleConfirm = () => {
-    setStep('pending');
-    setTimeout(() => {
-      setStep('success');
-    }, 2000);
+    executeSafeSubmit();
   };
 
   const handleCloseComplete = () => {
@@ -253,9 +285,19 @@ export function QuickRepayModal({
               />
             )}
 
+            <TransactionConfirmationSummary
+              preflight={preflight}
+              canSign={canSign}
+              isSwitching={isSwitching}
+              switchError={switchError}
+              onSwitchNetwork={handleSwitchNetwork}
+              onAcknowledgeIdentityChange={acknowledgeIdentityChange}
+            />
+
             <button className="focus-ring"
               onClick={handleConfirm}
               disabled={isConfirmDisabled}
+              aria-disabled={isConfirmDisabled || undefined}
               style={{
                 ...btn.primary,
                 width: '100%',

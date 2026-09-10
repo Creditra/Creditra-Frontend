@@ -256,7 +256,7 @@ interface WalletContextType {
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 
-const WalletContext = createContext<WalletContextType | undefined>(undefined);
+export const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 

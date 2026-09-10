@@ -168,4 +168,58 @@ describe('RepayPreviewModal', () => {
     expect(dialog).toHaveAttribute('aria-labelledby');
     expect(dialog).toHaveAttribute('aria-describedby');
   });
+
+  describe('preflight integration', () => {
+    const validWallet = {
+      type: 'freighter',
+      publicKey: 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H',
+      network: 'TESTNET',
+    };
+
+    it('blocks confirmation when network is mismatched', () => {
+      const wrongNetworkWallet = {
+        ...validWallet,
+        network: 'PUBLIC',
+      };
+
+      render(
+        <RepayPreviewModal
+          {...defaultProps}
+          enablePreflight={true}
+          walletOverride={wrongNetworkWallet}
+          statusOverride="connected"
+        />,
+      );
+
+      expect(screen.getByTestId('transaction-preflight-summary')).toBeInTheDocument();
+      expect(screen.getByTestId('preflight-status-badge')).toHaveTextContent('Signing Blocked');
+
+      const confirmBtn = screen.getByTestId('repay-preview-confirm');
+      expect(confirmBtn).toBeDisabled();
+    });
+
+    it('allows confirmation when network and account match', async () => {
+      const user = userEvent.setup();
+      const onConfirm = vi.fn();
+
+      render(
+        <RepayPreviewModal
+          {...defaultProps}
+          enablePreflight={true}
+          expectedAccount={validWallet.publicKey}
+          walletOverride={validWallet}
+          statusOverride="connected"
+          onConfirm={onConfirm}
+        />,
+      );
+
+      expect(screen.getByTestId('preflight-status-badge')).toHaveTextContent('Ready to Sign');
+
+      const confirmBtn = screen.getByTestId('repay-preview-confirm');
+      expect(confirmBtn).not.toBeDisabled();
+
+      await user.click(confirmBtn);
+      expect(onConfirm).toHaveBeenCalledWith(3000);
+    });
+  });
 });

@@ -13,6 +13,10 @@ import {
   TypedAmountConfirmField,
   isTypedAmountMatch,
 } from './TypedAmountConfirm';
+import { useTransactionPreflight } from '../hooks/useTransactionPreflight';
+import { TransactionConfirmationSummary } from './TransactionConfirmationSummary';
+import { EXPECTED_NETWORK } from '../utils/wallet';
+import type { WalletInfo, ConnectionStatus } from '../types/wallet';
 import './RepayModal.css';
 
 interface RepaymentCreditLine {
@@ -21,6 +25,8 @@ interface RepaymentCreditLine {
   limit: number;
   utilized: number;
   apr: number;
+  borrowerAddress?: string;
+  account?: string;
 }
 
 type ModalStep = 'input' | 'review' | 'pending' | 'success';
@@ -32,6 +38,10 @@ interface RepayModalProps {
   onSuccess: (amount: number) => void;
   /** Ref to the element that triggered the modal; focus returns here on close. */
   triggerRef?: React.RefObject<HTMLElement | null>;
+  expectedNetwork?: string;
+  expectedAccount?: string;
+  walletOverride?: WalletInfo | null;
+  statusOverride?: ConnectionStatus;
 }
 
 const COLOR = {
@@ -98,6 +108,10 @@ export function RepayModal({
   onClose,
   onSuccess,
   triggerRef,
+  expectedNetwork,
+  expectedAccount,
+  walletOverride,
+  statusOverride,
 }: RepayModalProps) {
   const [step, setStep] = useState<ModalStep>('input');
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -116,6 +130,31 @@ export function RepayModal({
   const [txHash, setTxHash] = useState('');
   const [txTimestamp, setTxTimestamp] = useState('');
   const [copyMessage, setCopyMessage] = useState('');
+
+  const {
+    preflight,
+    canSign,
+    isSwitching,
+    switchError,
+    handleSwitchNetwork,
+    executeSafeSubmit,
+    acknowledgeIdentityChange,
+  } = useTransactionPreflight({
+    expectedNetwork: expectedNetwork || EXPECTED_NETWORK,
+    expectedAccount: expectedAccount || creditLine.borrowerAddress || creditLine.account,
+    walletOverride,
+    statusOverride,
+    onExecuteTransaction: () => {
+      const completedHash = `0x${Math.random().toString(16).slice(2, 18).padEnd(16, '0')}`;
+      const completedTimestamp = new Date().toISOString();
+      setTxHash(completedHash);
+      setTxTimestamp(completedTimestamp);
+      setStep('pending');
+      setTimeout(() => {
+        setStep('success');
+      }, 2500);
+    },
+  });
 
   useEffect(() => {
     if (step === 'review') {
@@ -159,7 +198,7 @@ export function RepayModal({
 
   const needsConfirm = requiresRepayConfirmation(amount);
   const isConfirmMatch = needsConfirm ? isTypedAmountMatch(confirmAmountStr, amount) : true;
-  const isConfirmDisabled = needsConfirm && !isConfirmMatch;
+  const isConfirmDisabled = (needsConfirm && !isConfirmMatch) || !canSign || isSwitching;
 
   const handlePercent = (pct: number) => {
     setIsRepayAllLocked(false);
@@ -201,14 +240,7 @@ export function RepayModal({
   };
 
   const handleConfirm = () => {
-    const completedHash = `0x${Math.random().toString(16).slice(2, 18).padEnd(16, '0')}`;
-    const completedTimestamp = new Date().toISOString();
-    setTxHash(completedHash);
-    setTxTimestamp(completedTimestamp);
-    setStep('pending');
-    setTimeout(() => {
-      setStep('success');
-    }, 2500);
+    executeSafeSubmit();
   };
 
   const handleCopySummary = async () => {
@@ -610,6 +642,15 @@ export function RepayModal({
                 </p>
               </div>
             )}
+
+            <TransactionConfirmationSummary
+              preflight={preflight}
+              canSign={canSign}
+              isSwitching={isSwitching}
+              switchError={switchError}
+              onSwitchNetwork={handleSwitchNetwork}
+              onAcknowledgeIdentityChange={acknowledgeIdentityChange}
+            />
 
             <div style={{ display: 'flex', gap: '1rem' }}>
               <button className="focus-ring" onClick={() => setStep('input')} style={{ ...btn.outline, flex: 1 }}>

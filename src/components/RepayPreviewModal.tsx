@@ -31,6 +31,10 @@ import {
   TypedAmountConfirmField,
   isTypedAmountMatch,
 } from './TypedAmountConfirm';
+import { useTransactionPreflight } from '../hooks/useTransactionPreflight';
+import { TransactionConfirmationSummary } from './TransactionConfirmationSummary';
+import { EXPECTED_NETWORK } from '../utils/wallet';
+import type { WalletInfo, ConnectionStatus } from '../types/wallet';
 import './RepayPreviewModal.css';
 
 export interface RepaymentCreditLine {
@@ -40,6 +44,8 @@ export interface RepaymentCreditLine {
   utilized: number;
   apr: number;
   nextPaymentAmount?: number;
+  borrowerAddress?: string;
+  account?: string;
 }
 
 export interface RepayPreviewModalProps {
@@ -61,6 +67,16 @@ export interface RepayPreviewModalProps {
   title?: string;
   /** Custom submit button label */
   confirmLabel?: string;
+  /** Expected network for preflight verification. */
+  expectedNetwork?: string;
+  /** Expected signer account public key. */
+  expectedAccount?: string;
+  /** Optional wallet override. */
+  walletOverride?: WalletInfo | null;
+  /** Optional status override. */
+  statusOverride?: ConnectionStatus;
+  /** Enable preflight validation checks. Default false. */
+  enablePreflight?: boolean;
 }
 
 const fmt = (n: number) =>
@@ -91,6 +107,11 @@ export function RepayPreviewModal({
   triggerRef,
   title = 'Preview Repayment Consequences',
   confirmLabel = 'Confirm & Repay',
+  expectedNetwork = EXPECTED_NETWORK,
+  expectedAccount,
+  walletOverride,
+  statusOverride,
+  enablePreflight = false,
 }: RepayPreviewModalProps) {
   const [confirmAmountStr, setConfirmAmountStr] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -99,6 +120,29 @@ export function RepayPreviewModal({
     isActive: isOpen,
     triggerRef,
     onEscape: !isSubmitting ? onClose : undefined,
+  });
+
+  const {
+    preflight,
+    canSign,
+    isSwitching,
+    switchError,
+    handleSwitchNetwork,
+    executeSafeSubmit,
+    acknowledgeIdentityChange,
+  } = useTransactionPreflight({
+    expectedNetwork,
+    expectedAccount: expectedAccount || creditLine.borrowerAddress || creditLine.account,
+    walletOverride,
+    statusOverride,
+    onExecuteTransaction: async () => {
+      try {
+        setIsSubmitting(true);
+        await onConfirm(repayAmount);
+      } catch {
+        setIsSubmitting(false);
+      }
+    },
   });
 
   useEffect(() => {
@@ -158,15 +202,22 @@ export function RepayPreviewModal({
   const isConfirmMatch = needsConfirm
     ? isTypedAmountMatch(confirmAmountStr, repayAmount)
     : true;
-  const isSubmitDisabled = isSubmitting || (needsConfirm && !isConfirmMatch);
+  const isSubmitDisabled =
+    isSubmitting ||
+    (needsConfirm && !isConfirmMatch) ||
+    (enablePreflight && (!canSign || isSwitching));
 
   const handleConfirmSubmit = async () => {
     if (isSubmitDisabled) return;
-    try {
-      setIsSubmitting(true);
-      await onConfirm(repayAmount);
-    } catch {
-      setIsSubmitting(false);
+    if (enablePreflight) {
+      await executeSafeSubmit();
+    } else {
+      try {
+        setIsSubmitting(true);
+        await onConfirm(repayAmount);
+      } catch {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -397,6 +448,17 @@ export function RepayPreviewModal({
                 idPrefix="repay-preview-confirm"
               />
             </div>
+          )}
+
+          {enablePreflight && (
+            <TransactionConfirmationSummary
+              preflight={preflight}
+              canSign={canSign}
+              isSwitching={isSwitching}
+              switchError={switchError}
+              onSwitchNetwork={handleSwitchNetwork}
+              onAcknowledgeIdentityChange={acknowledgeIdentityChange}
+            />
           )}
         </div>
 

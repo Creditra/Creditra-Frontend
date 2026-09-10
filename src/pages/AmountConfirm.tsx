@@ -1,4 +1,8 @@
 import { useState } from 'react';
+import { useTransactionPreflight } from '../hooks/useTransactionPreflight';
+import { TransactionConfirmationSummary } from '../components/TransactionConfirmationSummary';
+import { EXPECTED_NETWORK } from '../utils/wallet';
+import type { WalletInfo, ConnectionStatus } from '../types/wallet';
 
 export interface AmountConfirmProps {
   /** The monetary amount to confirm (USD). */
@@ -11,6 +15,16 @@ export interface AmountConfirmProps {
   confirmLabel?: string;
   /** Additional CSS class names. */
   className?: string;
+  /** Whether to enable transaction preflight checks (network and account validation). */
+  enablePreflight?: boolean;
+  /** Expected network for preflight verification. */
+  expectedNetwork?: string;
+  /** Expected signer account public key. */
+  expectedAccount?: string;
+  /** Optional wallet override. */
+  walletOverride?: WalletInfo | null;
+  /** Optional status override. */
+  statusOverride?: ConnectionStatus;
 }
 
 /**
@@ -45,26 +59,53 @@ export function AmountConfirm({
   onCancel,
   confirmLabel = 'Confirm',
   className = '',
+  enablePreflight = false,
+  expectedNetwork = EXPECTED_NETWORK,
+  expectedAccount,
+  walletOverride,
+  statusOverride,
 }: AmountConfirmProps) {
   const [typed, setTyped] = useState('');
   const [error, setError] = useState('');
   const formattedAmount = `$${amount.toLocaleString()}`;
+
+  const {
+    preflight,
+    canSign,
+    isSwitching,
+    switchError,
+    handleSwitchNetwork,
+    executeSafeSubmit,
+    acknowledgeIdentityChange,
+  } = useTransactionPreflight({
+    expectedNetwork,
+    expectedAccount,
+    walletOverride,
+    statusOverride,
+    onExecuteTransaction: onConfirm,
+  });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setTyped(e.target.value);
     setError('');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const isMatch = typed.trim() === String(amount);
+  const canProceed = isMatch && (enablePreflight ? canSign && !isSwitching : true);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (typed.trim() === String(amount)) {
-      onConfirm();
-    } else {
+    if (!isMatch) {
       setError(`Please type exactly "${amount}" to confirm.`);
+      return;
+    }
+
+    if (enablePreflight) {
+      await executeSafeSubmit();
+    } else {
+      onConfirm();
     }
   };
-
-  const isMatch = typed.trim() === String(amount);
 
   const classes = ['card', 'amount-confirm', className]
     .filter(Boolean)
@@ -105,6 +146,17 @@ export function AmountConfirm({
         autoComplete="off"
       />
 
+      {enablePreflight && (
+        <TransactionConfirmationSummary
+          preflight={preflight}
+          canSign={canSign}
+          isSwitching={isSwitching}
+          switchError={switchError}
+          onSwitchNetwork={handleSwitchNetwork}
+          onAcknowledgeIdentityChange={acknowledgeIdentityChange}
+        />
+      )}
+
       <div className="amount-confirm__actions">
         {onCancel && (
           <button
@@ -118,7 +170,7 @@ export function AmountConfirm({
         <button
           type="submit"
           className="amount-confirm__btn amount-confirm__btn--confirm"
-          aria-disabled={!isMatch}
+          aria-disabled={!canProceed}
         >
           {confirmLabel}
         </button>

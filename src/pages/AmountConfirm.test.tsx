@@ -66,4 +66,64 @@ describe('AmountConfirm', () => {
     );
     expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
   });
+
+  describe('preflight integration', () => {
+    const validWallet = {
+      type: 'freighter',
+      publicKey: 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H',
+      network: 'TESTNET',
+    };
+
+    it('renders preflight summary and disables confirm button when on wrong network', () => {
+      const wrongNetworkWallet = {
+        ...validWallet,
+        network: 'PUBLIC',
+      };
+
+      render(
+        <AmountConfirm
+          amount={5000}
+          onConfirm={vi.fn()}
+          enablePreflight={true}
+          walletOverride={wrongNetworkWallet}
+          statusOverride="connected"
+        />,
+      );
+
+      const input = screen.getByLabelText(/Type the amount to confirm/i);
+      fireEvent.change(input, { target: { value: '5000' } });
+
+      expect(screen.getByTestId('transaction-preflight-summary')).toBeInTheDocument();
+      expect(screen.getByTestId('preflight-status-badge')).toHaveTextContent('Signing Blocked');
+
+      const confirmBtn = screen.getByRole('button', { name: 'Confirm' });
+      expect(confirmBtn).toHaveAttribute('aria-disabled', 'true');
+    });
+
+    it('enables confirm button and calls onConfirm when preflight checks pass', () => {
+      const onConfirm = vi.fn();
+
+      render(
+        <AmountConfirm
+          amount={5000}
+          onConfirm={onConfirm}
+          enablePreflight={true}
+          expectedAccount={validWallet.publicKey}
+          walletOverride={validWallet}
+          statusOverride="connected"
+        />,
+      );
+
+      const input = screen.getByLabelText(/Type the amount to confirm/i);
+      fireEvent.change(input, { target: { value: '5000' } });
+
+      expect(screen.getByTestId('preflight-status-badge')).toHaveTextContent('Ready to Sign');
+
+      const confirmBtn = screen.getByRole('button', { name: 'Confirm' });
+      expect(confirmBtn).toHaveAttribute('aria-disabled', 'false');
+
+      fireEvent.click(confirmBtn);
+      expect(onConfirm).toHaveBeenCalledTimes(1);
+    });
+  });
 });
