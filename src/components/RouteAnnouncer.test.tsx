@@ -9,11 +9,6 @@ import {
   RouteAnnouncer,
 } from "./RouteAnnouncer";
 
-// `useDocumentTitle` is invoked inside an effect — mock it so the tests
-// don't depend on real `document.title` / meta-mutation side effects.
-vi.mock("../hooks/useDocumentTitle", () => ({
-  useDocumentTitle: vi.fn(),
-}));
 
 const renderRouteAnnouncer = (path: string) =>
   render(

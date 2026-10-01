@@ -133,6 +133,33 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     };
   }, []);
 
+  const announce = useCallback((count: number) => {
+    setAnnouncement(`${count} notification${count !== 1 ? 's' : ''} marked as read`);
+    if (announcementTimerRef.current) clearTimeout(announcementTimerRef.current);
+    announcementTimerRef.current = setTimeout(() => setAnnouncement(''), 3000);
+  }, []);
+
+  const handleMarkAllAsRead = useCallback(() => {
+    const prior = [...notifications];
+    const count = unreadCount;
+    const toastId = addToast({
+      type: 'success',
+      title: 'Marked all as read',
+      message: `${unreadCount} notification${unreadCount !== 1 ? 's' : ''}`,
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          undoRead(prior.map(n => n.id));
+          dismissToast(toastId);
+        },
+      },
+      duration: 6000,
+      saveToHistory: false,
+    });
+    markAllAsRead();
+    announce(count);
+  }, [notifications, unreadCount, addToast, dismissToast, undoRead, markAllAsRead, announce]);
+
   // Keyboard shortcut: Shift+R to mark all as read when panel is open
   useEffect(() => {
     if (!isPanelOpen) return;
@@ -195,33 +222,6 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     panelElRef.current = el;
     (panelRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
   };
-
-  const announce = useCallback((count: number) => {
-    setAnnouncement(`${count} notification${count !== 1 ? 's' : ''} marked as read`);
-    if (announcementTimerRef.current) clearTimeout(announcementTimerRef.current);
-    announcementTimerRef.current = setTimeout(() => setAnnouncement(''), 3000);
-  }, []);
-
-  const handleMarkAllAsRead = useCallback(() => {
-    const prior = [...notifications];
-    const count = unreadCount;
-    const toastId = addToast({
-      type: 'success',
-      title: 'Marked all as read',
-      message: `${unreadCount} notification${unreadCount !== 1 ? 's' : ''}`,
-      action: {
-        label: 'Undo',
-        onClick: () => {
-          undoRead(prior.map(n => n.id));
-          dismissToast(toastId);
-        },
-      },
-      duration: 6000,
-      saveToHistory: false,
-    });
-    markAllAsRead();
-    announce(count);
-  }, [notifications, unreadCount, addToast, dismissToast, undoRead, markAllAsRead, announce]);
 
   const handleClearAll = useCallback(() => {
     const prior = [...notifications];

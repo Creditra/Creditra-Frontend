@@ -129,6 +129,30 @@ export const ROUTE_METADATA: RouteMetadata[] = [
     description:
       "Monitor Creditra Dutch auction opportunities, bids, clearing prices, and market activity.",
   },
+  {
+    path: "/compare-credit-lines",
+    pageName: "Compare Credit Lines",
+    description:
+      "Compare interest rates, borrowing limits, and collateral terms across available Creditra credit lines.",
+  },
+  {
+    path: "/repay",
+    pageName: "Repay",
+    description:
+      "Make principal and interest repayments on your active Creditra credit lines.",
+  },
+  {
+    path: "/linked-accounts",
+    pageName: "Linked Accounts",
+    description:
+      "Manage external accounts and wallet addresses linked to your Creditra profile.",
+  },
+  {
+    path: "/notification-preferences",
+    pageName: "Notification Preferences",
+    description:
+      "Configure your email, push, and transaction alert preferences for Creditra.",
+  },
 ];
 
 export const NOT_FOUND_METADATA: Omit<RouteMetadata, "path"> = {
@@ -150,12 +174,15 @@ export function RouteAnnouncer() {
   const override = headCtx?.head;
   const [announcement, setAnnouncement] = useState("");
 
+  const metadata = getRouteMetadata(location.pathname);
+  const title = override?.title ?? titleFor(metadata.pageName);
+  const description = override?.description ?? metadata.description;
+
+  useDocumentTitle(title, description);
+
   useEffect(() => {
-    const metadata = getRouteMetadata(location.pathname);
-    const title = titleFor(metadata.pageName);
-    useDocumentTitle(title, metadata.description);
     setAnnouncement(`${metadata.pageName} page loaded`);
-  }, [location.pathname]);
+  }, [location.pathname, metadata.pageName]);
 
   return (
     <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">

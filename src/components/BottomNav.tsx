@@ -90,3 +90,5 @@ export function BottomNav() {
     </nav>
   );
 }
+
+export { NAV_ITEMS, NAV_ITEMS as BOTTOM_NAV_ITEMS };

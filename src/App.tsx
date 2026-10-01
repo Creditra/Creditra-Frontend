@@ -28,6 +28,39 @@ const DutchAuctions = lazy(() => import("./pages/DutchAuctions").then(m => ({ de
 const LinkedAccounts = lazy(() => import("./pages/LinkedAccounts").then(m => ({ default: m.LinkedAccounts })));
 const SessionTimeoutBanner = lazy(() => import("./components/SessionTimeoutBanner").then(m => ({ default: m.SessionTimeoutBanner })));
 const NotificationPreferences = lazy(() => import("./pages/NotificationPreferences").then(m => ({ default: m.NotificationPreferences })));
+const RepayPage = lazy(() => import("./pages/RepayPage"));
+const CreditLineCompare = lazy(() => import("./pages/CreditLineCompare"));
+
+export interface RouteConfig {
+  path: string;
+  element: React.ReactElement;
+  name: string;
+}
+
+export const APP_ROUTES: RouteConfig[] = [
+  { path: "/", element: <Dashboard />, name: "Dashboard" },
+  { path: "/transactions", element: <TransactionHistory />, name: "Transaction History" },
+  { path: "/credit-lines", element: <CreditLines />, name: "Credit Lines" },
+  { path: "/compare-credit-lines", element: <CreditLineCompare />, name: "Compare Credit Lines" },
+  { path: "/repay", element: <RepayPage />, name: "Repay" },
+  { path: "/help", element: <HelpCenter />, name: "Help Center" },
+  { path: "/draw-credit", element: <DrawCreditPage />, name: "Draw Credit" },
+  {
+    path: "/draw-credit/success",
+    element: <DrawCreditPage />,
+    name: "Draw Credit Success",
+  },
+  { path: "/open-credit", element: <RequestEvaluation />, name: "Request Evaluation" },
+  { path: "/dutch-auctions", element: <DutchAuctions />, name: "Dutch Auctions" },
+  { path: "/linked-accounts", element: <LinkedAccounts />, name: "Linked Accounts" },
+  {
+    path: "/notification-preferences",
+    element: <NotificationPreferences />,
+    name: "Notification Preferences",
+  },
+];
+
+export const REGISTERED_PATHS: string[] = APP_ROUTES.map((r) => r.path);
 
 // ── Suspense Fallback for Route Loading ───────────────────────────────────────
 /** Minimal skeleton shown while route chunks load (preserves first paint). */
@@ -74,7 +107,11 @@ const isEditableTarget = (target: EventTarget | null) => {
  *
  * See docs/ARCHITECTURE.md for the full component topology.
  */
-function App() {
+export interface AppProps {
+  Router?: React.ComponentType<{ children: React.ReactNode }>;
+}
+
+export function App({ Router = BrowserRouter }: AppProps = {}) {
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [openedFromSettingsLink, setOpenedFromSettingsLink] = useState(false);
   const [isKycDrawerOpen, setIsKycDrawerOpen] = useState(false);
@@ -117,7 +154,7 @@ function App() {
             <KycProvider>
               <NotificationProvider>
                 <ReducedMotionProvider>
-                  <BrowserRouter>
+                  <Router>
                     <RouteHeadProvider>
                       <RouteAnnouncer />
                       <div className="app">
@@ -143,19 +180,13 @@ function App() {
                           <NetworkMismatchBanner />
                           <Suspense fallback={<RouteLoadingFallback />}>
                             <Routes>
-                              <Route path="/" element={<Dashboard />} />
-                              <Route path="/transactions" element={<TransactionHistory />} />
-                              <Route path="/credit-lines" element={<CreditLines />} />
-                              <Route path="/help" element={<HelpCenter />} />
-                              <Route path="/draw-credit" element={<DrawCreditPage />} />
-                              <Route
-                                path="/draw-credit/success"
-                                element={<DrawCreditPage />}
-                              />
-                              <Route path="/open-credit" element={<RequestEvaluation />} />
-                              <Route path="/dutch-auctions" element={<DutchAuctions />} />
-                              <Route path="/linked-accounts" element={<LinkedAccounts />} />
-                              <Route path="/notification-preferences" element={<NotificationPreferences />} />
+                              {APP_ROUTES.map((route) => (
+                                <Route
+                                  key={route.path}
+                                  path={route.path}
+                                  element={route.element}
+                                />
+                              ))}
                               <Route path="*" element={<NotFound />} />
                             </Routes>
                           </Suspense>
@@ -183,7 +214,7 @@ function App() {
                         />
                       </div>
                     </RouteHeadProvider>
-                  </BrowserRouter>
+                  </Router>
                 </ReducedMotionProvider>
               </NotificationProvider>
             </KycProvider>

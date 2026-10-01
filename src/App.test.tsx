@@ -202,11 +202,11 @@ describe("App Styling and Accessibility", () => {
     ).toBeInTheDocument();
   });
 
-  it("ignores ? when focus is inside an input", () => {
+  it("ignores ? when focus is inside an input", async () => {
     window.history.pushState({}, "", "/help");
     render(<App />);
 
-    const searchInput = screen.getByPlaceholderText("Search for help...");
+    const searchInput = await screen.findByPlaceholderText("Search for help...");
     searchInput.focus();
     fireEvent.keyDown(searchInput, { key: "?" });
 
