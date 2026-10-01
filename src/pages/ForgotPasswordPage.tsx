@@ -18,8 +18,9 @@ export function ForgotPasswordPage() {
     setError(null);
     setLoading(true);
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      setError({ message: "Please enter a valid email address" });
+    const trimmedEmail = formData.email.trim();
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setError({ field: "email", message: "Please enter a valid email address" });
       setLoading(false);
       return;
     }
@@ -28,19 +29,31 @@ export function ForgotPasswordPage() {
       const response = await fetch("/api/auth/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ email: trimmedEmail }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
+
+      // Account enumeration prevention:
+      // Never reveal whether an email exists in the database.
+      // If the backend returns 404 or a "not found" message for unregistered emails,
+      // treat it as success on the client.
+      if (
+        response.status === 404 ||
+        (typeof data?.message === "string" && data.message.toLowerCase().includes("not found"))
+      ) {
+        setSuccess(true);
+        return;
+      }
 
       if (!response.ok) {
-        setError({ message: data.message || "Failed to send reset email" });
+        setError({ message: data.message || "Failed to send reset email. Please try again." });
         return;
       }
 
       setSuccess(true);
     } catch (err) {
-      setError({ message: "An error occurred. Please try again." });
+      setError({ message: "Network error. Please check your connection and try again." });
     } finally {
       setLoading(false);
     }
@@ -69,8 +82,7 @@ export function ForgotPasswordPage() {
               Check Your Email
             </h1>
             <p className="text-gray-600 mb-6">
-              We've sent a password reset link to{" "}
-              <strong>{formData.email}</strong>
+              If an account exists for <strong>{formData.email.trim()}</strong>, we've sent password reset instructions.
             </p>
 
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
@@ -103,26 +115,25 @@ export function ForgotPasswordPage() {
             </p>
           </div>
 
-          {error && (
+          {error && !error.field && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-sm text-red-800">{error.message}</p>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6" noValidate>
             <FormField
               id="email"
+              name="email"
               label="Email Address"
               type="email"
               required
+              value={formData.email}
+              onChange={(val) => setFormData({ email: val })}
+              placeholder="you@example.com"
+              autoComplete="email"
               helpText="Enter the email associated with your account"
               error={error?.field === 'email' ? error.message : undefined}
-              inputProps={{
-                value: formData.email,
-                onChange: (e) => setFormData({ email: e.target.value }),
-                placeholder: "you@example.com",
-                autoComplete: "email"
-              }}
             />
 
             <PendingButton
