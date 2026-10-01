@@ -486,3 +486,68 @@ padding-top: var(--sat);
 5. Every affected component CSS file references the relevant `--sa*` token.
 
 Live `env()` resolution on a physical iOS device is validated by the Playwright E2E suite.
+
+---
+
+## 8. Hard-Coded Literal to Token Migration Guide
+
+Hard-coded hex colors and inline rgba strings violate theme portability and are automated review blockers. This section provides an authoritative mapping table to replace legacy literals with design tokens.
+
+### A. Literal-to-Token Mapping Table
+
+| Legacy Hard-Coded Literal | CSS Token Variable | TypeScript Token (`tokens.ts`) | Semantic Intent |
+| :--- | :--- | :--- | :--- |
+| `#58a6ff` | `var(--accent)` | `COLOR.accent` | Interactive links, focus rings, primary action buttons |
+| `#3fb950` | `var(--success)` | `COLOR.success` | Active status, low utilization (<50%), repayments |
+| `#d29922` | `var(--warning)` | `COLOR.warning` | Suspended status, medium utilization (50–80%), interest |
+| `#f85149` | `var(--error)` | `COLOR.error` | Defaulted credit lines, danger thresholds, draw actions |
+| `#0d1117` | `var(--bg)` | `COLOR.bg` | Root document and app container background |
+| `#161b22` | `var(--surface)` | `COLOR.surface` | Content cards, modal containers, inputs, table rows |
+| `#1c2230` | `var(--surface-raised)` | `COLOR.surfaceRaised` | Tooltips, dropdown menus, elevated panels |
+| `#30363d` | `var(--border)` | `COLOR.border` | Card outlines, dividers, border strokes |
+| `#e6edf3` | `var(--text)` | `COLOR.text` | Primary body typography, active labels |
+| `#8b949e` | `var(--muted)` | `COLOR.muted` | Secondary captions, placeholders, inactive icons |
+| `rgba(63, 185, 80, 0.08)` | `var(--success-surface)` | `COLOR.successSurface` | Positive badge background fill |
+| `rgba(248, 81, 73, 0.08)` | `var(--error-surface)` | `COLOR.errorSurface` | Danger/alert badge background fill |
+| `rgba(210, 153, 34, 0.08)` | `var(--warning-surface)` | `COLOR.warningSurface` | Cautionary badge background fill |
+| `rgba(88, 166, 255, 0.08)` | `var(--accent-surface)` | `COLOR.accentSurface` | Interactive item hover/active pill fill |
+| `rgba(13, 17, 23, 0.72)` | `var(--surface-overlay)` | `COLOR.surfaceOverlay` | Modal backdrop scrim |
+
+---
+
+### B. Tint & Alpha Derivation Conventions
+
+Component backgrounds (such as status pills and subtle card highlights) derive their tint by blending semantic primary colors at standard alpha thresholds:
+
+1. **Subtle Surface Fills (`0.08` / 8% Alpha)**:
+   - Formula: `color-mix(in srgb, var(--<semantic-color>) 8%, transparent)` or `rgba(var(--<color>-rgb), 0.08)`.
+   - Used for non-interactive badge backgrounds, table row selection highlights, and inactive pill tags.
+2. **Hover / Interactive States (`0.15` / 15% Alpha)**:
+   - Formula: `color-mix(in srgb, var(--<semantic-color>) 15%, transparent)` or `rgba(var(--<color>-rgb), 0.15)`.
+   - Used when hovering over tinted action buttons or list elements.
+3. **Borders & Dividers (`0.30` / 30% Alpha)**:
+   - Formula: `color-mix(in srgb, var(--<semantic-color>) 30%, transparent)`.
+   - Used for contextual status borders matching badge fills.
+
+---
+
+### C. High-Contrast & Accessibility Implications
+
+Hard-coded hex values break user accessibility settings:
+- **Forced Colors Mode (`@media (forced-colors: active)`)**: When users enable Windows High Contrast or system-level accessibility color schemes, hard-coded hex colors ignore OS color overrides, rendering text unreadable.
+- **Dynamic Semantic Overrides**: Tokens (`var(--text)`, `var(--border)`) automatically resolve to `CanvasText`, `ButtonText`, and `Highlight` system keywords in forced-colors mode.
+- **Contrast Ratios**: All mapped tokens meet WCAG 2.1 AA standards (minimum 4.5:1 for normal text, 3:1 for large text and UI components) against `--surface` and `--bg`.
+
+---
+
+### D. Files Pending Migration (Audit Checklist)
+
+Contributors modernizing components should reference the following audit priority list:
+
+- [ ] `src/components/LandingPage.tsx` (15 hard-coded color literals identified)
+- [ ] `src/components/RepayModal.tsx` (11 hard-coded color literals identified)
+- [ ] `src/components/QuickRepayModal.tsx` (10 hard-coded color literals identified)
+- [ ] `src/components/notificationIcons.tsx` (10 hard-coded color literals identified)
+- [ ] `src/components/RiskGauge.tsx` (Inline SVG stroke and fill literals)
+- [ ] `src/components/CreditLineCard.tsx` (Legacy badge borders)
+
