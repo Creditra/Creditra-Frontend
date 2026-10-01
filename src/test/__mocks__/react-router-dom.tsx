@@ -5,7 +5,7 @@
  * is unavailable or aliased away in vitest.config.ts.
  */
 
-import { createElement, Fragment } from 'react';
+import { Children, createElement, Fragment, isValidElement } from 'react';
 
 /*
  * Module-level "current location", set by MemoryRouter when it renders and
@@ -30,6 +30,9 @@ function applyEntry(entry: string) {
 }
 
 export function BrowserRouter({ children }: { children: React.ReactNode }) {
+  if (typeof window !== 'undefined' && window.location) {
+    applyEntry(window.location.pathname + window.location.search + window.location.hash);
+  }
   return createElement(Fragment, null, children);
 }
 
@@ -76,11 +79,39 @@ export function NavLink({
   return createElement('a', { href: to, className: cls, ...props }, content);
 }
 
-export function Routes({ children }: { children: React.ReactNode }) {
-  return createElement(Fragment, null, children);
+function findMatchingRouteElement(children: React.ReactNode, pathname: string): React.ReactNode {
+  let matchElement: React.ReactNode = null;
+  let starElement: React.ReactNode = null;
+
+  function traverse(nodes: React.ReactNode) {
+    Children.forEach(nodes, (child) => {
+      if (!isValidElement(child)) return;
+      if (child.type === Fragment) {
+        traverse((child.props as { children?: React.ReactNode }).children);
+        return;
+      }
+      const { path, element } = (child.props || {}) as { path?: string; element?: React.ReactNode };
+      if (!path) return;
+      if (path === '*') {
+        if (!starElement) starElement = element;
+        return;
+      }
+      if (!matchElement && matchPath({ path, end: true }, pathname)) {
+        matchElement = element;
+      }
+    });
+  }
+
+  traverse(children);
+  return matchElement ?? starElement ?? null;
 }
 
-export function Route(_props: Record<string, unknown>) {
+export function Routes({ children }: { children: React.ReactNode }) {
+  const element = findMatchingRouteElement(children, currentPathname);
+  return createElement(Fragment, null, element);
+}
+
+export function Route(_props: { path?: string; element?: React.ReactNode; [key: string]: unknown }) {
   return null;
 }
 
@@ -145,5 +176,45 @@ export function __setMockLocation(pathname: string, search = '') {
 
 export function useParams() {
   return {};
+}
+
+export function matchPath(
+  pattern: string | { path: string; caseSensitive?: boolean; end?: boolean },
+  pathname: string,
+) {
+  const patternObj = typeof pattern === 'string' ? { path: pattern, end: true } : pattern;
+  const { path: patternPath, end = true, caseSensitive = false } = patternObj;
+
+  if (patternPath === '*') {
+    return {
+      params: { '*': pathname },
+      pathname,
+      pathnameBase: pathname,
+      pattern: patternObj,
+    };
+  }
+
+  const pPath = caseSensitive ? patternPath : patternPath.toLowerCase();
+  const aPath = caseSensitive ? pathname : pathname.toLowerCase();
+
+  if (pPath === aPath) {
+    return {
+      params: {},
+      pathname,
+      pathnameBase: pathname,
+      pattern: patternObj,
+    };
+  }
+
+  if (!end && aPath.startsWith(pPath.endsWith('/') ? pPath : pPath + '/')) {
+    return {
+      params: {},
+      pathname,
+      pathnameBase: patternPath,
+      pattern: patternObj,
+    };
+  }
+
+  return null;
 }
 

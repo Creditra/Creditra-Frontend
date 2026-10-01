@@ -150,12 +150,15 @@ export function RouteAnnouncer() {
   const override = headCtx?.head;
   const [announcement, setAnnouncement] = useState("");
 
+  const metadata = getRouteMetadata(location.pathname);
+  const title = override?.title ?? titleFor(metadata.pageName);
+  const description = override?.description ?? metadata.description;
+
+  useDocumentTitle(title, description);
+
   useEffect(() => {
-    const metadata = getRouteMetadata(location.pathname);
-    const title = titleFor(metadata.pageName);
-    useDocumentTitle(title, metadata.description);
     setAnnouncement(`${metadata.pageName} page loaded`);
-  }, [location.pathname]);
+  }, [location.pathname, metadata.pageName]);
 
   return (
     <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">

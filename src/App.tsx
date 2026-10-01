@@ -31,12 +31,19 @@ const NotificationPreferences = lazy(() => import("./pages/NotificationPreferenc
 
 // ── Suspense Fallback for Route Loading ───────────────────────────────────────
 /** Minimal skeleton shown while route chunks load (preserves first paint). */
-function RouteLoadingFallback() {
+export function RouteLoadingFallback() {
   return (
-    <div style={{ padding: "2rem 0" }}>
-      <Skeleton style={{ width: "200px", height: "32px", marginBottom: "0.5rem", borderRadius: "6px" }} />
-      <Skeleton style={{ width: "300px", height: "16px", marginBottom: "2rem", borderRadius: "4px" }} />
-      <Skeleton style={{ width: "100%", height: "200px", borderRadius: "8px" }} />
+    <div
+      role="status"
+      aria-busy="true"
+      aria-live="polite"
+      aria-label="Loading page"
+      className="route-loading-fallback"
+    >
+      <span className="sr-only">Loading page</span>
+      <Skeleton className="route-loading-fallback__title" />
+      <Skeleton className="route-loading-fallback__subtitle" />
+      <Skeleton className="route-loading-fallback__card" shape="card" />
     </div>
   );
 }
