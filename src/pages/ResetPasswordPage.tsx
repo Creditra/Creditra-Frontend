@@ -138,26 +138,25 @@ export function ResetPasswordPage() {
             <p className="text-gray-500 mt-2">Enter your new password</p>
           </div>
 
-          {error && (
+          {error && !error.field && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-sm text-red-800">{error.message}</p>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6" noValidate>
             <FormField
               id="newPassword"
+              name="newPassword"
               label="New Password"
               type="password"
               required
               helpText="Must be at least 8 characters with letters and numbers"
               error={error?.field === 'newPassword' ? error.message : undefined}
-              inputProps={{
-                value: formData.newPassword,
-                onChange: (e) => handlePasswordChange(e.target.value),
-                placeholder: "Create a strong password",
-                autoComplete: "new-password"
-              }}
+              value={formData.newPassword}
+              onChange={(value) => handlePasswordChange(value)}
+              placeholder="Create a strong password"
+              autoComplete="new-password"
             />
             {formData.newPassword && (
               <div className="mt-2">
@@ -180,16 +179,17 @@ export function ResetPasswordPage() {
 
             <FormField
               id="confirmPassword"
+              name="confirmPassword"
               label="Confirm Password"
               type="password"
               required
               error={error?.field === 'confirmPassword' ? error.message : undefined}
-              inputProps={{
-                value: formData.confirmPassword,
-                onChange: (e) => setFormData({ ...formData, confirmPassword: e.target.value }),
-                placeholder: "Re-enter your password",
-                autoComplete: "new-password"
-              }}
+              value={formData.confirmPassword}
+              onChange={(value) =>
+                setFormData({ ...formData, confirmPassword: value })
+              }
+              placeholder="Re-enter your password"
+              autoComplete="new-password"
             />
 
             <PendingButton
