@@ -3,11 +3,13 @@ import './FormField.css';
 
 interface FormFieldProps {
   id: string;
-  name: string;
+  name?: string;
   label: string;
   type?: 'text' | 'password' | 'email' | 'tel' | 'number';
-  value: string;
-  onChange: (value: string) => void;
+  as?: 'input' | 'textarea';
+  rows?: number;
+  value?: string;
+  onChange?: (value: string) => void;
   onBlur?: () => void;
   placeholder?: string;
   error?: string;
@@ -19,6 +21,7 @@ interface FormFieldProps {
   autoComplete?: string;
   maxLength?: number;
   className?: string;
+  inputProps?: Record<string, any>;
 }
 
 export const FormField: React.FC<FormFieldProps> = ({
@@ -26,6 +29,8 @@ export const FormField: React.FC<FormFieldProps> = ({
   name,
   label,
   type = 'text',
+  as = 'input',
+  rows,
   value,
   onChange,
   onBlur,
@@ -39,10 +44,37 @@ export const FormField: React.FC<FormFieldProps> = ({
   autoComplete,
   maxLength,
   className = '',
+  inputProps,
 }) => {
   const helpId = `${id}-help`;
   const errorId = `${id}-error`;
   const formatId = `${id}-format`;
+
+  const effectiveValue = value ?? inputProps?.value ?? '';
+  const effectivePlaceholder = placeholder ?? inputProps?.placeholder;
+  const effectiveAutoComplete = autoComplete ?? inputProps?.autoComplete;
+  const effectiveMaxLength = maxLength ?? inputProps?.maxLength;
+  const effectiveDisabled = disabled || Boolean(inputProps?.disabled);
+  const effectiveRequired = required || Boolean(inputProps?.required);
+  const effectiveRows = rows ?? inputProps?.rows ?? 3;
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (onChange) {
+      onChange(e.target.value);
+    }
+    if (inputProps?.onChange) {
+      inputProps.onChange(e);
+    }
+  };
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (onBlur) {
+      onBlur();
+    }
+    if (inputProps?.onBlur) {
+      inputProps.onBlur(e);
+    }
+  };
 
   // Combine aria-describedby from props and computed IDs
   const getAriaDescribedBy = (): string => {
@@ -72,27 +104,47 @@ export const FormField: React.FC<FormFieldProps> = ({
     <div className={`form-field ${className} ${error ? 'form-field--error' : ''}`}>
       <label htmlFor={id} className="form-field__label">
         {label}
-        {required && <span className="form-field__required" aria-hidden="true">*</span>}
+        {effectiveRequired && <span className="form-field__required" aria-hidden="true">*</span>}
       </label>
 
       <div className="form-field__input-wrapper">
-        <input
-          id={id}
-          name={name}
-          type={type}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onBlur={onBlur}
-          placeholder={placeholder}
-          disabled={disabled}
-          required={required}
-          autoComplete={autoComplete}
-          maxLength={maxLength}
-          className="form-field__input"
-          aria-describedby={getAriaDescribedBy()}
-          aria-invalid={!!error}
-          aria-required={required}
-        />
+        {as === 'textarea' ? (
+          <textarea
+            id={id}
+            name={name ?? id}
+            value={effectiveValue}
+            onChange={handleChange}
+            onBlur={handleBlur}
+            placeholder={effectivePlaceholder}
+            disabled={effectiveDisabled}
+            required={effectiveRequired}
+            autoComplete={effectiveAutoComplete}
+            maxLength={effectiveMaxLength}
+            rows={effectiveRows}
+            className="form-field__input"
+            aria-describedby={getAriaDescribedBy()}
+            aria-invalid={!!error}
+            aria-required={effectiveRequired}
+          />
+        ) : (
+          <input
+            id={id}
+            name={name ?? id}
+            type={type}
+            value={effectiveValue}
+            onChange={handleChange}
+            onBlur={handleBlur}
+            placeholder={effectivePlaceholder}
+            disabled={effectiveDisabled}
+            required={effectiveRequired}
+            autoComplete={effectiveAutoComplete}
+            maxLength={effectiveMaxLength}
+            className="form-field__input"
+            aria-describedby={getAriaDescribedBy()}
+            aria-invalid={!!error}
+            aria-required={effectiveRequired}
+          />
+        )}
       </div>
 
       {/* Help text - always present but hidden from screen readers unless referenced */}

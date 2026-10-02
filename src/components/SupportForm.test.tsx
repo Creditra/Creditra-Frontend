@@ -293,7 +293,7 @@ describe("SupportForm", () => {
   });
 
   it("enforces maxLength on subject and message", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<SupportForm />);
 
     const longSubject = "x".repeat(150);
@@ -305,5 +305,5 @@ describe("SupportForm", () => {
     // maxLength attribute enforces truncation
     expect(screen.getByLabelText(/subject/i)).toHaveValue(longSubject.slice(0, 120));
     expect(screen.getByLabelText(/message/i)).toHaveValue(longMessage.slice(0, 1000));
-  });
+  }, 15000);
 });

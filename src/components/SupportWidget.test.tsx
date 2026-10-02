@@ -4,6 +4,14 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { SupportWidget } from "./SupportWidget";
 
+import { submitSupportRequest } from "../services/support";
+
+vi.mock("../services/support", () => ({
+  submitSupportRequest: vi.fn().mockResolvedValue({ success: true }),
+}));
+
+let capturedSupportFormProps: any = null;
+
 // SupportForm's onSubmit defaults to a setTimeout — mock to avoid leaking timers
 vi.mock("./SupportForm", async (importOriginal) => {
   const mod = await importOriginal<typeof import("./SupportForm")>();
@@ -11,14 +19,15 @@ vi.mock("./SupportForm", async (importOriginal) => {
     ...mod,
     SupportForm: (
       props: React.ComponentProps<typeof mod.SupportForm>,
-    ) => (
-      <mod.SupportForm
-        {...props}
-        onSubmit={async () => {
-          // No-op for widget integration tests
-        }}
-      />
-    ),
+    ) => {
+      capturedSupportFormProps = props;
+      return (
+        <mod.SupportForm
+          {...props}
+          onSubmit={props.onSubmit ?? (async () => {})}
+        />
+      );
+    },
   };
 });
 
@@ -142,6 +151,24 @@ describe("SupportWidget", () => {
       expect(
         screen.getByRole("button", { name: "Send message" }),
       ).toBeInTheDocument();
+    });
+
+    it("passes a real submit handler to SupportForm that calls submitSupportRequest", async () => {
+      await openContactTab();
+      expect(capturedSupportFormProps?.onSubmit).toBeTypeOf("function");
+
+      await capturedSupportFormProps.onSubmit({
+        subject: "Need help",
+        message: "Can't connect wallet",
+      });
+
+      expect(submitSupportRequest).toHaveBeenCalledWith(
+        { subject: "Need help", message: "Can't connect wallet" },
+        expect.objectContaining({
+          route: "/",
+          appVersion: "0.1.0",
+        })
+      );
     });
 
     it("can switch back to FAQ tab", async () => {

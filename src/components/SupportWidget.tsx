@@ -32,11 +32,14 @@ import {
   useMemo,
   useRef,
   useState,
+  useContext,
 } from "react";
 import { HelpCircle, Mail, Search, X } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { WalletContext } from "../context/WalletContext";
+import { submitSupportRequest } from "../services/support";
 import faqEntriesData from "../data/faq.json";
-import { SupportForm } from "./SupportForm";
+import { SupportForm, type SupportFormData } from "./SupportForm";
 import "./SupportWidget.css";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -67,6 +70,18 @@ export function SupportWidget() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("faq");
   const [query, setQuery] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const location = useLocation();
+  const walletContext = useContext(WalletContext);
+  const walletType = walletContext?.wallet?.type ?? "none";
+
+  const handleSubmitSupport = async (data: SupportFormData) => {
+    await submitSupportRequest(data, {
+      route: location.pathname,
+      appVersion: "0.1.0",
+      walletType,
+    });
+  };
 
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -295,7 +310,10 @@ export function SupportWidget() {
             aria-labelledby={contactTabId}
             hidden={activeTab !== "contact"}
           >
-            <SupportForm isOpen={isOpen && activeTab === "contact"} />
+            <SupportForm
+              isOpen={isOpen && activeTab === "contact"}
+              onSubmit={handleSubmitSupport}
+            />
           </div>
         </section>
       )}
