@@ -292,6 +292,31 @@ export function RequestEvaluation() {
 
         {step === 3 && (
   <div>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+      <span style={{ fontSize: '0.875rem', color: COLOR.text }}>
+        Evaluating on-chain activity: {progress}%
+      </span>
+      <span style={{ fontSize: '0.875rem', color: COLOR.muted }}>
+        Estimated time remaining: {eta}s
+      </span>
+    </div>
+    <div
+      role="progressbar"
+      aria-valuenow={progress}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label="Evaluation progress"
+      style={{ height: 4, background: COLOR.border, borderRadius: 2, overflow: 'hidden', marginBottom: '1rem' }}
+    >
+      <div
+        style={{
+          height: '100%',
+          width: `${progress}%`,
+          background: COLOR.accent,
+          transition: isReducedMotionActive ? 'none' : 'width 200ms',
+        }}
+      />
+    </div>
     {/* Content-aware skeletons mimicking the result card */}
     <div
       style={{
