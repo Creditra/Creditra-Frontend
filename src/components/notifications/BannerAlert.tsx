@@ -11,12 +11,16 @@ export function BannerAlerts() {
     <div className="banner-stack">
       {banners.map((banner) => {
         const colors = TYPE_COLOR[banner.type];
+        const role =
+          banner.type === 'error' || banner.type === 'danger' || banner.type === 'warning'
+            ? 'alert'
+            : 'status';
         return (
           <div
             key={banner.id}
             className="banner-alert"
             style={{ background: colors.bg, borderColor: colors.border }}
-            role="alert"
+            role={role}
           >
             <span
               className="banner-icon"
