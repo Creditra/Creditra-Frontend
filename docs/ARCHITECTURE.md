@@ -158,11 +158,14 @@ notifications while keeping transaction confirmations).
 | --- | --- | --- |
 | `/` | `<Dashboard />` | Default landing for a connected wallet |
 | `/transactions` | `<TransactionHistory />` | Sortable, filterable ledger |
-| `/credit-lines` | route is rendered in the nav but currently delegates to `pages/CreditLines.tsx`; wiring happens via `App.tsx` updates |
-| `/compare-credit-lines` | `<CreditLineCompare />` | Side-by-side comparison of two credit lines. Accepts `?a=<id>&b=<id>` query params; falls back to an inline picker when params are absent or invalid. Linked from the "Full Compare →" button on `/credit-lines`. |
+| `/credit-lines` | `<CreditLines />` | Credit-line list with sort by status/limit/utilization/APR/risk |
+| `/help` | `<HelpCenter />` | Help center documentation, FAQ, and guides |
 | `/draw-credit` | `<DrawCreditPage />` | 4-step wizard |
 | `/draw-credit/success` | `<DrawCreditPage />` | Same component, success branch driven by `useLocation().state.transaction` |
 | `/open-credit` | `<RequestEvaluation />` | New-applicant intake |
+| `/dutch-auctions` | `<DutchAuctions />` | Dutch auction collateral liquidation marketplace |
+| `/linked-accounts` | `<LinkedAccounts />` | Multi-wallet linking and management |
+| `/notification-preferences` | `<NotificationPreferences />` | Granular alert preference configuration |
 | `*` | `<NotFound />` | Semantic 404 with link back to `/` |
 
 ### Code-splitting

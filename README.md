@@ -29,8 +29,8 @@ talks to Stellar wallets via injected provider APIs.
 - **Token-first styling.** Color, spacing, radius and elevation tokens live in
   `:root` (`src/index.css`) and `src/utils/tokens.ts`. One-off hex values are a
   review-blocker.
-- **Tested where it counts.** 75 tests across 18 files — focus-trap, modal a11y, amount
-  validation, currency/date formatters, error boundaries, copy-to-clipboard.
+- **Tested where it counts.** Comprehensive test suite covering focus-trap, modal a11y, amount
+  validation, currency/date formatters, error boundaries, copy-to-clipboard, and page flows (run via `npm test -- --run`).
 
 ---
 
@@ -112,16 +112,27 @@ Every entry below is grounded in a real file in `src/`.
 | Route | Component | Purpose |
 | --- | --- | --- |
 | `/` | `pages/Dashboard.tsx` | Risk gauge, credit summary, recent transactions, wallet chip |
-| `/credit-lines` | `pages/CreditLines.tsx` | Credit-line list with sort by status/limit/utilization/APR/risk |
-| `/compare-credit-lines` | `pages/CreditLineCompare.tsx` | Side-by-side comparison of two credit lines. Accepts `?a=<id>&b=<id>`; falls back to an inline picker. Navigable from the "Full Compare →" button on the credit-lines page. |
 | `/transactions` | `pages/TransactionHistory.tsx` | Filterable transaction ledger with sortable headers |
-| `/repay` | `pages/RepayPage.tsx` | Repay flow with Smart Pay suggested amount, percent presets, review step |
+| `/credit-lines` | `pages/CreditLines.tsx` | Credit-line list with sort by status/limit/utilization/APR/risk |
+| `/help` | `pages/HelpCenter.tsx` | Help center documentation, search, and user guides |
 | `/draw-credit` | `pages/DrawCreditPage.tsx` | 4-step wizard: select → amount → confirm → status |
-| `/open-credit` | `pages/RequestEvaluation.tsx` | Onboarding evaluation form |
-| `*` | `pages/NotFound.tsx` | 404 with semantic landmarks |
+| `/draw-credit/success` | `pages/DrawCreditPage.tsx` | Success view for completed credit draws |
+| `/open-credit` | `pages/RequestEvaluation.tsx` | Onboarding credit evaluation request form |
+| `/dutch-auctions` | `pages/DutchAuctions.tsx` | Dutch auction marketplace for collateral & debt positions |
+| `/linked-accounts` | `pages/LinkedAccounts.tsx` | Multi-account management and external wallet links |
+| `/notification-preferences` | `pages/NotificationPreferences.tsx` | Granular notification alert toggles and channel preferences |
+| `*` | `pages/NotFound.tsx` | 404 with semantic landmarks and home navigation |
 
-Auth pages (`LoginPage`, `RegisterPage`, `ForgotPasswordPage`, `ResetPasswordPage`) and a
-public `LandingPage` exist as components, ready to be wired into the route tree.
+### Unrouted Page Components (built but not routed)
+
+The following components exist in `src/pages/` and are fully implemented, ready to be wired into future route trees or embedded modal views:
+
+- **Credit Line Comparison:** `pages/CreditLineCompare.tsx` (comparison view)
+- **Repayment:** `pages/RepayPage.tsx` (repayment wizard) & `pages/AutopayPage.tsx` (automated recurring repayment setup)
+- **Authentication:** `pages/LoginPage.tsx`, `pages/RegisterPage.tsx`, `pages/ForgotPasswordPage.tsx`, `pages/ResetPasswordPage.tsx`
+- **Landing & Marketing:** `pages/LandingHero.tsx`
+- **Account & Settings:** `pages/Settings.tsx`, `pages/SettingsAccount.tsx`, `pages/Profile.tsx`, `pages/ProfileActivity.tsx`
+- **Trading & Collateral:** `pages/CollateralSwap.tsx`
 
 ### Reusable components ([`src/components/`](src/components/))
 
