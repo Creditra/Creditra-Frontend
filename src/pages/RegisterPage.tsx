@@ -109,41 +109,39 @@ export function RegisterPage() {
             <p className="text-gray-500 mt-2">Sign up to get started</p>
           </div>
 
-          {error && (
+          {error && !error.field && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-sm text-red-800">{error.message}</p>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6" noValidate>
             <FormField
               id="email"
+              name="email"
               label="Email Address"
               type="email"
               required
               helpText="We'll never share your email with anyone"
               error={error?.field === 'email' ? error.message : undefined}
-              inputProps={{
-                value: formData.email,
-                onChange: (e) => setFormData({ ...formData, email: e.target.value }),
-                placeholder: "you@example.com",
-                autoComplete: "email"
-              }}
+              value={formData.email}
+              onChange={(value) => setFormData({ ...formData, email: value })}
+              placeholder="you@example.com"
+              autoComplete="email"
             />
 
             <FormField
               id="password"
+              name="password"
               label="Password"
               type="password"
               required
               helpText="Must be at least 8 characters with letters and numbers"
               error={error?.field === 'password' ? error.message : undefined}
-              inputProps={{
-                value: formData.password,
-                onChange: (e) => handlePasswordChange(e.target.value),
-                placeholder: "Create a strong password",
-                autoComplete: "new-password"
-              }}
+              value={formData.password}
+              onChange={(value) => handlePasswordChange(value)}
+              placeholder="Create a strong password"
+              autoComplete="new-password"
             />
             {formData.password && (
               <div className="mt-2">
@@ -166,16 +164,17 @@ export function RegisterPage() {
 
             <FormField
               id="confirmPassword"
+              name="confirmPassword"
               label="Confirm Password"
               type="password"
               required
               error={error?.field === 'confirmPassword' ? error.message : undefined}
-              inputProps={{
-                value: formData.confirmPassword,
-                onChange: (e) => setFormData({ ...formData, confirmPassword: e.target.value }),
-                placeholder: "Re-enter your password",
-                autoComplete: "new-password"
-              }}
+              value={formData.confirmPassword}
+              onChange={(value) =>
+                setFormData({ ...formData, confirmPassword: value })
+              }
+              placeholder="Re-enter your password"
+              autoComplete="new-password"
             />
 
             <div>
