@@ -10,6 +10,7 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useInertBackdrop } from "../hooks/useInertBackdrop";
 import { useBodyScrollLock } from "../hooks/useBodyScrollLock";
 import { MOCK_CREDIT_LINES } from "../data/mockData";
+import { createCreditDataSource } from "../services/credit";
 import type {
   CreditLineStatus,
   SortField,
@@ -388,6 +389,29 @@ export default function CreditLines({
   const [creditLines, setCreditLines] = useState(MOCK_CREDIT_LINES);
   const [isLoading, setIsLoading] = useState(true);
   const hasCreditLines = creditLines.length > 0;
+
+  useEffect(() => {
+    if (
+      typeof import.meta !== "undefined" &&
+      import.meta.env?.VITE_CREDIT_DATA_SOURCE === "soroban"
+    ) {
+      const dataSource = createCreditDataSource("soroban");
+      const borrower =
+        "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H";
+      setIsLoading(true);
+      dataSource
+        .listCreditLines(borrower)
+        .then((lines) => {
+          setCreditLines(lines);
+        })
+        .catch((err) => {
+          console.error("[CreditLines] Failed to load credit lines from Soroban RPC:", err);
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+    }
+  }, []);
 
   const [loading, setLoading] = useState(defaultLoading);
   useEffect(() => {
