@@ -22,6 +22,12 @@ import {
 /** How long a banner dismissal snoozes the banner. */
 export const RISK_EDUCATION_DISMISS_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
 
+/**
+ * Version of the risk education content. Bump this when the primer text
+ * changes so previously-acknowledged users see the new version.
+ */
+export const RISK_EDUCATION_VERSION = 1;
+
 export interface RiskEducationState {
   /** The content version the borrower acknowledged, applicable to this wallet. */
   acknowledgedVersion?: number;
