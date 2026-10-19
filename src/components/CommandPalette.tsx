@@ -402,8 +402,17 @@ export function CommandPalette({
           )}
 
           {results.map((item, index) => (
-            <li key={item.id} role="option" aria-selected={index === activeIndex}>
+            <li
+              key={item.id}
+              id={`cp-item-${item.id}`}
+              role="option"
+              aria-selected={index === activeIndex}
+            >
               {/*
+               * The `id` above sits on the `role="option"` element so
+               * `aria-activedescendant` references a real option, as required
+               * by the listbox pattern documented at the top of this file.
+               *
                * Each item is a `<button>` (not an `<a>`) because:
                * - Navigation items call `navigate()` imperatively.
                * - Callback items don't have a URL.
@@ -418,7 +427,6 @@ export function CommandPalette({
                * the two never conflict.
                */}
               <button
-                id={`cp-item-${item.id}`}
                 type="button"
                 className={`cp-item${index === activeIndex ? ' cp-item--active' : ''}`}
                 onClick={() => activate(item)}

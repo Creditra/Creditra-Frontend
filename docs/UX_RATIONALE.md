@@ -277,7 +277,8 @@ heavy.
   we want a fresh re-decision rather than reusing stale validation state.
 
 **Chosen approach.** Four-step linear flow in `pages/DrawCreditPage.tsx`:
-`select → amount → preview → confirm → status`. Each step is its own component:
+`select → amount → preview → confirm`, followed by the terminal `status` state.
+Each step is its own component:
 `CreditLineSelector` → `AmountInput` → `PreviewSection` → `ConfirmationStep` →
 `TransactionStatus`. Progress is shown via the visible header steps; the back button
 unwinds one step at a time.
@@ -287,7 +288,7 @@ responsibility and is independently testable.
 
 ---
 
-## 10. Dark theme by default
+## 11. Dark theme by default
 
 **Problem.** Finance apps are used at night, during market opens in unusual time zones,
 in low-light environments. A bright theme is fatiguing in those contexts.
@@ -305,7 +306,10 @@ token swap when we add it.
 
 **Trade-off.** A subset of users prefer light. The manual toggle is coming; the
 infrastructure is already in place.
-## Inline Help Escape Hatch
+
+---
+
+## 12. Inline Help Escape Hatch
 
 Draw and repayment flows include a discreet `I need help` footer action that opens
 the Help Center in an in-app overlay. The overlay imports the Help Center content
@@ -320,7 +324,7 @@ motion-reduced animation behavior.
 
 ---
 
-## 11. Per-step micro-progress in the draw wizard
+## 13. Per-step micro-progress in the draw wizard
 
 **Problem.** The draw wizard header shows which step is active but not whether
 each step's requirements are satisfied (line chosen, amount in bounds, preview
@@ -346,7 +350,7 @@ so all four remain visible at compact density.
 
 ---
 
-## 12. Microcopy glossary
+## 14. Microcopy glossary
 
 **Problem.** Risk-priced credit terminology (utilization, reserve, draw, APR
 vs. APY, attestation) appeared inconsistently across AmountInput, PreviewSection,
@@ -365,7 +369,7 @@ terminology appearing over time — is worse for users and contributors alike.
 
 ---
 
-## 13. Non-dismissible default-risk education gate before first draw
+## 15. Non-dismissible default-risk education gate before first draw
 
 **Problem.** First-time borrowers taking on credit lines may not fully comprehend the legal, financial, and credit implications of defaulting on an adaptive on-chain credit protocol. Without explicit education, borrowers face unexpected account suspension, credit score downgrades, or liquidation mechanisms. For the GrantFox credit campaign, borrower protection requires that every user understand the definition, consequences, and avoidance strategies of default before their first draw.
 
@@ -382,7 +386,7 @@ To support ongoing education, support agents, documentation, and campaign links 
 
 ---
 
-## 14. Draw pricing is tiered on *post-draw* utilisation
+## 16. Draw pricing is tiered on *post-draw* utilisation
 
 **Problem.** A draw changes the utilisation it is priced at, so pricing the
 adjustment on the line's utilisation *before* the draw understates the cost
