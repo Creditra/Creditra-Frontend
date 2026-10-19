@@ -3,6 +3,12 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import RepayPage from '../RepayPage';
 
+vi.mock('@/context/WalletContext', () => ({
+  useWallet: () => ({
+    wallet: { publicKey: 'GTESTWALLET' },
+  }),
+}));
+
 vi.mock('@/data/mockData', () => ({
   MOCK_CREDIT_LINES: [
     {

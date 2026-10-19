@@ -28,6 +28,8 @@ import { KbdHint } from '@/components/KbdHint';
 import { RepayPreviewModal } from '@/components/RepayPreviewModal';
 import { CopyToClipboard } from '@/components/CopyToClipboard';
 import { MOCK_CREDIT_LINES } from '@/data/mockData';
+import { saveMockRepaymentTransaction } from '@/services/creditDataSource';
+import { useWallet } from '@/context/WalletContext';
 import { motionClasses, useReducedMotion } from '@/context/ReducedMotionContext';
 import {
   saveRepayDraft,
@@ -125,6 +127,7 @@ export default function RepayPage() {
   const [srAnnouncement, setSrAnnouncement] = useState('');
   const helpTriggerRef = useRef<HTMLButtonElement>(null);
   const previewTriggerRef = useRef<HTMLButtonElement>(null);
+  const { wallet } = useWallet();
   const { isReducedMotionActive } = useReducedMotion();
 
   const creditLines = useMemo(
@@ -193,22 +196,39 @@ export default function RepayPage() {
   };
 
   const handleConfirm = () => {
-    if (isSubmittingRef.current) return;
+    if (!selectedLine || isSubmittingRef.current) return;
     isSubmittingRef.current = true;
 
     draftClearedRef.current = true;
     clearRepayDraft();
-    navigate('/repay/success', {
-      state: {
-        amount,
-        creditLineName: selectedLine.name,
+    const transactionId = `TXN-${Date.now()}`;
+    const timestamp = new Date().toISOString();
+    if (wallet?.publicKey) {
+      saveMockRepaymentTransaction({
+        id: transactionId,
+        owner: wallet.publicKey,
+        status: 'Completed',
         creditLineId: selectedLine.id,
-        transactionId: `TXN-${Date.now()}`,
+        creditLineName: selectedLine.name,
+        amount,
         remainingDebt,
         limit: selectedLine.limit,
         apr: selectedLine.apr,
         nextPaymentAmount: selectedLine.nextPaymentAmount,
-        timestamp: new Date().toISOString(),
+        timestamp,
+      });
+    }
+    navigate(`/repay/success?tx=${encodeURIComponent(transactionId)}`, {
+      state: {
+        amount,
+        creditLineName: selectedLine.name,
+        creditLineId: selectedLine.id,
+        transactionId,
+        remainingDebt,
+        limit: selectedLine.limit,
+        apr: selectedLine.apr,
+        nextPaymentAmount: selectedLine.nextPaymentAmount,
+        timestamp,
       },
       onOffline: () => {
         queueAction(() => {

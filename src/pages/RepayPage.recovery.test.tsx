@@ -18,6 +18,7 @@ import { render, screen, act, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import RepayPage from './RepayPage';
 import { saveRepayDraft, clearRepayDraft, MAX_AGE_MS } from '@/state/repayDraft';
+import { creditDataSource } from '@/services/creditDataSource';
 
 // ── Module mocks ─────────────────────────────────────────────────────────
 
@@ -277,7 +278,7 @@ describe('RepayPage — draft recovery (issue #935)', () => {
       expect(draft.state.amountStr).toBe('5000');
     });
 
-    it('should clear draft after successful confirmation', () => {
+    it('should save the completed transaction and clear the draft after confirmation', async () => {
       saveRepayDraft({
         step: 'input',
         creditLineId: 'CL-2024-001',
@@ -299,12 +300,21 @@ describe('RepayPage — draft recovery (issue #935)', () => {
 
       // Click confirm — navigates to /repay/success and sets step='success'
       const confirmBtn = screen.getByText(/Confirm Repayment/i);
+      const transactionId = `TXN-${Date.now()}`;
       fireEvent.click(confirmBtn);
 
       // Draft should be cleared.  The confirm handler calls clearRepayDraft()
       // synchronously, and the persist effect's step==='success' branch also
       // calls clearRepayDraft() as a safety net.
       expect(localStorage.getItem('creditra_repay_draft')).toBeNull();
+      await expect(
+        creditDataSource.getTransaction('GAABC1234567890ABCDEF', transactionId),
+      ).resolves.toMatchObject({
+        id: transactionId,
+        status: 'Completed',
+        amount: 1000,
+        remainingDebt: 186500,
+      });
     });
   });
 

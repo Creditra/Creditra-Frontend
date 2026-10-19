@@ -4,12 +4,24 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import RepaySuccess from '../RepaySuccess';
 
+const { getTransaction } = vi.hoisted(() => ({
+  getTransaction: vi.fn(),
+}));
+
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
 // ThemeContext is consumed by RepaySuccessShareCard
 vi.mock('../../context/ThemeContext', () => ({
   useTheme: () => ({ theme: 'default' }),
   ThemeProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+vi.mock('@/services/creditDataSource', () => ({
+  creditDataSource: { getTransaction },
+}));
+
+vi.mock('@/context/WalletContext', () => ({
+  useWallet: () => ({ wallet: { publicKey: 'GTESTWALLET' } }),
 }));
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────────
@@ -24,6 +36,20 @@ const validState = {
   apr: 8.5,
   nextPaymentAmount: 3200,
   timestamp: '2025-07-25T14:30:00.000Z',
+};
+
+const completedTransaction = {
+  id: validState.transactionId,
+  owner: 'GTESTWALLET',
+  status: 'Completed',
+  creditLineName: validState.creditLineName,
+  creditLineId: validState.creditLineId,
+  amount: validState.amount,
+  remainingDebt: validState.remainingDebt,
+  limit: validState.limit,
+  apr: validState.apr,
+  nextPaymentAmount: validState.nextPaymentAmount,
+  timestamp: validState.timestamp,
 };
 
 const fullPayoffState = {
@@ -44,13 +70,18 @@ const noNextPaymentState = {
  * Renders the RepaySuccess page as a route so we can verify
  * that the navigation contract works correctly.
  */
-function renderSuccessPage(state: unknown = validState, initialRoute = '/repay/success') {
+function renderSuccessPage(
+  state: unknown = validState,
+  initialRoute = `/repay/success?tx=${validState.transactionId}`,
+) {
+  const [pathname, query = ''] = initialRoute.split('?');
   return render(
-    <MemoryRouter initialEntries={[{ pathname: initialRoute, state }]}>
+    <MemoryRouter initialEntries={[{ pathname, search: query ? `?${query}` : '', state }]}>
       <Routes>
         <Route path="/repay/success" element={<RepaySuccess />} />
         <Route path="/" element={<div data-testid="dashboard-route">Dashboard</div>} />
         <Route path="/repay" element={<div data-testid="repay-route">Repay</div>} />
+        <Route path="/transactions" element={<div data-testid="transactions-route">Transactions</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -61,17 +92,19 @@ function renderSuccessPage(state: unknown = validState, initialRoute = '/repay/s
 describe('RepaySuccess page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getTransaction.mockReturnValue(new Promise(() => {}));
   });
 
   // ── Happy paths ─────────────────────────────────────────────────────────
 
-  it('renders the success header with the repayment amount', () => {
+  it('renders fresh navigation state immediately and starts transaction verification', () => {
     renderSuccessPage();
 
     expect(
       screen.getByText('You repaid $3,200.00!'),
     ).toBeInTheDocument();
-  });
+    expect(getTransaction).toHaveBeenCalledWith('GTESTWALLET', validState.transactionId);
+  }, 30000);
 
   it('displays the credit line name and success message in the header', () => {
     renderSuccessPage();
@@ -195,46 +228,101 @@ describe('RepaySuccess page', () => {
     ).toBeInTheDocument();
   });
 
-  // ── Fallback: no state provided ─────────────────────────────────────────
+  // ── Transaction verification ──────────────────────────────────────────────
 
-  it('renders a fallback message when no navigation state is provided', () => {
-    renderSuccessPage(null, '/repay/success');
+  it('verifies the URL transaction for the connected wallet and uses its data', async () => {
+    getTransaction.mockResolvedValue({
+      ...completedTransaction,
+      amount: 4100,
+      remainingDebt: 183400,
+    });
+    renderSuccessPage();
 
-    expect(
-      screen.getByText('Repayment successful'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /the full details are not available on this screen/,
-      ),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('You repaid $4,100.00!')).toBeInTheDocument();
+    expect(getTransaction).toHaveBeenCalledWith('GTESTWALLET', validState.transactionId);
   });
 
-  it('fallback view has Back to Dashboard button', () => {
-    renderSuccessPage(null, '/repay/success');
+  it('verifies a refresh using the transaction id without navigation state', async () => {
+    getTransaction.mockResolvedValue(completedTransaction);
+    renderSuccessPage(null);
 
-    expect(
-      screen.getByRole('button', { name: /back to dashboard/i }),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('You repaid $3,200.00!')).toBeInTheDocument();
   });
 
-  it('fallback view has Make another repayment button', () => {
-    renderSuccessPage(null, '/repay/success');
+  it('shows a pending state with a refresh action', async () => {
+    getTransaction.mockResolvedValue({ ...completedTransaction, status: 'Pending' });
+    renderSuccessPage(validState);
 
     expect(
-      screen.getByRole('button', { name: /make another repayment/i }),
+      await screen.findByRole('heading', { name: /repayment submitted, awaiting confirmation/i }),
     ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument();
   });
 
-  it('fallback navigates to dashboard on button click', async () => {
+  it('refreshes the transaction status when requested', async () => {
+    getTransaction
+      .mockResolvedValueOnce({ ...completedTransaction, status: 'Pending' })
+      .mockResolvedValueOnce(completedTransaction);
     const user = userEvent.setup();
+    renderSuccessPage(validState);
+
+    await user.click(await screen.findByRole('button', { name: /refresh/i }));
+
+    expect(await screen.findByText('You repaid $3,200.00!')).toBeInTheDocument();
+    expect(getTransaction).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows a failed state with a link to the matching credit line repayment', async () => {
+    getTransaction.mockResolvedValue({ ...completedTransaction, status: 'Failed' });
+    renderSuccessPage(validState);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Repayment failed');
+    expect(screen.getByRole('link', { name: /return to repayment/i })).toHaveAttribute(
+      'href',
+      '/repay?line=CL-2024-001',
+    );
+  });
+
+  it.each([
+    ['missing transaction', null],
+    ['another wallet', { ...completedTransaction, owner: 'GOTHERWALLET' }],
+  ])('does not reveal success for %s', async (_label, transaction) => {
+    getTransaction.mockResolvedValue(transaction);
+    const { container } = renderSuccessPage(validState);
+
+    expect(
+      await screen.findByRole('heading', { name: /we couldn't find this repayment/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/repayment successful/i)).not.toBeInTheDocument();
+    expect(container.querySelector('.text-success')).toBeNull();
+  });
+
+  it('shows a neutral page with dashboard and transaction links without a tx or state', () => {
     renderSuccessPage(null, '/repay/success');
 
-    await user.click(
-      screen.getByRole('button', { name: /back to dashboard/i }),
-    );
+    expect(
+      screen.getByRole('heading', { name: /we couldn't find this repayment/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/repayment successful/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: 'Transactions' })).toHaveAttribute('href', '/transactions');
+    expect(getTransaction).not.toHaveBeenCalled();
+  });
 
-    expect(screen.getByTestId('dashboard-route')).toBeInTheDocument();
+  it.each([
+    ['negative amount', { ...validState, amount: -1 }],
+    ['non-finite amount', { ...validState, amount: Number.NaN }],
+    ['remaining debt above limit', { ...validState, remainingDebt: validState.limit + 1 }],
+    ['empty transaction id', { ...validState, transactionId: ' ' }],
+    ['invalid timestamp', { ...validState, timestamp: '2025-02-30T14:30:00.000Z' }],
+  ])('does not trust invalid navigation state (%s)', async (_label, state) => {
+    getTransaction.mockResolvedValue(null);
+    renderSuccessPage(state);
+
+    expect(
+      await screen.findByRole('heading', { name: /we couldn't find this repayment/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/you repaid/i)).not.toBeInTheDocument();
   });
 
   // ── Accessibility ──────────────────────────────────────────────────────
