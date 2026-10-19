@@ -32,7 +32,14 @@ import { useRef, useState, useEffect, useCallback } from "react";
 import { Skeleton } from "@/components/Skeleton";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useReducedMotion } from "@/context/ReducedMotionContext";
-import { loadDraft, saveDraft, clearDraft } from "@/state/wizardDraft";
+import {
+  loadDraft,
+  saveDraft,
+  clearDraft,
+  type WizardDraftState,
+} from "@/state/wizardDraft";
+import { useWallet, walletIdentityKey } from "@/context/WalletContext";
+import { getStoredWallet, isWalletRemembered } from "@/utils/wallet";
 import { readJson, writeJson } from "@/utils/storage";
 import {
   DEFAULT_RISK_ACK_KEY,
@@ -69,6 +76,18 @@ const drawSteps = [
 ] as const;
 
 type ProgressStep = (typeof drawSteps)[number]["id"];
+
+interface RestoredDraft {
+  draft: WizardDraftState | null;
+  line: CreditLine | null;
+  notice: string;
+}
+
+const EMPTY_RESTORED_DRAFT: RestoredDraft = {
+  draft: null,
+  line: null,
+  notice: "",
+};
 
 /** Returns true if the currently focused element can receive text input. */
 function isFocusedOnInput(): boolean {
@@ -125,27 +144,121 @@ export default function DrawCreditPage() {
   }, []);
 
   const { queueAction } = useOnline();
+  const { wallet } = useWallet();
+  // Auto-reconnect starts after the first render, so fall back to the
+  // remembered wallet during that window. Without this, a draft saved by the
+  // remembered wallet would look foreign to the initial `null` identity and be
+  // discarded before reconnection completes. The owner-change effect still
+  // clears it if a different wallet connects.
+  const rememberedWallet = isWalletRemembered() ? getStoredWallet() : null;
+  const draftOwner = walletIdentityKey(wallet ?? rememberedWallet);
   const routeTransaction = location.state?.transaction as Transaction | undefined;
-  const draftState = routeTransaction ? null : loadDraft();
 
-  const [step, setStep] = useState<DrawStep>(
-    routeTransaction ? "status" : draftState?.step ?? "select",
-  );
-  const [selectedCreditLine, setSelectedCreditLine] =
-    useState<CreditLine | null>(
-      draftState?.selectedCreditLine
-        ? normalizeCreditLineAvailability(draftState.selectedCreditLine)
-        : null,
+  /**
+   * Resolve a persisted draft exactly once, at mount.
+   *
+   * The stored line id is re-resolved against the current line data rather
+   * than trusting a snapshot. A missing or fully-drawn line discards the
+   * draft and leaves an informational note instead of opening a stale flow.
+   */
+  const [restoredDraft] = useState<RestoredDraft>(() => {
+    if (routeTransaction) return EMPTY_RESTORED_DRAFT;
+
+    const draft = loadDraft(draftOwner);
+    if (!draft) return EMPTY_RESTORED_DRAFT;
+
+    if (draft.step === "select") {
+      return { draft, line: null, notice: "" };
+    }
+
+    const line = mockCreditLines.find(
+      (candidate) => candidate.id === draft.lineId,
     );
-  const [amount, setAmount] = useState(draftState?.amount ?? 0);
+
+    if (!line) {
+      clearDraft();
+      return {
+        draft: null,
+        line: null,
+        notice:
+          "Your saved draw draft was discarded because that credit line is no longer available.",
+      };
+    }
+
+    const normalizedLine = normalizeCreditLineAvailability(line);
+    if (normalizedLine.available <= 0) {
+      clearDraft();
+      return {
+        draft: null,
+        line: null,
+        notice:
+          "Your saved draw draft was discarded because that credit line is no longer eligible for a draw.",
+      };
+    }
+
+    // Even if the stored step were ever tampered with, an amount-step draft
+    // can never land on confirm: the user always re-reviews current pricing.
+    return { draft, line: normalizedLine, notice: "" };
+  });
+
+  const [draftNotice, setDraftNotice] = useState(restoredDraft.notice);
+  const [step, setStep] = useState<DrawStep>(() => {
+    if (routeTransaction) return "status";
+    return restoredDraft.draft?.step === "amount" && restoredDraft.line
+      ? "amount"
+      : "select";
+  });
+  const [selectedCreditLine, setSelectedCreditLine] = useState<CreditLine | null>(
+    restoredDraft.line,
+  );
+  const [amount, setAmount] = useState(() =>
+    restoredDraft.draft?.step === "amount"
+      ? restoredDraft.draft.amountCents / 100
+      : 0,
+  );
+
+  // Drafts belong to the wallet identity that created them. Clear the
+  // persisted draft when the wallet disconnects or switches accounts, and skip
+  // the save effect for the commit that observed the change so the old flow is
+  // not immediately re-persisted under the new owner.
+  const previousDraftOwner = useRef(draftOwner);
+  const skipNextDraftSave = useRef(false);
+
+  useEffect(() => {
+    if (previousDraftOwner.current === draftOwner) return;
+
+    previousDraftOwner.current = draftOwner;
+    clearDraft();
+    skipNextDraftSave.current = true;
+    setDraftNotice(
+      draftOwner
+        ? "Your saved draw draft was cleared because the wallet changed."
+        : "Your saved draw draft was cleared because the wallet disconnected.",
+    );
+  }, [draftOwner]);
 
   useEffect(() => {
     if (step === "status") {
       clearDraft();
-    } else {
-      saveDraft({ step, selectedCreditLine, amount });
+      return;
     }
-  }, [step, selectedCreditLine, amount]);
+
+    if (skipNextDraftSave.current) {
+      skipNextDraftSave.current = false;
+      return;
+    }
+
+    saveDraft(
+      {
+        // Persist the confirm step as its preceding amount step so a reload
+        // always re-enters at the last reviewable position.
+        step: step === "confirm" ? "amount" : step,
+        lineId: selectedCreditLine?.id ?? null,
+        amountCents: Math.round(amount * 100),
+      },
+      draftOwner,
+    );
+  }, [step, selectedCreditLine, amount, draftOwner]);
 
   const [isLoading, setIsLoading] = useState(false);
   /**
@@ -373,6 +486,11 @@ export default function DrawCreditPage() {
           </div>
         )}
         <div className="dc-page__card">
+          {draftNotice && (
+            <p className="dc-draft-notice" role="status">
+              {draftNotice}
+            </p>
+          )}
           {step === "select" && (
             <>
               <CreditLineSelector
@@ -398,6 +516,7 @@ export default function DrawCreditPage() {
             <div className="dc-step">
               <AmountInput
                 creditLine={selectedCreditLine}
+                initialAmount={amount}
                 onAmountChange={setAmount}
                 onNext={handleAmountNext}
                 onBack={handleBack}
