@@ -36,7 +36,7 @@ import * as walletUtils from '../utils/wallet';
 
 const STORED_WALLET = {
   type: 'freighter' as const,
-  publicKey: 'GABC123...',
+  publicKey: 'GBBM6BKZPEHWYO3E3YKREDPQXMS4VK35YLNU7NFBRI26RAN7GI5POFBB',
   network: 'PUBLIC',
 };
 
@@ -68,6 +68,7 @@ function WalletContextConsumer() {
       <span data-testid="wallet">{wallet?.publicKey ?? 'null'}</span>
       <span data-testid="wallet-network">{wallet?.network ?? 'null'}</span>
       <span data-testid="error">{error?.type ?? 'null'}</span>
+      <span data-testid="error-message">{error?.message ?? 'null'}</span>
       <span data-testid="reconnect-timed-out">{String(reconnectTimedOut)}</span>
       <span data-testid="is-remembered">{String(isRemembered)}</span>
       <span data-testid="balances">{balances ? balances.map((b) => `${b.asset}:${b.balance}`).join(',') : 'null'}</span>
@@ -222,7 +223,7 @@ describe('WalletContext — opt-in connect', () => {
     vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue({
       ...STORED_WALLET,
       type: 'albedo',
-      publicKey: 'GDEF',
+      publicKey: 'GB7KKHHVYLDIZEKYJPAJUOTBE5E3NJAXPSDZK7O6O44WR3EBRO5HRPVT',
     });
 
     renderProvider();
@@ -251,6 +252,31 @@ describe('WalletContext — opt-in connect', () => {
     expect(screen.getByTestId('status').textContent).toBe('error');
     // setWalletRemembered must never be called on a failed connect
     expect(walletUtils.setWalletRemembered).not.toHaveBeenCalled();
+  });
+
+  it('rejects a returned secret seed without logging or persisting it', async () => {
+    const secretSeed = 'SAB5556L5AN5KSR5WF7UOEFDCIODEWEO7H2UR4S5R62DFTQOGLKOVZDY';
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue({
+      ...STORED_WALLET,
+      publicKey: secretSeed,
+    });
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    renderProvider();
+    await act(async () => {
+      screen.getByTestId('connect-remember-btn').click();
+    });
+    await flushPromises();
+
+    expect(screen.getByTestId('status').textContent).toBe('error');
+    expect(screen.getByTestId('error').textContent).toBe('connection_failed');
+    expect(screen.getByTestId('error-message').textContent).toBe(
+      'Your wallet returned an invalid account address',
+    );
+    expect(walletUtils.saveWalletPreference).not.toHaveBeenCalled();
+    expect(walletUtils.setWalletRemembered).not.toHaveBeenCalled();
+    expect(window.localStorage.length).toBe(0);
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain(secretSeed);
   });
 });
 
@@ -521,8 +547,16 @@ describe('WalletContext — auto-reconnect', () => {
 // ─── #961 — cache invalidation after account or network switching ───────────
 
 describe('WalletContext — cache invalidation on account/network switch (#961)', () => {
-  const ACCOUNT_A = { type: 'freighter' as const, publicKey: 'GAAA111', network: 'PUBLIC' };
-  const ACCOUNT_B = { type: 'freighter' as const, publicKey: 'GBBB222', network: 'PUBLIC' };
+  const ACCOUNT_A = {
+    type: 'freighter' as const,
+    publicKey: 'GBBM6BKZPEHWYO3E3YKREDPQXMS4VK35YLNU7NFBRI26RAN7GI5POFBB',
+    network: 'PUBLIC',
+  };
+  const ACCOUNT_B = {
+    type: 'freighter' as const,
+    publicKey: 'GB7KKHHVYLDIZEKYJPAJUOTBE5E3NJAXPSDZK7O6O44WR3EBRO5HRPVT',
+    network: 'PUBLIC',
+  };
 
   function mockBalancesFetch(asset: string, balance: string) {
     return vi.fn().mockResolvedValue({
@@ -640,6 +674,27 @@ describe('WalletContext — cache invalidation on account/network switch (#961)'
     expect(screen.getByTestId('status').textContent).toBe('connected');
     expect(screen.getByTestId('wallet').textContent).toBe(ACCOUNT_A.publicKey);
     expect(consoleErrorSpy).toHaveBeenCalled();
+  });
+
+  it('ignores an invalid account returned during identity refresh', async () => {
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_A);
+    renderProvider();
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+
+    const secretSeed = 'SAB5556L5AN5KSR5WF7UOEFDCIODEWEO7H2UR4S5R62DFTQOGLKOVZDY';
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce({
+      ...ACCOUNT_A,
+      publicKey: secretSeed,
+    });
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await act(async () => { screen.getByTestId('refresh-identity-btn').click(); });
+    await flushPromises();
+
+    expect(screen.getByTestId('wallet').textContent).toBe(ACCOUNT_A.publicKey);
+    expect(walletUtils.saveWalletPreference).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain(secretSeed);
   });
 
   it('discards a balance response that resolves after the wallet has already switched accounts', async () => {

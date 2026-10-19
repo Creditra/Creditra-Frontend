@@ -103,6 +103,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import type { WalletInfo, ConnectionStatus, WalletError, WalletType } from '../types/wallet';
+import { isValidAccountId } from '../utils/strkey';
 import {
   connectWallet,
   disconnectWallet,
@@ -156,6 +157,16 @@ export function walletIdentityKey(wallet: WalletInfo | null): string | null {
   if (!wallet) return null;
   return `${wallet.type}:${wallet.publicKey}:${wallet.network}`;
 }
+
+const requireValidWalletInfo = (wallet: WalletInfo): WalletInfo => {
+  if (!isValidAccountId(wallet.publicKey)) {
+    throw {
+      type: 'connection_failed',
+      message: 'Your wallet returned an invalid account address',
+    } as WalletError;
+  }
+  return wallet;
+};
 
 /** Optional second-arg bag for `connect()`. */
 export interface ConnectOptions {
@@ -369,7 +380,7 @@ export const WalletProvider = ({
       }, timeoutMs);
 
       try {
-        const walletInfo = await connectWallet(type);
+        const walletInfo = requireValidWalletInfo(await connectWallet(type));
         clearReconnectTimeout();
         setWallet(walletInfo);
         setStatus('connected');
@@ -425,7 +436,7 @@ export const WalletProvider = ({
     const shouldRemember = options?.remember === true;
 
     try {
-      const walletInfo = await connectWallet(type);
+      const walletInfo = requireValidWalletInfo(await connectWallet(type));
       setWallet(walletInfo);
       setStatus('connected');
       saveWalletPreference(walletInfo);
@@ -504,7 +515,7 @@ export const WalletProvider = ({
     const stored = getStoredWallet();
     if (!stored || !wallet) return;
     try {
-      const walletInfo = await connectWallet(stored.type);
+      const walletInfo = requireValidWalletInfo(await connectWallet(stored.type));
       setWallet(walletInfo);
       setStatus('connected');
       saveWalletPreference(walletInfo);
@@ -556,7 +567,7 @@ export const WalletProvider = ({
   }, [wallet]);
 
   const fetchBalances = useCallback(async (): Promise<BalanceInfo[] | null> => {
-    if (!wallet?.publicKey) return null;
+    if (!wallet?.publicKey || !isValidAccountId(wallet.publicKey)) return null;
     // Snapshot which identity this fetch is *for*. If the wallet changes
     // before the request resolves, the response belongs to an identity we've
     // already invalidated and must not be applied — see the module doc
@@ -612,9 +623,10 @@ export const WalletProvider = ({
    * an otherwise-healthy session.
    */
   const refreshWalletIdentity = useCallback(async () => {
-    if (!wallet) return;
+    if (!wallet || !isValidAccountId(wallet.publicKey)) return;
     try {
       const fresh = await connectWallet(wallet.type);
+      if (!isValidAccountId(fresh.publicKey)) return;
       if (walletIdentityKey(fresh) !== walletIdentityKey(wallet)) {
         setWallet(fresh);
       }

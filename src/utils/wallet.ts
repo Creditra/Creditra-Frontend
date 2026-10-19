@@ -1,5 +1,6 @@
 import { WalletType, WalletInfo, WalletError } from '../types/wallet';
 import { readJson, writeJson, removeKey } from './storage';
+import { isValidAccountId } from './strkey';
 
 // ─── Storage keys ──────────────────────────────────────────────────────────────
 //
@@ -24,6 +25,16 @@ const STORAGE_KEY_INFO_LEGACY = 'wallet_info';
 // Hard cap on MRU length — covers every supported wallet and then some, so the
 // array stays small and the rewrite cost is trivial.
 const MRU_MAX_LENGTH = 8;
+
+const validateAccountId = (publicKey: unknown): string => {
+  if (!isValidAccountId(publicKey)) {
+    throw {
+      type: 'connection_failed',
+      message: 'Your wallet returned an invalid account address',
+    } as WalletError;
+  }
+  return publicKey;
+};
 
 const SUPPORTED_WALLET_TYPES: ReadonlySet<WalletType> = new Set([
   'freighter',
@@ -80,7 +91,7 @@ export const connectWallet = async (type: WalletType): Promise<WalletInfo> => {
 
   try {
     if (type === 'freighter') {
-      const publicKey = await window.freighter.getPublicKey();
+      const publicKey = validateAccountId(await window.freighter.getPublicKey());
       const network = await window.freighter.getNetwork();
       
       if (network !== 'PUBLIC' && network !== 'TESTNET') {
@@ -97,13 +108,13 @@ export const connectWallet = async (type: WalletType): Promise<WalletInfo> => {
       const result = await window.albedo.publicKey({});
       return { 
         type, 
-        publicKey: result.pubkey, 
+        publicKey: validateAccountId(result.pubkey),
         network: 'PUBLIC' 
       };
     }
 
     if (type === 'xbull') {
-      const publicKey = await window.xBullSDK.getPublicKey();
+      const publicKey = validateAccountId(await window.xBullSDK.getPublicKey());
       return { 
         type, 
         publicKey, 
@@ -115,7 +126,7 @@ export const connectWallet = async (type: WalletType): Promise<WalletInfo> => {
       const result = await window.rabet.connect();
       return { 
         type, 
-        publicKey: result.publicKey, 
+        publicKey: validateAccountId(result.publicKey),
         network: 'PUBLIC' 
       };
     }
