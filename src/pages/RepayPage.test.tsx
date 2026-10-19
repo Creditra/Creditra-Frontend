@@ -34,6 +34,16 @@ vi.mock('../context/WalletContext', () => ({
       network: 'TESTNET',
     },
     status: 'connected',
+    balances: [{
+      asset: 'USDC',
+      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      balance: '50000.0000000',
+    }],
+    refreshBalance: async () => [{
+      asset: 'USDC',
+      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      balance: '50000.0000000',
+    }],
   }),
 }));
 

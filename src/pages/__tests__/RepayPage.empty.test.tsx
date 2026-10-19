@@ -9,6 +9,15 @@ vi.mock('@/data/mockData', () => ({
   MOCK_CREDIT_LINES: [],
 }));
 
+vi.mock('@/context/WalletContext', () => ({
+  useWallet: () => ({
+    wallet: { publicKey: 'GTEST', network: 'TESTNET' },
+    status: 'connected',
+    balances: [],
+    refreshBalance: async () => [],
+  }),
+}));
+
 import RepayPage from '../RepayPage';
 
 function renderEmpty(initialEntries = ['/repay']) {

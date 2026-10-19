@@ -10,9 +10,10 @@
  * - ARIA attributes
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, within, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import axe from 'axe-core';
 import { LinkedAccounts } from './LinkedAccounts';
 import * as linkedAccountsService from '../services/linkedAccounts';
 import type { LinkedAccount } from '../types/linkedAccount';
@@ -190,15 +191,42 @@ describe('LinkedAccounts', () => {
   });
 
   describe('Disconnect Action', () => {
-    it('should call disconnectAccount when disconnect button is clicked', async () => {
+    it('opens accessible confirmation dialog with Cancel focused and never calls window.confirm', async () => {
+      const user = userEvent.setup();
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue(mockAccounts);
+      const confirmSpy = vi.spyOn(window, 'confirm');
+
+      render(<LinkedAccounts />);
+
+      const disconnectTrigger = await screen.findByRole('button', {
+        name: /disconnect google account/i,
+      });
+      await user.click(disconnectTrigger);
+
+      expect(confirmSpy).not.toHaveBeenCalled();
+
+      const dialog = screen.getByRole('alertdialog', { name: /disconnect google\?/i });
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveAccessibleDescription(
+        'Disconnecting Google may lower your credit evaluation score. You can reconnect later.',
+      );
+
+      const cancelButton = within(dialog).getByRole('button', { name: 'Cancel' });
+      await waitFor(() => {
+        expect(cancelButton).toHaveFocus();
+      });
+
+      confirmSpy.mockRestore();
+    });
+
+    it('should call disconnectAccount once when confirmed in dialog', async () => {
       const user = userEvent.setup();
       vi.mocked(linkedAccountsService.fetchLinkedAccounts)
         .mockResolvedValueOnce(mockAccounts)
         .mockResolvedValueOnce([]);
       vi.mocked(linkedAccountsService.disconnectAccount).mockResolvedValue();
 
-      // Mock window.confirm
-      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+      const confirmSpy = vi.spyOn(window, 'confirm');
 
       render(<LinkedAccounts />);
 
@@ -208,8 +236,12 @@ describe('LinkedAccounts', () => {
 
       await user.click(screen.getByRole('button', { name: /disconnect google account/i }));
 
-      expect(confirmSpy).toHaveBeenCalled();
+      const dialog = screen.getByRole('alertdialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Disconnect Google' }));
+
+      expect(confirmSpy).not.toHaveBeenCalled();
       await waitFor(() => {
+        expect(linkedAccountsService.disconnectAccount).toHaveBeenCalledTimes(1);
         expect(linkedAccountsService.disconnectAccount).toHaveBeenCalledWith('google-123');
       });
 
@@ -220,7 +252,7 @@ describe('LinkedAccounts', () => {
       const user = userEvent.setup();
       vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue(mockAccounts);
 
-      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+      const confirmSpy = vi.spyOn(window, 'confirm');
 
       render(<LinkedAccounts />);
 
@@ -230,10 +262,37 @@ describe('LinkedAccounts', () => {
 
       await user.click(screen.getByRole('button', { name: /disconnect google account/i }));
 
-      expect(confirmSpy).toHaveBeenCalled();
+      const dialog = screen.getByRole('alertdialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+      expect(confirmSpy).not.toHaveBeenCalled();
       expect(linkedAccountsService.disconnectAccount).not.toHaveBeenCalled();
 
       confirmSpy.mockRestore();
+    });
+
+    it('resolves false on Escape and returns focus to the Disconnect button', async () => {
+      const user = userEvent.setup();
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue(mockAccounts);
+
+      render(<LinkedAccounts />);
+
+      const disconnectBtn = await screen.findByRole('button', {
+        name: /disconnect google account/i,
+      });
+      disconnectBtn.focus();
+      await user.click(disconnectBtn);
+
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+      await user.keyboard('{Escape}');
+
+      await waitFor(() => {
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      });
+
+      expect(linkedAccountsService.disconnectAccount).not.toHaveBeenCalled();
+      expect(disconnectBtn).toHaveFocus();
     });
 
     it('should show success message after disconnection', async () => {
@@ -243,8 +302,6 @@ describe('LinkedAccounts', () => {
         .mockResolvedValueOnce([]);
       vi.mocked(linkedAccountsService.disconnectAccount).mockResolvedValue();
 
-      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-
       render(<LinkedAccounts />);
 
       await waitFor(() => {
@@ -253,11 +310,12 @@ describe('LinkedAccounts', () => {
 
       await user.click(screen.getByRole('button', { name: /disconnect google account/i }));
 
+      const dialog = screen.getByRole('alertdialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Disconnect Google' }));
+
       await waitFor(() => {
         expect(screen.getByRole('status')).toHaveTextContent(/google account disconnected/i);
       });
-
-      confirmSpy.mockRestore();
     });
   });
 
@@ -327,6 +385,39 @@ describe('LinkedAccounts', () => {
       await waitFor(() => {
         expect(screen.getByRole('article', { name: /google account connected/i })).toBeInTheDocument();
       });
+    });
+
+    it('renders provider grid as role="list" with 4 listitem children', async () => {
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue(mockAccounts);
+
+      render(<LinkedAccounts />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('article', { name: /google account connected/i })).toBeInTheDocument();
+      });
+
+      const gridList = screen.getByRole('list', { name: /available providers/i });
+      expect(gridList).toBeInTheDocument();
+
+      const items = within(gridList).getAllByRole('listitem');
+      expect(items).toHaveLength(4);
+    });
+
+    it('reports no aria-required-children or other axe accessibility violations on the rendered page', async () => {
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue(mockAccounts);
+
+      const { container } = render(<LinkedAccounts />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('article', { name: /google account connected/i })).toBeInTheDocument();
+      });
+
+      const results = await axe.run(container);
+      const ariaRequiredChildren = results.violations.filter(
+        (v) => v.id === 'aria-required-children',
+      );
+      expect(ariaRequiredChildren).toHaveLength(0);
+      expect(results.violations).toHaveLength(0);
     });
 
     it('should have proper ARIA labels on action buttons', async () => {
@@ -554,7 +645,7 @@ describe('LinkedAccounts', () => {
       });
     });
 
-    it('calls disconnectAccount for all connected accounts when disconnect all is confirmed', async () => {
+    it('calls disconnectAccount for all connected accounts when disconnect all is confirmed and mentions the number of accounts', async () => {
       const user = userEvent.setup();
       const multiAccounts: LinkedAccount[] = [
         ...mockAccounts,
@@ -574,7 +665,7 @@ describe('LinkedAccounts', () => {
         .mockResolvedValueOnce([]);
       vi.mocked(linkedAccountsService.disconnectAccount).mockResolvedValue();
 
-      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+      const confirmSpy = vi.spyOn(window, 'confirm');
 
       render(<LinkedAccounts />);
 
@@ -584,7 +675,15 @@ describe('LinkedAccounts', () => {
 
       await user.click(screen.getByRole('button', { name: /disconnect all accounts from toolbar/i }));
 
-      expect(confirmSpy).toHaveBeenCalled();
+      const dialog = screen.getByRole('alertdialog');
+      expect(dialog).toHaveTextContent(/2/);
+      expect(dialog).toHaveAccessibleDescription(
+        'Disconnecting 2 linked accounts may lower your credit evaluation score. You can reconnect later.',
+      );
+
+      await user.click(within(dialog).getByRole('button', { name: 'Disconnect All' }));
+
+      expect(confirmSpy).not.toHaveBeenCalled();
       await waitFor(() => {
         expect(linkedAccountsService.disconnectAccount).toHaveBeenCalledWith('google-123');
         expect(linkedAccountsService.disconnectAccount).toHaveBeenCalledWith('github-456');

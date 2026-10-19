@@ -103,6 +103,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import type { WalletInfo, ConnectionStatus, WalletError, WalletType } from '../types/wallet';
+import { WalletConnectError } from '../types/wallet';
 import {
   connectWallet,
   disconnectWallet,
@@ -111,6 +112,7 @@ import {
   recordRecentWallet,
   isWalletRemembered,
   setWalletRemembered,
+  classifyWalletError,
 } from '../utils/wallet';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -139,9 +141,10 @@ export const SESSION_WARN_BEFORE_MS = 60_000;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface BalanceInfo {
+export interface BalanceInfo {
   asset: string; // e.g., 'XLM' or asset_code
   balance: string;
+  issuer?: string;
 }
 
 /**
@@ -168,6 +171,11 @@ export interface ConnectOptions {
    */
   remember?: boolean;
 }
+
+/** Result of a connect attempt. */
+export type ConnectResult =
+  | { ok: true; wallet: WalletInfo }
+  | { ok: false; error: WalletConnectError };
 
 interface WalletContextType {
   /** The currently connected wallet, or `null` when disconnected. */
@@ -201,13 +209,19 @@ interface WalletContextType {
    * Open a connection to the given wallet. Updates `status` to
    * `connecting`, then either `connected` (on success) or `error`.
    *
+   * Returns a result object that lets callers distinguish success from
+   * failure without checking context state. On success, `{ ok: true, wallet }`
+   * is returned. On failure, `{ ok: false, error }` is returned and the
+   * context's `error` and `status` fields are also updated for backward
+   * compatibility with existing consumers like WalletReconnectBanner.
+   *
    * Successful connections are added to the MRU list so the modal can
    * order wallets by recency.  Passing `{ remember: true }` additionally
    * persists an opt-in flag that drives next-visit auto-reconnect.  The
    * flag defaults to `false` because acceptance criteria require the
    * preference to be opt-in, not pre-checked.
    */
-  connect: (type: WalletType, options?: ConnectOptions) => Promise<void>;
+  connect: (type: WalletType, options?: ConnectOptions) => Promise<ConnectResult>;
   /** Forget the current wallet, clear preference, return to disconnected state. */
   disconnect: () => void;
   /**
@@ -237,7 +251,7 @@ interface WalletContextType {
    * On failure: status transitions to `'error'`.
    */
   stayConnected: () => Promise<void>;
-  refreshBalance: () => Promise<void>;
+  refreshBalance: () => Promise<BalanceInfo[] | null>;
   /**
    * Re-derive the wallet's current `publicKey`/`network` from the extension
    * without a `connecting`/`reconnecting` UI transition. Use this after an
@@ -414,7 +428,7 @@ export const WalletProvider = ({
 
   // ── User-initiated connection ───────────────────────────────────────────────
 
-  const connect = async (type: WalletType, options?: ConnectOptions) => {
+  const connect = async (type: WalletType, options?: ConnectOptions): Promise<ConnectResult> => {
     clearReconnectTimeout();
     setStatus('connecting');
     setError(null);
@@ -434,14 +448,21 @@ export const WalletProvider = ({
       setWalletRemembered(shouldRemember);
       setIsRemembered(shouldRemember);
       startSessionTimers();
+      return { ok: true, wallet: walletInfo };
     } catch (err) {
-      setError(err as WalletError);
+      // Ensure the error is properly classified
+      const walletError = err instanceof WalletConnectError 
+        ? err 
+        : classifyWalletError(err);
+      
+      setError(walletError);
       setStatus('error');
       setWallet(null);
       clearSessionTimers();
       setSessionTimeoutWarning(false);
       // Don't write any remembered state on failure: leaving stale
       // persistence around has confused earlier releases.
+      return { ok: false, error: walletError };
     }
   };
 
@@ -554,8 +575,8 @@ export const WalletProvider = ({
     setLastUpdated(null);
   }, [wallet]);
 
-  const fetchBalances = async () => {
-    if (!wallet?.publicKey) return;
+  const fetchBalances = useCallback(async (): Promise<BalanceInfo[] | null> => {
+    if (!wallet?.publicKey) return null;
     // Snapshot which identity this fetch is *for*. If the wallet changes
     // before the request resolves, the response belongs to an identity we've
     // already invalidated and must not be applied — see the module doc
@@ -571,25 +592,33 @@ export const WalletProvider = ({
 
       if (balancesIdentityRef.current !== fetchIdentity) {
         console.warn('[WalletContext] Discarding balance response for a stale wallet identity.');
-        return;
+        return null;
       }
 
-      const bal: BalanceInfo[] = data.balances.map((b: { asset_type: string; asset_code: string; balance: string }) => ({
-        asset: b.asset_type === 'native' ? 'XLM' : b.asset_code,
-        balance: b.balance,
-      }));
+      const bal: BalanceInfo[] = data.balances.map(
+        (b: {
+          asset_type: string;
+          asset_code?: string;
+          asset_issuer?: string;
+          balance: string;
+        }) => ({
+          asset: b.asset_type === 'native' ? 'XLM' : b.asset_code ?? '',
+          balance: b.balance,
+          ...(b.asset_issuer ? { issuer: b.asset_issuer } : {}),
+        }),
+      );
       setBalances(bal);
       setLastUpdated(new Date());
+      return bal;
     } catch (e) {
       console.error('Failed to fetch balances', e);
-      if (balancesIdentityRef.current !== fetchIdentity) return;
+      if (balancesIdentityRef.current !== fetchIdentity) return null;
       setBalances(null);
+      return null;
     }
-  };
+  }, [wallet]);
 
-  const refreshBalance = async () => {
-    await fetchBalances();
-  };
+  const refreshBalance = useCallback(() => fetchBalances(), [fetchBalances]);
 
   /**
    * Re-derive the connected wallet's current identity from the extension.
