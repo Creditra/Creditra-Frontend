@@ -165,6 +165,8 @@ export default function DrawCreditPage() {
   );
   const [confirmationAcknowledged, setConfirmationAcknowledged] =
     useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const amountInputRef = useRef<HTMLInputElement>(null);
 
   const { debouncedAnnouncement: microProgressAnnouncement } =
     useDrawWizardMicroProgress({
@@ -208,7 +210,10 @@ export default function DrawCreditPage() {
     // input, but re-validating here ensures an out-of-bounds amount restored
     // from a wizard draft can never be silently submitted.
     const validation = getDrawAmountValidation(String(amount), line);
-    if (!validation.isValid) return;
+    if (!validation.isValid) {
+      setSubmitError(validation.message);
+      return;
+    }
 
     isSubmittingRef.current = true;
     setIsLoading(true);
@@ -271,6 +276,7 @@ export default function DrawCreditPage() {
     setAmount(0);
     setConfirmationAcknowledged(false);
     setTransaction(null);
+    setSubmitError(null);
   };
 
   const handleBack = useCallback(() => {
@@ -278,9 +284,11 @@ export default function DrawCreditPage() {
       setStep("select");
       setSelectedCreditLine(null);
       setConfirmationAcknowledged(false);
+      setSubmitError(null);
     } else if (step === "confirm") {
       setStep("amount");
       setConfirmationAcknowledged(false);
+      setSubmitError(null);
     }
   }, [step]);
 
@@ -311,9 +319,18 @@ export default function DrawCreditPage() {
           break;
 
         case "ArrowRight":
-          if (step === "amount" && amount > 0) {
+          if (step === "amount" && selectedCreditLine) {
             e.preventDefault();
-            handleAmountNext(amount);
+            const validation = getDrawAmountValidation(
+              String(amount),
+              selectedCreditLine,
+            );
+            if (validation.isValid) {
+              handleAmountNext(amount);
+            } else {
+              amountInputRef.current?.focus();
+              setSubmitError(validation.message);
+            }
           }
           if (step === "confirm" && confirmationAcknowledged) {
             e.preventDefault();
@@ -333,7 +350,7 @@ export default function DrawCreditPage() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [step, amount, confirmationAcknowledged, handleBack, handleCancel, isRiskModalOpen]);
+  }, [step, amount, selectedCreditLine, confirmationAcknowledged, handleBack, handleCancel, isRiskModalOpen]);
 
   return (
     <main className="dc-page" aria-label="Draw credit">
@@ -346,6 +363,12 @@ export default function DrawCreditPage() {
         id="draw-wizard-progress-announcement"
         message={microProgressAnnouncement}
       />
+      {submitError && step === "amount" && (
+        <LiveRegion
+          id="draw-wizard-amount-error-announcement"
+          message={submitError}
+        />
+      )}
       <div className="dc-page__inner">
         {!hasAcknowledgedRisk && !isRiskModalOpen && (
           <div className="dc-risk-banner" role="note">
@@ -397,6 +420,7 @@ export default function DrawCreditPage() {
           {step === "amount" && selectedCreditLine && (
             <div className="dc-step">
               <AmountInput
+                ref={amountInputRef}
                 creditLine={selectedCreditLine}
                 onAmountChange={setAmount}
                 onNext={handleAmountNext}
@@ -413,7 +437,7 @@ export default function DrawCreditPage() {
                   keys={["←", "→"]}
                   label="Back / Continue"
                   separator="/"
-                  description="Use left and right arrow keys to go back or continue"
+                  description="Use left and right arrow keys to go back or continue; → requires a valid amount"
                 />
                 <KbdHint
                   keys="Esc"
@@ -431,6 +455,24 @@ export default function DrawCreditPage() {
 
           {step === "confirm" && selectedCreditLine && (
             <>
+              {submitError && (
+                <div className="dc-step dc-step--error" role="alert">
+                  <p className="dc-step__subtitle">
+                    This amount is no longer valid: {submitError}
+                  </p>
+                  <button
+                    type="button"
+                    className="focus-ring dc-step__back-btn"
+                    onClick={() => {
+                      setSubmitError(null);
+                      setConfirmationAcknowledged(false);
+                      setStep("amount");
+                    }}
+                  >
+                    Change amount
+                  </button>
+                </div>
+              )}
               <ConfirmationStep
                 creditLine={selectedCreditLine}
                 amount={amount}
