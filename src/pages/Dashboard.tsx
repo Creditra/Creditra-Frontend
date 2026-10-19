@@ -21,8 +21,9 @@ import { RiskBandsPanel } from "../components/RiskBandsPanel";
 import { WhatsChangedPanel } from "../components/WhatsChangedPanel";
 import { RiskExplainerOverlay } from "../components/RiskExplainerOverlay";
 import { ContinuePrompt } from "../components/ContinuePrompt";
-import { MOCK_CREDIT_LINES, MOCK_ATTESTATIONS } from "../data/mockData";
-import type { Transaction } from "../types/creditLine";
+import { MOCK_ATTESTATIONS } from "../data/mockData";
+import type { Transaction, CreditLine } from "../types/creditLine";
+import { fetchCreditLines, type CreditLinesResult } from "../services/credit";
 import {
   COLOR,
   UTIL_COLOR,
@@ -97,7 +98,10 @@ export function Dashboard() {
 
   const { wallet, status: walletStatus } = useWallet();
   const navigate = useNavigate();
-  const creditLines = MOCK_CREDIT_LINES;
+  
+  const [creditLines, setCreditLines] = useState<CreditLine[]>([]);
+  const [skippedRecords, setSkippedRecords] = useState(0);
+  const [isLoadingData, setIsLoadingData] = useState(true);
 
   const [repayCount, setRepayCount] = useState(0);
   const [status, setStatus] = useState<
@@ -105,6 +109,38 @@ export function Dashboard() {
   >("idle");
   const [announcement, setAnnouncement] = useState<string>("");
   const [isExplainOpen, setIsExplainOpen] = useState(false);
+  
+  // Load credit lines with validation
+  useEffect(() => {
+    let mounted = true;
+    
+    const loadData = async () => {
+      try {
+        setIsLoadingData(true);
+        const result = await fetchCreditLines();
+        
+        if (mounted) {
+          setCreditLines(result.creditLines);
+          setSkippedRecords(result.skipped);
+        }
+      } catch (error) {
+        console.error('Failed to load credit lines:', error);
+        if (mounted) {
+          setCreditLines([]);
+        }
+      } finally {
+        if (mounted) {
+          setIsLoadingData(false);
+        }
+      }
+    };
+    
+    loadData();
+    
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // ─── Sync timestamps ─────────────────────────────────────────────────────
   const [riskSyncedAt, setRiskSyncedAt] = useState<Date>(() => new Date());

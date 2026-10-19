@@ -6,8 +6,9 @@ import { AmountRangeChips, type AmountRangePreset } from "../components/AmountRa
 import { useDebounceValue } from "../hooks/useDebounceValue";
 import { toCsv, downloadCsv } from "../utils/csv";
 import { useNotifications } from "../context/NotificationContext";
-import { MOCK_CREDIT_LINES } from "../data/mockData";
+import { fetchCreditLines } from "../services/credit";
 import type {
+  CreditLine,
   CreditLineStatus,
   TransactionStatus,
   TransactionType,
@@ -450,12 +451,35 @@ export function TransactionHistory() {
    * fetch; here it simulates that pattern against the static mock data.
    */
   const [isLoading, setIsLoading] = useState(true);
+  const [creditLines, setCreditLines] = useState<CreditLine[]>([]);
+  const [skippedRecords, setSkippedRecords] = useState(0);
 
   useEffect(() => {
-    // Simulate async data resolution on first mount.
-    // Replace with the real data-fetch completion signal when the API is wired up.
-    const id = setTimeout(() => setIsLoading(false), 0);
-    return () => clearTimeout(id);
+    let mounted = true;
+    
+    const loadData = async () => {
+      try {
+        const result = await fetchCreditLines();
+        
+        if (mounted) {
+          setCreditLines(result.creditLines);
+          setSkippedRecords(result.skipped);
+          setIsLoading(false);
+        }
+      } catch (error) {
+        console.error('Failed to load credit lines:', error);
+        if (mounted) {
+          setCreditLines([]);
+          setIsLoading(false);
+        }
+      }
+    };
+    
+    loadData();
+    
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // ─── Filter and UI State ───
@@ -547,7 +571,7 @@ export function TransactionHistory() {
   // Get all transactions from all credit lines
   const allTransactions = useMemo(() => {
     const txs: TransactionWithLine[] = [];
-    MOCK_CREDIT_LINES.forEach((cl) => {
+    creditLines.forEach((cl) => {
       cl.transactions.forEach((tx) => {
         txs.push({
           ...tx,
@@ -560,7 +584,7 @@ export function TransactionHistory() {
     return txs.sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
     );
-  }, []);
+  }, [creditLines]);
 
   // Sync the debounced input value into the filter state and reset page.
   // This is the only place `searchQuery` (which drives filteredTransactions)
@@ -889,7 +913,7 @@ export function TransactionHistory() {
     [isSuggestionsOpen, suggestions, activeSuggestionIndex, commitSuggestion, dismissSuggestions],
   );
 
-  const hasLines = MOCK_CREDIT_LINES.length > 0;
+  const hasLines = creditLines.length > 0;
   const hasTransactions = allTransactions.length > 0;
 
   const hasActiveFilters =
@@ -942,7 +966,7 @@ export function TransactionHistory() {
       const lineLabel =
         selectedLine === "all"
           ? "All"
-          : MOCK_CREDIT_LINES.find((cl) => cl.id === selectedLine)?.name || selectedLine;
+          : creditLines.find((cl) => cl.id === selectedLine)?.name || selectedLine;
       message = `Filtered by credit line ${lineLabel}. ${resultCountText}.`;
     } else if (selectedStatus !== prevStates.current.selectedStatus) {
       message = `Filtered by status ${selectedStatus === "all" ? "All" : selectedStatus}. ${resultCountText}.`;
@@ -1327,6 +1351,23 @@ export function TransactionHistory() {
         </div>
       </div>
 
+      {skippedRecords > 0 && (
+        <div
+          role="status"
+          style={{
+            background: 'rgba(210,153,34,0.12)',
+            border: '1px solid rgba(210,153,34,0.3)',
+            borderRadius: '6px',
+            padding: '0.75rem 1rem',
+            margin: '1rem 0',
+            color: 'var(--warning)',
+            fontSize: '0.875rem',
+          }}
+        >
+          ⚠️ Some records could not be displayed due to validation errors.
+        </div>
+      )}
+
       <div className="th-filters">
         <div className="th-filter-group">
           <label>Credit Line</label>
@@ -1338,7 +1379,7 @@ export function TransactionHistory() {
             }}
           >
             <option value="all">All Credit Lines</option>
-            {MOCK_CREDIT_LINES.map((cl) => (
+            {creditLines.map((cl) => (
               <option key={cl.id} value={cl.id}>
                 {cl.name}
               </option>

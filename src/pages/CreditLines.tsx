@@ -9,8 +9,9 @@ import { NoLines } from "../components/illustrations";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useInertBackdrop } from "../hooks/useInertBackdrop";
 import { useBodyScrollLock } from "../hooks/useBodyScrollLock";
-import { MOCK_CREDIT_LINES } from "../data/mockData";
+import { fetchCreditLines } from "../services/credit";
 import type {
+  CreditLine,
   CreditLineStatus,
   SortField,
   SortDirection,
@@ -55,7 +56,7 @@ import {
 } from "../utils/comparisonSelection";
 
 const CREDIT_LINES_PAGE_SIZE = 6;
-const getCreditLineId = (line: (typeof MOCK_CREDIT_LINES)[number]) => line.id;
+const getCreditLineId = (line: CreditLine) => line.id;
 
 // ─── Credit Line Card ────────────────────────────────────────────────────────
 
@@ -70,11 +71,11 @@ function CreditLineCard({
   onFreeze,
   onUnfreeze,
 }: {
-  line: (typeof MOCK_CREDIT_LINES)[0];
+  line: CreditLine;
   isSelected: boolean;
   onToggle: () => void;
   onSwapCollateral?: (
-    line: (typeof MOCK_CREDIT_LINES)[0],
+    line: CreditLine,
     triggerRef: React.RefObject<HTMLButtonElement | null>,
   ) => void;
   onRepay?: () => void;
@@ -399,9 +400,39 @@ export default function CreditLines({
   );
   const [announcement, setAnnouncement] = useState("");
 
-  const [creditLines, setCreditLines] = useState(MOCK_CREDIT_LINES);
+  const [creditLines, setCreditLines] = useState<CreditLine[]>([]);
+  const [skippedRecords, setSkippedRecords] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const hasCreditLines = creditLines.length > 0;
+  
+  // Load credit lines with validation
+  useEffect(() => {
+    let mounted = true;
+    
+    const loadData = async () => {
+      try {
+        const result = await fetchCreditLines();
+        
+        if (mounted) {
+          setCreditLines(result.creditLines);
+          setSkippedRecords(result.skipped);
+          setIsLoading(false);
+        }
+      } catch (error) {
+        console.error('Failed to load credit lines:', error);
+        if (mounted) {
+          setCreditLines([]);
+          setIsLoading(false);
+        }
+      }
+    };
+    
+    loadData();
+    
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const [loading, setLoading] = useState(defaultLoading);
   useEffect(() => {
@@ -422,7 +453,7 @@ export default function CreditLines({
     saveComparisonSelection(selectedLines);
   }, [selectedLines]);
   const [modalTarget, setModalTarget] = useState<{
-    line: (typeof MOCK_CREDIT_LINES)[0];
+    line: CreditLine;
     currentAsset: string;
     triggerRef: React.RefObject<HTMLButtonElement | null>;
   } | null>(null);
@@ -432,7 +463,7 @@ export default function CreditLines({
     setModalTarget(null);
   };
   const handleSwapCollateral = (
-    line: (typeof MOCK_CREDIT_LINES)[0],
+    line: CreditLine,
     triggerRef: React.RefObject<HTMLButtonElement | null>,
   ) => {
     setModalTarget({
@@ -950,10 +981,28 @@ export default function CreditLines({
               <CreditLineCardSkeleton key={i} />
             ))}
           </div>
-        ) : filteredAndSorted.length === 0 ? (
-          <div className="cl-empty" role="region" aria-label="No credit lines">
-            <NoLines className="empty-state-illustration--muted" />
-            <h2 className="cl-empty-title">Get started with Credit Lines</h2>
+        ) : (
+          <>
+            {skippedRecords > 0 && (
+              <div
+                role="status"
+                style={{
+                  background: 'rgba(210,153,34,0.12)',
+                  border: '1px solid rgba(210,153,34,0.3)',
+                  borderRadius: '6px',
+                  padding: '0.75rem 1rem',
+                  marginBottom: '1rem',
+                  color: 'var(--warning)',
+                  fontSize: '0.875rem',
+                }}
+              >
+                ⚠️ Some records could not be displayed due to validation errors.
+              </div>
+            )}
+            {filteredAndSorted.length === 0 ? (
+              <div className="cl-empty" role="region" aria-label="No credit lines">
+                <NoLines className="empty-state-illustration--muted" />
+                <h2 className="cl-empty-title">Get started with Credit Lines</h2>
             <p className="cl-empty-desc">
               Credit lines give you access to flexible capital when you need it.
               Open your first line and unlock funding tailored to your business.
