@@ -215,5 +215,32 @@ describe('useOnline hook', () => {
       });
       expect(action).toHaveBeenCalledTimes(2);
     });
+
+    it('should queue action when isOnline hook state is stale-true while navigator.onLine is false', () => {
+      // Start with hook initialized online
+      setNavigatorOnLine(true);
+      const { result } = renderHook(() => useOnline());
+      expect(result.current.isOnline).toBe(true);
+
+      // Navigator goes offline without firing the offline event yet (or before React re-renders)
+      setNavigatorOnLine(false);
+      const action = vi.fn();
+
+      act(() => {
+        result.current.queueAction(action, 'stale-test-key');
+      });
+
+      // Action must not be called immediately because navigator is offline!
+      expect(action).not.toHaveBeenCalled();
+      expect(result.current.queuedActionCount).toBe(1);
+
+      // When online event fires, the queued action runs
+      act(() => {
+        setNavigatorOnLine(true);
+        window.dispatchEvent(new Event('online'));
+      });
+
+      expect(action).toHaveBeenCalledTimes(1);
+    });
   });
 });

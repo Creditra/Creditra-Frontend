@@ -51,9 +51,18 @@ import { LiveRegion } from "@/components/LiveRegion";
 import { CreditLine, DrawStep, Transaction } from "@/types/draw-credit.types";
 import { mockCreditLines } from "@/lib/draw-credit-mock-data";
 import { normalizeCreditLineAvailability } from "@/lib/credit-line-availability";
-import { getDrawAmountValidation } from "@/utils/amountValidation";
+import { getDrawAmountValidation, formatMoney } from "@/utils/amountValidation";
 import { offlineMutation } from "@/utils/offline";
-import { useOnline } from "@/hooks/useOnline";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+import { useInertBackdrop } from "@/hooks/useInertBackdrop";
+import {
+  savePendingDrawIntent,
+  getPendingDrawIntent,
+  clearPendingDrawIntent,
+  isPendingDrawIntentExpired,
+  PendingDrawIntent,
+} from "@/state/pendingDraw";
 import { WhyApr } from "@/components/WhyApr";
 import { DrawSummaryBar } from "@/components/DrawSummaryBar";
 import { useDrawWizardMicroProgress } from "@/hooks/useDrawWizardMicroProgress";
@@ -124,13 +133,6 @@ export default function DrawCreditPage() {
     });
   }, [closeRiskModal]);
 
-  const handleRiskModalAcknowledgeAndFocus = useCallback(() => {
-    handleRiskModalAcknowledge();
-    requestAnimationFrame(() => {
-      stepHeadingRef.current?.focus();
-    });
-  }, [handleRiskModalAcknowledge]);
-
   const handleRiskModalAcknowledge = useCallback(() => {
     writeJson(DEFAULT_RISK_ACK_KEY, true);
     writeJson(GRANTFOX_RISK_EDUCATION_ACK_KEY, true);
@@ -138,12 +140,18 @@ export default function DrawCreditPage() {
     closeRiskModal();
   }, [closeRiskModal]);
 
+  const handleRiskModalAcknowledgeAndFocus = useCallback(() => {
+    handleRiskModalAcknowledge();
+    requestAnimationFrame(() => {
+      stepHeadingRef.current?.focus();
+    });
+  }, [handleRiskModalAcknowledge]);
+
   const handleDismissRiskBanner = useCallback(() => {
     writeJson(DEFAULT_RISK_BANNER_DISMISSED_KEY, true);
     setHasAcknowledgedRisk(true);
   }, []);
 
-  const { queueAction } = useOnline();
   const routeTransaction = location.state?.transaction as Transaction | undefined;
   const draftState = routeTransaction ? null : loadDraft();
 
@@ -175,6 +183,14 @@ export default function DrawCreditPage() {
    * deterministically instead of issuing a second draw.
    */
   const isSubmittingRef = useRef(false);
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const helpTriggerRef = useRef<HTMLButtonElement>(null);
   const [isWhyAprOpen, setIsWhyAprOpen] = useState(false);
@@ -186,6 +202,54 @@ export default function DrawCreditPage() {
     useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const amountInputRef = useRef<HTMLInputElement>(null);
+
+  // Resume draw intent state
+  const [pendingIntent, setPendingIntent] = useState<PendingDrawIntent | null>(null);
+  const [expiredStatusMessage, setExpiredStatusMessage] = useState<string | null>(null);
+
+  // Check pending intent on reconnect
+  useEffect(() => {
+    const handleOnline = () => {
+      if (!isMountedRef.current) return;
+      const intent = getPendingDrawIntent();
+      if (!intent) return;
+
+      if (isPendingDrawIntentExpired(intent)) {
+        clearPendingDrawIntent();
+        setPendingIntent(null);
+        setExpiredStatusMessage("Your pending draw intent has expired after 15 minutes. Please submit a new draw request.");
+        return;
+      }
+
+      setPendingIntent(intent);
+    };
+
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+    };
+  }, []);
+
+  const handleReviewPendingIntent = () => {
+    if (!pendingIntent) return;
+    const line = mockCreditLines.find((l) => l.id === pendingIntent.lineId) || selectedCreditLine;
+    const amountVal = pendingIntent.amountCents / 100;
+    clearPendingDrawIntent();
+    setPendingIntent(null);
+
+    if (line) {
+      setSelectedCreditLine(normalizeCreditLineAvailability(line));
+    }
+    setAmount(amountVal);
+    setConfirmationAcknowledged(false);
+    setIsOfflineBlocked(false);
+    setStep("confirm");
+  };
+
+  const handleDiscardPendingIntent = () => {
+    clearPendingDrawIntent();
+    setPendingIntent(null);
+  };
 
   const { debouncedAnnouncement: microProgressAnnouncement } =
     useDrawWizardMicroProgress({
@@ -247,6 +311,8 @@ export default function DrawCreditPage() {
           // Simulate API call
           await new Promise((resolve) => setTimeout(resolve, 2000));
 
+          if (!isMountedRef.current) return;
+
           const succeeded = Math.random() > 0.2;
           const newTransaction: Transaction = {
             id: `TXN-${Date.now()}`,
@@ -269,22 +335,24 @@ export default function DrawCreditPage() {
           }
         },
         onOffline: () => {
-          queueAction(() => {
-            void handleConfirm();
-          }, 'draw-confirm');
+          savePendingDrawIntent({
+            lineId: line.id,
+            amountCents: Math.round(amount * 100),
+            queuedAt: Date.now(),
+          });
         },
         offlineMessage:
-          "You are offline, so your draw cannot be processed yet. It has been queued and will be submitted when your connection is restored.",
+          "You are offline, so your draw cannot be processed yet. We'll ask you to confirm when you're back online.",
       });
     } catch {
-      setIsLoading(false);
-      setIsOfflineBlocked(true);
+      if (isMountedRef.current) {
+        setIsLoading(false);
+        setIsOfflineBlocked(true);
+      }
     }
     // Always release the lock (success, offline-block, or throw) so a later
     // draw attempt — e.g. after reconnecting and flushing the queue, a failed
     // submission, or "Make Another Draw" — is never blocked by a stale flag.
-    // Note: dedup via the 'draw-confirm' key still prevents double-submission
-    // when the user re-triggers while offline.
     isSubmittingRef.current = false;
   };
 
@@ -596,9 +664,8 @@ export default function DrawCreditPage() {
                 >
                   <h2 className="dc-step__title">You're offline</h2>
                   <p className="dc-step__subtitle">
-                    Your draw cannot be processed while offline. It has been
-                    queued and will be submitted automatically when your
-                    connection is restored.
+                    Your draw cannot be processed while offline. We'll ask you
+                    to confirm when you're back online.
                   </p>
                   <button
                     type="button"
@@ -621,6 +688,23 @@ export default function DrawCreditPage() {
             </>
           )}
         </div>
+
+        {expiredStatusMessage && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="dc-banner dc-banner--warning mt-4"
+          >
+            <p className="dc-banner__title">{expiredStatusMessage}</p>
+          </div>
+        )}
+
+        <ResumeDrawDialog
+          isOpen={pendingIntent !== null}
+          intent={pendingIntent}
+          onReview={handleReviewPendingIntent}
+          onDiscard={handleDiscardPendingIntent}
+        />
 
         <p className="dc-page__footer">
           Need help?{" "}
@@ -651,6 +735,88 @@ export default function DrawCreditPage() {
         step={step}
       />
     </main>
+  );
+}
+
+interface ResumeDrawDialogProps {
+  isOpen: boolean;
+  intent: PendingDrawIntent | null;
+  onReview: () => void;
+  onDiscard: () => void;
+}
+
+function ResumeDrawDialog({
+  isOpen,
+  intent,
+  onReview,
+  onDiscard,
+}: ResumeDrawDialogProps) {
+  const line = intent ? mockCreditLines.find((l) => l.id === intent.lineId) : null;
+  const lineName = line ? line.name : "credit line";
+  const amountStr = intent ? formatMoney(intent.amountCents / 100) : "$0.00";
+
+  const modalId = "resume-draw-dialog-portal";
+  const titleId = "resume-draw-dialog-title";
+  const bodyId = "resume-draw-dialog-body";
+  const discardBtnRef = useRef<HTMLButtonElement>(null);
+
+  const containerRef = useFocusTrap({
+    isActive: isOpen,
+    onEscape: onDiscard,
+  });
+
+  useBodyScrollLock({ isLocked: isOpen });
+  useInertBackdrop({ isInert: isOpen, modalId });
+
+  useEffect(() => {
+    if (isOpen) {
+      discardBtnRef.current?.focus();
+    }
+  }, [isOpen]);
+
+  if (!isOpen || !intent) return null;
+
+  return (
+    <div id={modalId} className="confirm-dialog-portal" data-testid="resume-draw-dialog-portal">
+      <div
+        className="confirm-dialog-backdrop"
+        data-testid="resume-draw-dialog-backdrop"
+        aria-hidden="true"
+        onClick={onDiscard}
+      />
+      <div
+        ref={containerRef}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={bodyId}
+        className="confirm-dialog"
+      >
+        <h2 id={titleId} className="confirm-dialog__title">
+          Resume draw
+        </h2>
+        <p id={bodyId} className="confirm-dialog__body">
+          You were offline when you confirmed a {amountStr} draw from {lineName}. Review and submit?
+        </p>
+        <div className="confirm-dialog__footer">
+          <button
+            ref={discardBtnRef}
+            type="button"
+            className="confirm-dialog__btn confirm-dialog__btn--cancel btn-secondary btn-sm"
+            onClick={onDiscard}
+          >
+            Discard
+          </button>
+          <button
+            type="button"
+            className="confirm-dialog__btn confirm-dialog__btn--primary btn-sm"
+            onClick={onReview}
+          >
+            Review
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
