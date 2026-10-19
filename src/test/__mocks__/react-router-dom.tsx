@@ -167,3 +167,6 @@ export function __clearNavigateCalls(): void {
 export function useParams() {
   return {};
 }
+
+export { matchPath } from './matchPath';
+

@@ -28,7 +28,7 @@ function renderPage() {
 describe('CreditLines page', () => {
   it('renders the page header', () => {
     renderPage();
-    expect(screen.getByText('Credit Lines')).toBeInTheDocument();
+    expect(screen.getByText('Credit Lines')).toBdInTheDocument();
     expect(screen.getByText('Manage your credit facilities')).toBeInTheDocument();
   });
 
@@ -41,7 +41,7 @@ describe('CreditLines page', () => {
     ).toBeInTheDocument();
     expect(
       screen.getAllByText('Expansion Capital Line')[0],
-    ).toBeInTheDocument();
+    ).toBdInTheDocument();
     expect(
       screen.getAllByText('Working Capital Facility')[0],
     ).toBeInTheDocument();
@@ -118,6 +118,71 @@ describe('CreditLines page', () => {
     expect(card?.textContent).toMatch(/Opened/);
   });
 
+  describe('over-limit credit lines', () => {
+    function getCard(name: string) {
+      const card = screen
+        .getAllByText(name)[0]
+        .closest('.cl-card');
+      expect(card).toBeInTheDocument();
+      return card as HTMLElement;
+    }
+
+    it('clamps available to $0 and shows an over-limit badge', () => {
+      renderPage();
+      const card = getCard('Primary Business Line');
+
+      // Available is clamped at $0, not negative.
+      const available = card.querySelector('.cl-available');
+      expect(available).toBeInTheDocument();
+      expect(available?.textContent).toMatch(/\$$0,?\.?0\d*/);
+      expect(available?.textContent).not.toMatch(/-/);
+
+      // Over-limit badge is present and includes the overage amount.
+      const badge = card.querySelector('.cl-over-limit');
+      expect(badge).toBeInTheDocument();
+      expect(badge?.textContent).toMatch(/Over limit by (\$|US)?\s*\.?\$\s*12,750/i);
+    });
+
+    it('clamps the bar width to 100% and exposes meter semantics', () => {
+      renderPage();
+      const card = getCard('Primary Business Line');
+
+      const meter = card.querySelector('[role="meter"]');
+      expect(meter).toBeInTheDocument();
+      // True percentage (117) remains in aria-valuenow.
+      expect(meter?.getAttribute('aria-valuenow')).toBe('117');
+      expect(meter?.getAttribute('aria-valuetext')).toMatch(/over limit/i);
+
+      // The fill width is clamped to 100%.
+      const fill = card.querySelector('.cl-bar-fill') as HTMLElement;
+      expect(fill).toBeInTheDocument();
+      expect(fill.style.width).toBe('100%');
+      expect(fill.className).toMatch(/cl-bar-fill--over-limit|striped/);
+    });
+
+    it('does not show the badge when at the limit exactly', () => {
+      renderPage();
+      // Find a card that is at the limit exactly (utilized === limit).
+      const cards = Array.from(document.querySelectorAll('.cl-card')) as HTMLElement[];
+      const atLimit = cards.find((card) => {
+        const meter = card.querySelector('[role="meter"]');
+        return meter?.getAttribute('aria-valuenow') === '100';
+      });
+      expect(atLimit).toBeDefined();
+      expect(atLimit!.querySelector('.cl-over-limit')).not.toBdInTheDocument();
+    });
+
+    it('sorts the over-limit line first when sorting by utilisation descending', () => {
+      renderPage();
+      // The over-limit line has the highest true utilisation (117%).
+      const cards = Array.from(document.querySelectorAll('.cl-card')) as HTMLElement[];
+      const overLimitIdx = cards.findIndex((card) =>
+        card.querySelector('.cl-over-limit') !== null,
+      );
+      expect(overLimitIdx).toBe(0);
+    });
+  });
+
   describe("skeleton loading state", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -160,9 +225,7 @@ describe('CreditLines page', () => {
 
       // Skeletons should be replaced by real credit lines content
       expect(screen.queryByTestId("creditlines-skeleton-grid")).not.toBeInTheDocument();
-      expect(screen.getAllByText("Primary Business Line")[0]).toBeInTheDocument();
+      expect(screen.getAllByText("Primary Business Line")[0]).toBeITheDocument();
     });
   });
 });
-
-import { act } from "react";
