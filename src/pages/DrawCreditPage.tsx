@@ -28,7 +28,7 @@
  *     a meaningful visual fallback rather than a frozen rotation frame.
  */
 
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback, useContext } from "react";
 import { Skeleton } from "@/components/Skeleton";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useReducedMotion } from "@/context/ReducedMotionContext";
@@ -53,6 +53,7 @@ import { mockCreditLines } from "@/lib/draw-credit-mock-data";
 import { normalizeCreditLineAvailability } from "@/lib/credit-line-availability";
 import { getDrawAmountValidation } from "@/utils/amountValidation";
 import { offlineMutation } from "@/utils/offline";
+import { NotificationContext } from "@/context/NotificationContext";
 import { useOnline } from "@/hooks/useOnline";
 import { WhyApr } from "@/components/WhyApr";
 import { DrawSummaryBar } from "@/components/DrawSummaryBar";
@@ -81,6 +82,19 @@ function isFocusedOnInput(): boolean {
 
 export default function DrawCreditPage() {
   const navigate = useNavigate();
+  // Read the context directly (not `useNotifications()`) so this
+  // component renders in isolation tests without a provider.
+  // In production, App.tsx always wraps this in <NotificationProvider>,
+  // so `addToast` is defined and the toast fires.
+  const notifCtx = useContext(NotificationContext);
+  const addToast = notifCtx?.addToast;
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const isLearnMode = searchParams.get("learn") === "1";
@@ -92,7 +106,7 @@ export default function DrawCreditPage() {
     () =>
       readJson<boolean>(DEFAULT_RISK_ACK_KEY, false) ||
       readJson<boolean>(GRANTFOX_RISK_EDUCATION_ACK_KEY, false) ||
-      readJson<boolean>(DEFAULT_RISK_BANNER_DISMISSED_KEY, false)
+      readJson<boolean>(DEFAULT_RISK_BANNER_DISMISSED_KEY, false),
   );
   const [isRiskModalOpen, setIsRiskModalOpen] = useState(() => isLearnMode);
 
@@ -125,11 +139,12 @@ export default function DrawCreditPage() {
   }, []);
 
   const { queueAction } = useOnline();
-  const routeTransaction = location.state?.transaction as Transaction | undefined;
+  const routeTransaction = location.state?.transaction as
+    Transaction | undefined;
   const draftState = routeTransaction ? null : loadDraft();
 
   const [step, setStep] = useState<DrawStep>(
-    routeTransaction ? "status" : draftState?.step ?? "select",
+    routeTransaction ? "status" : (draftState?.step ?? "select"),
   );
   const [selectedCreditLine, setSelectedCreditLine] =
     useState<CreditLine | null>(
@@ -233,6 +248,28 @@ export default function DrawCreditPage() {
             timestamp: new Date(),
           };
 
+          // Issue #1180: if the user left the page during processing,
+          // do not mutate unmounted React state and do not hijack
+          // navigation. Surface the result as a toast instead.
+          if (!isMountedRef.current) {
+            addToast?.({
+              type: succeeded ? "success" : "error",
+              category: "transaction",
+              title: succeeded
+                ? `Your $${amount} draw succeeded`
+                : `Your $${amount} draw failed`,
+              message: succeeded
+                ? "View the details in your transaction history."
+                : "Insufficient funds available.",
+              action: {
+                label: "View transactions",
+                onClick: () => navigate("/transactions"),
+              },
+              saveToHistory: true,
+            });
+            return;
+          }
+
           setTransaction(newTransaction);
           setIsLoading(false);
           setStep("status");
@@ -247,7 +284,7 @@ export default function DrawCreditPage() {
         onOffline: () => {
           queueAction(() => {
             void handleConfirm();
-          }, 'draw-confirm');
+          }, "draw-confirm");
         },
         offlineMessage:
           "You are offline, so your draw cannot be processed yet. It has been queued and will be submitted when your connection is restored.",
@@ -287,6 +324,17 @@ export default function DrawCreditPage() {
   const handleCancel = useCallback(() => {
     navigate("/");
   }, [navigate]);
+
+  // Issue #1180: warn on tab close while a submission is in flight.
+  useEffect(() => {
+    if (!isLoading) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isLoading]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -333,7 +381,14 @@ export default function DrawCreditPage() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [step, amount, confirmationAcknowledged, handleBack, handleCancel, isRiskModalOpen]);
+  }, [
+    step,
+    amount,
+    confirmationAcknowledged,
+    handleBack,
+    handleCancel,
+    isRiskModalOpen,
+  ]);
 
   return (
     <main className="dc-page" aria-label="Draw credit">
@@ -462,98 +517,103 @@ export default function DrawCreditPage() {
             </>
           )}
 
-          {step === "status" && (isLoading || transaction || isOfflineBlocked) && (
-            <>
-              {isLoading && (
-                <div
-                  className="dc-spinner-wrap"
-                  role="status"
-                  aria-live="polite"
-                  aria-label="Processing your draw request"
-                >
-                  <div className="dc-spinner-ring-bg">
-                    {isReducedMotionActive ? (
-                      <div className="dc-spinner-static" aria-hidden="true">
-                        <svg
-                          viewBox="0 0 64 64"
-                          fill="none"
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="64"
-                          height="64"
-                          aria-hidden="true"
-                        >
-                          <circle
-                            cx="32"
-                            cy="32"
-                            r="28"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                            strokeLinecap="round"
-                          />
-                          <line
-                            x1="32"
-                            y1="32"
-                            x2="32"
-                            y2="14"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                            strokeLinecap="round"
-                          />
-                          <line
-                            x1="32"
-                            y1="32"
-                            x2="46"
-                            y2="32"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                            strokeLinecap="round"
-                          />
-                        </svg>
-                      </div>
-                    ) : (
-                      <div className="dc-spinner-ring" aria-hidden="true" />
-                    )}
-                  </div>
-                  <div>
-                    <h2 className="dc-step__title">Processing</h2>
-                    <p className="dc-step__subtitle">
-                      Your draw request is being processed.
-                    </p>
-                  </div>
-                </div>
-              )}
-              {isOfflineBlocked && !isLoading && (
-                <div
-                  className="dc-step"
-                  role="alert"
-                  aria-live="assertive"
-                >
-                  <h2 className="dc-step__title">You're offline</h2>
-                  <p className="dc-step__subtitle">
-                    Your draw cannot be processed while offline. It has been
-                    queued and will be submitted automatically when your
-                    connection is restored.
-                  </p>
-                  <button
-                    type="button"
-                    className="focus-ring dc-step__back-btn"
-                    onClick={() => {
-                      setIsOfflineBlocked(false);
-                      setStep("confirm");
-                    }}
+          {step === "status" &&
+            (isLoading || transaction || isOfflineBlocked) && (
+              <>
+                {isLoading && (
+                  <div
+                    className="dc-spinner-wrap"
+                    role="status"
+                    aria-live="polite"
+                    aria-label="Processing your draw request"
                   >
-                    Back to review
-                  </button>
-                </div>
-              )}
-              {transaction && !isLoading && (
-                <TransactionStatus
-                  transaction={transaction}
-                  onNewDraw={handleNewDraw}
-                />
-              )}
-            </>
-          )}
+                    <div className="dc-spinner-ring-bg">
+                      {isReducedMotionActive ? (
+                        <div className="dc-spinner-static" aria-hidden="true">
+                          <svg
+                            viewBox="0 0 64 64"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="64"
+                            height="64"
+                            aria-hidden="true"
+                          >
+                            <circle
+                              cx="32"
+                              cy="32"
+                              r="28"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                              strokeLinecap="round"
+                            />
+                            <line
+                              x1="32"
+                              y1="32"
+                              x2="32"
+                              y2="14"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                              strokeLinecap="round"
+                            />
+                            <line
+                              x1="32"
+                              y1="32"
+                              x2="46"
+                              y2="32"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                              strokeLinecap="round"
+                            />
+                          </svg>
+                        </div>
+                      ) : (
+                        <div className="dc-spinner-ring" aria-hidden="true" />
+                      )}
+                    </div>
+                    <div>
+                      <h2 className="dc-step__title">Processing</h2>
+                      <p className="dc-step__subtitle">
+                        Your draw request is being processed.
+                      </p>
+                      <p
+                        className="dc-step__subtitle"
+                        data-testid="draw-status-hint"
+                        style={{ marginTop: "0.25rem", fontSize: "0.8125rem" }}
+                      >
+                        You can leave this page; we&apos;ll notify you when it
+                        completes.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {isOfflineBlocked && !isLoading && (
+                  <div className="dc-step" role="alert" aria-live="assertive">
+                    <h2 className="dc-step__title">You're offline</h2>
+                    <p className="dc-step__subtitle">
+                      Your draw cannot be processed while offline. It has been
+                      queued and will be submitted automatically when your
+                      connection is restored.
+                    </p>
+                    <button
+                      type="button"
+                      className="focus-ring dc-step__back-btn"
+                      onClick={() => {
+                        setIsOfflineBlocked(false);
+                        setStep("confirm");
+                      }}
+                    >
+                      Back to review
+                    </button>
+                  </div>
+                )}
+                {transaction && !isLoading && (
+                  <TransactionStatus
+                    transaction={transaction}
+                    onNewDraw={handleNewDraw}
+                  />
+                )}
+              </>
+            )}
         </div>
 
         <p className="dc-page__footer">
@@ -609,7 +669,11 @@ export function DrawCreditPageSkeleton() {
                   <div className="dc-credit-line-item">
                     <div className="dc-credit-line-item__inner w-full">
                       <div className="dc-credit-line-item__body w-full">
-                        <Skeleton width="120px" height="24px" className="mb-3" />
+                        <Skeleton
+                          width="120px"
+                          height="24px"
+                          className="mb-3"
+                        />
                         <div className="flex gap-6 mb-3">
                           <div className="space-y-1">
                             <Skeleton width="60px" height="14px" />

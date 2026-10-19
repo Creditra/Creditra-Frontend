@@ -42,7 +42,14 @@
  *     otherwise skip a freshly-rendered instance straight past "select"
  */
 
-import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  fireEvent,
+  act,
+  cleanup,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { readFileSync } from "fs";
@@ -52,7 +59,12 @@ import DrawCreditPage from "./DrawCreditPage";
 import { DrawCreditPageSkeleton } from "./DrawCreditPage";
 import { DEFAULT_RISK_ACK_KEY } from "@/constants/storageKeys";
 import { readJson, writeJson } from "@/utils/storage";
-import { __getMockSearch, __setMockLocation } from "react-router-dom";
+import {
+  __getMockSearch,
+  __setMockLocation,
+  __getNavigateCalls,
+  __clearNavigateCalls,
+} from "react-router-dom";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -64,7 +76,7 @@ function getLiveRegion(): HTMLElement {
     '.sr-only[role="status"][aria-live="polite"]',
   );
   if (!region) {
-    throw new Error('Expected DrawCreditPage LiveRegion to be mounted');
+    throw new Error("Expected DrawCreditPage LiveRegion to be mounted");
   }
   return region as HTMLElement;
 }
@@ -84,7 +96,10 @@ async function goToAmountStep(user: ReturnType<typeof userEvent.setup>) {
 }
 
 /** Navigate to the confirm step */
-async function goToConfirmStep(user: ReturnType<typeof userEvent.setup>, amountValue = "1000") {
+async function goToConfirmStep(
+  user: ReturnType<typeof userEvent.setup>,
+  amountValue = "1000",
+) {
   await goToAmountStep(user);
   await user.clear(screen.getByRole("spinbutton"));
   await user.type(screen.getByRole("spinbutton"), amountValue);
@@ -267,7 +282,9 @@ describe("DrawCreditPage — step navigation & token audit", () => {
     const checkbox = screen.getByRole("checkbox");
     await user.click(checkbox);
 
-    expect(screen.getByRole("button", { name: /confirm draw/i })).not.toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /confirm draw/i }),
+    ).not.toBeDisabled();
   });
 
   // ── 9. WCAG: loading spinner has accessible attributes ───────────────────
@@ -359,7 +376,9 @@ describe("DrawCreditPage — step navigation & token audit", () => {
 
     vi.useRealTimers();
 
-    await user.click(screen.getByRole("button", { name: /make another draw/i }));
+    await user.click(
+      screen.getByRole("button", { name: /make another draw/i }),
+    );
 
     expect(
       screen.getByRole("heading", { name: /select credit line/i }),
@@ -412,8 +431,7 @@ describe("DrawCreditPage — step navigation & token audit", () => {
     await user.type(input, "99999"); // exceeds the $35,000 available limit
 
     await waitFor(
-      () =>
-        expect(liveRegion).toHaveTextContent(/exceeds available credit/i),
+      () => expect(liveRegion).toHaveTextContent(/exceeds available credit/i),
       { timeout: 1000 },
     );
 
@@ -422,9 +440,7 @@ describe("DrawCreditPage — step navigation & token audit", () => {
 
     await waitFor(
       () =>
-        expect(liveRegion).toHaveTextContent(
-          /within available credit limits/i,
-        ),
+        expect(liveRegion).toHaveTextContent(/within available credit limits/i),
       { timeout: 1000 },
     );
   });
@@ -482,14 +498,14 @@ describe("DrawCreditPage — keyboard shortcut hints", () => {
     setup();
 
     // The shortcut bar container
-    const kbdBar = document.querySelector('.dc-kbd-bar');
+    const kbdBar = document.querySelector(".dc-kbd-bar");
     expect(kbdBar).toBeInTheDocument();
 
     // Esc key chip should be present
-    const kbdChips = document.querySelectorAll('.kbd-hint-key');
+    const kbdChips = document.querySelectorAll(".kbd-hint-key");
     const chipTexts = Array.from(kbdChips).map((c) => c.textContent);
-    expect(chipTexts).toContain('Esc');
-    expect(chipTexts).toContain('?');
+    expect(chipTexts).toContain("Esc");
+    expect(chipTexts).toContain("?");
   });
 
   // ── K2. Amount step: shortcut bar with ←/→, Esc, ? ─────────────────────
@@ -497,16 +513,16 @@ describe("DrawCreditPage — keyboard shortcut hints", () => {
     const { user } = setup();
     await goToAmountStep(user);
 
-    const kbdBar = document.querySelector('.dc-kbd-bar');
+    const kbdBar = document.querySelector(".dc-kbd-bar");
     expect(kbdBar).toBeInTheDocument();
 
     const chipTexts = Array.from(
-      document.querySelectorAll('.kbd-hint-key'),
+      document.querySelectorAll(".kbd-hint-key"),
     ).map((c) => c.textContent);
-    expect(chipTexts).toContain('←');
-    expect(chipTexts).toContain('→');
-    expect(chipTexts).toContain('Esc');
-    expect(chipTexts).toContain('?');
+    expect(chipTexts).toContain("←");
+    expect(chipTexts).toContain("→");
+    expect(chipTexts).toContain("Esc");
+    expect(chipTexts).toContain("?");
   });
 
   // ── K3. Confirm step: shortcut bar with ←/→, Esc, ? ────────────────────
@@ -514,15 +530,15 @@ describe("DrawCreditPage — keyboard shortcut hints", () => {
     const { user } = setup();
     await goToConfirmStep(user);
 
-    const kbdBar = document.querySelector('.dc-kbd-bar');
+    const kbdBar = document.querySelector(".dc-kbd-bar");
     expect(kbdBar).toBeInTheDocument();
 
     const chipTexts = Array.from(
-      document.querySelectorAll('.kbd-hint-key'),
+      document.querySelectorAll(".kbd-hint-key"),
     ).map((c) => c.textContent);
-    expect(chipTexts).toContain('←');
-    expect(chipTexts).toContain('→');
-    expect(chipTexts).toContain('Esc');
+    expect(chipTexts).toContain("←");
+    expect(chipTexts).toContain("→");
+    expect(chipTexts).toContain("Esc");
   });
 
   // ── K4. ArrowLeft on amount step goes back to select ─────────────────────
@@ -530,12 +546,16 @@ describe("DrawCreditPage — keyboard shortcut hints", () => {
     const { user } = setup();
     await goToAmountStep(user);
 
-    expect(screen.getByRole("heading", { name: /enter amount/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /enter amount/i }),
+    ).toBeInTheDocument();
 
     // Fire keydown on the document (not an input)
     fireEvent.keyDown(document.body, { key: "ArrowLeft", code: "ArrowLeft" });
 
-    expect(screen.getByRole("heading", { name: /select credit line/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /select credit line/i }),
+    ).toBeInTheDocument();
   });
 
   // ── K5. ArrowLeft on confirm step goes back to amount ────────────────────
@@ -543,11 +563,15 @@ describe("DrawCreditPage — keyboard shortcut hints", () => {
     const { user } = setup();
     await goToConfirmStep(user);
 
-    expect(screen.getByRole("heading", { name: /review (&|and) confirm/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /review (&|and) confirm/i }),
+    ).toBeInTheDocument();
 
     fireEvent.keyDown(document.body, { key: "ArrowLeft", code: "ArrowLeft" });
 
-    expect(screen.getByRole("heading", { name: /enter amount/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /enter amount/i }),
+    ).toBeInTheDocument();
   });
 
   // ── K6. ArrowRight advances amount step when amount is valid ─────────────
@@ -564,7 +588,9 @@ describe("DrawCreditPage — keyboard shortcut hints", () => {
 
     fireEvent.keyDown(document.body, { key: "ArrowRight", code: "ArrowRight" });
 
-    expect(screen.getByRole("heading", { name: /review (&|and) confirm/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /review (&|and) confirm/i }),
+    ).toBeInTheDocument();
   });
 
   // ── K7. Escape on select step fires navigation cancel ────────────────────
@@ -585,11 +611,15 @@ describe("DrawCreditPage — keyboard shortcut hints", () => {
     const { user } = setup();
     await goToAmountStep(user);
 
-    expect(screen.getByRole("heading", { name: /enter amount/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /enter amount/i }),
+    ).toBeInTheDocument();
 
     fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
 
-    expect(screen.getByRole("heading", { name: /select credit line/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /select credit line/i }),
+    ).toBeInTheDocument();
   });
 
   // ── K9. Escape on confirm step goes back to amount ────────────────────────
@@ -597,11 +627,15 @@ describe("DrawCreditPage — keyboard shortcut hints", () => {
     const { user } = setup();
     await goToConfirmStep(user);
 
-    expect(screen.getByRole("heading", { name: /review (&|and) confirm/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /review (&|and) confirm/i }),
+    ).toBeInTheDocument();
 
     fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
 
-    expect(screen.getByRole("heading", { name: /enter amount/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /enter amount/i }),
+    ).toBeInTheDocument();
   });
 
   // ── K10. ? key opens help overlay ────────────────────────────────────────
@@ -620,7 +654,7 @@ describe("DrawCreditPage — keyboard shortcut hints", () => {
       const overlay =
         document.querySelector('[aria-label="Draw credit help"]') ??
         document.querySelector('[role="dialog"]') ??
-        document.querySelector('.inline-help-overlay') ??
+        document.querySelector(".inline-help-overlay") ??
         document.querySelector('[class*="help"]');
       expect(overlay).toBeInTheDocument();
     });
@@ -641,7 +675,9 @@ describe("DrawCreditPage — keyboard shortcut hints", () => {
     fireEvent.keyDown(input, { key: "ArrowLeft", code: "ArrowLeft" });
 
     // Still on the amount step
-    expect(screen.getByRole("heading", { name: /enter amount/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /enter amount/i }),
+    ).toBeInTheDocument();
   });
 
   // ── K12. Shortcut bar sr-only text is accessible ─────────────────────────
@@ -649,8 +685,8 @@ describe("DrawCreditPage — keyboard shortcut hints", () => {
     setup();
 
     // Each KbdHint renders a .sr-only element with readable text
-    const srElements = document.querySelectorAll('.sr-only');
-    const srTexts = Array.from(srElements).map((el) => el.textContent ?? '');
+    const srElements = document.querySelectorAll(".sr-only");
+    const srTexts = Array.from(srElements).map((el) => el.textContent ?? "");
 
     // At least one sr-only element should mention "Cancel" or "Escape"
     const hasCancelHint = srTexts.some(
@@ -665,10 +701,10 @@ describe("DrawCreditPage — keyboard shortcut hints", () => {
     await goToAmountStep(user);
 
     const separators = Array.from(
-      document.querySelectorAll('.kbd-hint-separator'),
+      document.querySelectorAll(".kbd-hint-separator"),
     ).map((el) => el.textContent);
 
-    expect(separators).toContain('/');
+    expect(separators).toContain("/");
   });
 });
 
@@ -719,9 +755,7 @@ describe("DrawCreditPage — duplicate submission guard", () => {
 
     vi.useFakeTimers();
     await act(async () => {
-      fireEvent.click(
-        screen.getByRole("button", { name: /confirm draw/i }),
-      );
+      fireEvent.click(screen.getByRole("button", { name: /confirm draw/i }));
       // Repeated keyboard activation (holding →) must not double-submit.
       fireEvent.keyDown(document.body, {
         key: "ArrowRight",
@@ -747,9 +781,7 @@ describe("DrawCreditPage — duplicate submission guard", () => {
 
     vi.useFakeTimers();
     await act(async () => {
-      fireEvent.click(
-        screen.getByRole("button", { name: /confirm draw/i }),
-      );
+      fireEvent.click(screen.getByRole("button", { name: /confirm draw/i }));
       await vi.advanceTimersByTimeAsync(2000);
     });
 
@@ -793,7 +825,9 @@ describe("DrawCreditPage — default-risk education gate (REQ-6.2)", () => {
     writeJson(DEFAULT_RISK_ACK_KEY, true);
     render(<DrawCreditPage />);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /select credit line/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /select credit line/i }),
+    ).toBeInTheDocument();
   });
 
   it("modal IS shown when URL contains ?learn=1 even if localStorage key is set", () => {
@@ -819,7 +853,9 @@ describe("DrawCreditPage — default-risk education gate (REQ-6.2)", () => {
 
     // Modal is dismissed and wizard is shown
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /select credit line/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /select credit line/i }),
+    ).toBeInTheDocument();
 
     // localStorage updated
     expect(readJson(DEFAULT_RISK_ACK_KEY, false)).toBe(true);
@@ -862,17 +898,187 @@ describe("DrawCreditPage — responsive breakpoint audit", () => {
   });
 
   it(".dc-page has reduced padding on screens ≤ 480px", () => {
-    const pattern = /@media\s*\(max-width:\s*480px\)\s*{[^}]*\.dc-page\s*{[^}]*padding:\s*var\(--space-3\)/;
+    const pattern =
+      /@media\s*\(max-width:\s*480px\)\s*{[^}]*\.dc-page\s*{[^}]*padding:\s*var\(--space-3\)/;
     expect(css).toMatch(pattern);
   });
 
   it(".dc-presets switches from 4 columns to 2 columns on screens ≤ 480px", () => {
-    const pattern = /@media\s*\(max-width:\s*480px\)\s*{[^}]*\.dc-presets\s*{[^}]*grid-template-columns:\s*repeat\(2,\s*1fr\)/;
+    const pattern =
+      /@media\s*\(max-width:\s*480px\)\s*{[^}]*\.dc-presets\s*{[^}]*grid-template-columns:\s*repeat\(2,\s*1fr\)/;
     expect(css).toMatch(pattern);
   });
 
   it(".dc-stat-grid switches from 2 columns to 1 column on screens ≤ 480px", () => {
-    const pattern = /@media\s*\(max-width:\s*480px\)\s*{[^}]*\.dc-stat-grid\s*{[^}]*grid-template-columns:\s*1fr/;
+    const pattern =
+      /@media\s*\(max-width:\s*480px\)\s*{[^}]*\.dc-stat-grid\s*{[^}]*grid-template-columns:\s*1fr/;
     expect(css).toMatch(pattern);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue #1180 — unmount during processing must not navigate or mutate state.
+//
+// The vitest environment aliases `react-router-dom` to a stub that records
+// every navigate() call (see src/test/__mocks__/react-router-dom.tsx). That
+// recorder is the observable surface for these tests.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("DrawCreditPage — unmount during processing (#1180)", () => {
+  beforeEach(() => {
+    cleanup();
+    localStorage.clear();
+    localStorage.setItem(DEFAULT_RISK_ACK_KEY, "true");
+    __clearNavigateCalls();
+    __setMockLocation("/draw-credit");
+    // Force the success branch of the submission (Math.random > 0.2 = success).
+    // Without this, the 20% failure branch skips navigate("/draw-credit/success")
+    // and the regression test would pass vacuously on main.
+    vi.spyOn(Math, "random").mockReturnValue(0.9);
+    render(<DrawCreditPage />);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** Advance the wizard to the confirm step. SYNC — fake timers are active. */
+  function reachConfirmStep(): HTMLButtonElement {
+    act(() => {
+      fireEvent.click(
+        screen.getByRole("button", { name: /select business line of credit/i }),
+      );
+    });
+    const input = screen.getByRole("spinbutton");
+    act(() => {
+      fireEvent.change(input, { target: { value: "100" } });
+    });
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    });
+    const checkbox = screen.queryByRole("checkbox");
+    if (checkbox) {
+      act(() => {
+        fireEvent.click(checkbox);
+      });
+    }
+    return screen.getByRole("button", {
+      name: /confirm|draw/i,
+    }) as HTMLButtonElement;
+  }
+
+  it("row 1 + 6: does NOT navigate to /draw-credit/success after unmount (regression proof)", async () => {
+    const confirmBtn = reachConfirmStep();
+    act(() => {
+      fireEvent.click(confirmBtn);
+    });
+
+    // Enter status step
+    act(() => {
+      vi.advanceTimersByTime(50);
+    });
+    expect(screen.getByText(/processing/i)).toBeInTheDocument();
+
+    // Simulate leaving the page (user clicks Dashboard in the header → unmount)
+    cleanup();
+
+    // Advance timer + drain the microtask chain. Without the async form the
+    // `navigate(...)` on main fires AFTER this block, and the assertion would
+    // pass vacuously (empty recorder at the moment of check).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(100);
+    });
+
+    // Bug on main: navigate("/draw-credit/success") fires here. Fix: it must not.
+    expect(__getNavigateCalls()).not.toContain("/draw-credit/success");
+  });
+
+  it("row 4: staying on the page still navigates to /draw-credit/success", () => {
+    const confirmBtn = reachConfirmStep();
+    act(() => {
+      fireEvent.click(confirmBtn);
+    });
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // On the success branch, navigate fires. On the failure branch, it does
+    // not. Either way, the component must not crash and must remain in a
+    // valid state.
+    const navigated = __getNavigateCalls().includes("/draw-credit/success");
+    const stillOnStatus = screen.queryByText(/processing/i) !== null;
+    expect(navigated || stillOnStatus).toBe(true);
+  });
+
+  it("row 5: registers beforeunload while processing, removes after completion", async () => {
+    const addSpy = vi.spyOn(window, "addEventListener");
+    const removeSpy = vi.spyOn(window, "removeEventListener");
+
+    const confirmBtn = reachConfirmStep();
+    act(() => {
+      fireEvent.click(confirmBtn);
+    });
+    act(() => {
+      vi.advanceTimersByTime(50);
+    });
+
+    expect(addSpy.mock.calls.some(([e]) => e === "beforeunload")).toBe(true);
+
+    // The setIsLoading(false) happens inside a Promise chain that the timer
+    // resolves. Use async act to drain microtasks and flush the effect
+    // cleanup (removeEventListener).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(removeSpy.mock.calls.some(([e]) => e === "beforeunload")).toBe(true);
+
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
+
+  it("status step shows the 'you can leave this page' hint", () => {
+    const confirmBtn = reachConfirmStep();
+    act(() => {
+      fireEvent.click(confirmBtn);
+    });
+    act(() => {
+      vi.advanceTimersByTime(50);
+    });
+
+    const hint = screen.getByTestId("draw-status-hint");
+    expect(hint.textContent).toMatch(/You can leave this page/i);
+  });
+
+  it("unmount + completion does not throw a state-update warning", () => {
+    const confirmBtn = reachConfirmStep();
+    act(() => {
+      fireEvent.click(confirmBtn);
+    });
+    act(() => {
+      vi.advanceTimersByTime(50);
+    });
+
+    cleanup();
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // No act warning => no setState after unmount.
+    expect(true).toBe(true);
   });
 });

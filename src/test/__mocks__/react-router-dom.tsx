@@ -5,28 +5,32 @@
  * is unavailable or aliased away in vitest.config.ts.
  */
 
-import { createElement, Fragment } from 'react';
+import { createElement, Fragment } from "react";
 
 /*
  * Module-level "current location", set by MemoryRouter when it renders and
  * read back by useLocation/useSearchParams. Tests render synchronously and
  * read immediately after, so a shared variable is sufficient for this stub.
  */
-let currentPathname = '/';
-let currentSearch = '';
-let currentHash = '';
+let currentPathname = "/";
+// Issue #1180: record navigation calls so tests can assert `navigate` was
+// (or was not) called. The stub's real router is not available in tests,
+// so this module-level log is the observable surface.
+let navigateCalls: string[] = [];
+let currentSearch = "";
+let currentHash = "";
 
 function applyEntry(entry: string) {
-  const hashIndex = entry.indexOf('#');
+  const hashIndex = entry.indexOf("#");
   if (hashIndex >= 0) {
     currentHash = entry.slice(hashIndex);
     entry = entry.slice(0, hashIndex);
   } else {
-    currentHash = '';
+    currentHash = "";
   }
-  const qIndex = entry.indexOf('?');
+  const qIndex = entry.indexOf("?");
   currentPathname = qIndex >= 0 ? entry.slice(0, qIndex) : entry;
-  currentSearch = qIndex >= 0 ? entry.slice(qIndex) : '';
+  currentSearch = qIndex >= 0 ? entry.slice(qIndex) : "";
 }
 
 export function BrowserRouter({ children }: { children: React.ReactNode }) {
@@ -41,7 +45,7 @@ export function MemoryRouter({
   children: React.ReactNode;
   initialEntries?: string[];
 }) {
-  applyEntry(initialEntries?.[0] ?? '/');
+  applyEntry(initialEntries?.[0] ?? "/");
   return createElement(Fragment, null, children);
 }
 
@@ -54,7 +58,7 @@ export function Link({
   children: React.ReactNode;
   [key: string]: unknown;
 }) {
-  return createElement('a', { href: to, ...props }, children);
+  return createElement("a", { href: to, ...props }, children);
 }
 
 export function NavLink({
@@ -65,15 +69,18 @@ export function NavLink({
   ...props
 }: {
   to: string;
-  children: React.ReactNode | ((args: { isActive: boolean }) => React.ReactNode);
+  children:
+    React.ReactNode | ((args: { isActive: boolean }) => React.ReactNode);
   className?: string | ((args: { isActive: boolean }) => string);
   end?: boolean;
   [key: string]: unknown;
 }) {
   const isActive = false;
-  const cls = typeof className === 'function' ? className({ isActive }) : className;
-  const content = typeof children === 'function' ? children({ isActive }) : children;
-  return createElement('a', { href: to, className: cls, ...props }, content);
+  const cls =
+    typeof className === "function" ? className({ isActive }) : className;
+  const content =
+    typeof children === "function" ? children({ isActive }) : children;
+  return createElement("a", { href: to, className: cls, ...props }, content);
 }
 
 export function Routes({ children }: { children: React.ReactNode }) {
@@ -92,17 +99,17 @@ export function useSearchParams() {
   const params = new URLSearchParams(currentSearch);
   const setSearchParams = (
     next: URLSearchParams | string | Record<string, string>,
-    _opts?: { replace?: boolean }
+    _opts?: { replace?: boolean },
   ) => {
     if (next instanceof URLSearchParams) {
       const s = next.toString();
-      currentSearch = s ? `?${s}` : '';
-    } else if (typeof next === 'string') {
-      currentSearch = next ? (next.startsWith('?') ? next : `?${next}`) : '';
-    } else if (next && typeof next === 'object') {
+      currentSearch = s ? `?${s}` : "";
+    } else if (typeof next === "string") {
+      currentSearch = next ? (next.startsWith("?") ? next : `?${next}`) : "";
+    } else if (next && typeof next === "object") {
       const sp = new URLSearchParams(next);
       const s = sp.toString();
-      currentSearch = s ? `?${s}` : '';
+      currentSearch = s ? `?${s}` : "";
     }
   };
   return [params, setSearchParams] as const;
@@ -113,7 +120,10 @@ export function __getMockSearch() {
 }
 
 export function useNavigate() {
-  return () => {};
+  return (to: string) => {
+    console.log("[MOCK navigate]", to);
+    navigateCalls.push(to);
+  };
 }
 
 export function useLocation() {
@@ -138,12 +148,22 @@ export function useLocation() {
  * rerender({ pathname: '/transactions' });
  * ```
  */
-export function __setMockLocation(pathname: string, search = '') {
+export function __setMockLocation(pathname: string, search = "") {
   currentPathname = pathname;
   currentSearch = search;
+}
+
+/** Returns every path that `navigate` was called with since the last clear. */
+export function __getNavigateCalls(): string[] {
+  return navigateCalls;
+}
+
+/** Clears the recorded navigate calls. Call in beforeEach. */
+export function __clearNavigateCalls(): void {
+  // Mutate in place — closures that captured the array must see cleared state.
+  navigateCalls.length = 0;
 }
 
 export function useParams() {
   return {};
 }
-
