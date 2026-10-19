@@ -126,6 +126,17 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     localStorage.setItem(PREFS_KEY, JSON.stringify(preferences));
   }, [preferences]);
 
+  // Clear all pending toast timers on provider unmount
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      for (const timer of timers.values()) {
+        clearTimeout(timer);
+      }
+      timers.clear();
+    };
+  }, []);
+
   const genId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
   // ─── Toasts ────────────────────────────────────────────────────────────────
@@ -156,12 +167,26 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       action: opts.action,
     };
 
-    setToasts(prev => [toast, ...prev].slice(0, 5)); // max 5 stacked
-
     if (!toast.persistent) {
       const timer = setTimeout(() => dismissToast(id), toast.duration);
       timersRef.current.set(id, timer);
     }
+
+    setToasts(prev => {
+      const next = [toast, ...prev];
+      if (next.length > 5) {
+        const evicted = next.slice(5);
+        for (const t of evicted) {
+          const timer = timersRef.current.get(t.id);
+          if (timer) {
+            clearTimeout(timer);
+            timersRef.current.delete(t.id);
+          }
+        }
+        return next.slice(0, 5);
+      }
+      return next;
+    });
 
     if (opts.saveToHistory !== false) {
       const notification: Notification = {

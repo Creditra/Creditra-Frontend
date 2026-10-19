@@ -213,7 +213,7 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     if (!isPanelOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.shiftKey && e.key === 'r' && unreadCount > 0) {
+      if (e.shiftKey && e.key.toLowerCase() === 'r' && unreadCount > 0) {
         e.preventDefault();
         handleMarkAllAsRead();
       }
