@@ -35,30 +35,18 @@ import {
 } from "react";
 import { HelpCircle, Mail, Search, X } from "lucide-react";
 import { Link } from "react-router-dom";
-import faqEntriesData from "../data/faq.json";
+import { FAQ } from "../content/faq";
+import { searchFaq } from "../lib/faq-search";
 import { SupportForm } from "./SupportForm";
 import "./SupportWidget.css";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-type FaqEntry = {
-  id: string;
-  question: string;
-  answer: string;
-  tags: string[];
-};
 
 type ActiveTab = "faq" | "contact";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const SUPPORT_EMAIL = "support@creditra.com";
-const faqEntries = faqEntriesData as FaqEntry[];
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const searchableValue = (entry: FaqEntry) =>
-  [entry.question, entry.answer, ...entry.tags].join(" ").toLowerCase();
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -79,11 +67,7 @@ export function SupportWidget() {
 
   // ── Filtered FAQ list ────────────────────────────────────────────────────
   const filteredFaqs = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return faqEntries;
-    return faqEntries.filter((entry) =>
-      searchableValue(entry).includes(normalizedQuery),
-    );
+    return searchFaq(FAQ, query);
   }, [query]);
 
   // ── Keyboard + outside-click handling ───────────────────────────────────

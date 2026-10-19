@@ -34,6 +34,9 @@ import { CreditLineSummaryBlock } from "@/components/CreditLineSummaryBlock";
 import { PendingButton } from "@/components/PendingButton";
 import { formatMoney } from "@/utils/amountValidation";
 import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
+import { getRiskEducationState, RISK_EDUCATION_VERSION } from "@/state/riskEducation";
+import { useWalletIdentityKey } from "@/hooks/useWalletIdentityKey";
+import { useEffect } from "react";
 
 interface ConfirmationStepProps {
   /** The credit line the user is drawing from. */
@@ -62,6 +65,12 @@ interface ConfirmationStepProps {
   agreedToTerms?: boolean;
   /** Notified when the user toggles the terms checkbox. */
   onAgreedToTermsChange?: (agreed: boolean) => void;
+  /**
+   * Opens the default-risk education modal. When provided and the wallet has
+   * not acknowledged the current content version, a non-blocking nudge is
+   * rendered above the terms checkbox.
+   */
+  onReviewRiskEducation?: () => void;
 }
 
 /** Map a DrawPricingRiskBand to a human-readable label and visual tone. */
@@ -145,6 +154,7 @@ export function ConfirmationStep({
   isLoading = false,
   agreedToTerms: agreedToTermsProp,
   onAgreedToTermsChange,
+  onReviewRiskEducation,
 }: ConfirmationStepProps) {
   const [agreedToTermsInternal, setAgreedToTermsInternal] = useState(false);
   const agreedToTerms = agreedToTermsProp ?? agreedToTermsInternal;
@@ -154,6 +164,19 @@ export function ConfirmationStep({
       setAgreedToTermsInternal(value);
     }
   };
+
+  const walletIdentityKey = useWalletIdentityKey();
+  const [riskEducationState, setRiskEducationState] = useState<{
+    acknowledgedVersion?: number;
+    dismissedAt?: string;
+  }>({});
+  useEffect(() => {
+    setRiskEducationState(
+      walletIdentityKey ? getRiskEducationState(walletIdentityKey) : {},
+    );
+  }, [walletIdentityKey]);
+  const needsRiskEducation =
+    riskEducationState.acknowledgedVersion !== RISK_EDUCATION_VERSION;
 
   /** Controls the "How is my APR calculated?" collapsible section. */
   const [aprDisclosureOpen, setAprDisclosureOpen] = useState(false);
@@ -443,6 +466,31 @@ export function ConfirmationStep({
           </div>
         )}
       </section>
+
+      {/* ── Default-risk education nudge (non-blocking) ──────────────────── */}
+      {needsRiskEducation && onReviewRiskEducation && (
+        <div
+          role="note"
+          data-testid="risk-education-nudge"
+          className="flex items-start gap-3 rounded-lg border border-border bg-surface p-3"
+        >
+          <Info className="w-5 h-5 text-muted mt-0.5 shrink-0" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-semibold text-foreground">
+              You haven&apos;t reviewed default risk yet
+            </p>
+            <p className="text-sm text-muted mt-1">
+              <button
+                type="button"
+                onClick={onReviewRiskEducation}
+                className="underline font-semibold text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
+              >
+                Review default risk (1 min)
+              </button>
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Terms checkbox ───────────────────────────────────────────────── */}
       <label className="dc-terms-label">
