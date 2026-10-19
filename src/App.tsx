@@ -15,6 +15,7 @@ import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
 import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatchBanner";
 import { Header } from "./layouts/Header";
 import { Skeleton } from "./components/Skeleton";
+import { isEditableTarget } from "./utils/isEditableTarget";
 
 // ── Code-split route components (non-critical for first paint) ────────────────
 const Dashboard = lazy(() => import("./pages/Dashboard").then(m => ({ default: m.Dashboard })));
@@ -46,17 +47,6 @@ function RouteLoadingFallback() {
     </div>
   );
 }
-
-const isEditableTarget = (target: EventTarget | null) => {
-  if (!(target instanceof HTMLElement)) return false;
-  const tagName = target.tagName.toLowerCase();
-  return (
-    target.isContentEditable ||
-    tagName === "input" ||
-    tagName === "textarea" ||
-    tagName === "select"
-  );
-};
 
 /**
  * Application root.
