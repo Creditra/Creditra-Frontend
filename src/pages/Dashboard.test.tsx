@@ -1009,3 +1009,234 @@ describe('Dashboard credit summary real refresh (#1201)', () => {
     });
   }, 15000);
 });
+
+describe('Dashboard overdue and payment due notices (Issue #1200)', () => {
+  const baseDate = new Date(2026, 9, 19, 12, 0, 0);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(baseDate);
+    resetGlobalCreditLines();
+  });
+
+  afterEach(() => {
+    resetGlobalCreditLines();
+    vi.useRealTimers();
+  });
+
+  it('Scenario 1: Due 3 days ago renders overdue notice with danger severity and Repay link', async () => {
+    const lineOverdue: CreditLine = {
+      ...MOCK_CREDIT_LINES[0],
+      id: 'CL-OVERDUE-1',
+      name: 'Alpha Line',
+      status: 'Active',
+      nextPaymentDate: '2026-10-16', // 3 days ago
+      nextPaymentAmount: 1500,
+    };
+    setGlobalCreditLines([lineOverdue]);
+
+    render(
+      <BrowserRouter>
+        <Dashboard />
+      </BrowserRouter>
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    const overdueNotice = screen.getByRole('alert');
+    expect(overdueNotice).toBeInTheDocument();
+    expect(overdueNotice).toHaveClass('notification-item--danger');
+    expect(overdueNotice.textContent).toMatch(/payment of/i);
+    expect(overdueNotice.textContent).toMatch(/\$1,500/);
+    expect(overdueNotice.textContent).toMatch(/for Alpha Line is 3 days overdue/i);
+
+    const repayLink = screen.getByRole('link', { name: /repay now/i });
+    expect(repayLink).toBeInTheDocument();
+    expect(repayLink).toHaveAttribute('href', '/repay?line=CL-OVERDUE-1');
+  }, 15000);
+
+  it('Scenario 2: Due today at 23:59 with now at 08:00 renders due-today notice with warning severity', async () => {
+    vi.setSystemTime(new Date(2026, 9, 19, 8, 0, 0));
+    const lineDueToday: CreditLine = {
+      ...MOCK_CREDIT_LINES[0],
+      id: 'CL-TODAY-1',
+      name: 'Beta Line',
+      status: 'Active',
+      nextPaymentDate: '2026-10-19T23:59:00',
+      nextPaymentAmount: 2200,
+    };
+    setGlobalCreditLines([lineDueToday]);
+
+    render(
+      <BrowserRouter>
+        <Dashboard />
+      </BrowserRouter>
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    const notice = screen.getByText(/is due today/i).closest('.notification-item') as HTMLElement;
+    expect(notice).toBeInTheDocument();
+    expect(notice).toHaveClass('notification-item--warning');
+    expect(notice.getAttribute('role')).toBe('status');
+    expect(notice.textContent).toMatch(/payment of/i);
+    expect(notice.textContent).toMatch(/\$2,200/);
+    expect(notice.textContent).toMatch(/for Beta Line is due today/i);
+
+    const repayLink = screen.getByRole('link', { name: /repay now/i });
+    expect(repayLink).toHaveAttribute('href', '/repay?line=CL-TODAY-1');
+  }, 15000);
+
+  it('Scenario 3: Due in 5 days renders upcoming info notice', async () => {
+    const lineUpcoming: CreditLine = {
+      ...MOCK_CREDIT_LINES[0],
+      id: 'CL-UPCOMING-1',
+      name: 'Gamma Line',
+      status: 'Active',
+      nextPaymentDate: '2026-10-24', // in 5 days
+      nextPaymentAmount: 850,
+    };
+    setGlobalCreditLines([lineUpcoming]);
+
+    render(
+      <BrowserRouter>
+        <Dashboard />
+      </BrowserRouter>
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    const notice = screen.getByText(/due in/i).closest('.notification-item') as HTMLElement;
+    expect(notice).toBeInTheDocument();
+    expect(notice).toHaveClass('notification-item--info');
+    expect(notice.getAttribute('role')).toBe('status');
+    expect(notice.textContent).toMatch(/payment of/i);
+    expect(notice.textContent).toMatch(/\$850/);
+    expect(notice.textContent).toMatch(/due in 5 days for Gamma Line/i);
+  }, 15000);
+
+  it('Scenario 4: Due in 10 days produces no payment notice', async () => {
+    const lineFarFuture: CreditLine = {
+      ...MOCK_CREDIT_LINES[0],
+      id: 'CL-FUTURE-1',
+      name: 'Delta Line',
+      status: 'Active',
+      utilized: 1000,
+      limit: 100000, // low utilization so no util notice
+      nextPaymentDate: '2026-10-29', // in 10 days
+      nextPaymentAmount: 300,
+    };
+    setGlobalCreditLines([lineFarFuture]);
+
+    const { container } = render(
+      <BrowserRouter>
+        <Dashboard />
+      </BrowserRouter>
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(screen.queryByText(/payment of/i)).not.toBeInTheDocument();
+  }, 15000);
+
+  it('Scenario 5: Ordering with mixed lines places overdue first, then due today, then upcoming', async () => {
+    const lineUpcoming: CreditLine = {
+      ...MOCK_CREDIT_LINES[0],
+      id: 'CL-UPCOMING-ORDER',
+      name: 'Line Upcoming',
+      status: 'Active',
+      limit: 100000,
+      utilized: 1000,
+      nextPaymentDate: '2026-10-23', // in 4 days
+      nextPaymentAmount: 400,
+    };
+    const lineOverdue: CreditLine = {
+      ...MOCK_CREDIT_LINES[0],
+      id: 'CL-OVERDUE-ORDER',
+      name: 'Line Overdue',
+      status: 'Active',
+      limit: 100000,
+      utilized: 1000,
+      nextPaymentDate: '2026-10-17', // 2 days ago
+      nextPaymentAmount: 600,
+    };
+    const lineDueToday: CreditLine = {
+      ...MOCK_CREDIT_LINES[0],
+      id: 'CL-TODAY-ORDER',
+      name: 'Line Due Today',
+      status: 'Active',
+      limit: 100000,
+      utilized: 1000,
+      nextPaymentDate: '2026-10-19', // today
+      nextPaymentAmount: 500,
+    };
+
+    // Provide lines in reverse order to verify sorting logic
+    setGlobalCreditLines([lineUpcoming, lineOverdue, lineDueToday]);
+
+    const { container } = render(
+      <BrowserRouter>
+        <Dashboard />
+      </BrowserRouter>
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    const notificationItems = container.querySelectorAll('.notification-item');
+    const texts = Array.from(notificationItems).map((el) => el.textContent || '');
+
+    const overdueIndex = texts.findIndex((t) => t.includes('is 2 days overdue'));
+    const dueTodayIndex = texts.findIndex((t) => t.includes('is due today'));
+    const upcomingIndex = texts.findIndex((t) => t.includes('due in 4 days'));
+
+    expect(overdueIndex).toBeGreaterThanOrEqual(0);
+    expect(dueTodayIndex).toBeGreaterThanOrEqual(0);
+    expect(upcomingIndex).toBeGreaterThanOrEqual(0);
+
+    expect(overdueIndex).toBeLessThan(dueTodayIndex);
+    expect(dueTodayIndex).toBeLessThan(upcomingIndex);
+  }, 15000);
+
+  it('Scenario 6: Suspended line overdue shows overdue notice', async () => {
+    const lineSuspendedOverdue: CreditLine = {
+      ...MOCK_CREDIT_LINES[0],
+      id: 'CL-SUSPENDED-OVERDUE',
+      name: 'Suspended Line Overdue',
+      status: 'Suspended',
+      nextPaymentDate: '2026-10-15', // 4 days ago
+      nextPaymentAmount: 3500,
+    };
+    setGlobalCreditLines([lineSuspendedOverdue]);
+
+    render(
+      <BrowserRouter>
+        <Dashboard />
+      </BrowserRouter>
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    const overdueNotice = screen.getByRole('alert');
+    expect(overdueNotice).toBeInTheDocument();
+    expect(overdueNotice.textContent).toMatch(/payment of/i);
+    expect(overdueNotice.textContent).toMatch(/\$3,500/);
+    expect(overdueNotice.textContent).toMatch(/for Suspended Line Overdue is 4 days overdue/i);
+    expect(screen.getByRole('link', { name: /repay now/i })).toHaveAttribute(
+      'href',
+      '/repay?line=CL-SUSPENDED-OVERDUE'
+    );
+  }, 15000);
+});
