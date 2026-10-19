@@ -111,4 +111,56 @@ describe('useFocusTrap', () => {
 
     expect(document.activeElement).toBe(trigger);
   });
+
+  it('does not move focus when re-rendered with a new inline onEscape while active', () => {
+    const { rerender } = render(<TrapHarness isActive={true} onEscape={() => {}} />);
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    const second = document.getElementById('second') as HTMLElement;
+    second.focus();
+    expect(document.activeElement).toBe(second);
+
+    rerender(<TrapHarness isActive={true} onEscape={() => {}} />);
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(document.activeElement).toBe(second);
+  });
+
+  it('calls the latest onEscape once when Escape is pressed after several re-renders', () => {
+    const firstEscape = vi.fn();
+    const secondEscape = vi.fn();
+    const latestEscape = vi.fn();
+
+    const { rerender } = render(<TrapHarness isActive={true} onEscape={firstEscape} />);
+    rerender(<TrapHarness isActive={true} onEscape={secondEscape} />);
+    rerender(<TrapHarness isActive={true} onEscape={latestEscape} />);
+
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+      );
+    });
+
+    expect(firstEscape).not.toHaveBeenCalled();
+    expect(secondEscape).not.toHaveBeenCalled();
+    expect(latestEscape).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the initial-focus timer when unmounted within 50 ms of activation', () => {
+    const { unmount } = render(<TrapHarness isActive={true} onEscape={vi.fn()} />);
+
+    act(() => {
+      vi.advanceTimersByTime(20);
+    });
+
+    unmount();
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });
