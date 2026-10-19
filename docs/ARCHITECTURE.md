@@ -92,7 +92,96 @@ sequenceDiagram
 
 ---
 
-## 3. State management
+## 3. Runtime data validation
+
+All credit data arriving from adapters (Soroban, Horizon, backend APIs) passes through
+**strict runtime decoders** before reaching the UI. TypeScript types alone cannot prevent
+malformed payloads from crashing the application — a hostile or buggy data source can
+still send unknown statuses, negative limits, or invalid dates.
+
+### Decode policy
+
+The decoders live in `src/services/credit/decode.ts` and enforce:
+
+- **Closed unions**: `CreditLineStatus`, `TransactionType`, and `TransactionStatus` must
+  be members of their respective enums. Unknown values (e.g. `'Liquidated'`) are rejected.
+- **Non-negative amounts**: `amount`, `utilized`, `apr`, and `riskScore` must be finite
+  and ≥ 0.
+- **Positive limits**: `limit` must be > 0 for non-Closed credit lines (Closed lines may
+  have `limit: 0`).
+- **Valid ISO 8601 dates**: `openedAt`, `updatedAt`, `date`, and optional date fields are
+  parsed and validated.
+- **Non-empty IDs**: `id` fields must be non-empty strings.
+- **64-character hex txHash**: When present, `txHash` must match `/^[0-9a-fA-F]{64}$/`.
+- **Length-capped notes**: Free-text `note` fields are capped at 500 characters to
+  prevent payload bloat.
+
+### Adapter behavior
+
+Adapters in `src/services/credit/adapter.ts` apply decoders to all incoming data:
+
+| Fetch type | Success | Failure |
+| --- | --- | --- |
+| **List call** (e.g. `fetchCreditLines()`) | Returns `{ creditLines: T[], skipped: number }`. Invalid records are dropped, one `console.warn` is logged per record with issue paths, and the `skipped` count is returned. | Same as success — partial results are always returned. |
+| **Single-record call** (e.g. `fetchCreditLineById(id)`) | Returns the decoded record. | Throws `CreditDataError('invalid_response')` with a descriptive message. |
+
+### Over-limit flag
+
+When `utilized > limit` (which can occur on-chain due to interest accrual), the decoder
+returns the credit line successfully and attaches a `flags: ['over_limit']` marker. The UI
+can use this flag to render special treatment (e.g. a warning badge or alert on the
+credit-lines page).
+
+### UI notification
+
+When `skipped > 0`, the affected pages (Dashboard, Credit Lines, Transaction History)
+display a non-blocking `role="status"` notification:
+
+> ⚠️ Some records could not be displayed due to validation errors.
+
+This notification appears once per page load and does not block interaction.
+
+### Performance
+
+Decoding 1,000 credit line or transaction records must complete in under 10 ms. This
+constraint is enforced by performance tests in `src/services/credit/__tests__/decode.test.ts`.
+
+### Example usage
+
+```ts
+import { fetchCreditLines } from '@/services/credit';
+
+const { creditLines, skipped } = await fetchCreditLines();
+
+if (skipped > 0) {
+  console.warn(`${skipped} invalid credit line(s) were skipped`);
+}
+
+// creditLines is guaranteed to be valid
+creditLines.forEach(line => {
+  if (line.flags?.includes('over_limit')) {
+    // Show warning
+  }
+});
+```
+
+### Why decode?
+
+Without runtime validation:
+
+- **Crashes**: Unknown statuses cause `undefined.bg` errors when looked up in
+  `STATUS_COLOR` tables.
+- **Bad math**: `limit: 0` causes division by zero in `getUtilizationLevel()`;
+  `NaN`/`Infinity` propagate through sort comparisons.
+- **Display bugs**: Malformed dates render as `"Invalid Date"`; missing IDs break React
+  key props.
+
+The decoders prevent all of these failure modes by rejecting invalid data before it enters
+the UI layer.
+
+---
+
+## 4. State management
 
 The store is deliberately small. We do not use Redux, Zustand, Recoil, or React Query.
 
@@ -152,7 +241,7 @@ notifications while keeping transaction confirmations).
 
 ---
 
-## 4. Routing
+## 5. Routing
 
 | Path | Element | Notes |
 | --- | --- | --- |
@@ -175,7 +264,7 @@ See [`PERFORMANCE.md`](PERFORMANCE.md) for the rollout plan and per-route bundle
 
 ---
 
-## 5. Error and loading state policy
+## 6. Error and loading state policy
 
 Every screen that fetches data follows the same four-state pattern:
 
@@ -202,7 +291,7 @@ the tree falls back to a labelled error page with a "Go back" and "Reload" pair 
 
 ---
 
-## 6. Accessibility primitives
+## 7. Accessibility primitives
 
 Three hooks compose to form every modal/sheet contract.
 
@@ -221,7 +310,7 @@ do so is a review blocker.
 
 ---
 
-## 7. Design tokens
+## 8. Design tokens
 
 Tokens are co-located in two places:
 
@@ -238,7 +327,7 @@ See [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) for the full catalogue and theming mo
 
 ---
 
-## 8. Folder map (annotated)
+## 9. Folder map (annotated)
 
 ```
 src/
