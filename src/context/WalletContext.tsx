@@ -139,9 +139,10 @@ export const SESSION_WARN_BEFORE_MS = 60_000;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface BalanceInfo {
+export interface BalanceInfo {
   asset: string; // e.g., 'XLM' or asset_code
   balance: string;
+  issuer?: string;
 }
 
 /**
@@ -237,7 +238,7 @@ interface WalletContextType {
    * On failure: status transitions to `'error'`.
    */
   stayConnected: () => Promise<void>;
-  refreshBalance: () => Promise<void>;
+  refreshBalance: () => Promise<BalanceInfo[] | null>;
   /**
    * Re-derive the wallet's current `publicKey`/`network` from the extension
    * without a `connecting`/`reconnecting` UI transition. Use this after an
@@ -554,8 +555,8 @@ export const WalletProvider = ({
     setLastUpdated(null);
   }, [wallet]);
 
-  const fetchBalances = async () => {
-    if (!wallet?.publicKey) return;
+  const fetchBalances = useCallback(async (): Promise<BalanceInfo[] | null> => {
+    if (!wallet?.publicKey) return null;
     // Snapshot which identity this fetch is *for*. If the wallet changes
     // before the request resolves, the response belongs to an identity we've
     // already invalidated and must not be applied — see the module doc
@@ -571,25 +572,33 @@ export const WalletProvider = ({
 
       if (balancesIdentityRef.current !== fetchIdentity) {
         console.warn('[WalletContext] Discarding balance response for a stale wallet identity.');
-        return;
+        return null;
       }
 
-      const bal: BalanceInfo[] = data.balances.map((b: { asset_type: string; asset_code: string; balance: string }) => ({
-        asset: b.asset_type === 'native' ? 'XLM' : b.asset_code,
-        balance: b.balance,
-      }));
+      const bal: BalanceInfo[] = data.balances.map(
+        (b: {
+          asset_type: string;
+          asset_code?: string;
+          asset_issuer?: string;
+          balance: string;
+        }) => ({
+          asset: b.asset_type === 'native' ? 'XLM' : b.asset_code ?? '',
+          balance: b.balance,
+          ...(b.asset_issuer ? { issuer: b.asset_issuer } : {}),
+        }),
+      );
       setBalances(bal);
       setLastUpdated(new Date());
+      return bal;
     } catch (e) {
       console.error('Failed to fetch balances', e);
-      if (balancesIdentityRef.current !== fetchIdentity) return;
+      if (balancesIdentityRef.current !== fetchIdentity) return null;
       setBalances(null);
+      return null;
     }
-  };
+  }, [wallet]);
 
-  const refreshBalance = async () => {
-    await fetchBalances();
-  };
+  const refreshBalance = useCallback(() => fetchBalances(), [fetchBalances]);
 
   /**
    * Re-derive the connected wallet's current identity from the extension.
