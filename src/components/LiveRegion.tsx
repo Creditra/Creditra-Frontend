@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
-
 interface LiveRegionProps {
   message: string;
   politeness?: "polite" | "assertive";
+  "aria-live"?: "polite" | "assertive";
   atomic?: boolean;
   /** Optional id, useful when a page renders more than one live region. */
   id?: string;
@@ -29,27 +28,23 @@ interface LiveRegionProps {
 export function LiveRegion({
   message,
   politeness = "polite",
+  "aria-live": ariaLive,
   atomic = true,
   id,
   className,
 }: LiveRegionProps) {
-  const [announcement, setAnnouncement] = useState(message);
-
-  useEffect(() => {
-    setAnnouncement(message);
-  }, [message]);
-
   const cls = className ? `sr-only ${className}` : "sr-only";
+  const resolvedPoliteness = ariaLive || politeness;
 
   return (
     <div
       id={id}
       className={cls}
       role="status"
-      aria-live={politeness}
+      aria-live={resolvedPoliteness}
       aria-atomic={atomic ? "true" : "false"}
     >
-      {announcement}
+      {message}
     </div>
   );
 }

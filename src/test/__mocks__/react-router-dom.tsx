@@ -186,16 +186,5 @@ export function useParams() {
   return {};
 }
 
-export function matchPath(
-  pattern: { path: string; end?: boolean } | string,
-  pathname: string
-) {
-  const path = typeof pattern === 'string' ? pattern : pattern.path;
-  const end = typeof pattern === 'string' ? true : (pattern.end ?? true);
-  if (path === '*') return { path, pathname, params: {} };
-  if (end) {
-    return path === pathname ? { path, pathname, params: {} } : null;
-  }
-  return pathname.startsWith(path) ? { path, pathname, params: {} } : null;
-}
+export { matchPath } from './matchPath';
 

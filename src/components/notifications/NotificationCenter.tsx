@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNotifications } from '../../context/NotificationContext';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { useNotificationActionHandler } from '../../hooks/useNotificationActionHandler';
 import { useInertBackdrop } from '../../hooks/useInertBackdrop';
 import type { Notification, NotificationCategory } from '../../types/notification';
 import { CATEGORY_ICON, TYPE_COLOR, TYPE_ICON } from './notificationIcons';
@@ -117,6 +118,8 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     triggerRef,
     onEscape: closePanel,
   });
+
+  const { handleAction } = useNotificationActionHandler();
 
   useBodyScrollLock({ isLocked: isPanelOpen });
   useInertBackdrop({ isInert: isPanelOpen, modalId: PANEL_ID });
@@ -458,10 +461,10 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
                       <button
                         className="nc-item-action"
                         style={{ color: colors.text }}
-                        onClick={e => { e.stopPropagation(); n.action!.onClick(); }}
-                        aria-label={`${n.action.label} for notification: ${n.title}`}
+                        onClick={e => { e.stopPropagation(); handleAction(n.action as any); }}
+                        aria-label={`${n.action?.label} for notification: ${n.title}`}
                       >
-                        {n.action.label} →
+                        {n.action?.label} →
                       </button>
                     )}
                   </div>
