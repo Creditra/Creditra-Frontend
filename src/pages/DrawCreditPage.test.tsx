@@ -225,13 +225,7 @@ describe("DrawCreditPage — step navigation & token audit", () => {
   });
 
   // ── 7. Confirm step — Confirm button disabled before terms acceptance ─────
-  // Skipped: reaching the confirm step crashes on render with
-  // `ReferenceError: fee is not defined` inside ConfirmationStep.tsx —
-  // that component references `fee`/`estimatedMonthlyInterest`/`newBalance`/
-  // `remainingAvailable` without deriving them from `getDrawPricingQuote`
-  // (which it imports but never calls). Pre-existing on main, unrelated to
-  // the aria-live work in issue #587 — needs its own fix/issue.
-  it.skip("7. confirm step shows a disabled Confirm button until terms are accepted", async () => {
+  it("7. confirm step shows a disabled Confirm button until terms are accepted", async () => {
     const { user } = setup();
 
     // Select → Amount → Confirm
@@ -252,8 +246,7 @@ describe("DrawCreditPage — step navigation & token audit", () => {
   });
 
   // ── 8. Accepting terms enables Confirm ───────────────────────────────────
-  // Skipped: see note on test 7 (ConfirmationStep render crash, pre-existing).
-  it.skip("8. accepting terms enables the Confirm button", async () => {
+  it("8. accepting terms enables the Confirm button", async () => {
     const { user } = setup();
 
     await user.click(
@@ -271,8 +264,7 @@ describe("DrawCreditPage — step navigation & token audit", () => {
   });
 
   // ── 9. WCAG: loading spinner has accessible attributes ───────────────────
-  // Skipped: see note on test 7 (ConfirmationStep render crash, pre-existing).
-  it.skip("9. loading state renders a region with role='status' and aria-live='polite'", async () => {
+  it("9. loading state renders a region with role='status' and aria-live='polite'", async () => {
     const { user } = setup();
 
     await user.click(
@@ -298,8 +290,7 @@ describe("DrawCreditPage — step navigation & token audit", () => {
   });
 
   // ── 10. Successful transaction renders the result heading ─────────────────
-  // Skipped: see note on test 7 (ConfirmationStep render crash, pre-existing).
-  it.skip("10. after the API resolves, the transaction status heading is visible", async () => {
+  it("10. after the API resolves, the transaction status heading is visible", async () => {
     const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.9);
     const { user } = setup();
 
@@ -330,8 +321,7 @@ describe("DrawCreditPage — step navigation & token audit", () => {
   });
 
   // ── 11. "Make Another Draw" resets to select step ────────────────────────
-  // Skipped: see note on test 7 (ConfirmationStep render crash, pre-existing).
-  it.skip("11. 'Make Another Draw' resets the flow to the select step", async () => {
+  it("11. 'Make Another Draw' resets the flow to the select step", async () => {
     const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.9);
     const { user } = setup();
 

@@ -68,8 +68,6 @@ const drawSteps = [
   { id: "confirm", label: "Confirm" },
 ] as const;
 
-type ProgressStep = (typeof drawSteps)[number]["id"];
-
 /** Returns true if the currently focused element can receive text input. */
 function isFocusedOnInput(): boolean {
   const el = document.activeElement;
@@ -333,7 +331,7 @@ export default function DrawCreditPage() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [step, amount, confirmationAcknowledged, handleBack, handleCancel, isRiskModalOpen]);
+  }, [step, amount, confirmationAcknowledged, handleBack, handleCancel, isRiskModalOpen, handleConfirm]);
 
   return (
     <main className="dc-page" aria-label="Draw credit">

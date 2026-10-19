@@ -51,6 +51,7 @@ interface CreditLineSelectorProps {
  * Accessibility:
  * - Rows are real `<button>` elements with a descriptive `aria-label`
  *   (`Select <name> credit line, available balance <fmt>`).
+ * - Rows are keyboard-activatable via native button semantics (Enter/Space).
  * - The step heading is exposed via `id="select-credit-line-heading"`
  *   so the parent can wire it as the labelling element for the wizard
  *   container.
@@ -64,7 +65,7 @@ export function CreditLineSelector({
     <div className="dc-step">
       {/* Step header */}
       <div>
-        <h2 className="dc-step__title">Select Credit Line</h2>
+        <h2 id="select-credit-line-heading" className="dc-step__title">Select Credit Line</h2>
         <p className="dc-step__subtitle">
           Choose which line of credit to draw from
         </p>
@@ -81,13 +82,15 @@ export function CreditLineSelector({
           })
           .map((line) => {
           const isHighUtilization = line.utilization > 80;
+          const availableLabel = formatMoney(line.available);
 
           return (
             <li key={line.id}>
               <button
+                type="button"
                 onClick={() => onSelect(line)}
                 className="dc-credit-line-item"
-                aria-label={`Select ${line.name} credit line, available balance $${line.available.toLocaleString()}`}
+                aria-label={`Select ${line.name} credit line, available balance ${availableLabel}`}
               >
                 <div className="dc-credit-line-item__inner">
                   <div className="dc-credit-line-item__body">
@@ -101,7 +104,7 @@ export function CreditLineSelector({
                           Available:
                         </span>
                         <span className="dc-credit-line-item__value tabular-nums">
-                          ${line.available.toLocaleString()}
+                          {availableLabel}
                         </span>
                       </div>
 
@@ -125,6 +128,7 @@ export function CreditLineSelector({
                         <div
                           className="dc-credit-line-item__warning-badge"
                           role="status"
+                          aria-live="polite"
                         >
                           <AlertCircle
                             className="dc-banner__icon"
@@ -139,7 +143,7 @@ export function CreditLineSelector({
                     <div
                       className="dc-progress-track"
                       role="progressbar"
-                      aria-valuenow={line.utilization}
+                      aria-valuenow={Math.round(line.utilization)}
                       aria-valuemin={0}
                       aria-valuemax={100}
                       aria-label={`${line.name} utilization: ${line.utilization}%`}
