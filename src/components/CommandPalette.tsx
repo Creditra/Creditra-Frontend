@@ -38,6 +38,7 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useInertBackdrop } from '../hooks/useInertBackdrop';
 import { useDebounceValue } from '../hooks/useDebounceValue';
+import { ROUTE_MANIFEST } from '../routes/manifest';
 import './CommandPalette.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -74,18 +75,15 @@ export interface CommandItem {
  * Keep this list sorted by expected usage frequency so the most useful
  * commands appear first in the default (empty-query) view.
  */
-const DEFAULT_ITEMS: CommandItem[] = [
-  { id: 'nav-dashboard',    label: 'Dashboard',           icon: '🏠',  action: '/',                          description: 'Go to Dashboard' },
-  { id: 'nav-transactions', label: 'Transactions',         icon: '📋',  action: '/transactions',              description: 'View transaction history' },
-  { id: 'nav-credit-lines', label: 'Credit Lines',         icon: '💳',  action: '/credit-lines',              description: 'Manage your credit lines' },
-  { id: 'nav-repay',        label: 'Repay',                icon: '💰',  action: '/repay',                     description: 'Make a repayment' },
-  { id: 'nav-draw-credit',  label: 'Draw',                 icon: '⬇️',  action: '/draw-credit',               description: 'Draw from a credit line' },
-  { id: 'nav-open-credit',  label: 'Request Evaluation',   icon: '📝',  action: '/open-credit',               description: 'Apply for a new credit line' },
-  { id: 'nav-auctions',     label: 'Dutch Auctions',       icon: '🔨',  action: '/dutch-auctions',            description: 'View active auctions' },
-  { id: 'nav-linked',       label: 'Linked Accounts',      icon: '🔗',  action: '/linked-accounts',           description: 'Manage linked external accounts' },
-  { id: 'nav-help',         label: 'Help Center',          icon: '❓',  action: '/help',                      description: 'Browse help articles' },
-  { id: 'nav-notif-prefs',  label: 'Notification Settings',icon: '🔔',  action: '/notification-preferences',  description: 'Manage notification preferences' },
-];
+const DEFAULT_ITEMS: CommandItem[] = ROUTE_MANIFEST.filter(
+  (r) => Boolean(r.nav?.palette)
+).map((r) => ({
+  id: `nav-${r.path.replace(/^\//, '').replace(/\//g, '-') || 'dashboard'}`,
+  label: r.nav!.palette!.label,
+  icon: r.nav!.palette!.icon,
+  action: r.path,
+  description: r.nav!.palette!.description,
+}));
 
 /** Exported for tests and documentation of the default registry. */
 export { DEFAULT_ITEMS as COMMAND_PALETTE_DEFAULT_ITEMS };

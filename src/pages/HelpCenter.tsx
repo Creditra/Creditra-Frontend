@@ -7,6 +7,9 @@ import { Tooltip } from "../components/Tooltip";
 import { VideoThumbnail } from "../components/VideoThumbnail";
 import { useActiveSection } from "../hooks/useActiveSection";
 import { useReducedMotion } from "../context/ReducedMotionContext";
+import { useDebounceValue } from "../hooks/useDebounceValue";
+import { FAQ } from "../content/faq";
+import { searchFaq } from "../lib/faq-search";
 import "./HelpCenter.css";
 
 const NAV_ITEMS = [
@@ -28,58 +31,6 @@ const categories = [
   { id: "shortcuts", title: "Shortcuts", desc: "Learn the keyboard shortcuts available across the app." },
 ] as const;
 
-interface FaqItem {
-  id: string;
-  sectionId: string;
-  q: string;
-  a: string;
-  videoId?: string;
-  transcriptUrl?: string;
-}
-
-const faqs: FaqItem[] = [
-  {
-    id: "what-is-creditra",
-    sectionId: "getting-started",
-    q: "What is Creditra?",
-    a: "Creditra is a Stellar-based credit experience that helps you request, manage, and repay flexible credit lines from one dashboard.",
-  },
-  {
-    id: "connect-wallet",
-    sectionId: "wallet",
-    q: "How do I connect a wallet?",
-    a: "Open the wallet modal, choose a detected wallet, and approve the request in your extension. If a wallet is missing, the Help Center wallet section walks through supported options and troubleshooting.",
-    videoId: "dQw4w9WgXcQ",
-    transcriptUrl: "https://support.creditra.app/transcripts/connect-wallet",
-  },
-  {
-    id: "repayments",
-    sectionId: "credit-lines",
-    q: "How do repayments work?",
-    a: "Repayments reduce your current debt and are recorded in transaction history with their status, amount, and on-chain hash when available.",
-    videoId: "9bZkp7q19f0",
-  },
-  {
-    id: "transaction-filters",
-    sectionId: "transactions",
-    q: "Can I filter my transaction history by date?",
-    a: "Yes. Use the preset chips for Today, 7d, 30d, or 90d, or switch to Custom to choose a specific date range.",
-  },
-  {
-    id: "notifications-settings",
-    sectionId: "notifications",
-    q: "Where can I manage alerts and notifications?",
-    a: "Open the notification center to review unread items, then use preferences to choose which categories should interrupt you.",
-  },
-  {
-    id: "keyboard-shortcuts",
-    sectionId: "shortcuts",
-    q: "Which keyboard shortcuts are supported?",
-    a: "Press ? outside text fields to open the shortcut overlay. Esc closes dialogs, and other shortcuts are grouped by surface inside the overlay.",
-    transcriptUrl: "https://support.creditra.app/transcripts/keyboard-shortcuts",
-  },
-];
-
 const SECTION_IDS = [...NAV_ITEMS.map((item) => item.id)];
 
 export default function HelpCenter() {
@@ -88,23 +39,32 @@ export default function HelpCenter() {
   const hashId = rawHash.replace("#", "");
   const [openFaqId, setOpenFaqId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedQuery = useDebounceValue(searchQuery, 300);
   const activeSection = useActiveSection(SECTION_IDS);
   const navRef = useRef<HTMLElement>(null);
   const { isReducedMotionActive } = useReducedMotion();
 
   const filteredFaqs = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return faqs;
-
-    return faqs.filter((item) =>
-      [item.q, item.a, item.sectionId].some((value) =>
-        value.toLowerCase().includes(query),
-      ),
-    );
+    return searchFaq(FAQ, searchQuery);
   }, [searchQuery]);
 
+  const visibleCategories = useMemo(() => {
+    const isSearching = searchQuery.trim().length > 0;
+    if (!isSearching) return categories;
+    return categories.filter((cat) =>
+      filteredFaqs.some((faq) => faq.sectionId === cat.id),
+    );
+  }, [searchQuery, filteredFaqs]);
+
+  const announcement = useMemo(() => {
+    const trimmed = debouncedQuery.trim();
+    if (!trimmed) return "";
+    const count = filteredFaqs.length;
+    return count === 0 ? "No results" : `${count} result${count === 1 ? "" : "s"}`;
+  }, [debouncedQuery, filteredFaqs.length]);
+
   const activeFaqId = useMemo(() => {
-    if (hashId && faqs.some((f) => f.id === hashId)) {
+    if (hashId && FAQ.some((f) => f.id === hashId)) {
       return hashId;
     }
     return openFaqId;
@@ -114,7 +74,7 @@ export default function HelpCenter() {
     if (!location.hash) return;
 
     const targetId = location.hash.replace("#", "");
-    const targetFaq = faqs.find((item) => item.id === targetId);
+    const targetFaq = FAQ.find((item) => item.id === targetId);
     if (targetFaq) {
       setOpenFaqId(targetFaq.id);
     }
@@ -186,18 +146,41 @@ export default function HelpCenter() {
             loading third-party media until you ask for it.
           </p>
 
-          <div className="help-center__search">
-            <Search className="help-center__search-icon" />
+          <form
+            role="search"
+            className="help-center__search"
+            onSubmit={(event) => event.preventDefault()}
+          >
+            <label htmlFor="help-center-search" className="visually-hidden">
+              Search help
+            </label>
+            <Search className="help-center__search-icon" aria-hidden="true" />
             <input
+              id="help-center-search"
+              type="search"
               className="help-center__search-input"
               placeholder="Search for help..."
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setSearchQuery("");
+                }
+              }}
             />
+          </form>
+
+          <div
+            className="visually-hidden"
+            aria-live="polite"
+            role="status"
+            aria-atomic="true"
+          >
+            {announcement}
           </div>
 
           <div className="help-center__grid">
-            {categories.map((cat) => (
+            {visibleCategories.map((cat) => (
               <div key={cat.id} id={cat.id} className="help-center__card">
                 <h3 className="help-center__card-title">{cat.title}</h3>
                 <p className="help-center__card-desc">{cat.desc}</p>
@@ -234,7 +217,7 @@ export default function HelpCenter() {
                       href={`#${item.id}`}
                       className="help-center__faq-anchor"
                       aria-current={isCurrent ? "true" : undefined}
-                      aria-label={`Direct link to FAQ: ${item.q}`}
+                      aria-label={`Direct link to FAQ: ${item.question}`}
                       onClick={(e) => handleFaqAnchorClick(e, item.id)}
                     >
                       #
@@ -248,7 +231,7 @@ export default function HelpCenter() {
                       aria-current={isCurrent ? "true" : undefined}
                     >
                       <span>
-                        <span className="help-center__faq-q">{item.q}</span>
+                        <span className="help-center__faq-q">{item.question}</span>
                         <span className="help-center__faq-category">
                           {categories.find((category) => category.id === item.sectionId)?.title}
                         </span>
@@ -260,10 +243,10 @@ export default function HelpCenter() {
                   </div>
                   {isOpen && (
                     <div id={`faq-answer-${item.id}`} className="help-center__faq-answer">
-                      <p>{item.a}</p>
+                      <p>{item.answer}</p>
                       <CopyToClipboard
-                        value={item.a}
-                        ariaLabel={`Copy answer for ${item.q}`}
+                        value={item.answer}
+                        ariaLabel={`Copy answer for ${item.question}`}
                         copyLabel="Copy answer"
                         copiedLabel="Answer copied"
                         errorLabel="Copy failed"
@@ -271,7 +254,7 @@ export default function HelpCenter() {
                       />
                       {item.videoId && (
                         <VideoThumbnail
-                          title={item.q}
+                          title={item.question}
                           videoId={item.videoId}
                           transcriptUrl={item.transcriptUrl}
                         />

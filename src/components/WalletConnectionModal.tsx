@@ -31,6 +31,7 @@ import {
   type WalletType,
 } from '@/utils/wallet';
 import type { WalletInfo } from '@/types/wallet';
+import { WalletConnectError } from '@/types/wallet';
 import './WalletConnectionModal.css';
 
 // Wallet provider definitions
@@ -116,8 +117,10 @@ interface WalletConnectionModalProps {
    * Callback when a wallet is selected.  Implementers should respect the
    * `options.remember` flag and persist it via the safe wrappers in
    * `src/utils/storage.ts`.
+   * 
+   * Returns a Promise so the modal can distinguish success from failure.
    */
-  onConnect: (provider: WalletProvider, options?: WalletConnectOptions) => void;
+  onConnect: (provider: WalletProvider, options?: WalletConnectOptions) => Promise<void>;
   /** Ref to the trigger button that opened the modal (for return focus) */
   triggerRef?: React.RefObject<HTMLElement | null>;
   /** Currently detected/available wallets */
@@ -228,6 +231,7 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
   }, [onClose]);
 
   // Wallet selection handler — forwards the opt-in flag to the consumer.
+  // On failure, the error is displayed in an alert and the modal stays open.
   const handleWalletSelect = useCallback(
     async (provider: WalletProvider) => {
       setError(null);
@@ -235,14 +239,23 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
 
       try {
         await onConnect(provider, { remember: rememberChoice });
+        // Success: close the modal
         handleClose();
       } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : `Failed to connect to ${provider}. Please try again.`
-        );
-        setConnectingId(null);
+        // Connection failed: show error message and keep modal open
+        let errorMessage: string;
+        
+        if (err instanceof WalletConnectError) {
+          // Use the user-facing message from the classified error
+          errorMessage = err.message;
+        } else if (err instanceof Error) {
+          errorMessage = err.message;
+        } else {
+          errorMessage = `Failed to connect to ${provider}. Please try again.`;
+        }
+        
+        setError(errorMessage);
+        setConnectingId(null); // Re-enable buttons
       }
     },
     [onConnect, handleClose, rememberChoice],

@@ -1,6 +1,91 @@
-import { WalletType, WalletInfo, WalletError } from '../types/wallet';
+import { WalletType, WalletInfo, WalletConnectError, WalletErrorType } from '../types/wallet';
 import { readJson, writeJson, removeKey } from './storage';
 import { isValidAccountId } from './strkey';
+
+// Re-export types for convenience
+export { WalletConnectError, type WalletType, type WalletErrorType } from '../types/wallet';
+
+// ─── Error classification and user-facing copy ─────────────────────────────────
+
+/**
+ * User-facing error messages for each error type.
+ * Centralised so copy updates only need to touch one place.
+ */
+const ERROR_MESSAGES: Record<WalletErrorType, string> = {
+  user_rejected: "You cancelled the request in your wallet. Try again when you're ready.",
+  not_found: "Wallet extension not found. Please install it first.",
+  wrong_network: "Switch your wallet to Testnet and try again.",
+  connection_failed: "Failed to connect. Please try again."
+};
+
+/**
+ * Classifies a raw error from a wallet extension into a typed WalletConnectError.
+ * 
+ * Examines the error message and code to determine the failure category:
+ * - User rejection (code 4001, or messages containing "reject", "decline", "cancel")
+ * - Extension not found
+ * - Wrong network
+ * - Generic connection failure (catch-all)
+ * 
+ * Raw error details are logged in development but never shown to users.
+ */
+export const classifyWalletError = (raw: unknown): WalletConnectError => {
+  // Already classified errors pass through unchanged
+  if (raw instanceof WalletConnectError) {
+    return raw;
+  }
+
+  // Check if it's a plain WalletError object (legacy format)
+  if (
+    raw &&
+    typeof raw === 'object' &&
+    'type' in raw &&
+    'message' in raw
+  ) {
+    const legacyError = raw as { type: WalletErrorType; message: string };
+    return new WalletConnectError(legacyError.type, legacyError.message);
+  }
+
+  // Extract message and code from the raw error
+  const message = raw && typeof raw === 'object' && 'message' in raw
+    ? String((raw as any).message)
+    : String(raw);
+  
+  const code = raw && typeof raw === 'object' && 'code' in raw
+    ? (raw as any).code
+    : undefined;
+
+  // Log raw error in development for debugging
+  if (process.env.NODE_ENV === 'development') {
+    console.error('[classifyWalletError] Raw error:', raw);
+  }
+
+  // Check for user rejection signals
+  // EIP-1193 standard error code for user rejection
+  if (code === 4001) {
+    return new WalletConnectError('user_rejected', ERROR_MESSAGES.user_rejected);
+  }
+
+  // Check message for rejection keywords
+  const lowerMessage = message.toLowerCase();
+  const rejectionKeywords = ['reject', 'decline', 'cancel', 'denied', 'user denied'];
+  if (rejectionKeywords.some(keyword => lowerMessage.includes(keyword))) {
+    return new WalletConnectError('user_rejected', ERROR_MESSAGES.user_rejected);
+  }
+
+  // Check for extension not found
+  if (lowerMessage.includes('not found') || lowerMessage.includes('not installed')) {
+    return new WalletConnectError('not_found', ERROR_MESSAGES.not_found);
+  }
+
+  // Check for network mismatch
+  if (lowerMessage.includes('network') || lowerMessage.includes('testnet') || lowerMessage.includes('mainnet')) {
+    return new WalletConnectError('wrong_network', ERROR_MESSAGES.wrong_network);
+  }
+
+  // Default: generic connection failure
+  return new WalletConnectError('connection_failed', ERROR_MESSAGES.connection_failed);
+};
 
 // ─── Storage keys ──────────────────────────────────────────────────────────────
 //
@@ -73,7 +158,7 @@ export const isWalletInstalled = (type: WalletType): boolean => {
  *
  * Each supported wallet exposes a slightly different surface area, so this
  * function normalises them into a single `WalletInfo` shape and throws a
- * `WalletError` with a stable `type` discriminator on failure.
+ * `WalletConnectError` with a stable `type` discriminator on failure.
  */
 export const connectWallet = async (type: WalletType): Promise<WalletInfo> => {
   if (!isWalletInstalled(type)) {
@@ -83,10 +168,10 @@ export const connectWallet = async (type: WalletType): Promise<WalletInfo> => {
       xbull: 'xBull',
       rabet: 'Rabet'
     };
-    throw {
-      type: 'not_found',
-      message: `${walletNames[type]} wallet not found. Please install the extension.`
-    } as WalletError;
+    throw new WalletConnectError(
+      'not_found',
+      `${walletNames[type]} wallet not found. Please install the extension.`
+    );
   }
 
   try {
@@ -95,10 +180,10 @@ export const connectWallet = async (type: WalletType): Promise<WalletInfo> => {
       const network = await window.freighter.getNetwork();
       
       if (network !== 'PUBLIC' && network !== 'TESTNET') {
-        throw {
-          type: 'wrong_network',
-          message: 'Please switch to Stellar network in your wallet.'
-        } as WalletError;
+        throw new WalletConnectError(
+          'wrong_network',
+          'Please switch to Stellar network in your wallet.'
+        );
       }
 
       return { type, publicKey, network };
@@ -132,13 +217,14 @@ export const connectWallet = async (type: WalletType): Promise<WalletInfo> => {
     }
 
     throw new Error('Unsupported wallet type');
-  } catch (error: any) {
-    if (error.type) throw error;
+  } catch (error: unknown) {
+    // Re-throw if already classified
+    if (error instanceof WalletConnectError) {
+      throw error;
+    }
     
-    throw {
-      type: 'connection_failed',
-      message: error.message || 'Failed to connect wallet. Please try again.'
-    } as WalletError;
+    // Classify and throw
+    throw classifyWalletError(error);
   }
 };
 
