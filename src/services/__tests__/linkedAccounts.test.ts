@@ -10,7 +10,7 @@
  * - Error handling and edge cases
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   fetchLinkedAccounts,
   initiateLinkAccount,
@@ -18,6 +18,7 @@ import {
   disconnectAccount,
   reconnectAccount,
   verifyAccount,
+  createLinkedAccountsService,
   PROVIDER_INFO,
 } from '../linkedAccounts';
 import * as storage from '../../utils/storage';
@@ -102,7 +103,10 @@ describe('linkedAccounts service', () => {
       const promise = fetchLinkedAccounts();
       vi.advanceTimersByTime(800);
 
-      await expect(promise).rejects.toThrow('Failed to fetch linked accounts');
+      await expect(promise).rejects.toMatchObject({
+        code: 'provider_error',
+        message: 'Failed to fetch linked accounts',
+      });
     });
   });
 
@@ -279,13 +283,16 @@ describe('linkedAccounts service', () => {
       ]);
     });
 
-    it('should throw error if account not found', async () => {
+    it('should throw typed error if account not found', async () => {
       vi.mocked(storage.readJson).mockReturnValue([]);
 
       const promise = disconnectAccount('nonexistent-id');
       vi.advanceTimersByTime(600);
 
-      await expect(promise).rejects.toThrow('Account not found');
+      await expect(promise).rejects.toMatchObject({
+        code: 'not_found',
+        message: 'Account not found',
+      });
     });
   });
 
@@ -312,18 +319,31 @@ describe('linkedAccounts service', () => {
       expect(result.authUrl).toContain('/oauth/google');
     });
 
-    it('should throw error if account not found', async () => {
+    it('should throw typed error if account not found', async () => {
       vi.mocked(storage.readJson).mockReturnValue([]);
 
       const promise = reconnectAccount('nonexistent-id');
       vi.advanceTimersByTime(400);
 
-      await expect(promise).rejects.toThrow('Account not found');
+      await expect(promise).rejects.toMatchObject({
+        code: 'not_found',
+        message: 'Account not found',
+      });
     });
   });
 
   describe('verifyAccount', () => {
-    it('should verify and update account timestamp', async () => {
+    it('should verify and update account timestamp with failure policy off', async () => {
+      const fixedNow = 1767225600000;
+      const service = createLinkedAccountsService({
+        now: () => fixedNow,
+        shouldFailVerification: () => false,
+        storage: {
+          readJson: storage.readJson,
+          writeJson: storage.writeJson,
+        },
+      });
+
       const mockAccount: LinkedAccount = {
         id: 'google-123',
         provider: 'google',
@@ -335,20 +355,25 @@ describe('linkedAccounts service', () => {
       };
 
       vi.mocked(storage.readJson).mockReturnValue([mockAccount]);
-      // Mock Math.random to always succeed verification
-      vi.spyOn(Math, 'random').mockReturnValue(0.5);
-      const originalLastVerified = mockAccount.lastVerified;
 
-      const promise = verifyAccount('google-123');
+      const promise = service.verifyAccount('google-123');
       await vi.advanceTimersByTimeAsync(1000);
       const result = await promise;
 
       expect(result.status).toBe('connected');
-      expect(new Date(result.lastVerified).getTime()).not.toBe(new Date(mockAccount.lastVerified).getTime());
+      expect(result.lastVerified).toBe(new Date(fixedNow).toISOString());
       expect(storage.writeJson).toHaveBeenCalled();
     });
 
-    it('should handle verification failure', async () => {
+    it('should handle verification failure with policy forcing failure', async () => {
+      const service = createLinkedAccountsService({
+        shouldFailVerification: () => true,
+        storage: {
+          readJson: storage.readJson,
+          writeJson: storage.writeJson,
+        },
+      });
+
       const mockAccount: LinkedAccount = {
         id: 'google-123',
         provider: 'google',
@@ -359,10 +384,8 @@ describe('linkedAccounts service', () => {
       };
 
       vi.mocked(storage.readJson).mockReturnValue([mockAccount]);
-      // Mock Math.random to trigger verification failure
-      vi.spyOn(Math, 'random').mockReturnValue(0.05);
 
-      const promise = verifyAccount('google-123');
+      const promise = service.verifyAccount('google-123');
       vi.advanceTimersByTime(1000);
       const result = await promise;
 
@@ -371,13 +394,16 @@ describe('linkedAccounts service', () => {
       expect(result.error?.code).toBe('provider_error');
     });
 
-    it('should throw error if account not found', async () => {
+    it('should throw typed error if account not found', async () => {
       vi.mocked(storage.readJson).mockReturnValue([]);
 
       const promise = verifyAccount('nonexistent-id');
       vi.advanceTimersByTime(1000);
 
-      await expect(promise).rejects.toThrow('Account not found');
+      await expect(promise).rejects.toMatchObject({
+        code: 'not_found',
+        message: 'Account not found',
+      });
     });
   });
 

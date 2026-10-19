@@ -46,7 +46,7 @@ export interface LinkedAccount {
  */
 export interface AccountLinkError {
   /** Error code for programmatic handling */
-  code: 'auth_failed' | 'already_linked' | 'provider_error' | 'network_error' | 'token_expired';
+  code: 'auth_failed' | 'already_linked' | 'provider_error' | 'network_error' | 'token_expired' | 'not_found';
   /** Human-readable error message */
   message: string;
   /** Optional timestamp of when the error occurred */
