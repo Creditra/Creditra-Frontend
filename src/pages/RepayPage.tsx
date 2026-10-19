@@ -19,7 +19,11 @@ import {
 import { offlineMutation } from '@/utils/offline';
 import { useOnline } from '@/hooks/useOnline';
 import { suggestRepayAmount } from '@/utils/suggestRepay';
-import { computeMonthlyAccruedInterest } from '@/utils/currency';
+import {
+  computeMonthlyAccruedInterest,
+  roundToCents,
+} from '@/utils/currency';
+import { allocateRepayment } from '@/lib/repay-allocation';
 import {
   isTypedAmountMatch,
   TypedAmountConfirmField,
@@ -139,26 +143,39 @@ export default function RepayPage() {
 
   const walletBalance = 50000;
 
+  const accruedInterest = useMemo(
+    () =>
+      selectedLine
+        ? computeMonthlyAccruedInterest(selectedLine.utilized, selectedLine.apr)
+        : 0,
+    [selectedLine],
+  );
+
+  const totalOwed = useMemo(
+    () => (selectedLine ? roundToCents(selectedLine.utilized + accruedInterest) : 0),
+    [selectedLine, accruedInterest],
+  );
+
   const validation = useMemo(
     () =>
       selectedLine
-        ? getRepayAmountValidation(amountStr, selectedLine.utilized, walletBalance)
+        ? getRepayAmountValidation(amountStr, totalOwed, walletBalance)
         : null,
-    [amountStr, selectedLine, walletBalance],
+    [amountStr, selectedLine, totalOwed, walletBalance],
   );
 
   const suggestedAmount = useMemo(
     () =>
       selectedLine
         ? suggestRepayAmount(
-            selectedLine.utilized,
+            totalOwed,
             selectedLine.limit,
             walletBalance,
             selectedLine.apr,
             selectedLine.nextPaymentAmount,
           )
         : 0,
-    [selectedLine, walletBalance],
+    [selectedLine, totalOwed, walletBalance],
   );
 
   const amount = validation?.amount ?? 0;
@@ -521,14 +538,9 @@ export default function RepayPage() {
   }
 
   const oldPct = Math.round((selectedLine.utilized / selectedLine.limit) * 100);
-  const remainingDebt = validation?.remainingDebt ?? selectedLine.utilized;
+  const allocation = allocateRepayment(selectedLine, amount, accruedInterest);
+  const remainingDebt = allocation.remainingTotal;
   const newPct = Math.round((remainingDebt / selectedLine.limit) * 100);
-  const accruedInterest = computeMonthlyAccruedInterest(
-    selectedLine.utilized,
-    selectedLine.apr,
-  );
-  const interestPortion = Math.min(amount, accruedInterest);
-  const principalPortion = Math.max(0, amount - interestPortion);
 
   return (
     <div className="repay-page mx-auto max-w-4xl px-4 py-6 sm:py-8">
@@ -953,20 +965,17 @@ export default function RepayPage() {
                 <span className="text-xs text-muted">{selectedLine.apr}% APR</span>
               </div>
               <div className="mt-3 space-y-2 text-sm">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted">Principal reduction</span>
-                  <span className="font-semibold text-foreground num-tabular">
-                    {formatMoney(principalPortion)}
+                <p className="font-semibold text-foreground" data-testid="repay-allocation-summary">
+                  Interest{' '}
+                  <span className="num-tabular">
+                    {formatMoney(allocation.interestPaid)}
                   </span>
-                </div>
-                {accruedInterest > 0 && (
-                  <div className="flex items-center justify-between gap-4 border-t border-border pt-2">
-                    <span className="text-muted">Accrued interest paid</span>
-                    <span className="font-semibold text-foreground num-tabular">
-                      {formatMoney(interestPortion)}
-                    </span>
-                  </div>
-                )}
+                  {' · '}
+                  Principal{' '}
+                  <span className="num-tabular">
+                    {formatMoney(allocation.principalPaid)}
+                  </span>
+                </p>
               </div>
             </div>
 
