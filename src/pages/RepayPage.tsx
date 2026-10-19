@@ -195,32 +195,6 @@ export default function RepayPage() {
   const handleConfirm = () => {
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
-
-    draftClearedRef.current = true;
-    clearRepayDraft();
-    navigate('/repay/success', {
-      state: {
-        amount,
-        creditLineName: selectedLine.name,
-        creditLineId: selectedLine.id,
-        transactionId: `TXN-${Date.now()}`,
-        remainingDebt,
-        limit: selectedLine.limit,
-        apr: selectedLine.apr,
-        nextPaymentAmount: selectedLine.nextPaymentAmount,
-        timestamp: new Date().toISOString(),
-      },
-      onOffline: () => {
-        queueAction(() => {
-          handleConfirm();
-        }, 'repay-confirm');
-        setIsOfflineBlocked(true);
-      },
-      offlineMessage:
-        'You are offline, so this repayment cannot be processed yet. It has been queued and will be submitted when your connection is restored.',
-    });
-    setStep('success');
-    setSrAnnouncement(`Payment successful! You repaid ${formatMoney(amount)}.`);
   };
 
   const handleNewRepay = () => {
@@ -288,10 +262,6 @@ export default function RepayPage() {
     // ran in the event handler, React Router's navigate() can trigger an
     // intermediate render that re-persists the draft before the step
     // state update is applied.
-    if (step === 'success') {
-      clearRepayDraft();
-      return;
-    }
     // Don't persist if the draft was just intentionally cleared
     // (handleConfirm / handleNewRepay).
     if (draftClearedRef.current) return;
@@ -1007,75 +977,6 @@ export default function RepayPage() {
                 <span className="flex items-center justify-center gap-2">
                   Confirm Repayment <KbdHint keys={['Enter']} />
                 </span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 'success' && (
-          <div className="space-y-6 text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-success/20">
-              <CheckCircle className="h-8 w-8 text-success" aria-hidden="true" />
-            </div>
-
-            <div>
-              <h2 className="text-2xl font-bold text-foreground">
-                You repaid <span className="num-tabular">{formatMoney(amount)}</span>!
-              </h2>
-              <p className="mt-1 text-muted">
-                Your transaction was successful.
-              </p>
-            </div>
-
-            <div className="rounded-lg border border-border bg-surface p-4 text-left">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted">Remaining debt</span>
-                <span className="flex items-center gap-1">
-                  <span className="font-semibold text-foreground num-tabular">
-                    {formatMoney(remainingDebt)}
-                  </span>
-                  <CopyToClipboard
-                    value={formatMoney(remainingDebt)}
-                    ariaLabel="Copy remaining debt amount"
-                  />
-                </span>
-              </div>
-              <div className="mt-2 flex items-center justify-between text-sm">
-                <span className="text-muted">Credit line utilization</span>
-                <span className="font-semibold text-foreground">
-                  Reduced to <span className="num-tabular">{newPct}%</span>
-                </span>
-              </div>
-              {isAutoSchedule && (
-                <div className="mt-2 flex items-center justify-between text-sm">
-                  <span className="text-muted">Auto-schedule</span>
-                  <span className="font-semibold text-accent">Active</span>
-                </div>
-              )}
-            </div>
-
-            <PayoffProjection
-              currentDebt={selectedLine.utilized}
-              apr={selectedLine.apr}
-              repayAmount={amount}
-              limit={selectedLine.limit}
-              nextPaymentAmount={selectedLine.nextPaymentAmount}
-            />
-
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => navigate('/')}
-                className={`rp-dashboard-btn flex-1 rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${motionClasses(isReducedMotionActive, 'transition-all hover:brightness-110')}`}
-              >
-                Back to Dashboard
-              </button>
-              <button
-                type="button"
-                onClick={handleNewRepay}
-                className={`rp-new-repay-btn flex-1 rounded-lg border border-border bg-surface px-4 py-3 text-sm font-semibold text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${motionClasses(isReducedMotionActive, 'transition-all hover:bg-border')}`}
-              >
-                Make another repayment
               </button>
             </div>
           </div>

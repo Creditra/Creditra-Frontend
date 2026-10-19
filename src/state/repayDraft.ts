@@ -45,6 +45,8 @@ export interface RepayDraftState {
   savedAt: string;
   /** Optional transaction ID for idempotency (set at confirm time). */
   transactionId?: string;
+  /** Idempotency key generated once per review session, reused on retry. */
+  idempotencyKey?: string;
 }
 
 interface StoredRepayDraft {
