@@ -22,6 +22,8 @@ import type { LinkedAccount } from '../types/linkedAccount';
 vi.mock('../services/linkedAccounts', () => ({
   fetchLinkedAccounts: vi.fn(),
   initiateLinkAccount: vi.fn(),
+  completeOAuthLink: vi.fn(),
+  cancelLinkAccount: vi.fn(),
   disconnectAccount: vi.fn(),
   reconnectAccount: vi.fn(),
   verifyAccount: vi.fn(),
@@ -145,17 +147,16 @@ describe('LinkedAccounts', () => {
       expect(linkedAccountsService.initiateLinkAccount).toHaveBeenCalledWith({ provider: 'google' });
     });
 
-    it('should show success message after successful connection', async () => {
+    it('Scenario 1: Click Connect on Google calls redirect with authUrl and shows no linked successfully text', async () => {
       const user = userEvent.setup();
-      vi.mocked(linkedAccountsService.fetchLinkedAccounts)
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce(mockAccounts);
+      const redirectMock = vi.fn();
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue([]);
       vi.mocked(linkedAccountsService.initiateLinkAccount).mockResolvedValue({
         authUrl: '/oauth/google?state=test',
         state: 'test-state',
       });
 
-      render(<LinkedAccounts />);
+      render(<LinkedAccounts redirect={redirectMock} />);
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /connect google account/i })).toBeInTheDocument();
@@ -164,7 +165,77 @@ describe('LinkedAccounts', () => {
       await user.click(screen.getByRole('button', { name: /connect google account/i }));
 
       await waitFor(() => {
-        expect(screen.getByRole('status')).toHaveTextContent(/google account linked successfully/i);
+        expect(redirectMock).toHaveBeenCalledWith('/oauth/google?state=test');
+      });
+      expect(screen.queryByText(/google account linked successfully/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+
+    it('Scenario 2: After initiate Google card shows pending text and Cancel, and aria-label contains pending', async () => {
+      const user = userEvent.setup();
+      const redirectMock = vi.fn();
+      const pendingGoogleAccount: LinkedAccount = {
+        id: 'google-pending',
+        provider: 'google',
+        status: 'pending',
+        displayName: 'Google (Pending)',
+        externalId: '',
+        connectedAt: new Date().toISOString(),
+      };
+
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts)
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([pendingGoogleAccount]);
+      vi.mocked(linkedAccountsService.initiateLinkAccount).mockResolvedValue({
+        authUrl: '/oauth/google?state=test',
+        state: 'test-state',
+      });
+
+      render(<LinkedAccounts redirect={redirectMock} />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /connect google account/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /connect google account/i }));
+
+      await waitFor(() => {
+        const googleCard = screen.getByRole('article', { name: /google account pending/i });
+        expect(googleCard).toBeInTheDocument();
+        expect(within(googleCard).getByText(/waiting for google authorization…/i)).toBeInTheDocument();
+        expect(within(googleCard).getByRole('button', { name: /cancel pending google link/i })).toBeInTheDocument();
+        expect(within(googleCard).queryByRole('button', { name: /connect google account/i })).not.toBeInTheDocument();
+      });
+    });
+
+    it('Scenario 3: Cancel pending removes pending entry and restores Connect button', async () => {
+      const user = userEvent.setup();
+      const pendingGoogleAccount: LinkedAccount = {
+        id: 'google-pending',
+        provider: 'google',
+        status: 'pending',
+        displayName: 'Google (Pending)',
+        externalId: '',
+        connectedAt: new Date().toISOString(),
+      };
+
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts)
+        .mockResolvedValueOnce([pendingGoogleAccount])
+        .mockResolvedValueOnce([]);
+      vi.mocked(linkedAccountsService.cancelLinkAccount).mockResolvedValue();
+
+      render(<LinkedAccounts />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /cancel pending google link/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /cancel pending google link/i }));
+
+      expect(linkedAccountsService.cancelLinkAccount).toHaveBeenCalledWith('google');
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /connect google account/i })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /cancel pending google link/i })).not.toBeInTheDocument();
       });
     });
 
@@ -343,8 +414,9 @@ describe('LinkedAccounts', () => {
       });
     });
 
-    it('should call reconnectAccount when reconnect button is clicked', async () => {
+    it('Scenario 6: Reconnect on an errored account calls redirect and shows no reconnected successfully text', async () => {
       const user = userEvent.setup();
+      const redirectMock = vi.fn();
       const errorAccount: LinkedAccount = {
         id: 'github-456',
         provider: 'github',
@@ -364,7 +436,7 @@ describe('LinkedAccounts', () => {
         state: 'test-state',
       });
 
-      render(<LinkedAccounts />);
+      render(<LinkedAccounts redirect={redirectMock} />);
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /reconnect github account/i })).toBeInTheDocument();
@@ -373,6 +445,181 @@ describe('LinkedAccounts', () => {
       await user.click(screen.getByRole('button', { name: /reconnect github account/i }));
 
       expect(linkedAccountsService.reconnectAccount).toHaveBeenCalledWith('github-456');
+      await waitFor(() => {
+        expect(redirectMock).toHaveBeenCalledWith('/oauth/github?state=test');
+      });
+      expect(screen.queryByText(/reconnected successfully/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('OAuth Completion and Pending Lifecycle (Scenarios 4, 5, 7, 8, 9)', () => {
+    it('Scenario 4: completeOAuthLink resolves -> Google account linked shown and card connected', async () => {
+      const originalLocation = window.location;
+      delete (window as unknown as { location: unknown }).location;
+      window.location = {
+        ...originalLocation,
+        search: '?code=authcode123&state=google-timestamp-rand',
+        pathname: '/linked-accounts',
+      } as unknown as Location;
+
+      try {
+        const connectedGoogleAccount: LinkedAccount = {
+          id: 'google-123',
+          provider: 'google',
+          status: 'connected',
+          displayName: 'Test User',
+          externalId: 'test@gmail.com',
+          connectedAt: new Date().toISOString(),
+        };
+
+        vi.mocked(linkedAccountsService.completeOAuthLink).mockResolvedValue(connectedGoogleAccount);
+        vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue([connectedGoogleAccount]);
+
+        render(<LinkedAccounts />);
+
+        await waitFor(() => {
+          expect(screen.getByRole('status')).toHaveTextContent(/google account linked/i);
+        });
+        await waitFor(() => {
+          expect(screen.getByRole('article', { name: /google account connected/i })).toBeInTheDocument();
+        });
+      } finally {
+        window.location = originalLocation;
+      }
+    });
+
+    it('Scenario 5: completeOAuthLink rejects token_expired -> specific expiry message and card not connected', async () => {
+      const originalLocation = window.location;
+      delete (window as unknown as { location: unknown }).location;
+      window.location = {
+        ...originalLocation,
+        search: '?code=authcode123&state=google-expiredstate',
+        pathname: '/linked-accounts',
+      } as unknown as Location;
+
+      try {
+        vi.mocked(linkedAccountsService.completeOAuthLink).mockRejectedValue({
+          code: 'token_expired',
+          message: 'The authorization link has expired. Please try connecting again.',
+        });
+        vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue([]);
+
+        render(<LinkedAccounts />);
+
+        await waitFor(() => {
+          expect(screen.getByRole('alert')).toHaveTextContent(/authorization link has expired/i);
+        });
+        await waitFor(() => {
+          expect(screen.getByRole('button', { name: /connect google account/i })).toBeInTheDocument();
+        });
+        expect(screen.queryByRole('article', { name: /google account connected/i })).not.toBeInTheDocument();
+      } finally {
+        window.location = originalLocation;
+      }
+    });
+
+    it('Scenario 7: Pending older than 10 minutes on load is shown as expired, then pruned by service', async () => {
+      // In service, fetchLinkedAccounts handles pruning expired pending accounts.
+      // When fetchLinkedAccounts is called, expired pending accounts are pruned and not returned.
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue([]);
+
+      render(<LinkedAccounts />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /connect google account/i })).toBeInTheDocument();
+      });
+      expect(screen.queryByRole('article', { name: /google account pending/i })).not.toBeInTheDocument();
+    });
+
+    it('Scenario 8: Pending Google does not block connecting GitHub', async () => {
+      const user = userEvent.setup();
+      const redirectMock = vi.fn();
+      const pendingGoogleAccount: LinkedAccount = {
+        id: 'google-pending',
+        provider: 'google',
+        status: 'pending',
+        displayName: 'Google (Pending)',
+        externalId: '',
+        connectedAt: new Date().toISOString(),
+      };
+
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue([pendingGoogleAccount]);
+      vi.mocked(linkedAccountsService.initiateLinkAccount).mockResolvedValue({
+        authUrl: '/oauth/github?state=gh-test',
+        state: 'gh-test',
+      });
+
+      render(<LinkedAccounts redirect={redirectMock} />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('article', { name: /google account pending/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /connect github account/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /connect github account/i }));
+
+      await waitFor(() => {
+        expect(redirectMock).toHaveBeenCalledWith('/oauth/github?state=gh-test');
+      });
+    });
+
+    it('Scenario 9: Offline during initiate shows offline error and no pending entry written', async () => {
+      const user = userEvent.setup();
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue([]);
+      vi.mocked(linkedAccountsService.initiateLinkAccount).mockRejectedValue(
+        new Error('You are currently offline. Please check your internet connection.')
+      );
+
+      render(<LinkedAccounts />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /connect google account/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /connect google account/i }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toHaveTextContent(/offline/i);
+      });
+      expect(screen.queryByRole('article', { name: /google account pending/i })).not.toBeInTheDocument();
+    });
+
+    it('Returning with pending entry and no callback params shows Linking was not completed with Retry and Cancel', async () => {
+      const user = userEvent.setup();
+      const redirectMock = vi.fn();
+      const pendingGoogleAccount: LinkedAccount = {
+        id: 'google-pending',
+        provider: 'google',
+        status: 'pending',
+        displayName: 'Google (Pending)',
+        externalId: '',
+        connectedAt: new Date().toISOString(),
+      };
+
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts)
+        .mockResolvedValueOnce([pendingGoogleAccount])
+        .mockResolvedValueOnce([]);
+      vi.mocked(linkedAccountsService.initiateLinkAccount).mockResolvedValue({
+        authUrl: '/oauth/google?state=retry-state',
+        state: 'retry-state',
+      });
+      vi.mocked(linkedAccountsService.cancelLinkAccount).mockResolvedValue();
+
+      render(<LinkedAccounts redirect={redirectMock} />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toHaveTextContent(/linking was not completed/i);
+      });
+
+      const retryBtn = screen.getByRole('button', { name: /retry/i });
+      const cancelBtn = screen.getByRole('button', { name: /cancel linking/i });
+      expect(retryBtn).toBeInTheDocument();
+      expect(cancelBtn).toBeInTheDocument();
+
+      // Click Cancel
+      await user.click(cancelBtn);
+      expect(linkedAccountsService.cancelLinkAccount).toHaveBeenCalledWith('google');
     });
   });
 
@@ -434,20 +681,19 @@ describe('LinkedAccounts', () => {
     it('should announce success messages with aria-live', async () => {
       const user = userEvent.setup();
       vi.mocked(linkedAccountsService.fetchLinkedAccounts)
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce(mockAccounts);
-      vi.mocked(linkedAccountsService.initiateLinkAccount).mockResolvedValue({
-        authUrl: '/oauth/google?state=test',
-        state: 'test-state',
-      });
+        .mockResolvedValueOnce(mockAccounts)
+        .mockResolvedValueOnce([]);
+      vi.mocked(linkedAccountsService.disconnectAccount).mockResolvedValue();
 
       render(<LinkedAccounts />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /connect google account/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /disconnect google account/i })).toBeInTheDocument();
       });
 
-      await user.click(screen.getByRole('button', { name: /connect google account/i }));
+      await user.click(screen.getByRole('button', { name: /disconnect google account/i }));
+      const dialog = screen.getByRole('alertdialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Disconnect Google' }));
 
       await waitFor(() => {
         const statusElement = screen.getByRole('status');
@@ -505,20 +751,19 @@ describe('LinkedAccounts', () => {
     it('should allow dismissing success message', async () => {
       const user = userEvent.setup();
       vi.mocked(linkedAccountsService.fetchLinkedAccounts)
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce(mockAccounts);
-      vi.mocked(linkedAccountsService.initiateLinkAccount).mockResolvedValue({
-        authUrl: '/oauth/google?state=test',
-        state: 'test-state',
-      });
+        .mockResolvedValueOnce(mockAccounts)
+        .mockResolvedValueOnce([]);
+      vi.mocked(linkedAccountsService.disconnectAccount).mockResolvedValue();
 
       render(<LinkedAccounts />);
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /connect google account/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /disconnect google account/i })).toBeInTheDocument();
       });
 
-      await user.click(screen.getByRole('button', { name: /connect google account/i }));
+      await user.click(screen.getByRole('button', { name: /disconnect google account/i }));
+      const dialog = screen.getByRole('alertdialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Disconnect Google' }));
 
       await waitFor(() => {
         expect(screen.getByRole('status')).toBeInTheDocument();

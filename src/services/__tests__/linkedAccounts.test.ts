@@ -15,6 +15,7 @@ import {
   fetchLinkedAccounts,
   initiateLinkAccount,
   completeOAuthLink,
+  cancelLinkAccount,
   disconnectAccount,
   reconnectAccount,
   verifyAccount,
@@ -324,6 +325,7 @@ describe('linkedAccounts service', () => {
 
   describe('verifyAccount', () => {
     it('should verify and update account timestamp', async () => {
+      vi.setSystemTime(new Date('2026-06-01T00:00:00Z'));
       const mockAccount: LinkedAccount = {
         id: 'google-123',
         provider: 'google',
@@ -331,20 +333,19 @@ describe('linkedAccounts service', () => {
         displayName: 'Google User',
         externalId: 'user@gmail.com',
         connectedAt: '2026-01-01T00:00:00Z',
-        lastVerified: '2026-06-01T00:00:00Z',
+        lastVerified: '2026-05-01T00:00:00Z',
       };
 
       vi.mocked(storage.readJson).mockReturnValue([mockAccount]);
       // Mock Math.random to always succeed verification
       vi.spyOn(Math, 'random').mockReturnValue(0.5);
-      const originalLastVerified = mockAccount.lastVerified;
 
       const promise = verifyAccount('google-123');
       await vi.advanceTimersByTimeAsync(1000);
       const result = await promise;
 
       expect(result.status).toBe('connected');
-      expect(new Date(result.lastVerified).getTime()).not.toBe(new Date(mockAccount.lastVerified).getTime());
+      expect(result.lastVerified).toBe('2026-06-01T00:00:01.000Z');
       expect(storage.writeJson).toHaveBeenCalled();
     });
 
@@ -378,6 +379,83 @@ describe('linkedAccounts service', () => {
       vi.advanceTimersByTime(1000);
 
       await expect(promise).rejects.toThrow('Account not found');
+    });
+  });
+
+  describe('Pending state and cancellation', () => {
+    it('initiateLinkAccount should write pending account entry and OAuth state', async () => {
+      vi.mocked(storage.readJson).mockReturnValue([]);
+
+      const promise = initiateLinkAccount({ provider: 'google' });
+      vi.advanceTimersByTime(400);
+      const res = await promise;
+
+      expect(res.authUrl).toContain('/oauth/google');
+      expect(storage.writeJson).toHaveBeenCalledWith(
+        'creditra:oauth-state',
+        expect.objectContaining({ provider: 'google' })
+      );
+      expect(storage.writeJson).toHaveBeenCalledWith(
+        'creditra:linked-accounts',
+        expect.arrayContaining([
+          expect.objectContaining({
+            provider: 'google',
+            status: 'pending',
+          })
+        ])
+      );
+    });
+
+    it('fetchLinkedAccounts should prune pending accounts older than 10 minutes', async () => {
+      const now = Date.now();
+      const expiredPendingAccount: LinkedAccount = {
+        id: 'google-pending-1',
+        provider: 'google',
+        status: 'pending',
+        displayName: 'Google (Pending)',
+        externalId: '',
+        connectedAt: new Date(now - 11 * 60 * 1000).toISOString(),
+      };
+      const activePendingAccount: LinkedAccount = {
+        id: 'github-pending-2',
+        provider: 'github',
+        status: 'pending',
+        displayName: 'GitHub (Pending)',
+        externalId: '',
+        connectedAt: new Date(now - 2 * 60 * 1000).toISOString(),
+      };
+
+      vi.mocked(storage.readJson).mockReturnValue([expiredPendingAccount, activePendingAccount]);
+
+      const promise = fetchLinkedAccounts();
+      vi.advanceTimersByTime(800);
+      const res = await promise;
+
+      expect(res).toHaveLength(1);
+      expect(res[0].provider).toBe('github');
+      expect(storage.writeJson).toHaveBeenCalledWith('creditra:linked-accounts', [activePendingAccount]);
+    });
+
+    it('cancelLinkAccount should remove pending account and clear matching oauth-state', async () => {
+      const pendingAccount: LinkedAccount = {
+        id: 'google-pending-1',
+        provider: 'google',
+        status: 'pending',
+        displayName: 'Google (Pending)',
+        externalId: '',
+        connectedAt: new Date().toISOString(),
+      };
+
+      vi.mocked(storage.readJson)
+        .mockReturnValueOnce([pendingAccount])
+        .mockReturnValueOnce({ state: 'google-state', provider: 'google', timestamp: Date.now() });
+
+      const promise = cancelLinkAccount('google');
+      vi.advanceTimersByTime(200);
+      await promise;
+
+      expect(storage.writeJson).toHaveBeenCalledWith('creditra:linked-accounts', []);
+      expect(storage.writeJson).toHaveBeenCalledWith('creditra:oauth-state', null);
     });
   });
 

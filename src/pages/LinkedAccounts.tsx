@@ -19,15 +19,15 @@ import { Link as LinkIcon, Unlink, RefreshCw, AlertCircle, CheckCircle } from 'l
 import {
   fetchLinkedAccounts,
   initiateLinkAccount,
+  completeOAuthLink,
+  cancelLinkAccount,
   disconnectAccount,
   reconnectAccount,
-  verifyAccount,
   PROVIDER_INFO,
 } from '../services/linkedAccounts';
 import type { LinkedAccount, AccountProvider, AccountLinkError } from '../types/linkedAccount';
 import { Skeleton } from '../components/Skeleton';
 import { PendingButton } from '../components/PendingButton';
-import { LiveRegion } from '../components/LiveRegion';
 import { Tooltip } from '../components/Tooltip';
 import { useConfirm } from '../components/ConfirmDialog';
 import { accountStripeStyle, colorFromId } from '../utils/colorFromId';
@@ -42,6 +42,7 @@ interface ProviderCardProps {
   onConnect: (provider: AccountProvider) => void;
   onDisconnect: (accountId: string) => void;
   onReconnect: (accountId: string) => void;
+  onCancelPending: (provider: AccountProvider) => void;
   isLoading: boolean;
   loadingAccountId: string | null;
 }
@@ -52,22 +53,32 @@ function ProviderCard({
   onConnect,
   onDisconnect,
   onReconnect,
+  onCancelPending,
   isLoading,
   loadingAccountId,
 }: ProviderCardProps) {
   const info = PROVIDER_INFO[provider];
   const isConnected = account?.status === 'connected';
   const hasError = account?.status === 'error';
+  const isPendingAccount = account?.status === 'pending';
   const isPending = loadingAccountId === account?.id;
   // Stable per-account identity stripe (falls back to provider key when unlinked).
   const stripeId = account?.id ?? `provider:${provider}`;
   const stripeColor = colorFromId(stripeId);
 
+  const cardStatus = isConnected
+    ? 'connected'
+    : isPendingAccount
+      ? 'pending'
+      : hasError
+        ? 'error'
+        : 'not connected';
+
   return (
     <div
-      className={`provider-card ${isConnected ? 'provider-card--connected' : ''} ${hasError ? 'provider-card--error' : ''}`}
+      className={`provider-card ${isConnected ? 'provider-card--connected' : ''} ${isPendingAccount ? 'provider-card--pending' : ''} ${hasError ? 'provider-card--error' : ''}`}
       role="article"
-      aria-label={`${info.name} account ${isConnected ? 'connected' : 'not connected'}`}
+      aria-label={`${info.name} account ${cardStatus}`}
       style={{ position: 'relative', overflow: 'hidden' }}
     >
       {/* Decorative identity stripe — meaning carried by the provider name below */}
@@ -94,6 +105,13 @@ function ProviderCard({
               </span>
             </p>
           )}
+          {isPendingAccount && (
+            <p className="provider-card__details">
+              <span className="provider-card__status">
+                Waiting for {info.name} authorization…
+              </span>
+            </p>
+          )}
           {hasError && account?.error && (
             <p className="provider-card__error" role="alert">
               <AlertCircle className="icon-sm" aria-hidden="true" />
@@ -109,12 +127,25 @@ function ProviderCard({
             onClick={() => onConnect(provider)}
             disabled={isLoading}
             pending={false}
+            pendingLabel="Connecting…"
             className="btn-secondary btn-sm"
             aria-label={`Connect ${info.name} account`}
           >
             <LinkIcon className="icon-sm" aria-hidden="true" />
             Connect
           </PendingButton>
+        )}
+
+        {isPendingAccount && (
+          <button
+            onClick={() => onCancelPending(provider)}
+            disabled={isLoading}
+            className="btn-danger btn-sm"
+            aria-label={`Cancel pending ${info.name} link`}
+          >
+            <Unlink className="icon-sm" aria-hidden="true" />
+            Cancel
+          </button>
         )}
 
         {isConnected && account && (
@@ -134,6 +165,7 @@ function ProviderCard({
             onClick={() => onReconnect(account.id)}
             disabled={isLoading}
             pending={isPending}
+            pendingLabel="Reconnecting…"
             className="btn-secondary btn-sm"
             aria-label={`Reconnect ${info.name} account`}
           >
@@ -159,7 +191,11 @@ function ProviderCard({
  * Sticky bottom action bar that appears when the header scrolls out of view.
  * Provides quick access to primary actions: connect new account, disconnect all.
  */
-export function LinkedAccounts() {
+export interface LinkedAccountsProps {
+  redirect?: (url: string) => void;
+}
+
+export function LinkedAccounts({ redirect = (url: string) => window.location.assign(url) }: LinkedAccountsProps = {}) {
   const [accounts, setAccounts] = useState<LinkedAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -167,14 +203,68 @@ export function LinkedAccounts() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
+  const [incompletePendingProvider, setIncompletePendingProvider] = useState<AccountProvider | null>(null);
   
   const messageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const { confirm, dialog: confirmDialog } = useConfirm();
 
-  // Fetch linked accounts on mount
+  // Fetch linked accounts and process OAuth callback params on mount
   useEffect(() => {
-    loadAccounts();
+    async function init() {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Check for OAuth callback query parameters: code and state
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get('code');
+        const state = params.get('state');
+
+        if (code && state) {
+          // Identify provider from state (state format: "<provider>-<timestamp>-<rand>")
+          const provider = state.split('-')[0] as AccountProvider;
+          try {
+            await completeOAuthLink({ provider, code, state });
+            showSuccessMessage(`${PROVIDER_INFO[provider]?.name || 'Account'} account linked`);
+            // Clean URL query params without reloading
+            if (window.history && window.history.replaceState) {
+              const cleanUrl = window.location.pathname;
+              window.history.replaceState({}, document.title, cleanUrl);
+            }
+          } catch (err) {
+            const linkError = err as AccountLinkError;
+            if (linkError.code === 'token_expired') {
+              setError('The authorization link has expired. Please try connecting again.');
+            } else if (linkError.code === 'auth_failed') {
+              setError('Authorization failed. Please try connecting again.');
+            } else if (linkError.code === 'already_linked') {
+              setError('This account is already linked.');
+            } else {
+              setError(linkError.message || 'Failed to complete account connection.');
+            }
+          }
+        }
+
+        const data = await fetchLinkedAccounts();
+        setAccounts(data);
+
+        // If returned without callback params and there is a pending account, show "Linking was not completed"
+        if (!code && !state) {
+          const pending = data.find(acc => acc.status === 'pending');
+          if (pending) {
+            setIncompletePendingProvider(pending.provider);
+          }
+        }
+      } catch (err) {
+        setError('Failed to load linked accounts. Please try again.');
+        console.error('Load accounts error:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    init();
   }, []);
 
   // Clean up message timeout on unmount
@@ -230,14 +320,30 @@ export function LinkedAccounts() {
       
       const response = await initiateLinkAccount({ provider });
       
-      // In production, redirect to OAuth URL
-      // For now, simulate successful connection
-      showSuccessMessage(`${PROVIDER_INFO[provider].name} account linked successfully`);
+      // Update accounts list to reflect newly created pending entry
       await loadAccounts();
+
+      // Hand off to provider authorization URL without announcing success
+      redirect(response.authUrl);
     } catch (err) {
       const error = err as AccountLinkError;
       setError(error.message || `Failed to connect ${PROVIDER_INFO[provider].name} account`);
       console.error('Connect error:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancelPending = async (provider: AccountProvider) => {
+    try {
+      setActionLoading(true);
+      setError(null);
+      await cancelLinkAccount(provider);
+      setIncompletePendingProvider(null);
+      await loadAccounts();
+    } catch (err) {
+      setError('Failed to cancel pending link. Please try again.');
+      console.error('Cancel pending error:', err);
     } finally {
       setActionLoading(false);
     }
@@ -284,10 +390,11 @@ export function LinkedAccounts() {
       
       const response = await reconnectAccount(accountId);
       
-      // In production, redirect to OAuth URL
-      // For now, simulate successful reconnection
-      showSuccessMessage(`${PROVIDER_INFO[account.provider].name} account reconnected successfully`);
+      // Update accounts list to reflect pending state
       await loadAccounts();
+
+      // Hand off to provider authorization URL without announcing success
+      redirect(response.authUrl);
     } catch (err) {
       setError(`Failed to reconnect account. Please try again.`);
       console.error('Reconnect error:', err);
@@ -364,6 +471,39 @@ export function LinkedAccounts() {
         </div>
       )}
 
+      {incompletePendingProvider && (
+        <div className="banner-alert banner-alert--danger" role="alert">
+          <AlertCircle className="icon" aria-hidden="true" />
+          <div className="banner-alert__content">
+            <p>Linking was not completed</p>
+            <div className="banner-alert__actions">
+              <button
+                onClick={() => handleConnect(incompletePendingProvider)}
+                className="btn-secondary btn-sm"
+              >
+                Retry
+              </button>
+              <button
+                onClick={() => handleCancelPending(incompletePendingProvider)}
+                className="btn-danger btn-sm"
+                aria-label="Cancel linking"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={() => setIncompletePendingProvider(null)}
+            className="banner-alert__close"
+            aria-label="Dismiss error"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {successMessage && (
         <div className="banner-alert banner-alert--success" role="status" aria-live="polite">
           <CheckCircle className="icon" aria-hidden="true" />
@@ -426,6 +566,7 @@ export function LinkedAccounts() {
                     onConnect={handleConnect}
                     onDisconnect={handleDisconnect}
                     onReconnect={handleReconnect}
+                    onCancelPending={handleCancelPending}
                     isLoading={actionLoading}
                     loadingAccountId={loadingAccountId}
                   />
@@ -481,6 +622,7 @@ export function LinkedAccounts() {
                 onClick={() => handleConnect('google')}
                 disabled={actionLoading}
                 pending={false}
+                pendingLabel="Connecting…"
                 className="btn-secondary btn-sm"
                 aria-label="Connect new account from toolbar"
               >
