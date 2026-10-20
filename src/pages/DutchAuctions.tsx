@@ -15,9 +15,7 @@ export const DutchAuctions: React.FC = () => {
     return true;
   });
 
-  const handlePurchase = (auctionId: string, price: number) => {
-    alert(`Purchased auction ${auctionId} for ${price} USD!`);
-  };
+
 
   return (
     <div style={{ padding: '1rem' }}>
@@ -77,7 +75,6 @@ export const DutchAuctions: React.FC = () => {
             <DutchAuctionCard
               key={auction.id}
               auction={auction}
-              onPurchase={handlePurchase}
             />
           ))
         )}

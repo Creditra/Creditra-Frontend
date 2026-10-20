@@ -16,14 +16,16 @@ import { CreditLineRowMenu } from "../components/CreditLineRowMenu";
 import { KbdHint } from "../components/KbdHint";
 import { DashboardTour } from "../components/DashboardTour";
 import { useWallet } from "../context/WalletContext";
-import { Sparkline } from "../components/Sparkline";
-import { RiskBandsPanel } from "../components/RiskBandsPanel";
-import { WhatsChangedPanel } from "../components/WhatsChangedPanel";
 import { RiskExplainerOverlay } from "../components/RiskExplainerOverlay";
 import { ContinuePrompt } from "../components/ContinuePrompt";
 import { MOCK_ATTESTATIONS } from "../data/mockData";
+<<<<<<< HEAD
 import type { Transaction, CreditLine } from "../types/creditLine";
 import { fetchCreditLines, type CreditLinesResult } from "../services/credit";
+=======
+import { useCreditLines, useCreditTransactions } from "@/hooks/useCreditLines";
+import type { Transaction } from "../types/creditLine";
+>>>>>>> c08c94e32fc2b6882697da9fee8b9a8034121c51
 import {
   COLOR,
   UTIL_COLOR,
@@ -98,12 +100,25 @@ export function Dashboard() {
 
   const { wallet, status: walletStatus } = useWallet();
   const navigate = useNavigate();
+<<<<<<< HEAD
   
   const [creditLines, setCreditLines] = useState<CreditLine[]>([]);
   const [skippedRecords, setSkippedRecords] = useState(0);
   const [isLoadingData, setIsLoadingData] = useState(true);
+=======
+  const {
+    lines: creditLines,
+    lastUpdatedAt: creditSyncedAt,
+    refetch: refetchCreditLines,
+  } = useCreditLines();
 
-  const [repayCount, setRepayCount] = useState(0);
+  const {
+    transactions: _recentTx,
+    lastUpdatedAt: activitySyncedAt,
+    refetch: refetchTransactions,
+  } = useCreditTransactions();
+>>>>>>> c08c94e32fc2b6882697da9fee8b9a8034121c51
+
   const [status, setStatus] = useState<
     "idle" | "loading" | "success" | "error"
   >("idle");
@@ -142,22 +157,25 @@ export function Dashboard() {
     };
   }, []);
 
-  // ─── Sync timestamps ─────────────────────────────────────────────────────
-  const [riskSyncedAt, setRiskSyncedAt] = useState<Date>(() => new Date());
-  const [creditSyncedAt, setCreditSyncedAt] = useState<Date>(() => new Date());
-  const [activitySyncedAt, setActivitySyncedAt] = useState<Date>(
-    () => new Date(),
-  );
-
   const handleCreditRefresh = useCallback(async () => {
-    await new Promise<void>((r) => setTimeout(r, 600));
-    setCreditSyncedAt(new Date());
-  }, []);
+    try {
+      await refetchCreditLines();
+      setAnnouncement("Credit summary refreshed successfully.");
+    } catch (err) {
+      setAnnouncement("Failed to refresh credit summary.");
+      throw err;
+    }
+  }, [refetchCreditLines]);
 
   const handleActivityRefresh = useCallback(async () => {
-    await new Promise<void>((r) => setTimeout(r, 600));
-    setActivitySyncedAt(new Date());
-  }, []);
+    try {
+      await refetchTransactions();
+      setAnnouncement("Recent activity refreshed successfully.");
+    } catch (err) {
+      setAnnouncement("Failed to refresh activity.");
+      throw err;
+    }
+  }, [refetchTransactions]);
   // ─── Credit line row menu handlers ──────────────────────────────────────
   const handleRowRepay = useCallback(
     (lineId: string) => navigate(`/repay?line=${lineId}`),
@@ -209,17 +227,32 @@ export function Dashboard() {
   useEffect(() => {
     let isMounted = true;
 
-    const loadDashboard = async () => {
+    const loadDashboard = () => {
       setStatus("loading");
       setAnnouncement("Loading dashboard data...");
 
       try {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-
-        if (isMounted) {
-          setStatus("success");
-          setAnnouncement("Dashboard loaded successfully.");
+        if (typeof fetch === "function") {
+          const res = fetch("/api/health");
+          if (res && typeof (res as Promise<unknown>).catch === "function") {
+            (res as Promise<unknown>).catch(() => {
+              if (isMounted) {
+                setStatus("error");
+                setAnnouncement("Failed to load dashboard. Please try again.");
+              }
+            });
+          }
         }
+        setTimeout(() => {
+          if (isMounted) {
+            setStatus((prev) => (prev === "error" ? "error" : "success"));
+            setAnnouncement((prev) =>
+              prev === "Failed to load dashboard. Please try again."
+                ? prev
+                : "Dashboard loaded successfully.",
+            );
+          }
+        }, 500);
       } catch (err) {
         if (isMounted) {
           setStatus("error");
@@ -240,12 +273,12 @@ export function Dashboard() {
       creditLines.filter(
         (cl) => cl.status === "Active" || cl.status === "Suspended",
       ),
-    [creditLines, repayCount],
+    [creditLines],
   );
 
   const activeLinesOnly = useMemo(
     () => creditLines.filter((cl) => cl.status === "Active"),
-    [creditLines, repayCount],
+    [creditLines],
   );
 
   const totalLimit = activeLinesOnly.reduce((s, cl) => s + cl.limit, 0);
@@ -272,7 +305,7 @@ export function Dashboard() {
     });
     all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     return all.slice(0, 5);
-  }, [creditLines, repayCount]);
+  }, [creditLines]);
 
   const notifications = useMemo(() => {
     const notes: {
@@ -348,7 +381,7 @@ export function Dashboard() {
       }
     });
     return notes;
-  }, [creditLines, repayCount]);
+  }, [creditLines]);
 
   const hasLines = creditLines.length > 0;
   const hasUtilized = totalUtilized > 0;
@@ -363,7 +396,7 @@ export function Dashboard() {
       <>
         <LiveRegion
           message={announcement}
-          aria-live={status === "error" ? "assertive" : "polite"}
+          aria-live="polite"
         />
         <div className="dashboard-header">
           <div>
@@ -1123,7 +1156,7 @@ export function Dashboard() {
                         </div>
                         <div className="cl-preview-bar">
                           <div
-                            className="cl-preview-bar-fill"
+                            className={`cl-preview-bar-fill util-fill--${level}`}
                             style={{
                               width: `${pct}%`,
                               background: UTIL_COLOR[level],

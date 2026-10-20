@@ -39,7 +39,7 @@ import { NextAccrualChip } from "../components/NextAccrualChip";
 import { LiveRegion } from "../components/LiveRegion";
 import { LastActivityStamp } from "../components/LastActivityStamp";
 import { RepaymentPlanChart } from "../components/RepaymentPlanChart";
-import { AgingTag } from "../components/AgingTag";
+import { CreditLineAging } from "../components/CreditLineAging";
 import {
   RepaymentSchedule,
   buildRepaymentScheduleFromLines,
@@ -118,21 +118,7 @@ function CreditLineCard({
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge status={line.status} />
-          {(() => {
-            if (line.status === "Defaulted" || line.status === "Suspended") {
-              const overdueEntry = line.statusHistory.find(
-                (h) => h.status === "Suspended" || h.status === "Defaulted",
-              );
-              if (overdueEntry) {
-                const diffTime = Math.abs(
-                  new Date().getTime() - new Date(overdueEntry.date).getTime(),
-                );
-                const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                return <AgingTag daysPastDue={days} />;
-              }
-            }
-            return null;
-          })()}
+          <CreditLineAging line={line} />
           <CreditLineRowMenu
             lineId={line.id}
             lineName={line.name}

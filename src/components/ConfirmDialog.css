@@ -1,0 +1,189 @@
+/**
+ * ConfirmDialog.css
+ *
+ * Styles for the accessible confirmation dialog.
+ *
+ * Design tokens (src/index.css):
+ * - Colors: var(--bg), var(--surface), var(--border), var(--text), var(--muted), var(--accent), var(--error), var(--danger)
+ * - Spacing: var(--space-sm) through var(--space-xl)
+ * - Radius: var(--radius-md), var(--radius-lg)
+ *
+ * Accessibility:
+ * - Works at 320px viewport width without overflow
+ * - 44px minimum touch targets (WCAG 2.5.5)
+ * - Reduced motion support via prefers-reduced-motion and [data-motion="reduced"]
+ * - High contrast mode support
+ */
+
+.confirm-dialog-portal {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4, 1rem);
+}
+
+.confirm-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 10, 14, 0.75);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: confirmDialogFadeIn 150ms ease-out;
+}
+
+.confirm-dialog {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  min-width: 0;
+  background: var(--surface, #161b22);
+  border: 1px solid var(--border, #30363d);
+  border-radius: var(--radius-lg, 0.75rem);
+  box-shadow: var(--shadow-lg, 0 16px 40px rgba(0, 0, 0, 0.45));
+  padding: var(--space-6, 1.5rem);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 1rem);
+  animation: confirmDialogEnter 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
+}
+
+.confirm-dialog__title {
+  margin: 0;
+  font-size: var(--text-xl, 1.25rem);
+  font-weight: var(--font-semibold, 600);
+  color: var(--text, #e6edf3);
+  line-height: var(--leading-tight, 1.25);
+}
+
+.confirm-dialog__body {
+  margin: 0;
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--muted, #8b949e);
+  line-height: var(--leading-normal, 1.5);
+}
+
+/* Button order rule (docs/BUTTON_ORDER.md):
+   Cancel (leftmost) -> Confirm / Destructive (rightmost)
+   Reversed on mobile (< 480px) so primary stacks on top. */
+.confirm-dialog__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3, 0.75rem);
+  margin-top: var(--space-2, 0.5rem);
+}
+
+.confirm-dialog__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.625rem 1.25rem;
+  border-radius: var(--radius-md, 0.5rem);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-semibold, 600);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+  border: 1px solid transparent;
+}
+
+.confirm-dialog__btn:focus-visible {
+  outline: 2px solid var(--accent, #58a6ff);
+  outline-offset: 2px;
+}
+
+.confirm-dialog__btn--cancel {
+  background: transparent;
+  border-color: var(--border, #30363d);
+  color: var(--text, #e6edf3);
+}
+
+.confirm-dialog__btn--cancel:hover {
+  background: var(--bg, #0d1117);
+  border-color: var(--muted, #8b949e);
+}
+
+.confirm-dialog__btn--danger {
+  background: var(--error, #f85149);
+  border-color: var(--error, #f85149);
+  color: var(--bg, #0d1117);
+}
+
+.confirm-dialog__btn--danger:hover {
+  opacity: 0.9;
+}
+
+.confirm-dialog__btn--danger:focus-visible {
+  outline: 2px solid var(--error, #f85149);
+  outline-offset: 2px;
+}
+
+.confirm-dialog__btn--primary {
+  background: var(--accent, #58a6ff);
+  border-color: var(--accent, #58a6ff);
+  color: var(--bg, #0d1117);
+}
+
+.confirm-dialog__btn--primary:hover {
+  opacity: 0.9;
+}
+
+/* Mobile & 320px viewport support */
+@media (max-width: 480px) {
+  .confirm-dialog-portal {
+    padding: var(--space-3, 0.75rem);
+  }
+
+  .confirm-dialog {
+    padding: var(--space-4, 1rem);
+  }
+
+  .confirm-dialog__footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .confirm-dialog__btn {
+    width: 100%;
+  }
+}
+
+/* Animations */
+@keyframes confirmDialogFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes confirmDialogEnter {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confirm-dialog-backdrop,
+  .confirm-dialog {
+    animation: none;
+  }
+
+  .confirm-dialog__btn {
+    transition: none;
+  }
+}
+
+[data-motion="reduced"] .confirm-dialog-backdrop,
+[data-motion="reduced"] .confirm-dialog {
+  animation: none;
+}
+
+@media (prefers-contrast: high) {
+  .confirm-dialog,
+  .confirm-dialog__btn {
+    border-width: 2px;
+  }
+}
