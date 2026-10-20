@@ -19,6 +19,9 @@ import {
 } from '../constants/storageKeys';
 
 
+/** Current version of default-risk education content. */
+export const RISK_EDUCATION_VERSION = 1;
+
 /** How long a banner dismissal snoozes the banner. */
 export const RISK_EDUCATION_DISMISS_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
 

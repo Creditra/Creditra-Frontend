@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import type { DutchAuction } from '../types/dutchAuction';
 import { COLOR, fmt } from '../utils/tokens';
@@ -8,103 +7,129 @@ import { canPurchase } from '../lib/dutch-auction-purchase';
 import { purchaseAuction } from '../services/dutchAuctions';
 import { EXPECTED_NETWORK } from '../utils/wallet';
 import { LiveRegion } from './LiveRegion';
+import { validateSchedule, priceAt, fromStroops } from '../lib/dutch-auction-pricing';
 
-interface DutchAuctionCardProps {
+export interface DutchAuctionCardProps {
   auction: DutchAuction;
+  onPurchase?: (auctionId: string, priceStroops: bigint) => void | Promise<void>;
 }
-
-const calculateCurrentPrice = (auction: DutchAuction): number => {
-  const now = Date.now();
-  const start = new Date(auction.startTime).getTime();
-  const end = new Date(auction.endTime).getTime();
-  
-  if (now < start) return auction.startPrice;
-  if (now > end) return auction.floorPrice;
-  
-  const elapsed = now - start;
-  const total = end - start;
-  const progress = elapsed / total;
-  
-  return auction.startPrice - progress * (auction.startPrice - auction.floorPrice);
-};
 
 const formatTimeLeft = (endTime: string): string => {
   const now = Date.now();
   const end = new Date(endTime).getTime();
+  if (Number.isNaN(end)) return 'Unavailable';
   const diff = end - now;
-  
+
   if (diff <= 0) return 'Ended';
-  
+
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
-  
+
   const h = hours;
   const m = minutes % 60;
   const s = seconds % 60;
-  
+
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
-export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) => {
-  const [currentPrice, setCurrentPrice] = useState(calculateCurrentPrice(auction));
-  const [timeLeft, setTimeLeft] = useState(formatTimeLeft(auction.endTime));
-  const { wallet, status } = useWallet();
+export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onPurchase }) => {
+  const validation = validateSchedule(auction);
+
+  const [currentPriceStroops, setCurrentPriceStroops] = useState<bigint | null>(() => {
+    if (!validation.ok) return null;
+    try {
+      return priceAt(auction, Date.now());
+    } catch {
+      return null;
+    }
+  });
+
+  const [timeLeft, setTimeLeft] = useState<string>(() => formatTimeLeft(auction.endTime));
+
+  let wallet: any = null;
+  let status = 'disconnected';
+  try {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const walletContext = useWallet();
+    wallet = walletContext.wallet;
+    status = walletContext.status;
+  } catch {
+    // Fallback when rendered outside WalletProvider (e.g. isolated component/page tests)
+  }
+
   const [pending, setPending] = useState(false);
+  const pendingRef = React.useRef(false);
   const [feedback, setFeedback] = useState('');
   const [politeness, setPoliteness] = useState<'polite' | 'assertive'>('polite');
 
   // Update price and timer
   useEffect(() => {
-    if (auction.status !== 'Active') return;
-    const interval = setInterval(() => {
-      setCurrentPrice(calculateCurrentPrice(auction));
+    if (auction.status !== 'Active' || !validation.ok) return;
+
+    const tick = () => {
+      try {
+        setCurrentPriceStroops(priceAt(auction, Date.now()));
+      } catch {
+        // preserve existing price if an unexpected tick error occurs
+      }
       setTimeLeft(formatTimeLeft(auction.endTime));
-    }, 1000);
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [auction]);
+  }, [auction, validation.ok]);
 
   const purchaseCheck = canPurchase(auction, wallet, status);
   const helperId = `purchase-helper-${auction.id}`;
 
   const handlePurchase = async () => {
-    if (pending) return; // guard concurrent calls
+    if (pendingRef.current || !validation.ok) return; // guard concurrent calls & invalid schedules
     const check = canPurchase(auction, wallet, status);
     if (!check.ok) return; // should not happen as button disabled
+
+    pendingRef.current = true;
     setPending(true);
     setFeedback('');
     try {
-      await purchaseAuction(auction.id, Math.round(currentPrice * 1e7)); // price in stroops approximation
-      setFeedback(`Purchased auction ${auction.id} for ${fmt(currentPrice)} USD!`);
+      const now = Date.now();
+      const priceStroops = priceAt(auction, now);
+      if (onPurchase) {
+        await onPurchase(auction.id, priceStroops);
+      } else {
+        await purchaseAuction(auction.id, priceStroops);
+      }
+      setFeedback(`Purchased auction ${auction.id} for ${fmt(fromStroops(priceStroops))} USD!`);
       setPoliteness('assertive');
     } catch (e) {
       setFeedback('Purchase failed. Please try again.');
       setPoliteness('assertive');
     } finally {
+      pendingRef.current = false;
       setPending(false);
     }
   };
 
   // Determine button state and helper text
+  const currentPriceNum = currentPriceStroops !== null ? fromStroops(currentPriceStroops) : 0;
   let buttonDisabled = false;
-  let buttonLabel = `Purchase Now for ${fmt(currentPrice)}`;
+  let buttonLabel = `Purchase Now for ${fmt(currentPriceNum)}`;
   let helperText = '';
+
   if (!wallet) {
     buttonLabel = 'Connect wallet to buy';
     // assume onClick of wallet connection handled elsewhere; keep enabled
-  } else if (purchaseCheck.reason === 'wrong_network') {
-    buttonDisabled = true;
-    helperText = `Switch to ${EXPECTED_NETWORK} to buy`;
-  } else if (purchaseCheck.reason === 'own_auction') {
-    buttonDisabled = true;
-    helperText = 'You are the seller';
-  } else if (purchaseCheck.reason === 'not_active') {
-    // Do not render purchase button at all for inactive auctions
-    return (
-      <div className="card" style={{ padding: '1rem', marginBottom: '1rem' }}>
-        {/* existing UI above omitted for brevity */}
-      </div>
-    );
+  } else if (!purchaseCheck.ok) {
+    if (purchaseCheck.reason === 'wrong_network') {
+      buttonDisabled = true;
+      helperText = `Switch to ${EXPECTED_NETWORK} to buy`;
+    } else if (purchaseCheck.reason === 'own_auction') {
+      buttonDisabled = true;
+      helperText = 'You are the seller';
+    } else if (purchaseCheck.reason === 'not_active') {
+      buttonDisabled = true;
+    }
   }
 
   return (
@@ -140,8 +165,18 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
                 borderRadius: '4px',
                 fontSize: '0.75rem',
                 fontWeight: 500,
-                background: auction.status === 'Active' ? 'rgba(63,185,80,0.16)' : auction.status === 'Completed' ? 'rgba(88,166,255,0.16)' : 'rgba(248,81,73,0.16)',
-                color: auction.status === 'Active' ? '#8ee99d' : auction.status === 'Completed' ? '#58a6ff' : '#ffb0aa',
+                background:
+                  auction.status === 'Active'
+                    ? 'rgba(63,185,80,0.16)'
+                    : auction.status === 'Completed'
+                    ? 'rgba(88,166,255,0.16)'
+                    : 'rgba(248,81,73,0.16)',
+                color:
+                  auction.status === 'Active'
+                    ? '#8ee99d'
+                    : auction.status === 'Completed'
+                    ? '#58a6ff'
+                    : '#ffb0aa',
               }}
             >
               {auction.status}
@@ -152,16 +187,43 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
             <div>
               <p style={{ margin: 0, color: COLOR.muted, fontSize: '0.75rem' }}>Current Price</p>
               <p style={{ margin: 0, color: COLOR.accent, fontSize: '1.25rem', fontWeight: 600 }}>
-                {auction.status === 'Active' ? fmt(currentPrice) : auction.finalPrice ? fmt(auction.finalPrice) : '-'}
+                {!validation.ok ? (
+                  <span>
+                    Pricing unavailable
+                    <span
+                      className="visually-hidden"
+                      style={{
+                        position: 'absolute',
+                        width: '1px',
+                        height: '1px',
+                        padding: 0,
+                        margin: '-1px',
+                        overflow: 'hidden',
+                        clip: 'rect(0, 0, 0, 0)',
+                        whiteSpace: 'nowrap',
+                        border: 0,
+                      }}
+                    >
+                      {` (${validation.reason})`}
+                    </span>
+                  </span>
+                ) : auction.status === 'Active' && currentPriceStroops !== null ? (
+                  fmt(fromStroops(currentPriceStroops))
+                ) : auction.finalPrice ? (
+                  fmt(auction.finalPrice)
+                ) : (
+                  '-'
+                )}
               </p>
             </div>
             <div>
               <p style={{ margin: 0, color: COLOR.muted, fontSize: '0.75rem' }}>Start / Floor</p>
               <p style={{ margin: 0, color: COLOR.text, fontSize: '0.9rem' }}>
-                {fmt(auction.startPrice)} / {fmt(auction.floorPrice)}
+                {Number.isFinite(auction.startPrice) ? fmt(auction.startPrice) : '-'} /{' '}
+                {Number.isFinite(auction.floorPrice) ? fmt(auction.floorPrice) : '-'}
               </p>
             </div>
-            {auction.status === 'Active' && (
+            {auction.status === 'Active' && validation.ok && (
               <div>
                 <p style={{ margin: 0, color: COLOR.muted, fontSize: '0.75rem' }}>Time Left</p>
                 <p style={{ margin: 0, color: COLOR.warning, fontSize: '1rem', fontWeight: 600 }}>{timeLeft}</p>
@@ -176,7 +238,7 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
               </div>
             )}
           </div>
-          {auction.status === 'Active' && (
+          {auction.status === 'Active' && validation.ok && (
             <div style={{ marginTop: '1rem' }}>
               <PendingButton
                 onClick={handlePurchase}
@@ -212,4 +274,3 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
     </div>
   );
 };
-
