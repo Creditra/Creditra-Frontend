@@ -29,6 +29,7 @@ import { Skeleton } from '../components/Skeleton';
 import { PendingButton } from '../components/PendingButton';
 import { LiveRegion } from '../components/LiveRegion';
 import { Tooltip } from '../components/Tooltip';
+import { useConfirm } from '../components/ConfirmDialog';
 import { accountStripeStyle, colorFromId } from '../utils/colorFromId';
 import './LinkedAccounts.css';
 
@@ -169,6 +170,7 @@ export function LinkedAccounts() {
   
   const messageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   // Fetch linked accounts on mount
   useEffect(() => {
@@ -245,10 +247,12 @@ export function LinkedAccounts() {
     const account = accounts.find(acc => acc.id === accountId);
     if (!account) return;
 
-    // Confirmation dialog
-    const confirmed = window.confirm(
-      `Are you sure you want to disconnect your ${PROVIDER_INFO[account.provider].name} account? You can reconnect it later.`
-    );
+    const providerName = PROVIDER_INFO[account.provider].name;
+    const confirmed = await confirm({
+      title: `Disconnect ${providerName}?`,
+      body: `Disconnecting ${providerName} may lower your credit evaluation score. You can reconnect later.`,
+      confirmLabel: `Disconnect ${providerName}`,
+    });
 
     if (!confirmed) return;
 
@@ -258,7 +262,7 @@ export function LinkedAccounts() {
       setError(null);
       
       await disconnectAccount(accountId);
-      showSuccessMessage(`${PROVIDER_INFO[account.provider].name} account disconnected`);
+      showSuccessMessage(`${providerName} account disconnected`);
       await loadAccounts();
     } catch (err) {
       setError(`Failed to disconnect account. Please try again.`);
@@ -297,9 +301,13 @@ export function LinkedAccounts() {
     const connectedAccounts = accounts.filter(acc => acc.status === 'connected');
     if (connectedAccounts.length === 0) return;
 
-    const confirmed = window.confirm(
-      'Are you sure you want to disconnect all your accounts? You can reconnect them later.'
-    );
+    const count = connectedAccounts.length;
+    const accountWord = count === 1 ? 'account' : 'accounts';
+    const confirmed = await confirm({
+      title: `Disconnect all ${count} ${accountWord}?`,
+      body: `Disconnecting ${count} linked ${accountWord} may lower your credit evaluation score. You can reconnect later.`,
+      confirmLabel: 'Disconnect All',
+    });
     if (!confirmed) return;
 
     try {
@@ -407,20 +415,21 @@ export function LinkedAccounts() {
             </div>
           </div>
         ) : (
-          <div className="linked-accounts__grid" role="list">
+          <div className="linked-accounts__grid" role="list" aria-label="Available providers">
             {availableProviders.map((provider) => {
               const account = accounts.find(acc => acc.provider === provider && acc.status !== 'disconnected');
               return (
-                <ProviderCard
-                  key={provider}
-                  provider={provider}
-                  account={account || null}
-                  onConnect={handleConnect}
-                  onDisconnect={handleDisconnect}
-                  onReconnect={handleReconnect}
-                  isLoading={actionLoading}
-                  loadingAccountId={loadingAccountId}
-                />
+                <div key={provider} role="listitem">
+                  <ProviderCard
+                    provider={provider}
+                    account={account || null}
+                    onConnect={handleConnect}
+                    onDisconnect={handleDisconnect}
+                    onReconnect={handleReconnect}
+                    isLoading={actionLoading}
+                    loadingAccountId={loadingAccountId}
+                  />
+                </div>
               );
             })}
           </div>
@@ -500,6 +509,8 @@ export function LinkedAccounts() {
           </div>
         </div>
       </div>
+
+      {confirmDialog}
     </div>
   );
 }

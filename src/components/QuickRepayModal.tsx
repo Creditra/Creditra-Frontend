@@ -8,6 +8,10 @@ import {
 } from '../utils/currency';
 import { allocateRepayment } from '../lib/repay-allocation';
 import { PendingButton } from './PendingButton';
+import { Skeleton } from './Skeleton';
+import { ConnectWalletPrompt } from './ConnectWalletPrompt';
+import type { RepayableBalanceResult } from '../lib/repayable-balance';
+import { SETTLEMENT_ASSET } from '../lib/repayable-balance';
 import {
   TypedAmountConfirmField,
   isTypedAmountMatch,
@@ -23,7 +27,9 @@ interface RepaymentCreditLine {
 
 interface QuickRepayModalProps {
   creditLine: RepaymentCreditLine;
-  walletBalance: number;
+  walletBalance: number | null;
+  balanceStatus: RepayableBalanceResult['status'];
+  walletConnected: boolean;
   initialAmount?: string;
   onClose: () => void;
   onSuccess: (amount: number) => void;
@@ -84,6 +90,8 @@ const fmt = (n: number) =>
 export function QuickRepayModal({
   creditLine,
   walletBalance,
+  balanceStatus,
+  walletConnected,
   initialAmount,
   onClose,
   onSuccess,
@@ -121,7 +129,9 @@ export function QuickRepayModal({
     creditLine.apr,
   );
   const totalDue = roundToCents(creditLine.utilized + accruedInterest);
-  const validation = getRepayAmountValidation(amountStr, totalDue, walletBalance);
+  const hasRepayableBalance =
+    walletConnected && balanceStatus === 'ok' && walletBalance !== null;
+  const validation = getRepayAmountValidation(amountStr, totalDue, walletBalance ?? 0);
   const amount = validation.amount;
   const isInvalid = !validation.isValid;
 
@@ -140,7 +150,9 @@ export function QuickRepayModal({
 
   const needsConfirm = requiresRepayConfirmation(amount);
   const isConfirmDisabled =
-    isInvalid || (needsConfirm && !isTypedAmountMatch(confirmAmountStr, amount));
+    !hasRepayableBalance ||
+    isInvalid ||
+    (needsConfirm && !isTypedAmountMatch(confirmAmountStr, amount));
 
   const handleConfirm = () => {
     setStep('pending');
@@ -180,8 +192,61 @@ export function QuickRepayModal({
           {step !== 'pending' && <button className="focus-ring" onClick={onClose} style={{ ...btn.ghost, padding: '0.4rem', borderRadius: 4 }} aria-label="Close modal">✕</button>}
         </div>
 
-        {step === 'confirm' && (
+        {step === 'confirm' && !walletConnected && (
           <div style={{ padding: '1.5rem' }}>
+            <ConnectWalletPrompt assetCode={SETTLEMENT_ASSET.code} />
+          </div>
+        )}
+
+        {step === 'confirm' && walletConnected && balanceStatus === 'no_trustline' && (
+          <div style={{ padding: '1.5rem' }}>
+            <div
+              role="alert"
+              style={{
+                border: `1px solid ${COLOR.danger}`,
+                background: 'rgba(248,81,73,0.08)',
+                color: COLOR.text,
+                borderRadius: 8,
+                padding: '1rem',
+              }}
+            >
+              <p style={{ margin: 0, fontWeight: 600 }}>
+                Add a {SETTLEMENT_ASSET.code} trustline to repay
+              </p>
+              <p style={{ margin: '0.5rem 0 0', color: COLOR.muted }}>
+                Add the settlement-asset trustline to your wallet, then refresh your balance.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {step === 'confirm' && walletConnected && balanceStatus !== 'no_trustline' && (
+          <div style={{ padding: '1.5rem' }}>
+            <div
+              aria-busy={balanceStatus === 'loading'}
+              role="status"
+              aria-live="polite"
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '1rem',
+                color: COLOR.muted,
+                fontSize: '0.85rem',
+              }}
+            >
+              <span>{SETTLEMENT_ASSET.code} wallet balance</span>
+              {balanceStatus === 'loading' ? (
+                <>
+                  <span className="sr-only">
+                    Loading {SETTLEMENT_ASSET.code} balance
+                  </span>
+                  <Skeleton width={72} height={16} />
+                </>
+              ) : (
+                <span>{fmt(walletBalance ?? 0)}</span>
+              )}
+            </div>
             <div style={{ marginBottom: '1.5rem', background: COLOR.bg, padding: '1rem', borderRadius: 8, border: `1px solid ${COLOR.border}` }}>
               <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: COLOR.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Outstanding debt

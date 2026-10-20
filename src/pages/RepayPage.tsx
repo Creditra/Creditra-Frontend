@@ -8,6 +8,7 @@ import { InlineHelpOverlay } from '@/components/InlineHelpOverlay';
 import { ProgressBar } from '@/components/ProgressBar';
 import type { ProgressBarVariant } from '@/components/ProgressBar';
 import { LiveRegion } from '@/components/LiveRegion';
+import { ConnectWalletPrompt } from '@/components/ConnectWalletPrompt';
 
 import { EmptyState } from '@/components/EmptyState';
 import { NoOutstandingDebt } from '@/components/illustrations';
@@ -33,6 +34,13 @@ import { RepayPreviewModal } from '@/components/RepayPreviewModal';
 import { CopyToClipboard } from '@/components/CopyToClipboard';
 import { MOCK_CREDIT_LINES } from '@/data/mockData';
 import { motionClasses, useReducedMotion } from '@/context/ReducedMotionContext';
+import { useWallet } from '@/context/WalletContext';
+import {
+  getRepayableBalance,
+  moneyCoversAmount,
+  moneyToNumber,
+  SETTLEMENT_ASSET,
+} from '@/lib/repayable-balance';
 import {
   saveRepayDraft,
   loadRepayDraft,
@@ -100,6 +108,12 @@ export default function RepayPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { queueAction } = useOnline();
+  const {
+    wallet,
+    status: walletStatus,
+    balances,
+    refreshBalance,
+  } = useWallet();
   const preselectedId = searchParams.get('line');
 
   // ── Draft recovery state ──────────────────────────────────────────────
@@ -141,7 +155,16 @@ export default function RepayPage() {
     [selectedId],
   );
 
-  const walletBalance = 50000;
+  const repayableBalance = getRepayableBalance(balances ?? null, SETTLEMENT_ASSET);
+  const hasRepayableBalance =
+    walletStatus === 'connected' &&
+    wallet !== null &&
+    repayableBalance.status === 'ok';
+  const walletBalance =
+    repayableBalance.status === 'ok' ? moneyToNumber(repayableBalance.amount) : 0;
+  const [isReviewBalanceLoading, setIsReviewBalanceLoading] = useState(false);
+  const [reviewBalance, setReviewBalance] = useState<number | null>(null);
+  const [reviewBalanceError, setReviewBalanceError] = useState('');
 
   const accruedInterest = useMemo(
     () =>
@@ -181,37 +204,90 @@ export default function RepayPage() {
   const amount = validation?.amount ?? 0;
   const isInvalid = !validation?.isValid;
   const needsConfirm = requiresRepayConfirmation(amount);
-  const isConfirmDisabled = needsConfirm && !isTypedAmountMatch(confirmAmountStr, amount);
+  const isConfirmDisabled =
+    needsConfirm && !isTypedAmountMatch(confirmAmountStr, amount);
+  const isReviewConfirmDisabled =
+    !hasRepayableBalance ||
+    isConfirmDisabled ||
+    isReviewBalanceLoading ||
+    reviewBalance === null ||
+    amount > reviewBalance;
 
   const activeTone = validation
     ? SEVERITY_CONFIG[validation.feedback.severity]
     : SEVERITY_CONFIG.info;
 
   const handlePercent = (pct: number) => {
-    if (!validation) return;
+    if (!validation || !hasRepayableBalance) return;
     let target = (validation.maxRepayAmount * pct) / 100;
     if (target > walletBalance) target = walletBalance;
     setAmountStr(target.toFixed(2));
   };
 
   const handleSmartPay = () => {
-    if (!selectedLine) return;
+    if (!selectedLine || !hasRepayableBalance) return;
     setAmountStr(suggestedAmount.toFixed(2));
     setSrAnnouncement(`Smart Pay amount set: ${formatMoney(suggestedAmount)}`);
   };
 
   const handleReview = () => {
-    if (!isInvalid && amount > 0) {
+    if (hasRepayableBalance && !isInvalid && amount > 0) {
       setConfirmAmountStr('');
+      setReviewBalance(null);
+      setReviewBalanceError('');
       setStep('review');
       // Announce the transition so SR users know they've moved to the review step.
       setSrAnnouncement(`Review step: repaying ${formatMoney(amount)}. Confirm or go back.`);
     }
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (isSubmittingRef.current) return;
+    if (step === 'review' && isReviewConfirmDisabled) return;
+    if (step === 'input' && (!hasRepayableBalance || amount > walletBalance)) return;
+
     isSubmittingRef.current = true;
+
+    if (step === 'input') {
+      try {
+        const refreshedBalances = await refreshBalance();
+        const refreshed = getRepayableBalance(
+          refreshedBalances,
+          SETTLEMENT_ASSET,
+        );
+        const refreshedAmount =
+          refreshed.status === 'ok' ? moneyToNumber(refreshed.amount) : 0;
+        if (
+          refreshed.status !== 'ok' ||
+          !moneyCoversAmount(refreshed.amount, amount)
+        ) {
+          isSubmittingRef.current = false;
+          setReviewBalance(refreshed.status === 'ok' ? refreshedAmount : null);
+          setReviewBalanceError(
+            refreshed.status === 'ok'
+              ? `Your ${SETTLEMENT_ASSET.code} balance dropped below the repayment amount. Reduce the amount to ${formatMoney(refreshedAmount)} or less.`
+              : `Unable to verify your ${SETTLEMENT_ASSET.code} balance. Check your trustline and try again.`,
+          );
+          setStep('review');
+          setSrAnnouncement(
+            refreshed.status === 'ok'
+              ? `Your ${SETTLEMENT_ASSET.code} balance dropped below the repayment amount.`
+              : `Unable to verify your ${SETTLEMENT_ASSET.code} balance.`,
+          );
+          return;
+        }
+      } catch {
+        isSubmittingRef.current = false;
+        setReviewBalanceError(
+          `Unable to verify your ${SETTLEMENT_ASSET.code} balance. Try again before confirming.`,
+        );
+        setStep('review');
+        setSrAnnouncement(
+          `Unable to verify your ${SETTLEMENT_ASSET.code} balance.`,
+        );
+        return;
+      }
+    }
 
     draftClearedRef.current = true;
     clearRepayDraft();
@@ -335,6 +411,86 @@ export default function RepayPage() {
   }, []);
 
   useEffect(() => {
+    if (walletStatus !== 'connected' || !wallet) {
+      setSrAnnouncement(
+        `Connect your wallet to check your ${SETTLEMENT_ASSET.code} balance.`,
+      );
+    } else if (repayableBalance.status === 'loading') {
+      setSrAnnouncement(
+        `Loading your ${SETTLEMENT_ASSET.code} wallet balance.`,
+      );
+    } else if (repayableBalance.status === 'no_trustline') {
+      setSrAnnouncement(
+        `Add a ${SETTLEMENT_ASSET.code} trustline to repay.`,
+      );
+    } else {
+      setSrAnnouncement(
+        `${SETTLEMENT_ASSET.code} wallet balance loaded.`,
+      );
+    }
+  }, [walletStatus, wallet, repayableBalance.status]);
+
+  useEffect(() => {
+    if (step !== 'review') return;
+    if (walletStatus !== 'connected' || !wallet) {
+      setIsReviewBalanceLoading(false);
+      setReviewBalance(null);
+      setReviewBalanceError('Connect your wallet to confirm this repayment.');
+      return;
+    }
+
+    let isCurrent = true;
+    setIsReviewBalanceLoading(true);
+    setReviewBalance(null);
+    setReviewBalanceError('');
+    setSrAnnouncement(
+      `Refreshing your ${SETTLEMENT_ASSET.code} wallet balance.`,
+    );
+
+    refreshBalance()
+      .then((freshBalances) => {
+        if (!isCurrent) return;
+        const fresh = getRepayableBalance(freshBalances, SETTLEMENT_ASSET);
+        if (fresh.status !== 'ok') {
+          setReviewBalanceError(
+            `Unable to verify your ${SETTLEMENT_ASSET.code} balance. Check your trustline and try again.`,
+          );
+          setSrAnnouncement(
+            `Unable to verify your ${SETTLEMENT_ASSET.code} balance.`,
+          );
+          return;
+        }
+
+        const freshAmount = moneyToNumber(fresh.amount);
+        setReviewBalance(freshAmount);
+        if (!moneyCoversAmount(fresh.amount, amount)) {
+          setReviewBalanceError(
+            `Your ${SETTLEMENT_ASSET.code} balance dropped below the repayment amount. Reduce the amount to ${formatMoney(freshAmount)} or less.`,
+          );
+          setSrAnnouncement(
+            `Your ${SETTLEMENT_ASSET.code} balance dropped below the repayment amount.`,
+          );
+        }
+      })
+      .catch(() => {
+        if (!isCurrent) return;
+        setReviewBalanceError(
+          `Unable to refresh your ${SETTLEMENT_ASSET.code} balance. Try again before confirming.`,
+        );
+        setSrAnnouncement(
+          `Unable to refresh your ${SETTLEMENT_ASSET.code} balance.`,
+        );
+      })
+      .finally(() => {
+        if (isCurrent) setIsReviewBalanceLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [step, amount, refreshBalance, walletStatus, wallet]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
 
@@ -363,7 +519,7 @@ export default function RepayPage() {
       } else if (e.key === 'Enter') {
         if (step === 'input' && selectedLine && !isInvalid && amount > 0) {
           handleReview();
-        } else if (step === 'review' && !isConfirmDisabled) {
+        } else if (step === 'review' && !isReviewConfirmDisabled) {
           handleConfirm();
         }
       }
@@ -371,7 +527,7 @@ export default function RepayPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [step, selectedLine, isInvalid, amount, isConfirmDisabled, handleBack, suggestedAmount, walletBalance]);
+  }, [step, selectedLine, isInvalid, amount, isReviewConfirmDisabled, handleBack, suggestedAmount, walletBalance]);
 
   // Task ariallive-v7: announce validation errors to screen readers
   useEffect(() => {
@@ -537,6 +693,15 @@ export default function RepayPage() {
     );
   }
 
+  if (walletStatus !== 'connected' || !wallet) {
+    return (
+      <div className="repay-page mx-auto max-w-2xl space-y-6 px-4 py-8">
+        <ConnectWalletPrompt assetCode={SETTLEMENT_ASSET.code} />
+        <LiveRegion message={srAnnouncement} />
+      </div>
+    );
+  }
+
   const oldPct = Math.round((selectedLine.utilized / selectedLine.limit) * 100);
   const allocation = allocateRepayment(selectedLine, amount, accruedInterest);
   const remainingDebt = allocation.remainingTotal;
@@ -666,10 +831,34 @@ export default function RepayPage() {
                     >
                       Amount to repay
                     </label>
-                    <span className="text-xs text-muted">
-                      Wallet: <span className="num-tabular">{formatMoney(walletBalance)}</span>
-                    </span>
+                    {repayableBalance.status === 'loading' ? (
+                      <span className="flex items-center gap-2 text-xs text-muted" aria-busy="true">
+                        Wallet:
+                        <Skeleton width={72} height={14} />
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted">
+                        Wallet:{' '}
+                        <span className="num-tabular">
+                          {hasRepayableBalance ? formatMoney(walletBalance) : 'Unavailable'}
+                        </span>
+                      </span>
+                    )}
                   </div>
+
+                  {repayableBalance.status === 'no_trustline' && (
+                    <div
+                      className="mt-3 rounded-lg border border-error bg-error/10 p-3 text-sm text-error"
+                      role="alert"
+                    >
+                      <p className="font-semibold">
+                        Add a {SETTLEMENT_ASSET.code} trustline to repay
+                      </p>
+                      <p className="mt-1 text-xs">
+                        Add the settlement-asset trustline to your wallet, then refresh your balance.
+                      </p>
+                    </div>
+                  )}
 
                   <div className="mt-3 flex gap-2">
                     {[25, 50, 75, 100].map((pct) => (
@@ -677,6 +866,7 @@ export default function RepayPage() {
                         key={pct}
                         type="button"
                         onClick={() => handlePercent(pct)}
+                        disabled={!hasRepayableBalance}
                         className={`rp-preset-btn flex-1 rounded-md border border-accent/30 px-2 py-1.5 text-xs font-medium text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${motionClasses(isReducedMotionActive, 'transition-colors hover:bg-accent/10')}`}
                         aria-label={`Set amount to ${pct === 100 ? 'maximum' : `${pct} percent`}`}
                       >
@@ -692,6 +882,7 @@ export default function RepayPage() {
                     <button
                       type="button"
                       onClick={handleSmartPay}
+                      disabled={!hasRepayableBalance}
                       className={`rp-smart-pay-btn flex-1 rounded-md border border-success/30 px-2 py-1.5 text-xs font-medium text-success focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-success ${motionClasses(isReducedMotionActive, 'transition-colors hover:bg-success/10')}`}
                       aria-label={`Smart Pay suggested repayment of ${formatMoney(suggestedAmount)}`}
                     >
@@ -713,6 +904,7 @@ export default function RepayPage() {
                       type="number"
                       value={amountStr}
                       onChange={(e) => setAmountStr(e.target.value)}
+                      disabled={!hasRepayableBalance}
                       placeholder="0.00"
                       min={1}
                       step={0.01}
@@ -838,7 +1030,7 @@ export default function RepayPage() {
                     <button
                       type="button"
                       onClick={handleReview}
-                      disabled={isInvalid || amount <= 0}
+                      disabled={!hasRepayableBalance || isInvalid || amount <= 0}
                       className={`rp-review-btn w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${motionClasses(isReducedMotionActive, 'transition-all hover:brightness-110')}`}
                     >
                       <span className="flex items-center justify-center gap-2">
@@ -849,7 +1041,7 @@ export default function RepayPage() {
                       ref={previewTriggerRef}
                       type="button"
                       onClick={() => setIsPreviewModalOpen(true)}
-                      disabled={isInvalid || amount <= 0}
+                      disabled={!hasRepayableBalance || isInvalid || amount <= 0}
                       className={`rp-preview-btn w-full rounded-lg border border-accent/40 bg-accent/10 px-4 py-2.5 text-xs font-semibold text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-40 ${motionClasses(isReducedMotionActive, 'transition-all hover:bg-accent/20')}`}
                     >
                       Preview Consequences Modal
@@ -919,6 +1111,23 @@ export default function RepayPage() {
                 </p>
               </div>
             )}
+            {isReviewBalanceLoading && (
+              <div
+                className="flex items-center justify-between rounded-lg border border-border bg-surface p-4 text-sm text-muted"
+                aria-busy="true"
+              >
+                <span>Refreshing {SETTLEMENT_ASSET.code} wallet balance</span>
+                <Skeleton width={72} height={16} />
+              </div>
+            )}
+            {reviewBalanceError && (
+              <div
+                className="rounded-lg border border-error bg-error/10 p-4 text-sm text-error"
+                role="alert"
+              >
+                {reviewBalanceError}
+              </div>
+            )}
             <div className="rounded-lg border border-border bg-surface p-6 text-center">
               <p className="text-sm text-muted">You are about to repay</p>
               <div className="mt-2 flex items-center justify-center gap-2">
@@ -947,7 +1156,9 @@ export default function RepayPage() {
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted">Wallet balance</span>
                   <span className="font-semibold text-success num-tabular">
-                    {formatMoney(walletBalance)}
+                    {isReviewBalanceLoading
+                      ? 'Refreshing…'
+                      : formatMoney(reviewBalance ?? walletBalance)}
                   </span>
                 </div>
                 {isAutoSchedule && (
@@ -1009,8 +1220,8 @@ export default function RepayPage() {
               <button
                 type="button"
                 onClick={handleConfirm}
-                disabled={isConfirmDisabled}
-                aria-disabled={isConfirmDisabled || undefined}
+                disabled={isReviewConfirmDisabled}
+                aria-disabled={isReviewConfirmDisabled || undefined}
                 className={`rp-confirm-btn flex-[2] rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${motionClasses(isReducedMotionActive, 'transition-all hover:brightness-110')}`}
               >
                 <span className="flex items-center justify-center gap-2">
