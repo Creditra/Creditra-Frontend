@@ -70,6 +70,7 @@ const CATEGORIES: { value: NotificationCategory | 'all'; label: string }[] = [
   { value: 'credit_line', label: 'Credit Lines' },
   { value: 'risk_score',  label: 'Risk Score' },
   { value: 'rate_change', label: 'Rates' },
+  { value: 'auction',     label: 'Auctions' },
   { value: 'system',      label: 'System' },
 ];
 

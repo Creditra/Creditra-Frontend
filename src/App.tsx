@@ -7,6 +7,7 @@ import { ThemeProvider } from "./context/ThemeContext";
 import { ContrastProvider } from "./context/ContrastContext";
 import { KycProvider } from "./context/KycContext";
 import { NotificationProvider } from "./context/NotificationContext";
+import { AuctionAlertWatcher } from "./components/AuctionAlertWatcher";
 import { ReducedMotionProvider } from "./context/ReducedMotionContext";
 import { KycDrawer } from "./components/KycDrawer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -111,6 +112,7 @@ function App() {
               <NotificationProvider>
                 <ReducedMotionProvider>
                   <BrowserRouter>
+                    <AuctionAlertWatcher />
                     <RouteHeadProvider>
                       <RouteAnnouncer />
                       <div className="app">

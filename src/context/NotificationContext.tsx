@@ -72,6 +72,7 @@ const DEFAULT_PREFS: NotificationPreferences = {
   credit_line: true,
   risk_score: true,
   rate_change: true,
+  auction: true,
   system: true,
 };
 
