@@ -135,6 +135,15 @@ type WalletError =
   | { type: 'user_rejected';     message: string };
 ```
 
+#### Attempt-Token Rule and StrictMode Safety
+
+`WalletContext` prevents asynchronous race conditions (e.g. slow auto-reconnect resolving after user disconnect, rapid wallet switching, or rejected stale requests overwriting current connection) by maintaining a monotonically increasing `attemptRef.current`:
+
+- **Attempt Tokens**: Every async connection lifecycle entry point (`connect`, `runReconnect`, `retryReconnect`, `stayConnected`) captures an incremented attempt token `const id = ++attemptRef.current`.
+- **Currency Checks**: After every `await`, the function compares `id === attemptRef.current`. If superseded, the result is discarded immediately—no React state updates and no writes to `localStorage` (`saveWalletPreference`, `recordRecentWallet`).
+- **Cancellation on User Action**: Calling `disconnect()` or `forgetRememberedChoice()` increments `attemptRef.current`, ensuring any pending connect or auto-reconnect cannot resurrect state or overwrite privacy preferences on disk.
+- **StrictMode-Safe Mount**: In development, `React.StrictMode` dual-mounts effects. Cleanup on unmount increments `attemptRef.current` and clears reconnect timeouts to cancel in-flight work. In addition, an in-flight connection promise guard (`inFlightConnectRef`) deduplicates overlapping connection attempts across the StrictMode dual-mount cycle, preventing duplicate extension prompts.
+
 ### NotificationContext
 
 `NotificationContext` is more ambitious. It holds:

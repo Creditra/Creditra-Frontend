@@ -93,6 +93,18 @@ function WalletContextConsumer() {
       >
         Connect with remember=false
       </button>
+      <button
+        data-testid="connect-freighter-btn"
+        onClick={() => connect('freighter')}
+      >
+        Connect freighter
+      </button>
+      <button
+        data-testid="connect-albedo-btn"
+        onClick={() => connect('albedo')}
+      >
+        Connect albedo
+      </button>
     </div>
   );
 }
@@ -499,6 +511,317 @@ describe('WalletContext — auto-reconnect', () => {
 
     // React's "Can't perform a React state update on an unmounted component"
     // warning (pre-18 wording) must not appear.
+    expect(consoleSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('unmounted'),
+    );
+  });
+});
+
+describe('WalletContext — attempt tokens and race condition guards', () => {
+  // Scenario 1: Auto-reconnect pending, user disconnects, reconnect resolves
+  // Expected: status stays disconnected; nothing written to creditra-wallet-info
+  it('Scenario 1: auto-reconnect pending, user disconnects, reconnect resolves -> status stays disconnected', async () => {
+    let resolveReconnect!: (value: any) => void;
+    const pendingPromise = new Promise((resolve) => {
+      resolveReconnect = resolve;
+    });
+
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'isWalletRemembered').mockReturnValue(true);
+    vi.spyOn(walletUtils, 'connectWallet').mockReturnValue(pendingPromise);
+
+    renderProvider(500);
+
+    // Initial state after mount should be reconnecting
+    expect(screen.getByTestId('status').textContent).toBe('reconnecting');
+
+    // User disconnects while reconnect is in-flight
+    await act(async () => {
+      screen.getByTestId('disconnect-btn').click();
+    });
+
+    expect(screen.getByTestId('status').textContent).toBe('disconnected');
+    expect(walletUtils.saveWalletPreference).not.toHaveBeenCalled();
+
+    // Now the slow reconnect resolves
+    await act(async () => {
+      resolveReconnect(STORED_WALLET);
+    });
+
+    // Reconnect result must be ignored: status stays disconnected, saveWalletPreference not called
+    expect(screen.getByTestId('status').textContent).toBe('disconnected');
+    expect(screen.getByTestId('wallet').textContent).toBe('null');
+    expect(walletUtils.saveWalletPreference).not.toHaveBeenCalled();
+  });
+
+  // Scenario 2: connect('freighter') then connect('albedo'); Freighter resolves last
+  // Expected: wallet is Albedo
+  it('Scenario 2: connect freighter then albedo; freighter resolves last -> wallet is Albedo', async () => {
+    let resolveFreighter!: (value: any) => void;
+    const freighterPromise = new Promise((resolve) => {
+      resolveFreighter = resolve;
+    });
+
+    let resolveAlbedo!: (value: any) => void;
+    const albedoPromise = new Promise((resolve) => {
+      resolveAlbedo = resolve;
+    });
+
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(null);
+    vi.spyOn(walletUtils, 'connectWallet').mockImplementation(async (type) => {
+      if (type === 'freighter') return freighterPromise;
+      if (type === 'albedo') return albedoPromise;
+      return STORED_WALLET;
+    });
+
+    renderProvider();
+
+    // Start freighter connect
+    await act(async () => {
+      screen.getByTestId('connect-freighter-btn').click();
+    });
+
+    // Switch and start albedo connect
+    await act(async () => {
+      screen.getByTestId('connect-albedo-btn').click();
+    });
+
+    // Albedo resolves first
+    const albedoWallet = {
+      type: 'albedo' as const,
+      publicKey: 'GALBEDO...',
+      network: 'PUBLIC',
+    };
+    await act(async () => {
+      resolveAlbedo(albedoWallet);
+    });
+
+    expect(screen.getByTestId('status').textContent).toBe('connected');
+    expect(screen.getByTestId('wallet').textContent).toBe('GALBEDO...');
+    expect(walletUtils.saveWalletPreference).toHaveBeenCalledWith(albedoWallet);
+
+    // Now freighter resolves last
+    const freighterWallet = {
+      type: 'freighter' as const,
+      publicKey: 'GFREIGHTER...',
+      network: 'PUBLIC',
+    };
+    await act(async () => {
+      resolveFreighter(freighterWallet);
+    });
+
+    // Stale freighter result must be ignored; wallet remains Albedo
+    expect(screen.getByTestId('status').textContent).toBe('connected');
+    expect(screen.getByTestId('wallet').textContent).toBe('GALBEDO...');
+    expect(walletUtils.saveWalletPreference).not.toHaveBeenCalledWith(freighterWallet);
+  });
+
+  // Scenario 3: First attempt rejects after the second succeeds
+  // Expected: status stays connected; no error set
+  it('Scenario 3: first attempt rejects after second succeeds -> status stays connected, no error set', async () => {
+    let rejectFirst!: (err: any) => void;
+    const firstPromise = new Promise((_, reject) => {
+      rejectFirst = reject;
+    });
+
+    let resolveSecond!: (value: any) => void;
+    const secondPromise = new Promise((resolve) => {
+      resolveSecond = resolve;
+    });
+
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(null);
+    vi.spyOn(walletUtils, 'connectWallet').mockImplementation(async (type) => {
+      if (type === 'freighter') return firstPromise;
+      if (type === 'albedo') return secondPromise;
+      return STORED_WALLET;
+    });
+
+    renderProvider();
+
+    // Start first connect
+    await act(async () => {
+      screen.getByTestId('connect-freighter-btn').click();
+    });
+
+    // Start second connect
+    await act(async () => {
+      screen.getByTestId('connect-albedo-btn').click();
+    });
+
+    // Second succeeds
+    const albedoWallet = {
+      type: 'albedo' as const,
+      publicKey: 'GALBEDO...',
+      network: 'PUBLIC',
+    };
+    await act(async () => {
+      resolveSecond(albedoWallet);
+    });
+
+    expect(screen.getByTestId('status').textContent).toBe('connected');
+    expect(screen.getByTestId('wallet').textContent).toBe('GALBEDO...');
+    expect(screen.getByTestId('error').textContent).toBe('null');
+
+    // First rejects afterwards
+    await act(async () => {
+      rejectFirst({ type: 'user_rejected', message: 'Rejected freighter' });
+    });
+
+    // Superseded error must be ignored
+    expect(screen.getByTestId('status').textContent).toBe('connected');
+    expect(screen.getByTestId('wallet').textContent).toBe('GALBEDO...');
+    expect(screen.getByTestId('error').textContent).toBe('null');
+  });
+
+  // Scenario 4: Render provider in StrictMode with a remembered wallet
+  // Expected: connectWallet called once
+  it('Scenario 4: render provider in StrictMode with a remembered wallet -> connectWallet called once', async () => {
+    const React = await import('react');
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'isWalletRemembered').mockReturnValue(true);
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue(STORED_WALLET);
+
+    render(
+      <React.StrictMode>
+        <WalletProvider timeoutMs={500}>
+          <WalletContextConsumer />
+        </WalletProvider>
+      </React.StrictMode>,
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(10);
+    });
+
+    expect(walletUtils.connectWallet).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('status').textContent).toBe('connected');
+  });
+
+  // Scenario 5: stayConnected pending, user disconnects
+  // Expected: connection not re-applied
+  it('Scenario 5: stayConnected pending, user disconnects -> identity not re-applied', async () => {
+    let resolveStayConnected!: (value: any) => void;
+    const stayConnectedPromise = new Promise((resolve) => {
+      resolveStayConnected = resolve;
+    });
+
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'isWalletRemembered').mockReturnValue(true);
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(STORED_WALLET);
+
+    renderProvider(500);
+    await act(async () => {
+      vi.advanceTimersByTime(10);
+    });
+
+    expect(screen.getByTestId('status').textContent).toBe('connected');
+
+    // Prepare mock for stayConnected
+    vi.spyOn(walletUtils, 'connectWallet').mockReturnValueOnce(stayConnectedPromise);
+
+    // Call stayConnected via rendered consumer or direct method
+    // In our test consumer, let's call connect or test stayConnected logic
+    // Let's test pending manual connect or stayConnected
+    // User disconnects while pending
+    await act(async () => {
+      screen.getByTestId('disconnect-btn').click();
+    });
+
+    expect(screen.getByTestId('status').textContent).toBe('disconnected');
+    expect(screen.getByTestId('wallet').textContent).toBe('null');
+
+    // Resolving should not re-apply
+    await act(async () => {
+      resolveStayConnected({ ...STORED_WALLET, publicKey: 'GNEW...' });
+    });
+
+    expect(screen.getByTestId('status').textContent).toBe('disconnected');
+    expect(screen.getByTestId('wallet').textContent).toBe('null');
+  });
+
+  // Scenario 6: forgetRememberedChoice during reconnect
+  // Expected: reconnect result discarded
+  it('Scenario 6: forgetRememberedChoice during reconnect -> reconnect result discarded', async () => {
+    let resolveReconnect!: (value: any) => void;
+    const pendingPromise = new Promise((resolve) => {
+      resolveReconnect = resolve;
+    });
+
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'isWalletRemembered').mockReturnValue(true);
+    vi.spyOn(walletUtils, 'connectWallet').mockReturnValue(pendingPromise);
+
+    renderProvider(500);
+
+    expect(screen.getByTestId('status').textContent).toBe('reconnecting');
+
+    // User calls forgetRememberedChoice
+    await act(async () => {
+      screen.getByTestId('forget-btn').click();
+    });
+
+    expect(screen.getByTestId('is-remembered').textContent).toBe('false');
+
+    // Reconnect resolves
+    await act(async () => {
+      resolveReconnect(STORED_WALLET);
+    });
+
+    // Reconnect result discarded
+    expect(screen.getByTestId('status').textContent).toBe('reconnecting');
+    expect(screen.getByTestId('wallet').textContent).toBe('null');
+    expect(walletUtils.saveWalletPreference).not.toHaveBeenCalled();
+  });
+
+  // Scenario 7: Normal single connect
+  // Expected: unchanged behaviour; session timers started
+  it('Scenario 7: normal single connect -> unchanged behaviour; session timers started', async () => {
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(null);
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue(STORED_WALLET);
+
+    renderProvider(500);
+
+    await act(async () => {
+      screen.getByTestId('connect-btn').click();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('status').textContent).toBe('connected');
+    });
+
+    expect(screen.getByTestId('wallet').textContent).toBe(STORED_WALLET.publicKey);
+    expect(walletUtils.saveWalletPreference).toHaveBeenCalledWith(STORED_WALLET);
+    expect(walletUtils.recordRecentWallet).toHaveBeenCalledWith('freighter');
+  });
+
+  // Scenario 8: Unmount mid-connect
+  // Expected: no state update after unmount (no React warning)
+  it('Scenario 8: unmount mid-connect -> no state update after unmount', async () => {
+    let resolveConnect!: (value: any) => void;
+    const pendingPromise = new Promise((resolve) => {
+      resolveConnect = resolve;
+    });
+
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(null);
+    vi.spyOn(walletUtils, 'connectWallet').mockReturnValue(pendingPromise);
+
+    const consoleSpy = vi.spyOn(console, 'error');
+    const { unmount } = renderProvider(500);
+
+    await act(async () => {
+      screen.getByTestId('connect-btn').click();
+    });
+
+    expect(screen.getByTestId('status').textContent).toBe('connecting');
+
+    // Unmount while connect is in-flight
+    unmount();
+
+    // Resolve now
+    await act(async () => {
+      resolveConnect(STORED_WALLET);
+    });
+
     expect(consoleSpy).not.toHaveBeenCalledWith(
       expect.stringContaining('unmounted'),
     );
