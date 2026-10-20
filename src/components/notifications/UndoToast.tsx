@@ -25,6 +25,7 @@ export function UndoToast({ message, ids, onClose, duration = 5000 }: UndoToastP
       action: {
         label: 'Undo',
         onClick: () => {
+          if (actedRef.current) return;
           actedRef.current = true;
           undoRead(idsRef.current);
           onCloseRef.current();
@@ -32,6 +33,7 @@ export function UndoToast({ message, ids, onClose, duration = 5000 }: UndoToastP
       },
       duration,
       saveToHistory: false,
+      bypassPreferences: true,
     });
     toastIdRef.current = id;
 

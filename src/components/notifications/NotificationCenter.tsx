@@ -83,6 +83,23 @@ const relativeTime = (iso: string): string => {
   return `${Math.floor(hrs / 24)}d ago`;
 };
 
+function isEditableElement(element: unknown): boolean {
+  if (!element || !(element instanceof HTMLElement)) return false;
+  const tag = element.tagName.toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+  return element.isContentEditable;
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (typeof document !== 'undefined' && isEditableElement(document.activeElement)) {
+    return true;
+  }
+  if (target && isEditableElement(target)) {
+    return true;
+  }
+  return false;
+}
+
 interface NotificationCenterProps {
   triggerRef?: React.RefObject<HTMLElement | null>;
 }
@@ -191,21 +208,25 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
   }, []);
 
   const handleMarkAllAsRead = useCallback(() => {
-    const prior = [...notifications];
+    const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
     const count = unreadCount;
+    let undone = false;
     const toastId = addToast({
       type: 'success',
       title: 'Marked all as read',
-      message: `${unreadCount} notification${unreadCount !== 1 ? 's' : ''}`,
+      message: `${count} notification${count !== 1 ? 's' : ''}`,
       action: {
         label: 'Undo',
         onClick: () => {
-          undoRead(prior.map(n => n.id));
+          if (undone) return;
+          undone = true;
+          undoRead(unreadIds);
           dismissToast(toastId);
         },
       },
       duration: 6000,
       saveToHistory: false,
+      bypassPreferences: true,
     });
     markAllAsRead();
     announce(count);
@@ -216,7 +237,15 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     if (!isPanelOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.shiftKey && e.key === 'r' && unreadCount > 0) {
+      if (isEditableTarget(e.target)) return;
+      if (
+        e.shiftKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        e.key.toLowerCase() === 'r' &&
+        unreadCount > 0
+      ) {
         e.preventDefault();
         handleMarkAllAsRead();
       }
@@ -228,6 +257,7 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
 
   const handleClearAll = useCallback(() => {
     const prior = [...notifications];
+    let undone = false;
     const toastId = addToast({
       type: 'success',
       title: 'Cleared all notifications',
@@ -235,12 +265,15 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
       action: {
         label: 'Undo',
         onClick: () => {
+          if (undone) return;
+          undone = true;
           restoreNotifications(prior);
           dismissToast(toastId);
         },
       },
       duration: 6000,
       saveToHistory: false,
+      bypassPreferences: true,
     });
     clearAll();
   }, [notifications, addToast, dismissToast, restoreNotifications, clearAll]);
@@ -252,6 +285,7 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     }
 
     markAsRead(notification.id);
+    let undone = false;
     const toastId = addToast({
       type: 'success',
       title: 'Marked as read',
@@ -259,12 +293,15 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
       action: {
         label: 'Undo',
         onClick: () => {
+          if (undone) return;
+          undone = true;
           undoRead([notification.id]);
           dismissToast(toastId);
         },
       },
       duration: 5500,
       saveToHistory: false,
+      bypassPreferences: true,
     });
   }, [markAsRead, addToast, dismissToast, undoRead]);
 

@@ -173,3 +173,34 @@ npx vitest run src/components/__tests__/NotificationCenter.test.tsx
   }
 }
 ```
+
+---
+
+## Undo Semantics and Preferences Bypass
+
+### Exact Prior State for Mark All as Read
+- **Capture**: When "Mark all as read" is activated, only the IDs of currently unread notifications (`!notification.read`) are captured in the undo closure.
+- **Restoration**: Triggering "Undo" invokes `undoRead(unreadIds)`, flipping only those specific notifications back to unread. Notifications that were already read before the action remain read.
+- **Idempotency**: Clicking Undo multiple times is idempotent and produces the exact same state without double toggling.
+
+### Merge-Safe Undo for Clear All
+- **Snapshot & Window**: When "Clear all" is triggered, a snapshot of all notifications is captured before clearing the inbox, and an undo toast is displayed for 6 seconds.
+- **Pure Merge**: Restoration calls `restoreNotifications(snapshot)`, which merges the snapshot with any new notifications that arrived or updated during the undo window via the pure function `mergeNotifications(snapshot, current, cap)`.
+- **Deduplication & Sorting**: Notifications are deduplicated by `id` (with newer arrivals taking precedence), sorted descending by timestamp (newest first), and capped at 100 entries.
+- **Idempotency**: Clicking Undo multiple times does not duplicate notifications.
+
+### Preferences Bypass Flag (`bypassPreferences`)
+- **Option**: `AddToastOptions.bypassPreferences?: boolean`
+- **Purpose**: When `bypassPreferences: true` is set, `addToast` bypasses user category mute preferences (e.g. `preferences.system = false`).
+- **Policy**: This flag is strictly reserved for undo toasts and critical system alerts that the user must be able to view and reverse.
+
+---
+
+## Keyboard Shortcuts
+
+### Shift+R: Mark All as Read
+- **Trigger**: `Shift + R` marks all notifications as read when `unreadCount > 0`.
+- **Panel Scoped**: The shortcut only fires when the notification panel is open (`isPanelOpen === true`).
+- **Browser Compatibility**: Handled with `e.shiftKey && e.key.toLowerCase() === 'r'` to support standard browser key event reporting where `e.key` is uppercase `'R'`.
+- **Editable Field Suppression**: Ignored if focus or the event target is inside an editable field (`<input>`, `<textarea>`, `<select>`, or `isContentEditable`) to avoid conflicting with user typing.
+
