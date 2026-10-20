@@ -83,4 +83,34 @@ export const FAQ: FaqEntry[] = [
     answer: "Use the Email support action in the support widget to open a secure mailto handoff to support@creditra.com.",
     tags: ["email", "support", "contact"],
   },
+  {
+    id: "kyc-steps",
+    sectionId: "kyc",
+    question: "What are the KYC verification steps?",
+    answer: "KYC verification proceeds through five ordered steps: Identity Verification, Address Verification, Document Upload, Selfie Check, and Final Review. Progress is saved automatically so you can resume from the first incomplete step at any time.",
+    tags: ["kyc", "verification", "identity", "address", "documents", "selfie", "review", "steps"],
+  },
+  {
+    id: "kyc-status",
+    sectionId: "kyc",
+    question: "What do the KYC verification statuses mean?",
+    answer: "Each step moves from Not started to In progress, then Completed, Pending (awaiting compliance review), or Failed (re-submission required). Your overall badge reflects whether verification is Not started, In progress, Under review, Approved, or Rejected.",
+    tags: ["kyc", "status", "verification", "pending", "approved", "rejected", "review"],
+  },
 ];
+
+export const HELP_SECTION_IDS = [
+  "getting-started",
+  "wallet",
+  "kyc",
+  "credit-lines",
+  "transactions",
+  "notifications",
+  "shortcuts",
+  "faq",
+] as const;
+
+export const HELP_ANCHORS: ReadonlySet<string> = new Set<string>([
+  ...HELP_SECTION_IDS,
+  ...FAQ.map((entry) => entry.id),
+]);

@@ -1,7 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import * as routerDom from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ReducedMotionProvider } from "../context/ReducedMotionContext";
 import HelpCenter from "./HelpCenter";
 
 class IntersectionObserverMock {
@@ -343,5 +345,135 @@ describe("HelpCenter", { timeout: 15000 }, () => {
     // Wallet category should remain, Notifications should be hidden
     expect(screen.getByRole("heading", { name: "Wallet" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Notifications" })).not.toBeInTheDocument();
+  });
+
+  it("Scenario 1: renders at /help#kyc, KYC section exists and receives focus", async () => {
+    render(
+      <MemoryRouter initialEntries={["/help#kyc"]}>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    const kycSection = document.getElementById("kyc");
+    expect(kycSection).toBeInTheDocument();
+    expect(kycSection).toHaveAttribute("tabIndex", "-1");
+
+    await waitFor(() => {
+      expect(kycSection).toHaveFocus();
+    });
+  });
+
+  it("Scenario 2: renders at /help#wallet and focuses the wallet section", async () => {
+    render(
+      <MemoryRouter initialEntries={["/help#wallet"]}>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    const walletSection = document.getElementById("wallet");
+    expect(walletSection).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(walletSection).toHaveFocus();
+    });
+  });
+
+  it("Scenario 3: renders at /help#connect-wallet, expands the FAQ and focuses it", async () => {
+    render(
+      <MemoryRouter initialEntries={["/help#connect-wallet"]}>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    const faqItem = document.getElementById("connect-wallet");
+    const faqButton = screen.getByRole("button", { name: /^how do i connect a wallet\?/i });
+
+    expect(faqButton).toHaveAttribute("aria-expanded", "true");
+    await waitFor(() => {
+      expect(faqItem).toHaveFocus();
+    });
+  });
+
+  it("Scenario 4: clicking 'Shortcuts' in the side nav updates the URL hash to shortcuts", async () => {
+    const navigateMock = vi.fn();
+    vi.spyOn(routerDom, "useNavigate").mockReturnValue(navigateMock);
+
+    render(
+      <MemoryRouter initialEntries={["/help"]}>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    const user = userEvent.setup();
+    const shortcutsLink = screen.getByRole("link", { name: "Shortcuts" });
+    await user.click(shortcutsLink);
+
+    expect(navigateMock).toHaveBeenCalledWith({ hash: "shortcuts" }, { replace: false });
+  });
+
+  it("Scenario 5: collapsing a deep-linked FAQ removes aria-current and clears the hash", async () => {
+    const navigateMock = vi.fn();
+    vi.spyOn(routerDom, "useNavigate").mockReturnValue(navigateMock);
+
+    render(
+      <MemoryRouter initialEntries={["/help#connect-wallet"]}>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    const user = userEvent.setup();
+    const faqAnchor = screen.getByRole("link", { name: /direct link to faq: how do i connect a wallet\?/i });
+    const faqButton = screen.getByRole("button", { name: /^how do i connect a wallet\?/i });
+
+    expect(faqAnchor).toHaveAttribute("aria-current", "true");
+    expect(faqButton).toHaveAttribute("aria-current", "true");
+    expect(faqButton).toHaveAttribute("aria-expanded", "true");
+
+    await user.click(faqButton);
+
+    expect(faqButton).toHaveAttribute("aria-expanded", "false");
+    expect(faqAnchor).not.toHaveAttribute("aria-current");
+    expect(faqButton).not.toHaveAttribute("aria-current");
+    expect(navigateMock).toHaveBeenCalledWith({ hash: "" }, { replace: true });
+  });
+
+  it("Scenario 6: renders inline not-found notice at /help#does-not-exist", () => {
+    const getElementByIdSpy = vi.spyOn(document, "getElementById");
+
+    render(
+      <MemoryRouter initialEntries={["/help#does-not-exist"]}>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText(/that help topic was not found/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /browse the topic list/i })).toBeInTheDocument();
+    expect(getElementByIdSpy).not.toHaveBeenCalledWith("does-not-exist");
+  });
+
+  it("Scenario 8: calls scrollIntoView with behavior: 'instant' when reduced motion is active", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    localStorage.setItem("creditra-motion-override", JSON.stringify("reduced"));
+
+    render(
+      <ReducedMotionProvider>
+        <MemoryRouter initialEntries={["/help#wallet"]}>
+          <HelpCenter />
+        </MemoryRouter>
+      </ReducedMotionProvider>,
+    );
+
+    await waitFor(() => {
+      expect(scrollIntoView).toHaveBeenCalledWith({
+        behavior: "instant",
+        block: "start",
+      });
+    });
+
+    localStorage.removeItem("creditra-motion-override");
   });
 });
