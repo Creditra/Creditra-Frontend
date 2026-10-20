@@ -853,6 +853,61 @@ describe('Dashboard empty state (no credit lines)', () => {
   });
 });
 
+describe('Dashboard borrower risk summary', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    resetGlobalCreditLines();
+  });
+
+  afterEach(() => {
+    resetGlobalCreditLines();
+    vi.useRealTimers();
+  });
+
+  it('uses the limit-weighted score across all non-Closed lines and captions the basis', async () => {
+    const { container } = render(
+      <BrowserRouter>
+        <Dashboard />
+      </BrowserRouter>,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    expect(container.querySelector('.risk-gauge-svg title')).toHaveTextContent(
+      'Risk score 687 of 850',
+    );
+    expect(screen.getByText('Weighted across 5 lines')).toBeInTheDocument();
+    expect(container.querySelector('.risk-gauge-svg title')).toHaveTextContent(
+      'Weighted across 5 lines',
+    );
+  });
+
+  it('renders the no-data gauge instead of a zero score when no non-Closed lines remain', async () => {
+    setGlobalCreditLines(
+      MOCK_CREDIT_LINES.filter((line) => line.status === 'Closed'),
+    );
+
+    const { container } = render(
+      <BrowserRouter>
+        <Dashboard />
+      </BrowserRouter>,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    expect(
+      screen.getByRole('heading', { name: 'No risk data available' }),
+    ).toBeInTheDocument();
+    expect(container.querySelector('.risk-gauge-svg')).not.toBeInTheDocument();
+    expect(screen.queryByText('0', { selector: '.risk-gauge-score' })).not.toBeInTheDocument();
+  });
+});
+
 
 describe('Dashboard credit summary real refresh (#1201)', () => {
   beforeEach(() => {

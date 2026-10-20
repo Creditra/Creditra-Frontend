@@ -46,6 +46,7 @@ import {
   loadComparisonSelection,
   saveComparisonSelection,
 } from "../utils/comparisonSelection";
+import { getBorrowerRiskScore } from "../lib/credit-summary";
 
 export { RiskGauge };
 
@@ -237,20 +238,22 @@ export function Dashboard() {
     [creditLines],
   );
 
+  const riskScoreLines = useMemo(
+    () => creditLines.filter((cl) => cl.status !== "Closed"),
+    [creditLines],
+  );
+
+  const borrowerRiskScore = useMemo(
+    () => getBorrowerRiskScore(creditLines),
+    [creditLines],
+  );
+
   const totalLimit = activeLinesOnly.reduce((s, cl) => s + cl.limit, 0);
   const totalUtilized = activeLinesOnly.reduce((s, cl) => s + cl.utilized, 0);
   const totalAvailable = totalLimit - totalUtilized;
   const overallPct = utilizationPct(totalUtilized, totalLimit || 1);
   const overallLevel =
     totalLimit > 0 ? getUtilizationLevel(totalUtilized, totalLimit) : "low";
-
-  const avgRiskScore =
-    activeLinesOnly.length > 0
-      ? Math.round(
-          activeLinesOnly.reduce((s, cl) => s + cl.riskScore, 0) /
-            activeLinesOnly.length,
-        )
-      : 0;
 
   const recentActivity = useMemo(() => {
     const all: (Transaction & { lineName: string; lineId: string })[] = [];
@@ -805,10 +808,17 @@ export function Dashboard() {
               </div>
             ) : (
               <RiskGauge
-                score={avgRiskScore}
+                score={borrowerRiskScore.score}
+                caption={
+                  borrowerRiskScore.basis === "limit_weighted"
+                    ? `Weighted across ${riskScoreLines.length} lines`
+                    : borrowerRiskScore.basis === "borrower"
+                      ? "Borrower-level score"
+                      : undefined
+                }
                 trend="improving"
                 lastUpdated={
-                  activeLinesOnly[0]?.updatedAt ?? new Date().toISOString()
+                  riskScoreLines[0]?.updatedAt ?? new Date().toISOString()
                 }
               />
             )}
