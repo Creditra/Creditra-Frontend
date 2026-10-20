@@ -565,9 +565,14 @@ export function TransactionHistory() {
         });
       });
     });
-    return txs.sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-    );
+    // Pre-sort descending by timestamp, then by id for consistency
+    // The paginator will re-sort with the same logic
+    return txs.sort((a, b) => {
+      const aTime = new Date(a.date).getTime();
+      const bTime = new Date(b.date).getTime();
+      if (bTime !== aTime) return bTime - aTime;
+      return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+    });
   }, []);
 
   // Sync the debounced input value into the filter state and reset page.
