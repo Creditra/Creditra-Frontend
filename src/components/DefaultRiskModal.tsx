@@ -4,10 +4,13 @@
  * GrantFox Campaign: Pre-Borrow Default-Risk Education Gate
  *
  * Purpose:
- *   A mandatory 3-step education modal dialog that explains default definitions,
- *   consequences, and avoidance strategies to borrowers before their first credit
- *   draw on Creditra. The modal completely gates the draw wizard flow until the
- *   user has viewed all three steps and clicked the final acknowledgment button.
+ *   A 3-step education modal dialog that explains default definitions,
+ *   consequences, and avoidance strategies to borrowers on Creditra. The modal
+ *   is offered, not forced: it never blocks the draw wizard. Completing all
+ *   three steps records an acknowledgement of `RISK_EDUCATION_VERSION` for the
+ *   connected wallet; dismissing the banner or the modal does not. The
+ *   confirm step shows a non-blocking nudge until the current version is
+ *   acknowledged.
  *
  * Props:
  *   - isOpen: boolean indicating whether the modal is visible and active
@@ -23,7 +26,8 @@
  *   - Criterion 2.1.2 (No Keyboard Trap): Focus is constrained within the dialog via `useFocusTrap`;
  *     Escape, the close button and a backdrop click dismiss it when `onDismiss` is provided.
  *   - Criterion 2.4.3 (Focus Order): Focus is placed on the first interactive control on mount and
- *     restored to `triggerRef` or prior active element on close.
+ *     restored to `triggerRef` or prior active element on close, with a fallback to the first `main`
+ *     landmark when the previous element has been detached while the dialog was open.
  *   - Criterion 4.1.2 (Name, Role, Value): Modal container implements `role="dialog"`, `aria-modal="true"`,
  *     `aria-labelledby` linking to the dynamic step title, and `aria-describedby` linking to the step body.
  *     Step indicator communicates state via `aria-current="step"`.
@@ -60,6 +64,13 @@ interface StepContent {
 }
 
 const MODAL_ID = 'default-risk-modal';
+
+/**
+ * Version of the risk-education content below. Bump this whenever `STEPS`
+ * changes materially so that every wallet is asked to re-acknowledge the
+ * updated content.
+ */
+export const RISK_EDUCATION_VERSION = 1;
 
 const STEPS: StepContent[] = [
   {

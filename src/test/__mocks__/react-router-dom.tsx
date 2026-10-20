@@ -147,3 +147,5 @@ export function useParams() {
   return {};
 }
 
+export { matchPath } from './matchPath';
+
