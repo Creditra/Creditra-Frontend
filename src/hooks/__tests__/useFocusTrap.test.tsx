@@ -49,7 +49,7 @@ describe('useFocusTrap', () => {
 
     // Advance past the setTimeout(50ms) used to defer focus
     act(() => {
-      vi.advanceTimersByTime(100);
+      vi.advanceTimesByTime(100);
     });
 
     expect(document.activeElement).toBe(first);
@@ -110,5 +110,60 @@ describe('useFocusTrap', () => {
     unmount();
 
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it('restores focus to the previously focused element when still connected', () => {
+    const prev = document.createElement('button');
+    prev.id = 'prev';
+    document.body.appendChild(prev);
+    prev.focus();
+
+    const { unmount } = render(
+      <TrapHarness isActive={true} onEscape={vi.fn()} />
+    );
+
+    unmount();
+
+    expect(document.activeElement).toBe(prev);
+  });
+
+  it('falls back to triggerRef when previous element is detached', () => {
+    const prev = document.createElement('button');
+    prev.id = 'prev';
+    document.body.appendChild(prev);
+    prev.focus();
+
+    const triggerRef = { current: trigger };
+    const { unmount } = render(
+      <TrapHarness isActive={true} onEscape={vi.fn()} triggerRef={triggerRef} />
+    );
+
+    // Detach the previously focused element while the trap is active.
+    prev.remove();
+
+    unmount();
+
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('falls back to the main landmark when previous and trigger are detached', () => {
+    const main = document.createElement('main');
+    document.body.appendChild(main);
+
+    const prev = document.createElement('button');
+    document.body.appendChild(prev);
+    prev.focus();
+
+    const triggerRef = { current: trigger };
+    const { unmount } = render(
+      <TrapHarness isActive={true} onEscape={vi.fn()} triggerRef={triggerRef} />
+    );
+
+    prev.remove();
+    trigger.remove();
+
+    unmount();
+
+    expect(document.activeElement).toBe(main);
   });
 });

@@ -676,3 +676,170 @@ describe('WalletContext — cache invalidation on account/network switch (#961)'
     expect(screen.getByTestId('balances').textContent).toBe('null');
   });
 });
+
+describe('WalletContext — connect result object (#1231)', () => {
+  it('returns { ok: true, wallet } on successful connection', async () => {
+    const mockWallet = {
+      type: 'freighter' as const,
+      publicKey: 'GTEST123',
+      network: 'PUBLIC',
+    };
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue(mockWallet);
+
+    let connectResult: any;
+    function TestComponent() {
+      const { connect } = useWallet();
+      return (
+        <button
+          data-testid="test-connect"
+          onClick={async () => {
+            connectResult = await connect('freighter');
+          }}
+        >
+          Connect
+        </button>
+      );
+    }
+
+    render(
+      <WalletProvider>
+        <TestComponent />
+      </WalletProvider>
+    );
+
+    await act(async () => {
+      screen.getByTestId('test-connect').click();
+    });
+
+    await flushPromises();
+
+    expect(connectResult).toEqual({
+      ok: true,
+      wallet: mockWallet,
+    });
+  });
+
+  it('returns { ok: false, error } on connection failure', async () => {
+    const mockError = new walletUtils.WalletConnectError(
+      'connection_failed',
+      'Failed to connect'
+    );
+    vi.spyOn(walletUtils, 'connectWallet').mockRejectedValue(mockError);
+
+    let connectResult: any;
+    function TestComponent() {
+      const { connect } = useWallet();
+      return (
+        <button
+          data-testid="test-connect"
+          onClick={async () => {
+            connectResult = await connect('freighter');
+          }}
+        >
+          Connect
+        </button>
+      );
+    }
+
+    render(
+      <WalletProvider>
+        <TestComponent />
+      </WalletProvider>
+    );
+
+    await act(async () => {
+      screen.getByTestId('test-connect').click();
+    });
+
+    await flushPromises();
+
+    expect(connectResult).toMatchObject({
+      ok: false,
+      error: expect.objectContaining({
+        type: 'connection_failed',
+        message: 'Failed to connect',
+      }),
+    });
+  });
+
+  it('returns user_rejected error when user cancels', async () => {
+    const mockError = new walletUtils.WalletConnectError(
+      'user_rejected',
+      "You cancelled the request in your wallet. Try again when you're ready."
+    );
+    vi.spyOn(walletUtils, 'connectWallet').mockRejectedValue(mockError);
+
+    let connectResult: any;
+    function TestComponent() {
+      const { connect } = useWallet();
+      return (
+        <button
+          data-testid="test-connect"
+          onClick={async () => {
+            connectResult = await connect('freighter');
+          }}
+        >
+          Connect
+        </button>
+      );
+    }
+
+    render(
+      <WalletProvider>
+        <TestComponent />
+      </WalletProvider>
+    );
+
+    await act(async () => {
+      screen.getByTestId('test-connect').click();
+    });
+
+    await flushPromises();
+
+    expect(connectResult).toMatchObject({
+      ok: false,
+      error: expect.objectContaining({
+        type: 'user_rejected',
+      }),
+    });
+  });
+
+  it('still sets context error state on failure for backward compatibility', async () => {
+    const mockError = new walletUtils.WalletConnectError(
+      'not_found',
+      'Wallet not found'
+    );
+    vi.spyOn(walletUtils, 'connectWallet').mockRejectedValue(mockError);
+
+    renderProvider();
+
+    await act(async () => {
+      screen.getByTestId('connect-btn').click();
+    });
+
+    await flushPromises();
+
+    expect(screen.getByTestId('status').textContent).toBe('error');
+    expect(screen.getByTestId('error').textContent).toBe('not_found');
+  });
+
+  it('classifies raw errors using classifyWalletError', async () => {
+    // Simulate a raw error from wallet extension (not already WalletConnectError)
+    const rawError = { code: 4001, message: 'User rejected' };
+    vi.spyOn(walletUtils, 'connectWallet').mockRejectedValue(rawError);
+    vi.spyOn(walletUtils, 'classifyWalletError').mockReturnValue(
+      new walletUtils.WalletConnectError('user_rejected', 'Classified message')
+    );
+
+    renderProvider();
+
+    await act(async () => {
+      screen.getByTestId('connect-btn').click();
+    });
+
+    await flushPromises();
+
+    expect(walletUtils.classifyWalletError).toHaveBeenCalledWith(rawError);
+    expect(screen.getByTestId('error').textContent).toBe('user_rejected');
+  });
+});
