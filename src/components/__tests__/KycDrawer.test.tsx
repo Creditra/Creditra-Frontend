@@ -33,6 +33,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import { KycDrawer, KycTriggerButton } from '../KycDrawer';
 import { KycProvider } from '../../context/KycContext';
 import type { KycStepId, KycStepStatus } from '../../types/kyc';
@@ -270,6 +272,25 @@ describe('KycDrawer', () => {
     expect(onResume).toHaveBeenCalledWith('selfie');
   });
 
+  it('reveals the sticky action bar after the drawer body scrolls', () => {
+    primeStorage({ identity: 'completed', address: 'completed', documents: 'completed', selfie: 'in_progress' });
+    renderDrawer();
+
+    const footer = document.querySelector('.kyc-drawer__footer') as HTMLElement;
+    const scrollBody = document.querySelector('.kyc-drawer__body') as HTMLElement;
+
+    expect(footer).toHaveAttribute('data-sticky-visible', 'false');
+
+    Object.defineProperty(scrollBody, 'scrollTop', {
+      configurable: true,
+      value: 48,
+      writable: true,
+    });
+    fireEvent.scroll(scrollBody);
+
+    expect(footer).toHaveAttribute('data-sticky-visible', 'true');
+  });
+
   // ── Dismiss ───────────────────────────────────────────────────────────────
 
   it('calls onClose when the × button is clicked', () => {
@@ -354,5 +375,66 @@ describe('KycTriggerButton', () => {
     const { onClick } = renderTrigger();
     await user.click(screen.getByRole('button', { name: /kyc/i }));
     expect(onClick).toHaveBeenCalledOnce();
+  });
+});
+
+// ─── Responsive audit ────────────────────────────────────────────────────
+
+describe('KycDrawer responsive audit (<=375px)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+
+  it('renders without error at 375px viewport', () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query: string) =>
+        ({
+          matches: query === '(max-width: 375px)',
+          media: query,
+          onchange: null,
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }) as unknown as MediaQueryList,
+    );
+    expect(() => renderDrawer()).not.toThrow();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem').length).toBe(5);
+  });
+
+  it('help link renders as an accessible anchor', () => {
+    renderDrawer();
+    const helpLink = screen.getByText(/Need help with verification/i);
+    expect(helpLink).toBeInTheDocument();
+    expect(helpLink.tagName).toBe('A');
+    expect(helpLink).toHaveAttribute('href', '/help#kyc');
+  });
+});
+
+// ─── CSS content audit ───────────────────────────────────────────────────
+
+describe('KycDrawer CSS — breakpoint & tap-target audit', () => {
+  it('contains a narrow-screen breakpoint at 375px', () => {
+    const css = readFileSync(resolve(__dirname, '../KycDrawer.css'), 'utf-8');
+    expect(css).toContain('@media (max-width: 375px)');
+    const start = css.indexOf('@media (max-width: 375px)');
+    const block = css.slice(start, css.indexOf('/* ── Reduced motion', start));
+    expect(block).toContain('--space-md');
+    expect(block).toContain('--space-lg');
+  });
+
+  it('sets min-height 44px on .kyc-drawer__help-link', () => {
+    const css = readFileSync(resolve(__dirname, '../KycDrawer.css'), 'utf-8');
+    const ruleStart = css.indexOf('.kyc-drawer__help-link');
+    const rule = css.slice(ruleStart, css.indexOf('}', ruleStart) + 1);
+    expect(rule).toContain('min-height: 44px');
+  });
+
+  it('does not use 36px tap target on help link', () => {
+    const css = readFileSync(resolve(__dirname, '../KycDrawer.css'), 'utf-8');
+    expect(css).not.toMatch(/\.kyc-drawer__help-link[^}]*min-height:\s*36px/);
   });
 });

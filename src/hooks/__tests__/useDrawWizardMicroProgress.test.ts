@@ -66,4 +66,67 @@ describe("useDrawWizardMicroProgress", () => {
     });
     expect(result.current.debouncedAnnouncement).toMatch(/Select line:/);
   });
+
+  it("still announces after several rapid input changes land on the same tone (issue #587)", () => {
+    // Regression test: diffing consecutive *renders* (instead of debounced
+    // *inputs*) meant a change's announcement was a one-render blip that
+    // got wiped out by the very next render — exactly what happens while
+    // typing a multi-digit amount, since each keystroke re-renders before
+    // the debounce timer can fire. See the comment in
+    // useDrawWizardMicroProgress.ts for the full explanation.
+    const { result, rerender } = renderHook(
+      (props) => useDrawWizardMicroProgress(props),
+      {
+        initialProps: {
+          selectedCreditLine: line as CreditLine | null,
+          amount: 0,
+          confirmationAcknowledged: false,
+          isOnConfirmStep: false,
+        },
+      },
+    );
+
+    // First change: draw an amount that exceeds the $35,000 available limit.
+    rerender({
+      selectedCreditLine: line,
+      amount: 99999,
+      confirmationAcknowledged: false,
+      isOnConfirmStep: false,
+    });
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(result.current.debouncedAnnouncement).toMatch(
+      /exceeds available credit/i,
+    );
+
+    // Simulate typing "1000" one keystroke at a time, each well within the
+    // 300ms debounce window of the last.
+    for (const amount of [1, 10, 100, 1000]) {
+      rerender({
+        selectedCreditLine: line,
+        amount,
+        confirmationAcknowledged: false,
+        isOnConfirmStep: false,
+      });
+      act(() => {
+        vi.advanceTimersByTime(50);
+      });
+    }
+
+    // Amounts 1, 10 and 100 all land on the same "success" tone as the
+    // final 1000, so only the last keystroke's settle actually matters —
+    // but every keystroke reset the input debounce, so nothing should have
+    // fired yet.
+    expect(result.current.debouncedAnnouncement).toMatch(
+      /exceeds available credit/i,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(result.current.debouncedAnnouncement).toMatch(
+      /within available credit limits/i,
+    );
+  });
 });

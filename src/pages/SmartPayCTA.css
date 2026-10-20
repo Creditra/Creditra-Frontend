@@ -1,0 +1,32 @@
+/* SmartPayCTA.css
+ *
+ * Layout for the CTA action row and the subtle keyboard-shortcut hint
+ * chip shown next to the primary action. All colors/spacing come from
+ * design tokens in src/index.css (or KbdHint's own token-based styles).
+ */
+
+.smartpay-cta__action {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3, 0.75rem);
+}
+
+.smartpay-cta__shortcut-hint {
+  /* Recedes visually behind the primary action — hinted, not competing. */
+  opacity: 0.75;
+}
+
+@media (max-width: 480px) {
+  /* Shortcut chips describe a physical keyboard; not useful on touch-only
+     viewports, and crowds the primary action at this width. */
+  .smartpay-cta__shortcut-hint {
+    display: none;
+  }
+}
+
+@media (prefers-contrast: high) {
+  .smartpay-cta__shortcut-hint {
+    opacity: 1;
+  }
+}

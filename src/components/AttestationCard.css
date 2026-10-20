@@ -1,0 +1,106 @@
+.attestation-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.attestation-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 0;
+    border-bottom: 1px solid var(--border);
+    gap: 0.75rem;
+}
+
+.attestation-row:last-of-type {
+    border-bottom: none;
+}
+
+.attestation-row__main {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-width: 0;
+}
+
+.attestation-row__label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+}
+
+.attestation-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.15rem 0.45rem;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: var(--lh-small);
+    white-space: nowrap;
+}
+
+.attestation-pill__cue {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.85rem;
+    height: 0.85rem;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    font-size: 0.55rem;
+    font-weight: 700;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.attestation-row__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-shrink: 0;
+}
+
+.attestation-row__verified {
+    font-size: 0.7rem;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.attestation-row__cta {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.attestation-row__cta:hover,
+.attestation-row__cta:focus-visible {
+    text-decoration: underline;
+}
+
+/* Compact row mode: stack meta below the label and guarantee 44px touch targets */
+@media (max-width: 480px) {
+    .attestation-row {
+        flex-wrap: wrap;
+        align-items: flex-start;
+    }
+
+    .attestation-row__meta {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .attestation-row__cta {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        min-width: 44px;
+    }
+}

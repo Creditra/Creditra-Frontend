@@ -146,10 +146,9 @@ export function RepaymentPlanChart({ line }: RepaymentPlanChartProps) {
           <h4 id="repayment-plan-heading">Projected repayment plan</h4>
           <p>Weekly buckets for the selected draw amount over 12 weeks.</p>
         </div>
-        <div className="repayment-plan__summary" aria-live="polite">
-          <span>Estimated repayment over 12 weeks</span>
-          <strong>{formatCurrency(totalProjectedRepayment)}</strong>
-        </div>
+        <span className="repayment-plan__summary" aria-live="polite">
+          <span>Estimated repayment over 12 weeks {formatCurrency(totalProjectedRepayment)}</span>
+        </span>
       </div>
 
       <div className="repayment-plan__controls" role="group" aria-label="Draw amount presets">

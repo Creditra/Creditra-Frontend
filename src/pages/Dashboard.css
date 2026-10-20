@@ -4,22 +4,22 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 1.75rem;
+    margin-bottom: var(--space-6);
     flex-wrap: wrap;
-    gap: 1rem;
+    gap: var(--space-4);
 }
 
 .dashboard-header h1 {
-    margin: 0 0 var(--space-sm);
-    font-size: 1.5rem;
-    font-weight: 700;
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-2xl);
+    font-weight: var(--font-bold);
     color: var(--text);
     line-height: var(--lh-display);
 }
 
 .dashboard-header .subtitle {
     margin: 0;
-    font-size: 0.875rem;
+    font-size: var(--text-sm);
     color: var(--muted);
     line-height: var(--lh-body);
 }
@@ -27,11 +27,11 @@
 .wallet-info {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
 }
 
 .wallet-address-chip {
-    font-size: 0.8rem;
+    font-size: var(--text-xs);
     font-family: monospace;
     max-width: 100%;
     word-break: break-all;
@@ -44,11 +44,11 @@
 .network-badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    padding: 0.25rem 0.6rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 600;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    font-weight: var(--font-semibold);
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
@@ -75,15 +75,15 @@
 .summary-cards {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 1rem;
-    margin-bottom: 1.75rem;
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
 }
 
 .summary-card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 1.25rem 1.5rem;
+    border-radius: var(--radius-md);
+    padding: var(--space-5) var(--space-6);
     position: relative;
     overflow: hidden;
     transition:
@@ -105,19 +105,19 @@
 }
 
 .summary-card .label {
-    margin: 0 0 var(--space-sm);
-    font-size: 0.7rem;
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-xs);
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    font-weight: 500;
+    font-weight: var(--font-medium);
     line-height: var(--lh-small);
 }
 
 .summary-card .value {
-    margin: 0 0 var(--space-xs);
-    font-size: 1.75rem;
-    font-weight: 700;
+    margin: 0 0 var(--space-1);
+    font-size: var(--text-3xl);
+    font-weight: var(--font-bold);
     line-height: var(--lh-display);
     overflow-wrap: anywhere;
     word-break: break-word;
@@ -125,7 +125,7 @@
 
 .summary-card .sub {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
     color: var(--muted);
     line-height: var(--lh-small);
 }
@@ -147,7 +147,7 @@
 .dashboard-grid {
     display: grid;
     grid-template-columns: 1fr minmax(0, 380px);
-    gap: 1.25rem;
+    gap: var(--space-5);
     align-items: start;
 }
 
@@ -160,29 +160,29 @@
 /* ─── Utilization Bar ───────────────────────────────────────────────────────── */
 
 .util-bar-container {
-    margin-bottom: 1.25rem;
+    margin-bottom: var(--space-5);
 }
 
 .util-bar-header {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 0.4rem;
+    margin-bottom: var(--space-1);
 }
 
 .util-bar-header span {
-    font-size: 0.8rem;
+    font-size: var(--text-xs);
 }
 
 .util-bar-track {
-    height: 8px;
+    height: var(--space-2);
     background: var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     overflow: hidden;
 }
 
 .util-bar-fill {
     height: 100%;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     transition: width 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
@@ -191,30 +191,30 @@
 .credit-breakdown {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    gap: 0.75rem;
+    gap: var(--space-3);
 }
 
 .credit-breakdown-item {
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 0.75rem 1rem;
+    border-radius: var(--radius-sm);
+    padding: var(--space-3) var(--space-4);
 }
 
 .credit-breakdown-item .cb-label {
-    margin: 0 0 var(--space-xs);
-    font-size: 0.7rem;
+    margin: 0 0 var(--space-1);
+    font-size: var(--text-xs);
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    font-weight: 500;
+    font-weight: var(--font-medium);
     line-height: var(--lh-small);
 }
 
 .credit-breakdown-item .cb-value {
     margin: 0;
-    font-size: 1rem;
-    font-weight: 700;
+    font-size: var(--text-base);
+    font-weight: var(--font-bold);
     line-height: var(--lh-heading);
 }
 
@@ -224,7 +224,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 0.5rem 0 1rem;
+    padding: var(--space-2) 0 var(--space-4);
 }
 
 .risk-gauge-svg {
@@ -232,7 +232,15 @@
     max-width: 160px;
     height: auto;
     aspect-ratio: 160 / 100;
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-3);
+    /* Required for focus ring to not be clipped */
+    overflow: visible;
+    /* Remove default browser outline - we use box-shadow for focus */
+    outline: none;
+    /* Smooth transition for focus ring appearance */
+    transition: box-shadow 0.15s ease;
+    /* Default cursor for keyboard navigation */
+    cursor: default;
 }
 
 .risk-gauge-bg {
@@ -260,24 +268,58 @@
 }
 
 .risk-gauge-score {
-    font-size: 2rem;
-    font-weight: 700;
+    font-size: var(--text-3xl);
+    font-weight: var(--font-bold);
     fill: var(--text);
     text-anchor: middle;
     dominant-baseline: middle;
 }
 
 .risk-gauge-label {
-    font-size: 0.65rem;
+    font-size: var(--text-xs);
     fill: var(--muted);
     text-anchor: middle;
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
 
+/*
+ * v7 — color-blind tier glyph (closes #565):
+ *   ▲ ≥700    (strong  / "look up")
+ *   ◆ 600–699 (fair    / "watch")
+ *   ●   <600  (below   / "act now")
+ * Pattern shape alone communicates risk band for color-blind users; color
+ * is supplied by the inline `style={{ color: gaugeColor }}` set by
+ * RiskGauge so the glyph stays aligned with the band.
+ */
+.risk-gauge-tier-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: var(--lh-small);
+}
+
+.risk-gauge-tier-glyph {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-block;
+}
+
+.risk-gauge-tier-glyph[data-tier="strong"],
+.risk-gauge-tier-glyph[data-tier="fair"],
+.risk-gauge-tier-glyph[data-tier="below"] {
+  /* Shape alone communicates the band — no decorative translation shift. */
+  transform: none;
+}
+
 .risk-meta {
     display: flex;
-    gap: 1.5rem;
+    gap: var(--space-6);
     justify-content: center;
 }
 
@@ -287,7 +329,7 @@
 
 .risk-meta-item .rm-label {
     display: block;
-    font-size: 0.65rem;
+    font-size: var(--text-xs);
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -297,7 +339,7 @@
 
 .risk-meta-item .rm-value {
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: var(--font-semibold);
     line-height: var(--lh-body);
 }
 
@@ -306,9 +348,9 @@
 .risk-explainer {
   display: flex;
   align-items: flex-start;
-  gap: 0.5rem;
-  padding: 0.625rem 0.75rem;
-  margin-top: 0.5rem;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin-top: var(--space-2);
   border-left: 3px solid var(--accent);
   background: var(--bg);
   border-radius: 0 6px 6px 0;
@@ -317,7 +359,7 @@
 
 .risk-explainer-text {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   line-height: 1.45;
   color: var(--muted);
   flex: 1;
@@ -333,7 +375,7 @@
   margin: -0.375rem -0.5rem 0 0;
   padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -372,16 +414,16 @@
 .quick-actions-grid {
     display: flex;
     flex-direction: column;
-    gap: 0.625rem;
+    gap: var(--space-2);
 }
 
 .qa-btn {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     width: 100%;
-    padding: 0.875rem 1rem;
-    border-radius: 8px;
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--bg);
     cursor: pointer;
@@ -397,29 +439,29 @@
 .qa-btn .qa-icon {
     width: 36px;
     height: 36px;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.1rem;
+    font-size: var(--text-lg);
     flex-shrink: 0;
 }
 
 .qa-btn .qa-label {
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
     line-height: var(--lh-heading);
 }
 
 .qa-btn .qa-desc {
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
     margin-top: var(--space-xs);
     line-height: var(--lh-small);
 }
 
 .qa-btn .qa-arrow {
     margin-left: auto;
-    font-size: 0.9rem;
+    font-size: var(--text-sm);
     opacity: 0.4;
     transition:
         opacity 0.15s,
@@ -437,9 +479,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.875rem 0;
+    padding: var(--space-3) 0;
     border-bottom: 1px solid var(--border);
-    gap: 0.75rem;
+    gap: var(--space-3);
 }
 
 .cl-preview-item:last-of-type {
@@ -447,15 +489,15 @@
 }
 
 .cl-preview-name {
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
     color: var(--text);
-    margin: 0 0 var(--space-xs);
+    margin: 0 0 var(--space-1);
     line-height: var(--lh-heading);
 }
 
 .cl-preview-id {
-    font-size: 0.7rem;
+    font-size: var(--text-xs);
     color: var(--muted);
     font-family: monospace;
     line-height: var(--lh-small);
@@ -467,10 +509,10 @@
 }
 
 .cl-preview-amount {
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
     color: var(--text);
-    margin-bottom: 0.2rem;
+    margin-bottom: var(--space-1);
 }
 
 .cl-preview-bar {
@@ -491,14 +533,14 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.35rem;
-    padding: 0.75rem;
-    margin-top: 0.5rem;
+    gap: var(--space-1);
+    padding: var(--space-3);
+    margin-top: var(--space-2);
     color: var(--accent);
-    font-size: 0.8rem;
-    font-weight: 500;
+    font-size: var(--text-xs);
+    font-weight: var(--font-medium);
     text-decoration: none;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     transition: background 0.15s;
 }
 
@@ -511,8 +553,8 @@
 .activity-item {
     display: flex;
     align-items: flex-start;
-    gap: 0.75rem;
-    padding: 0.75rem 0;
+    gap: var(--space-3);
+    padding: var(--space-3) 0;
     border-bottom: 1px solid var(--border);
 }
 
@@ -523,11 +565,11 @@
 .activity-icon {
     width: 28px;
     height: 28px;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.8rem;
+    font-size: var(--text-xs);
     flex-shrink: 0;
     margin-top: 2px;
 }
@@ -538,36 +580,42 @@
 }
 
 .activity-title {
-    font-size: 0.825rem;
-    font-weight: 500;
+    font-size: var(--text-sm);
+    font-weight: var(--font-medium);
     color: var(--text);
     margin-bottom: var(--space-xs);
     line-height: var(--lh-heading);
 }
 
 .activity-sub {
-    font-size: 0.725rem;
+    font-size: var(--text-xs);
     color: var(--muted);
     line-height: var(--lh-small);
 }
 
 .activity-amount {
-    font-size: 0.825rem;
-    font-weight: 600;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
     flex-shrink: 0;
     margin-top: 2px;
 }
 
 /* ─── Notifications ─────────────────────────────────────────────────────────── */
-
+/*
+ * The base `.notification-item` paints a tinted background via `background:`
+ * (shorthand → background-image: none).  Patterns.css loads *after* this
+ * file via Dashboard.tsx, so its `.notification-item--{info|warning|danger}`
+ * `background-image` rule later sets the colour-blind pattern overlay on top
+ * of that tint.  Stacking order relies on the import order in Dashboard.tsx.
+ */
 .notification-item {
     display: flex;
     align-items: flex-start;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    border-radius: 6px;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border-radius: var(--radius-sm);
     margin-bottom: 0.5rem;
-    font-size: 0.8rem;
+    font-size: var(--text-xs);
 }
 
 .notification-item:last-child {
@@ -587,7 +635,7 @@
 }
 
 .notification-icon {
-    font-size: 1rem;
+    font-size: var(--text-base);
     flex-shrink: 0;
     margin-top: 1px;
 }
@@ -598,13 +646,13 @@
 }
 
 .notification-text strong {
-    font-weight: 600;
+    font-weight: var(--font-semibold);
 }
 
 .notification-time {
-    font-size: 0.7rem;
+    font-size: var(--text-xs);
     color: var(--muted);
-    margin-top: var(--space-sm);
+    margin-top: var(--space-2);
     line-height: var(--lh-small);
 }
 
@@ -612,27 +660,27 @@
 
 .empty-state {
     text-align: center;
-    padding: 4rem 2rem;
+    padding: var(--space-12) var(--space-8);
     grid-column: 1 / -1;
 }
 
 .empty-state-icon {
     font-size: 3.5rem;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-4);
     opacity: 0.8;
 }
 
 .empty-state h2 {
-    margin: 0 0 0.5rem;
-    font-size: 1.25rem;
-    font-weight: 600;
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-xl);
+    font-weight: var(--font-semibold);
     color: var(--text);
 }
 
 .empty-state p {
-    margin: 0 0 1.5rem;
+    margin: 0 0 var(--space-6);
     color: var(--muted);
-    font-size: 0.9rem;
+    font-size: var(--text-sm);
     max-width: 400px;
     margin-left: auto;
     margin-right: auto;
@@ -642,14 +690,14 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-6);
     background: var(--accent);
     color: #0d1117;
     border: none;
-    border-radius: 8px;
-    font-size: 0.9rem;
-    font-weight: 600;
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
     cursor: pointer;
     text-decoration: none;
     transition:
@@ -828,7 +876,7 @@
 @media (max-width: 768px) {
     .dashboard-header {
         flex-direction: column;
-        gap: 0.75rem;
+        gap: var(--space-3);
     }
 
     .credit-breakdown {
@@ -841,11 +889,12 @@
 
     .risk-meta {
         flex-direction: column;
-        gap: 0.5rem;
+        gap: var(--space-2);
     }
 
     .wallet-info {
         flex-wrap: wrap;
+        gap: 0.5rem;
     }
 }
 
@@ -856,6 +905,31 @@
 
     .summary-card:last-child {
         grid-column: auto;
+    }
+}
+
+@media (max-width: 480px) {
+    .wallet-info {
+        flex-direction: column;
+        align-items: flex-start;
+        width: 100%;
+    }
+
+    .cl-preview-item {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.5rem;
+        padding: 1rem 0;
+    }
+
+    .cl-preview-right {
+        text-align: left;
+    }
+
+    .cl-preview-bar {
+        margin-left: 0;
+        width: 100%;
+        margin-top: 0.25rem;
     }
 }
 
@@ -873,18 +947,52 @@
 }
 
 /* ─── Skeleton Alignments and CLS Prevention ────────────────────────────────── */
+/*
+ * FWC26 — issue #690: Skeleton height/spacing/shape parity
+ * ──────────────────────────────────────────────────────────
+ * Each skeleton region is explicitly sized so the painted area matches
+ * the final rendered component.  This eliminates layout-shift (CLS) on
+ * first-paint.
+ *
+ * Rules below are the structural floor — they ensure the wrapping skeleton
+ * container never collapses to a smaller height than the real component,
+ * even before the Skeleton child widths/heights are applied.
+ */
 .summary-card.skeleton-card {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    min-height: 114px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  /*
+   * min-height matches the minimum rendered height of a real .summary-card:
+   *   padding-top (1.25rem) + label (14px) + gap (8px) + value (32px) +
+   *   gap (8px) + sub (12px) + padding-bottom (1.25rem) ≈ 114px
+   */
+  min-height: 114px;
 }
 
 .cl-preview-item {
-    min-height: 57px;
+  /*
+   * min-height matches the final .cl-preview-item rendered height:
+   *   padding (0.875rem × 2) + tallest content row (18px StatusBadge) ≈ 57px
+   */
+  min-height: 57px;
 }
 
 .activity-item {
-    min-height: 48px;
+  /*
+   * min-height matches the final .activity-item rendered height:
+   *   padding (0.75rem × 2) + icon (28px) ≈ 52px; floor at 48px.
+   */
+  min-height: 48px;
+}
+
+/*
+ * Risk-gauge skeleton container: preserve the 160:100 aspect ratio of the
+ * SVG viewBox so the placeholder and the live SVG occupy the same space.
+ * The .risk-gauge-container itself is flex-column centred; we just need the
+ * skeleton block inside it to hold its aspect ratio.
+ */
+.risk-gauge-container .skeleton[style*="aspect-ratio"] {
+  display: block;
 }
 

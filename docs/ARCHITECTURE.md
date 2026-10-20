@@ -118,31 +118,65 @@ interface WalletContextType {
   wallet: WalletInfo | null;
   status: 'disconnected' | 'connecting' | 'connected' | 'error';
   error: WalletError | null;
-  connect: (type: WalletType) => Promise<void>;
+  connect: (type: WalletType, options?: ConnectOptions) => Promise<ConnectResult>;
   disconnect: () => void;
   clearError: () => void;
 }
+
+type ConnectResult =
+  | { ok: true; wallet: WalletInfo }
+  | { ok: false; error: WalletConnectError };
 ```
 
-`WalletError` is a discriminated union — consumers branch on `error.type` to render
-specific recovery UI:
+`connect()` returns a result object that distinguishes success from failure. On success,
+`{ ok: true, wallet }` is returned. On failure, `{ ok: false, error }` is returned and
+the context's `error` and `status` fields are also updated for backward compatibility
+with existing consumers.
+
+`WalletConnectError` is a proper Error subclass (so `instanceof` checks work) with a
+`type` discriminator that classifies the failure category:
 
 ```ts
-type WalletError =
-  | { type: 'not_found';        message: string }
-  | { type: 'connection_failed'; message: string }
-  | { type: 'wrong_network';     message: string }
-  | { type: 'user_rejected';     message: string };
+class WalletConnectError extends Error {
+  type: 'not_found' | 'connection_failed' | 'wrong_network' | 'user_rejected';
+  message: string;
+}
 ```
 
-#### Attempt-Token Rule and StrictMode Safety
+### Error classification and user-facing copy
 
-`WalletContext` prevents asynchronous race conditions (e.g. slow auto-reconnect resolving after user disconnect, rapid wallet switching, or rejected stale requests overwriting current connection) by maintaining a monotonically increasing `attemptRef.current`:
+Raw errors from wallet extensions are classified by `classifyWalletError()` in
+`src/utils/wallet.ts`. The helper examines error codes and messages to detect:
 
-- **Attempt Tokens**: Every async connection lifecycle entry point (`connect`, `runReconnect`, `retryReconnect`, `stayConnected`) captures an incremented attempt token `const id = ++attemptRef.current`.
-- **Currency Checks**: After every `await`, the function compares `id === attemptRef.current`. If superseded, the result is discarded immediately—no React state updates and no writes to `localStorage` (`saveWalletPreference`, `recordRecentWallet`).
-- **Cancellation on User Action**: Calling `disconnect()` or `forgetRememberedChoice()` increments `attemptRef.current`, ensuring any pending connect or auto-reconnect cannot resurrect state or overwrite privacy preferences on disk.
-- **StrictMode-Safe Mount**: In development, `React.StrictMode` dual-mounts effects. Cleanup on unmount increments `attemptRef.current` and clears reconnect timeouts to cancel in-flight work. In addition, an in-flight connection promise guard (`inFlightConnectRef`) deduplicates overlapping connection attempts across the StrictMode dual-mount cycle, preventing duplicate extension prompts.
+- **`user_rejected`** — EIP-1193 code 4001, or messages containing "reject", "decline",
+  "cancel", "denied"
+- **`not_found`** — messages containing "not found" or "not installed"
+- **`wrong_network`** — messages containing "network", "testnet", or "mainnet"
+- **`connection_failed`** — catch-all for unknown failures
+
+Each error type maps to a user-facing message centralized in `ERROR_MESSAGES`:
+
+| Error Type | User-Facing Copy |
+| --- | --- |
+| `user_rejected` | "You cancelled the request in your wallet. Try again when you're ready." |
+| `not_found` | "Wallet extension not found. Please install it first." |
+| `wrong_network` | "Switch your wallet to Testnet and try again." |
+| `connection_failed` | "Failed to connect. Please try again." |
+
+Raw error details are logged in development but never shown to users.
+
+### Error propagation flow
+
+1. **`connectWallet()`** in `src/utils/wallet.ts` throws `WalletConnectError` on failure
+2. **`WalletContext.connect()`** catches errors, classifies them via
+   `classifyWalletError()`, sets context state, and returns `{ ok: false, error }`
+3. **`WalletButton.handleWalletConnect()`** checks the result and only opens the
+   onboarding flow when `ok === true`. On failure, it re-throws the error
+4. **`WalletConnectionModal.handleWalletSelect()`** catches the error, displays it in a
+   `role="alert"` region, and keeps the modal open with buttons re-enabled
+
+This ensures users are never pushed into onboarding after a failed connection, and the
+modal provides actionable feedback instead of closing silently.
 
 ### NotificationContext
 
@@ -200,7 +234,7 @@ stateDiagram-v2
 
 | State | Visual | Component |
 | --- | --- | --- |
-| Loading | Shimmer matching the final layout | `components/Skeleton.tsx` (`Skeleton.css` animation, `prefers-reduced-motion` disables shimmer) |
+| Loading | Shimmer matching the final layout | `components/Skeleton.tsx` (`Skeleton.css` animation, `prefers-reduced-motion` disables shimmer). `TransactionHistory` uses the page-level `components/TransactionHistorySkeleton.tsx` wrapper which composes `Skeleton` into a full stats + filter + table placeholder. `RepaymentVisualizer` uses `RepaymentVisualizerSkeleton` (issue #609) for a one-frame first-paint gate that mirrors the chart card geometry. |
 | Empty | Illustration + primary CTA to populate | inline per page (e.g. Dashboard's "no credit lines" state) |
 | Error | Banner + retry, or full-page `ErrorBoundary` if render-time | `components/ErrorBoundary.tsx` for render errors, `BannerAlert` for fetch errors |
 | Ready | Real data | the screen |
@@ -266,7 +300,7 @@ src/
 │   ├── notifications/   ToastContainer, BannerAlert, NotificationBell, NotificationCenter
 │   ├── (modals)         WalletConnectionModal, RepayModal, OnboardingFlow
 │   ├── (inputs)         FormField, FormMessage, AmountInput, PendingButton
-│   ├── (status)         StatusBadge, Skeleton, SuccessState, TransactionStatus, RiskGauge
+│   ├── (status)         StatusBadge, Skeleton, TransactionHistorySkeleton, SuccessState, TransactionStatus, RiskGauge
 │   ├── (a11y)           AccessibleTooltip, CopyToClipboard
 │   └── ErrorBoundary    Top-level render-error catcher
 ├── context/
@@ -275,7 +309,8 @@ src/
 ├── hooks/
 │   ├── useFocusTrap.ts
 │   ├── useBodyScrollLock.ts
-│   └── useInertBackdrop.ts
+│   ├── useInertBackdrop.ts
+│   └── useScrollRestoration.ts   — saves/restores scrollY per route
 ├── utils/
 │   ├── tokens.ts        Color/spacing tokens + formatters
 │   ├── wallet.ts        Wallet provider glue

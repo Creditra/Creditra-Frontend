@@ -70,20 +70,20 @@ export function DrawingLimit({
         <div className="flex items-center gap-4">
           <span className="font-medium text-foreground">
             {drawnLabel}:{" "}
-            <span className={`font-semibold ${textColor}`}>
+            <span className={`font-semibold ${textColor} tabular-nums`}>
               {formatCurrency(drawnAmount)}
             </span>
           </span>
           <span className="text-muted-foreground">/</span>
           <span className="text-muted-foreground">
             {availableLabel}:{" "}
-            <span className="font-semibold text-foreground">
+            <span className="font-semibold text-foreground tabular-nums">
               {formatCurrency(available)}
             </span>
           </span>
         </div>
         <span
-          className={`text-sm font-semibold ${textColor}`}
+          className={`text-sm font-semibold ${textColor} tabular-nums`}
           aria-live="polite"
           aria-atomic="true"
         >
@@ -116,12 +116,12 @@ export function DrawingLimit({
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>
           Limit:{" "}
-          <span className="font-medium text-foreground">
+          <span className="font-medium text-foreground tabular-nums">
             {formatCurrency(totalLimit)}
           </span>
         </span>
         {isExceeded && (
-          <span className="font-medium text-red-400">
+          <span className="font-medium text-red-400 tabular-nums">
             Overdrawn by {formatCurrency(drawnAmount - totalLimit)}
           </span>
         )}

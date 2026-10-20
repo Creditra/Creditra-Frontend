@@ -5,9 +5,8 @@
  *
  * Visibility
  * ──────────
- * Shown only below the `md` breakpoint (max-width 767px) on the `amount`
- * step once a credit line is selected. Desktop uses the sidebar
- * `PreviewSection`; `select`, `confirm`, and `status` steps are excluded
+ * Shown on all breakpoints on the `amount` step once a credit line is
+ * selected. `select`, `confirm`, and `status` steps are excluded
  * (see VISIBLE_STEPS).
  *
  * Scroll behaviour
@@ -29,7 +28,6 @@ import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
 import { formatMoney } from "@/utils/amountValidation";
 import { useDebounceValue } from "@/hooks/useDebounceValue";
 import { useScrollCollapse } from "@/hooks/useScrollCollapse";
-import { BELOW_MD_MEDIA, useMediaQuery } from "@/hooks/useMediaQuery";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import "./DrawSummaryBar.css";
 
@@ -69,8 +67,7 @@ export function DrawSummaryBar({
   amount,
   step,
 }: DrawSummaryBarProps) {
-  const isBelowMd = useMediaQuery(BELOW_MD_MEDIA);
-  const isVisible = !!creditLine && VISIBLE_STEPS.has(step) && isBelowMd;
+  const isVisible = !!creditLine && VISIBLE_STEPS.has(step);
   const isCollapsed = useScrollCollapse(isVisible);
   const prefersReducedMotion = usePrefersReducedMotion();
 

@@ -15,6 +15,7 @@ describe('NetworkStatus', () => {
       isOnline: true,
       queueAction: vi.fn(),
       checkOnlineStatus: vi.fn(),
+      queuedActionCount: 0,
     });
 
     render(<NetworkStatus />);
@@ -30,6 +31,7 @@ describe('NetworkStatus', () => {
       isOnline: false,
       queueAction: vi.fn(),
       checkOnlineStatus: vi.fn(),
+      queuedActionCount: 0,
     });
 
     render(<NetworkStatus />);
@@ -45,6 +47,7 @@ describe('NetworkStatus', () => {
       isOnline: true,
       queueAction: vi.fn(),
       checkOnlineStatus: vi.fn(),
+      queuedActionCount: 0,
     });
 
     render(<NetworkStatus />);
@@ -60,6 +63,7 @@ describe('NetworkStatus', () => {
       isOnline,
       queueAction: vi.fn(),
       checkOnlineStatus: vi.fn(),
+      queuedActionCount: 0,
     }));
 
     const { rerender } = render(<NetworkStatus />);
@@ -80,6 +84,7 @@ describe('NetworkStatus', () => {
       isOnline,
       queueAction: vi.fn(),
       checkOnlineStatus: vi.fn(),
+      queuedActionCount: 0,
     }));
 
     const { rerender } = render(<NetworkStatus />);
@@ -99,6 +104,7 @@ describe('NetworkStatus', () => {
       isOnline: true,
       queueAction: vi.fn(),
       checkOnlineStatus: vi.fn(),
+      queuedActionCount: 0,
     });
 
     const { rerender } = render(<NetworkStatus />);
@@ -110,6 +116,7 @@ describe('NetworkStatus', () => {
       isOnline: false,
       queueAction: vi.fn(),
       checkOnlineStatus: vi.fn(),
+      queuedActionCount: 0,
     });
     rerender(<NetworkStatus />);
 

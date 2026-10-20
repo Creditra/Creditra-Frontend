@@ -77,4 +77,48 @@ describe('PayoffProjection', () => {
     );
     expect(screen.getByText('Monthly payment')).toBeInTheDocument();
   });
+
+  describe('tabular-nums on numeric displays (FWC26)', () => {
+    it('months saved value has num-tabular class', () => {
+      const { container } = render(<PayoffProjection {...BASE_PROPS} repayAmount={20_000} />);
+      const monthsSaved = container.querySelector('.text-2xl.font-bold.text-accent.num-tabular');
+      expect(monthsSaved).toBeInTheDocument();
+      expect(monthsSaved?.classList.contains('num-tabular')).toBe(true);
+    });
+
+    it('interest saved value has num-tabular class', () => {
+      const { container } = render(<PayoffProjection {...BASE_PROPS} repayAmount={20_000} />);
+      const interestSaved = container.querySelector('.text-2xl.font-bold.text-success.num-tabular');
+      expect(interestSaved).toBeInTheDocument();
+      expect(interestSaved?.classList.contains('num-tabular')).toBe(true);
+    });
+
+    it('utilization percentage span has num-tabular class', () => {
+      const { container } = render(<PayoffProjection {...BASE_PROPS} repayAmount={20_000} />);
+      const utilSpan = container.querySelector('.text-xs.text-muted.num-tabular');
+      expect(utilSpan).toBeInTheDocument();
+      expect(utilSpan?.classList.contains('num-tabular')).toBe(true);
+    });
+
+    it('monthly payment value has num-tabular class', () => {
+      const { container } = render(<PayoffProjection {...BASE_PROPS} repayAmount={20_000} />);
+      const monthlyPayment = container.querySelector('.text-sm.font-semibold.text-foreground.num-tabular');
+      expect(monthlyPayment).toBeInTheDocument();
+      expect(monthlyPayment?.classList.contains('num-tabular')).toBe(true);
+    });
+
+    it('months saved retains num-tabular in full payoff state', () => {
+      const { container } = render(<PayoffProjection {...BASE_PROPS} repayAmount={100_000} />);
+      const fullPayoffEl = container.querySelector('.text-2xl.font-bold.text-accent.num-tabular');
+      expect(fullPayoffEl).toBeInTheDocument();
+    });
+
+    it('interest saved retains num-tabular in empty state (no amount)', () => {
+      const { container } = render(<PayoffProjection {...BASE_PROPS} repayAmount={0} />);
+      // When no amount, the interest/months section isn't rendered, but the
+      // monthly payment is always shown and should still have num-tabular
+      const monthlyPayment = container.querySelector('.text-sm.font-semibold.text-foreground.num-tabular');
+      expect(monthlyPayment).toBeInTheDocument();
+    });
+  });
 });

@@ -17,6 +17,8 @@ const BASE = {
   principal: 100_000,
   apr: 8.5,
   monthlyPayment: 2500,
+  /** Skip first-paint skeleton so existing sync assertions stay stable. */
+  loading: false as const,
 };
 
 describe('RepaymentVisualizer', () => {
@@ -97,20 +99,24 @@ describe('RepaymentVisualizer', () => {
   });
 
   it('caps term at maxMonths', () => {
-    render(<RepaymentVisualizer principal={100_000} apr={8.5} monthlyPayment={3000} maxMonths={6} />);
+    render(<RepaymentVisualizer principal={100_000} apr={8.5} monthlyPayment={3000} maxMonths={6}  loading={false} />);
     expect(screen.getAllByText(/6 month/).length).toBeGreaterThanOrEqual(1);
   });
 
   it('has no tooltip by default', () => {
     render(<RepaymentVisualizer {...BASE} />);
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // Only the LiveRegion (sr-only) status element exists, no visible tooltip status
+    const statusElements = screen.getAllByRole('status');
+    expect(statusElements).toHaveLength(1);
+    expect(statusElements[0]).toHaveClass('sr-only');
   });
 
   it('shows tooltip on mouse move over SVG', () => {
     render(<RepaymentVisualizer {...BASE} />);
     const svg = screen.getByRole('img');
     fireEvent.mouseMove(svg, { clientX: 100, clientY: 100 });
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    // Two status elements: LiveRegion (sr-only) + tooltip (visible)
+    expect(screen.getAllByRole('status')).toHaveLength(2);
     expect(screen.getAllByText(/Month/).length).toBeGreaterThanOrEqual(1);
   });
 
@@ -118,9 +124,12 @@ describe('RepaymentVisualizer', () => {
     render(<RepaymentVisualizer {...BASE} />);
     const svg = screen.getByRole('img');
     fireEvent.mouseMove(svg, { clientX: 100, clientY: 100 });
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.getAllByRole('status')).toHaveLength(2);
     fireEvent.mouseLeave(svg);
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // After mouse leave, only the LiveRegion remains
+    const statusElements = screen.getAllByRole('status');
+    expect(statusElements).toHaveLength(1);
+    expect(statusElements[0]).toHaveClass('sr-only');
   });
 });
 
@@ -142,7 +151,8 @@ describe('RepaymentVisualizer — keyboard shortcut hints & navigation', () => {
     const svg = screen.getByRole('img');
 
     fireEvent.keyDown(svg, { key: 'ArrowRight' });
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    // Two status elements: LiveRegion + tooltip
+    expect(screen.getAllByRole('status')).toHaveLength(2);
     expect(svg).toHaveAttribute('aria-valuenow', '1');
 
     fireEvent.keyDown(svg, { key: 'ArrowRight' });
@@ -153,7 +163,7 @@ describe('RepaymentVisualizer — keyboard shortcut hints & navigation', () => {
   });
 
   it('jumps to start and end of schedule using Home and End keys', () => {
-    render(<RepaymentVisualizer principal={100_000} apr={8.5} monthlyPayment={3000} maxMonths={6} />);
+    render(<RepaymentVisualizer principal={100_000} apr={8.5} monthlyPayment={3000} maxMonths={6}  loading={false} />);
     const svg = screen.getByRole('img');
 
     fireEvent.keyDown(svg, { key: 'End' });
@@ -168,10 +178,13 @@ describe('RepaymentVisualizer — keyboard shortcut hints & navigation', () => {
     const svg = screen.getByRole('img');
 
     fireEvent.keyDown(svg, { key: 'ArrowRight' });
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.getAllByRole('status')).toHaveLength(2);
 
     fireEvent.keyDown(svg, { key: 'Escape' });
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // After escape, only the LiveRegion remains
+    const statusElements = screen.getAllByRole('status');
+    expect(statusElements).toHaveLength(1);
+    expect(statusElements[0]).toHaveClass('sr-only');
   });
 });
 
@@ -283,7 +296,10 @@ describe('RepaymentVisualizer — tabular-nums on numeric displays', () => {
     render(<RepaymentVisualizer {...BASE} />);
     const svg = screen.getByRole('img');
     fireEvent.mouseMove(svg, { clientX: 100, clientY: 100 });
-    const tooltip = screen.getByRole('status');
+    // Find the visible (non-sr-only) status element — that's the tooltip
+    const statuses = screen.getAllByRole('status');
+    const tooltip = statuses.find((el) => !el.classList.contains('sr-only'));
+    expect(tooltip).toBeDefined();
     expect(tooltip).toHaveStyle({ fontVariantNumeric: 'tabular-nums' });
   });
 
@@ -408,7 +424,8 @@ describe('RepaymentVisualizer — reduced-motion fallback', () => {
       render(<RepaymentVisualizer {...BASE} />);
       const svg = screen.getByRole('img');
       fireEvent.mouseMove(svg, { clientX: 100, clientY: 100 });
-      expect(screen.getByRole('status')).toBeInTheDocument();
+      // Two status elements: LiveRegion + tooltip
+      expect(screen.getAllByRole('status')).toHaveLength(2);
     });
   });
 
@@ -476,5 +493,66 @@ describe('RepaymentVisualizer — reduced-motion fallback', () => {
     expect(document.querySelector('.rv-chart-wrap')).not.toBeInTheDocument();
 
     spy.mockRestore();
+  });
+});
+
+// ─── ARIA live-region announcement tests ─────────────────────────────────
+
+describe('RepaymentVisualizer — aria-live status announcements', () => {
+  it('renders a LiveRegion component with sr-only class', () => {
+    render(<RepaymentVisualizer {...BASE} />);
+    // The LiveRegion renders a div with role="status", aria-live="polite", and sr-only class
+    const liveRegion = document.querySelector('[aria-live="polite"].sr-only');
+    expect(liveRegion).toBeInTheDocument();
+    expect(liveRegion).toHaveAttribute('role', 'status');
+  });
+
+  it('LiveRegion announces the repayment plan summary when schedule is calculated', () => {
+    render(<RepaymentVisualizer {...BASE} />);
+    const liveRegion = document.querySelector('[aria-live="polite"].sr-only');
+    expect(liveRegion?.textContent).toMatch(/repayment plan/i);
+    expect(liveRegion?.textContent).toMatch(/month/i);
+    expect(liveRegion?.textContent).toMatch(/total interest/i);
+  });
+
+  it('LiveRegion announces tooltip data when inspecting a month via keyboard', () => {
+    render(<RepaymentVisualizer {...BASE} />);
+    const svg = screen.getByRole('img');
+
+    // Navigate to month 1 via keyboard
+    fireEvent.keyDown(svg, { key: 'ArrowRight' });
+
+    const liveRegion = document.querySelector('[aria-live="polite"].sr-only');
+    expect(liveRegion?.textContent).toMatch(/month 1/i);
+    expect(liveRegion?.textContent).toMatch(/principal remaining/i);
+    expect(liveRegion?.textContent).toMatch(/cumulative interest/i);
+  });
+
+  it('LiveRegion reverts to plan summary when tooltip is cleared', () => {
+    render(<RepaymentVisualizer {...BASE} />);
+    const svg = screen.getByRole('img');
+
+    // Show tooltip first
+    fireEvent.keyDown(svg, { key: 'ArrowRight' });
+
+    // Clear tooltip
+    fireEvent.keyDown(svg, { key: 'Escape' });
+
+    const liveRegion = document.querySelector('[aria-live="polite"].sr-only');
+    expect(liveRegion?.textContent).toMatch(/repayment plan/i);
+    expect(liveRegion?.textContent).not.toMatch(/month \d/i);
+  });
+
+  it('LiveRegion is empty when schedule has no data (empty state)', () => {
+    render(<RepaymentVisualizer {...BASE} principal={0} />);
+    const liveRegion = document.querySelector('[aria-live="polite"].sr-only');
+    // LiveRegion should have empty content when no schedule data
+    expect(liveRegion?.textContent).toBe('');
+  });
+
+  it('LiveRegion uses polite politeness to avoid interrupting the user', () => {
+    render(<RepaymentVisualizer {...BASE} />);
+    const liveRegion = document.querySelector('[aria-live="polite"].sr-only');
+    expect(liveRegion).toHaveAttribute('aria-live', 'polite');
   });
 });

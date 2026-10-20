@@ -764,6 +764,142 @@
   font-weight: 300;
 }
 
+/* 
+   Wallet Hover-Preview Card
+   Appears on hover/focus of each wallet option row.
+   Follows the same design pattern as PreviewCard but adapted for
+   the wallet-selection context.  The list item serves as the
+   positioning anchor so the card can extend beyond the button.
+    */
+.wallet-option-wrapper {
+  position: relative;
+}
+
+.wallet-preview {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%) scale(0.97);
+  z-index: 100;
+  width: 240px;
+  padding: var(--space-md);
+  background: var(--modal-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.15);
+  color: var(--color-text);
+  font-family: inherit;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms cubic-bezier(0.16, 1, 0.3, 1),
+              transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: left;
+}
+
+/* Arrow pointing to the trigger button */
+.wallet-preview::after {
+  content: '';
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%) rotate(45deg);
+  width: 10px;
+  height: 10px;
+  margin-right: -5px;
+  background: var(--modal-bg);
+  border-left: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Visible on hover/focus of the wrapper list item */
+.wallet-option-wrapper:hover .wallet-preview,
+.wallet-option-wrapper:focus-within .wallet-preview {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%) scale(1);
+}
+
+/* Preview card header — icon + name */
+.wallet-preview__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.wallet-preview__header img {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: contain;
+}
+
+.wallet-preview__name {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+/* Feature list */
+.wallet-preview__features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.wallet-preview__feature {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+}
+
+.wallet-preview__check {
+  flex-shrink: 0;
+  color: var(--color-success);
+  font-weight: 700;
+  font-size: 0.75rem;
+  margin-top: 0.1em;
+}
+
+/* Mobile: reposition below the trigger */
+@media (max-width: 640px) {
+  .wallet-preview {
+    position: static;
+    transform: none;
+    width: 100%;
+    margin-top: var(--space-xs);
+    margin-bottom: var(--space-xs);
+    border-radius: 8px;
+    box-shadow: none;
+    border-style: dashed;
+    opacity: 0;
+    max-height: 0;
+    overflow: hidden;
+    padding: 0 var(--space-md);
+    transition: opacity 200ms ease, max-height 200ms ease, padding 200ms ease;
+  }
+
+  .wallet-preview::after {
+    display: none;
+  }
+
+  .wallet-option-wrapper:hover .wallet-preview,
+  .wallet-option-wrapper:focus-within .wallet-preview {
+    opacity: 1;
+    max-height: 200px;
+    padding: var(--space-md);
+    transform: none;
+  }
+}
+
 /* Spinner */
 .wallet-option-spinner {
   width: 20px;
@@ -1101,6 +1237,10 @@
   
   .wallet-option:active:not(:disabled) {
     transform: none;
+  }
+  
+  .wallet-preview {
+    transition: none;
   }
 }
 

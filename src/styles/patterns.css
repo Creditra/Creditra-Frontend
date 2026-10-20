@@ -1,26 +1,663 @@
+/**
+ * patterns.css — color-blind-safe pattern fills (WCAG 1.4.1)
+ *
+ * All classes in this file pair a pattern texture with color so that
+ * status/severity information is conveyed by shape AND color rather than
+ * color alone.  The patterns are intentionally subtle — they reinforce the
+ * color signal without overpowering the UI.
+ *
+ * Sections:
+ *   1. Credit-line status cards (.status-*)
+ *   2. RepayPage utilization progress bars (.rp-progress-*)
+ *   3. RepayPage feedback severity banners (.rp-severity-*)
+ *   4. RepaymentVisualizer legend swatches (.rv-legend-swatch*)
+ *   5. Forced-colors (Windows High Contrast) overrides
+ */
+
+/* ─── 1. Credit-line status cards ─────────────────────────────────────────── */
 /* Patterns for Credit Line statuses to support color-blind accessibility */
+
+/*
+ * Transaction-status pattern classes
+ * ─────────────────────────────────────
+ * Augment the inline colour of .tx-status-badge with a subtle geometric
+ * pattern so that the three transaction statuses (Completed / Pending /
+ * Failed) are distinguishable without relying on colour alone.
+ *
+ * Usage (TransactionHistory.tsx):
+ *   <span className="tx-status-badge tx-status-pattern--completed" …>
+ *
+ * Each class:
+ *   – Applies a pure-CSS background-image as a secondary cue.
+ *   – Preserves the original background-color so the pattern merges
+ *     with the coloured tint and does not add an opaque layer.
+ *   – Declares forced-colors: active overrides (WCAG 2.1 SC 1.4.1)
+ *     so the pattern remains visible in Windows High Contrast Mode.
+ *
+ * Patterns
+ *   Completed – fine polka-dot (radial gradient)
+ *   Pending   – diagonal hatching (linear gradient, 45°)
+ *   Failed    – crosshatch (dual diagonal gradients)
+ */
+
+.tx-status-pattern--completed {
+  background-image: radial-gradient(circle,
+      rgba(63, 185, 80, 0.18) 1.5px,
+      transparent 1.5px);
+  background-size: 12px 12px;
+}
+
+.tx-status-pattern--pending {
+  background-image: repeating-linear-gradient(45deg,
+      transparent 0,
+      transparent 4px,
+      rgba(210, 153, 34, 0.18) 4px,
+      rgba(210, 153, 34, 0.18) 6px);
+}
+
+.tx-status-pattern--failed {
+  background-image:
+    repeating-linear-gradient(45deg,
+      transparent 0,
+      transparent 3px,
+      rgba(248, 81, 73, 0.14) 3px,
+      rgba(248, 81, 73, 0.14) 5px),
+    repeating-linear-gradient(-45deg,
+      transparent 0,
+      transparent 3px,
+      rgba(248, 81, 73, 0.14) 3px,
+      rgba(248, 81, 73, 0.14) 5px);
+}
+
+/* ── High Contrast / forced-colours overrides ─────────────────────────── */
+
+@media (forced-colors: active) {
+  .tx-status-pattern--completed {
+    background-image: radial-gradient(circle,
+        CanvasText 1.5px,
+        transparent 1.5px);
+    forced-color-adjust: none;
+  }
+
+  .tx-status-pattern--pending {
+    background-image: repeating-linear-gradient(45deg,
+        CanvasText 0,
+        CanvasText 1.5px,
+        transparent 1.5px,
+        transparent 5px);
+    forced-color-adjust: none;
+  }
+
+  .tx-status-pattern--failed {
+    background-image:
+      repeating-linear-gradient(45deg,
+        CanvasText 0,
+        CanvasText 1px,
+        transparent 1px,
+        transparent 5px),
+      repeating-linear-gradient(-45deg,
+        CanvasText 0,
+        CanvasText 1px,
+        transparent 1px,
+        transparent 5px);
+    forced-color-adjust: none;
+  }
+}
+
+/* ── Status classes (credit-line statuses) ───────────────────────────── */
 
 .status-active {
   background-image: radial-gradient(circle, rgba(16, 185, 129, 0.1) 1px, transparent 1px);
   background-size: 16px 16px;
 }
 
-.status-suspended {
-  background-image: linear-gradient(45deg, rgba(245, 158, 11, 0.1) 25%, transparent 25%, transparent 50%, rgba(245, 158, 11, 0.1) 50%, rgba(245, 158, 11, 0.1) 75%, transparent 75%, transparent);
-  background-size: 16px 16px;
+/* ─── Status badges (pre-existing — kept identical) ───────────────────────── */
+
+.status-active,
+.status-pattern--active {
+  background-image: radial-gradient(circle, rgba(63, 185, 80, 0.25) 1.5px, transparent 1.5px);
+  background-size: 8px 8px;
 }
 
-.status-frozen {
-  background-image: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 25%, transparent 25%, transparent 50%, rgba(59, 130, 246, 0.1) 50%, rgba(59, 130, 246, 0.1) 75%, transparent 75%, transparent);
-  background-size: 16px 16px;
+.status-suspended,
+.status-pattern--suspended {
+  background-image: repeating-linear-gradient(45deg, rgba(210, 153, 34, 0.2) 0, rgba(210, 153, 34, 0.2) 2px, transparent 2px, transparent 6px);
 }
 
-.status-defaulted {
-  background-image: repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.1) 10px, transparent 10px, transparent 20px);
+.status-frozen,
+.status-pattern--frozen {
+  background-image: repeating-linear-gradient(135deg, rgba(88, 166, 255, 0.2) 0, rgba(88, 166, 255, 0.2) 2px, transparent 2px, transparent 6px);
 }
 
-.status-closed {
-  background-image: repeating-linear-gradient(0deg, rgba(107, 114, 128, 0.1), rgba(107, 114, 128, 0.1) 6px, transparent 6px, transparent 12px);
+.status-defaulted,
+.status-pattern--defaulted {
+  background-image: repeating-linear-gradient(45deg, rgba(248, 81, 73, 0.2) 0, rgba(248, 81, 73, 0.2) 2px, transparent 2px, transparent 5px),
+                    repeating-linear-gradient(-45deg, rgba(248, 81, 73, 0.2) 0, rgba(248, 81, 73, 0.2) 2px, transparent 2px, transparent 5px);
+}
+
+.status-closed,
+.status-pattern--closed {
+  background-image: repeating-linear-gradient(0deg, rgba(139, 148, 158, 0.2) 0, rgba(139, 148, 158, 0.2) 1.5px, transparent 1.5px, transparent 4px);
+}
+
+/* ─── 2. RepayPage utilization progress bars ──────────────────────────────
+ *
+ * Three levels that map to UtilizationLevel: low / medium / high.
+ * Each class is applied to the filled <div> inside the progress track and
+ * uses a pattern (solid diagonal lines or dots) in addition to the token
+ * color so the level is distinguishable without relying on color alone.
+ *
+ * Token references:
+ *   low    → var(--success, #3fb950)  solid bar, dots indicate "all clear"
+ *   medium → var(--warning, #d29922)  diagonal stripes at 45° (caution)
+ *   high   → var(--error,   #f85149)  dense cross-hatch (urgent)
+ *
+ * The ghost bar (old utilization overlay) uses rp-progress--ghost and is
+ * always rendered at 30% opacity so it never competes with the live bar.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+.rp-progress--low {
+  background-color: var(--success, #3fb950);
+  /* Subtle dot pattern: presence of dots = "healthy" */
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--success, #3fb950) 55%, #fff) 1px,
+    transparent 1px
+  );
+  background-size: 8px 8px;
+}
+
+.rp-progress--medium {
+  background-color: var(--warning, #d29922);
+  /* Single diagonal lines: 45° = caution stripe */
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 3px,
+    color-mix(in srgb, var(--warning, #d29922) 60%, #fff) 3px,
+    color-mix(in srgb, var(--warning, #d29922) 60%, #fff) 4px
+  );
+}
+
+.rp-progress--high {
+  background-color: var(--error, #f85149);
+  /* Cross-hatch pattern: two directions = urgent/critical */
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 2px,
+      color-mix(in srgb, var(--error, #f85149) 55%, #fff) 2px,
+      color-mix(in srgb, var(--error, #f85149) 55%, #fff) 3px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 2px,
+      color-mix(in srgb, var(--error, #f85149) 55%, #fff) 2px,
+      color-mix(in srgb, var(--error, #f85149) 55%, #fff) 3px
+    );
+}
+
+/* Ghost bar — old utilization shown behind the new bar */
+.rp-progress--ghost {
+  background-color: var(--error, #f85149);
+  opacity: 0.30;
+}
+
+/* ─── 3. RepayPage severity feedback banners ──────────────────────────────
+ *
+ * Applied to the inline feedback <div> below the repay-amount input.
+ * Patterns are kept very lightweight because the feedback area is small —
+ * they appear as a faint repeating edge texture that reinforces the severity
+ * without obscuring the text.
+ *
+ * Token references:
+ *   info    → var(--accent,  #58a6ff)  horizontal rules (neutral/informational)
+ *   success → var(--success, #3fb950)  micro-dots (positive result)
+ *   warning → var(--warning, #d29922)  diagonal lines (caution)
+ *   danger  → var(--error,   #f85149)  cross-hatch (critical error)
+ * ──────────────────────────────────────────────────────────────────────── */
+
+.rp-severity--info {
+  /* Thin horizontal rules suggest "lines of information" */
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 10px,
+    color-mix(in srgb, var(--accent, #58a6ff) 12%, transparent) 10px,
+    color-mix(in srgb, var(--accent, #58a6ff) 12%, transparent) 11px
+  );
+}
+
+.rp-severity--success {
+  /* Micro-dot grid: "checkmarks scattered" / positive reading */
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--success, #3fb950) 18%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 10px 10px;
+}
+
+.rp-severity--warning {
+  /* Diagonal stripes at 45°: standard caution / hazard pattern */
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 6px,
+    color-mix(in srgb, var(--warning, #d29922) 15%, transparent) 6px,
+    color-mix(in srgb, var(--warning, #d29922) 15%, transparent) 7px
+  );
+}
+
+.rp-severity--danger {
+  /* Cross-hatch: strong urgency signal */
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 4px,
+      color-mix(in srgb, var(--error, #f85149) 14%, transparent) 4px,
+      color-mix(in srgb, var(--error, #f85149) 14%, transparent) 5px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 4px,
+      color-mix(in srgb, var(--error, #f85149) 14%, transparent) 4px,
+      color-mix(in srgb, var(--error, #f85149) 14%, transparent) 5px
+    );
+}
+
+/* ─── 2. RepayPage utilization progress bars ──────────────────────────────
+ *
+ * Three levels that map to UtilizationLevel: low / medium / high.
+ * Each class is applied to the filled <div> inside the progress track and
+ * uses a pattern (solid diagonal lines or dots) in addition to the token
+ * color so the level is distinguishable without relying on color alone.
+ *
+ * Token references:
+ *   low    → var(--success, #3fb950)  solid bar, dots indicate "all clear"
+ *   medium → var(--warning, #d29922)  diagonal stripes at 45° (caution)
+ *   high   → var(--error,   #f85149)  dense cross-hatch (urgent)
+ *
+ * The ghost bar (old utilization overlay) uses rp-progress--ghost and is
+ * always rendered at 30% opacity so it never competes with the live bar.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+.rp-progress--low {
+  background-color: var(--success, #3fb950);
+  /* Subtle dot pattern: presence of dots = "healthy" */
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--success, #3fb950) 55%, #fff) 1px,
+    transparent 1px
+  );
+  background-size: 8px 8px;
+}
+
+.rp-progress--medium {
+  background-color: var(--warning, #d29922);
+  /* Single diagonal lines: 45° = caution stripe */
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 3px,
+    color-mix(in srgb, var(--warning, #d29922) 60%, #fff) 3px,
+    color-mix(in srgb, var(--warning, #d29922) 60%, #fff) 4px
+  );
+}
+
+.rp-progress--high {
+  background-color: var(--error, #f85149);
+  /* Cross-hatch pattern: two directions = urgent/critical */
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 2px,
+      color-mix(in srgb, var(--error, #f85149) 55%, #fff) 2px,
+      color-mix(in srgb, var(--error, #f85149) 55%, #fff) 3px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 2px,
+      color-mix(in srgb, var(--error, #f85149) 55%, #fff) 2px,
+      color-mix(in srgb, var(--error, #f85149) 55%, #fff) 3px
+    );
+}
+
+/* Ghost bar — old utilization shown behind the new bar */
+.rp-progress--ghost {
+  background-color: var(--error, #f85149);
+  opacity: 0.30;
+}
+
+/* ─── 3. RepayPage severity feedback banners ──────────────────────────────
+ *
+ * Applied to the inline feedback <div> below the repay-amount input.
+ * Patterns are kept very lightweight because the feedback area is small —
+ * they appear as a faint repeating edge texture that reinforces the severity
+ * without obscuring the text.
+ *
+ * Token references:
+ *   info    → var(--accent,  #58a6ff)  horizontal rules (neutral/informational)
+ *   success → var(--success, #3fb950)  micro-dots (positive result)
+ *   warning → var(--warning, #d29922)  diagonal lines (caution)
+ *   danger  → var(--error,   #f85149)  cross-hatch (critical error)
+ * ──────────────────────────────────────────────────────────────────────── */
+
+.rp-severity--info {
+  /* Thin horizontal rules suggest "lines of information" */
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 10px,
+    color-mix(in srgb, var(--accent, #58a6ff) 12%, transparent) 10px,
+    color-mix(in srgb, var(--accent, #58a6ff) 12%, transparent) 11px
+  );
+}
+
+.rp-severity--success {
+  /* Micro-dot grid: "checkmarks scattered" / positive reading */
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--success, #3fb950) 18%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 10px 10px;
+}
+
+.rp-severity--warning {
+  /* Diagonal stripes at 45°: standard caution / hazard pattern */
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 6px,
+    color-mix(in srgb, var(--warning, #d29922) 15%, transparent) 6px,
+    color-mix(in srgb, var(--warning, #d29922) 15%, transparent) 7px
+  );
+}
+
+.rp-severity--danger {
+  /* Cross-hatch: strong urgency signal */
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 4px,
+      color-mix(in srgb, var(--error, #f85149) 14%, transparent) 4px,
+      color-mix(in srgb, var(--error, #f85149) 14%, transparent) 5px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 4px,
+      color-mix(in srgb, var(--error, #f85149) 14%, transparent) 4px,
+      color-mix(in srgb, var(--error, #f85149) 14%, transparent) 5px
+    );
+}
+
+/* ─── 2. RepayPage utilization progress bars ──────────────────────────────
+ *
+ * Three levels that map to UtilizationLevel: low / medium / high.
+ * Each class is applied to the filled <div> inside the progress track and
+ * uses a pattern (solid diagonal lines or dots) in addition to the token
+ * color so the level is distinguishable without relying on color alone.
+ *
+ * Token references:
+ *   low    → var(--success, #3fb950)  solid bar, dots indicate "all clear"
+ *   medium → var(--warning, #d29922)  diagonal stripes at 45° (caution)
+ *   high   → var(--error,   #f85149)  dense cross-hatch (urgent)
+ *
+ * The ghost bar (old utilization overlay) uses rp-progress--ghost and is
+ * always rendered at 30% opacity so it never competes with the live bar.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+.rp-progress--low {
+  background-color: var(--success, #3fb950);
+  /* Subtle dot pattern: presence of dots = "healthy" */
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--success, #3fb950) 55%, #fff) 1px,
+    transparent 1px
+  );
+  background-size: 8px 8px;
+}
+
+.rp-progress--medium {
+  background-color: var(--warning, #d29922);
+  /* Single diagonal lines: 45° = caution stripe */
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 3px,
+    color-mix(in srgb, var(--warning, #d29922) 60%, #fff) 3px,
+    color-mix(in srgb, var(--warning, #d29922) 60%, #fff) 4px
+  );
+}
+
+.rp-progress--high {
+  background-color: var(--error, #f85149);
+  /* Cross-hatch pattern: two directions = urgent/critical */
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 2px,
+      color-mix(in srgb, var(--error, #f85149) 55%, #fff) 2px,
+      color-mix(in srgb, var(--error, #f85149) 55%, #fff) 3px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 2px,
+      color-mix(in srgb, var(--error, #f85149) 55%, #fff) 2px,
+      color-mix(in srgb, var(--error, #f85149) 55%, #fff) 3px
+    );
+}
+
+/* Ghost bar — old utilization shown behind the new bar */
+.rp-progress--ghost {
+  background-color: var(--error, #f85149);
+  opacity: 0.30;
+}
+
+/* ─── 3. RepayPage severity feedback banners ──────────────────────────────
+ *
+ * Applied to the inline feedback <div> below the repay-amount input.
+ * Patterns are kept very lightweight because the feedback area is small —
+ * they appear as a faint repeating edge texture that reinforces the severity
+ * without obscuring the text.
+ *
+ * Token references:
+ *   info    → var(--accent,  #58a6ff)  horizontal rules (neutral/informational)
+ *   success → var(--success, #3fb950)  micro-dots (positive result)
+ *   warning → var(--warning, #d29922)  diagonal lines (caution)
+ *   danger  → var(--error,   #f85149)  cross-hatch (critical error)
+ * ──────────────────────────────────────────────────────────────────────── */
+
+.rp-severity--info {
+  /* Thin horizontal rules suggest "lines of information" */
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 10px,
+    color-mix(in srgb, var(--accent, #58a6ff) 12%, transparent) 10px,
+    color-mix(in srgb, var(--accent, #58a6ff) 12%, transparent) 11px
+  );
+}
+
+.rp-severity--success {
+  /* Micro-dot grid: "checkmarks scattered" / positive reading */
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--success, #3fb950) 18%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 10px 10px;
+}
+
+.rp-severity--warning {
+  /* Diagonal stripes at 45°: standard caution / hazard pattern */
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 6px,
+    color-mix(in srgb, var(--warning, #d29922) 15%, transparent) 6px,
+    color-mix(in srgb, var(--warning, #d29922) 15%, transparent) 7px
+  );
+}
+
+.rp-severity--danger {
+  /* Cross-hatch: strong urgency signal */
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 4px,
+      color-mix(in srgb, var(--error, #f85149) 14%, transparent) 4px,
+      color-mix(in srgb, var(--error, #f85149) 14%, transparent) 5px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 4px,
+      color-mix(in srgb, var(--error, #f85149) 14%, transparent) 4px,
+      color-mix(in srgb, var(--error, #f85149) 14%, transparent) 5px
+    );
+}
+
+/* ─── 2. RepayPage utilization progress bars ──────────────────────────────
+ *
+ * Three levels that map to UtilizationLevel: low / medium / high.
+ * Each class is applied to the filled <div> inside the progress track and
+ * uses a pattern (solid diagonal lines or dots) in addition to the token
+ * color so the level is distinguishable without relying on color alone.
+ *
+ * Token references:
+ *   low    → var(--success, #3fb950)  solid bar, dots indicate "all clear"
+ *   medium → var(--warning, #d29922)  diagonal stripes at 45° (caution)
+ *   high   → var(--error,   #f85149)  dense cross-hatch (urgent)
+ *
+ * The ghost bar (old utilization overlay) uses rp-progress--ghost and is
+ * always rendered at 30% opacity so it never competes with the live bar.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+.rp-progress--low {
+  background-color: var(--success, #3fb950);
+  /* Subtle dot pattern: presence of dots = "healthy" */
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--success, #3fb950) 55%, #fff) 1px,
+    transparent 1px
+  );
+  background-size: 8px 8px;
+}
+
+.rp-progress--medium {
+  background-color: var(--warning, #d29922);
+  /* Single diagonal lines: 45° = caution stripe */
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 3px,
+    color-mix(in srgb, var(--warning, #d29922) 60%, #fff) 3px,
+    color-mix(in srgb, var(--warning, #d29922) 60%, #fff) 4px
+  );
+}
+
+.rp-progress--high {
+  background-color: var(--error, #f85149);
+  /* Cross-hatch pattern: two directions = urgent/critical */
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 2px,
+      color-mix(in srgb, var(--error, #f85149) 55%, #fff) 2px,
+      color-mix(in srgb, var(--error, #f85149) 55%, #fff) 3px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 2px,
+      color-mix(in srgb, var(--error, #f85149) 55%, #fff) 2px,
+      color-mix(in srgb, var(--error, #f85149) 55%, #fff) 3px
+    );
+}
+
+/* Ghost bar — old utilization shown behind the new bar */
+.rp-progress--ghost {
+  background-color: var(--error, #f85149);
+  opacity: 0.30;
+}
+
+/* ─── 3. RepayPage severity feedback banners ──────────────────────────────
+ *
+ * Applied to the inline feedback <div> below the repay-amount input.
+ * Patterns are kept very lightweight because the feedback area is small —
+ * they appear as a faint repeating edge texture that reinforces the severity
+ * without obscuring the text.
+ *
+ * Token references:
+ *   info    → var(--accent,  #58a6ff)  horizontal rules (neutral/informational)
+ *   success → var(--success, #3fb950)  micro-dots (positive result)
+ *   warning → var(--warning, #d29922)  diagonal lines (caution)
+ *   danger  → var(--error,   #f85149)  cross-hatch (critical error)
+ * ──────────────────────────────────────────────────────────────────────── */
+
+.rp-severity--info {
+  /* Thin horizontal rules suggest "lines of information" */
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 10px,
+    color-mix(in srgb, var(--accent, #58a6ff) 12%, transparent) 10px,
+    color-mix(in srgb, var(--accent, #58a6ff) 12%, transparent) 11px
+  );
+}
+
+.rp-severity--success {
+  /* Micro-dot grid: "checkmarks scattered" / positive reading */
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--success, #3fb950) 18%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 10px 10px;
+}
+
+.rp-severity--warning {
+  /* Diagonal stripes at 45°: standard caution / hazard pattern */
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 6px,
+    color-mix(in srgb, var(--warning, #d29922) 15%, transparent) 6px,
+    color-mix(in srgb, var(--warning, #d29922) 15%, transparent) 7px
+  );
+}
+
+.rp-severity--danger {
+  /* Cross-hatch: strong urgency signal */
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 4px,
+      color-mix(in srgb, var(--error, #f85149) 14%, transparent) 4px,
+      color-mix(in srgb, var(--error, #f85149) 14%, transparent) 5px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 4px,
+      color-mix(in srgb, var(--error, #f85149) 14%, transparent) 4px,
+      color-mix(in srgb, var(--error, #f85149) 14%, transparent) 5px
+    );
 }
 
 /* RepaymentVisualizer series — distinguish principal vs interest without color alone (WCAG 1.4.1) */
@@ -36,63 +673,598 @@
 
 .rv-legend-swatch--principal {
   background-color: color-mix(in srgb, var(--accent, #58a6ff) 45%, transparent);
-  background-image: repeating-linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--accent, #58a6ff) 90%, #fff) 0,
-    color-mix(in srgb, var(--accent, #58a6ff) 90%, #fff) 1px,
-    transparent 1px,
-    transparent 5px
-  );
+  background-image: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--accent, #58a6ff) 90%, #fff) 0,
+      color-mix(in srgb, var(--accent, #58a6ff) 90%, #fff) 1px,
+      transparent 1px,
+      transparent 5px);
 }
 
 .rv-legend-swatch--interest {
   background-color: color-mix(in srgb, var(--warning, #d29922) 45%, transparent);
-  background-image: repeating-linear-gradient(
-    45deg,
-    transparent,
-    transparent 2px,
-    color-mix(in srgb, var(--warning, #d29922) 85%, #fff) 2px,
-    color-mix(in srgb, var(--warning, #d29922) 85%, #fff) 3px
-  ),
-  repeating-linear-gradient(
-    -45deg,
-    transparent,
-    transparent 2px,
-    color-mix(in srgb, var(--warning, #d29922) 85%, #fff) 2px,
-    color-mix(in srgb, var(--warning, #d29922) 85%, #fff) 3px
-  );
+  background-image: repeating-linear-gradient(45deg,
+      transparent,
+      transparent 2px,
+      color-mix(in srgb, var(--warning, #d29922) 85%, #fff) 2px,
+      color-mix(in srgb, var(--warning, #d29922) 85%, #fff) 3px),
+    repeating-linear-gradient(-45deg,
+      transparent,
+      transparent 2px,
+      color-mix(in srgb, var(--warning, #d29922) 85%, #fff) 2px,
+      color-mix(in srgb, var(--warning, #d29922) 85%, #fff) 3px);
+/* ─── v7 — Dashboard summary cards ────────────────────────────────────────── */
+/*
+ * Each summary card gets a subtle shape-coded corner stripe so the value
+ * type is identifiable without reading the label (helpful for sighted
+ * but color-blind users who scan the row).
+ */
+.summary-card {
+  --summary-pattern-opacity: 0.10;
 }
 
+.summary-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 100%;
+  background: transparent;
+  pointer-events: none;
+  z-index: 0;
+}
+/* Card content must sit above the stripe so text/glow renders cleanly */
+.summary-card > .glow,
+.summary-card > .label,
+.summary-card > .value,
+.summary-card > .sub {
+  position: relative;
+  z-index: 1;
+}
+
+/* Total Credit Limit — blue dot grid */
+.summary-card--accent::before {
+  background: transparent;
+  background-image: radial-gradient(circle, rgba(88, 166, 255, 0.18) 1.5px, transparent 1.5px);
+  background-size: 8px 8px;
+}
+
+/* Total Utilized — inherits util-fill--{level} pattern along the stripe */
+.summary-card--util.summary-card--util-low::before {
+  background-image: radial-gradient(circle, rgba(63, 185, 80, 0.18) 1.5px, transparent 1.5px);
+  background-size: 8px 8px;
+}
+.summary-card--util.summary-card--util-medium::before {
+  background-image: repeating-linear-gradient(45deg,
+    rgba(210, 153, 34, 0.22) 0 6px,
+    transparent 6px 12px);
+}
+.summary-card--util.summary-card--util-high::before {
+  background-image:
+    repeating-linear-gradient(45deg,
+      rgba(248, 81, 73, 0.25) 0 4px,
+      transparent 4px 8px),
+    repeating-linear-gradient(-45deg,
+      rgba(248, 81, 73, 0.25) 0 4px,
+      transparent 4px 8px);
+}
+
+/* Available Credit — green upward chevron field */
+.summary-card--available::before {
+  background-image: repeating-linear-gradient(0deg,
+    rgba(63, 185, 80, 0.20) 0 4px,
+    transparent 4px 8px),
+    linear-gradient(180deg, transparent 60%, rgba(63, 185, 80, 0.45) 60%);
+  background-size: 8px 16px, 100% 100%;
+}
+
+/* ─── v7 — Dashboard notifications ────────────────────────────────────────── */
+/*
+ * Three severity tiers, three shape families.  Patterns live on the right
+ * edge of each row so the left border colour is preserved (existing rule
+ * in Dashboard.css).
+ */
+.notification-item--info {
+  background-image: repeating-linear-gradient(0deg,
+    rgba(88, 166, 255, 0.16) 0 4px,
+    transparent 4px 10px);
+  background-size: auto;
+  background-position: right;
+}
+
+.notification-item--warning {
+  background-image: repeating-linear-gradient(45deg,
+    rgba(210, 153, 34, 0.22) 0 6px,
+    transparent 6px 12px);
+  background-attachment: scroll;
+}
+
+.notification-item--danger {
+  background-image:
+    repeating-linear-gradient(45deg,
+      rgba(248, 81, 73, 0.25) 0 4px,
+      transparent 4px 8px),
+    repeating-linear-gradient(-45deg,
+      rgba(248, 81, 73, 0.25) 0 4px,
+      transparent 4px 8px);
+}
+
+/* ─── v7 — Dashboard util bar overlay pseudo-element ──────────────────────── */
+/*
+ * The util bar's fill is sized inline (width: {pct}%) and coloured inline
+ * (background: UTIL_COLOR[level]).  We layer the high-util cross-hatch
+ * and medium 45° stripes via ::before so the colour is preserved.
+ * Rules live alongside the per-level modifiers above; this block just
+ * ensures the position/overflow backdrop is present.
+ */
+/* Util bar at the per-line row in the Credit Summary card — also gets
+ * the same ::before overlay so the row strip matches the section bar. */
+.cl-preview-bar-fill {
+  position: relative;
+  overflow: hidden;
+}
+.cl-preview-bar-fill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: none;
+}
+.cl-preview-bar-fill.util-fill--medium::before {
+  background-image: repeating-linear-gradient(45deg,
+    rgba(255, 255, 255, 0.45) 0 6px,
+    transparent 6px 12px);
+}
+.cl-preview-bar-fill.util-fill--high::before {
+  background-image:
+    repeating-linear-gradient(45deg,
+      rgba(255, 255, 255, 0.55) 0 4px,
+      transparent 4px 8px),
+    repeating-linear-gradient(-45deg,
+      rgba(255, 255, 255, 0.55) 0 4px,
+      transparent 4px 8px);
+}
+
+/* ─── High-contrast mode opacities (no-op in normal theme) ────────────────── */
+/* Pure black background (#000000) — pattern stripes lose contrast; bump
+ * alpha by ~0.25 so the shapes remain perceivable for users locked into
+ * the high-contrast theme via ContrastContext.  We raise specificity to
+ * `html[data-contrast="high"] …` instead of using `!important` so a
+ * downstream override without `!important` can still win. */
+html[data-contrast="high"] .util-fill--medium::before {
+  background-image: repeating-linear-gradient(45deg,
+    rgba(255, 255, 255, 0.7) 0 6px,
+    transparent 6px 12px);
+}
+html[data-contrast="high"] .util-fill--high::before {
+  background-image:
+    repeating-linear-gradient(45deg,
+      rgba(255, 255, 255, 0.8) 0 4px,
+      transparent 4px 8px),
+    repeating-linear-gradient(-45deg,
+      rgba(255, 255, 255, 0.8) 0 4px,
+      transparent 4px 8px);
+}
+html[data-contrast="high"] .cl-preview-bar-fill.util-fill--medium::before,
+html[data-contrast="high"] .cl-preview-bar-fill.util-fill--high::before,
+html[data-contrast="high"] .summary-card--accent::before,
+html[data-contrast="high"] .summary-card--util.summary-card--util-low::before,
+html[data-contrast="high"] .summary-card--util.summary-card--util-medium::before,
+html[data-contrast="high"] .summary-card--util.summary-card--util-high::before,
+html[data-contrast="high"] .summary-card--available::before,
+html[data-contrast="high"] .notification-item--info,
+html[data-contrast="high"] .notification-item--warning,
+html[data-contrast="high"] .notification-item--danger {
+  opacity: 1;
+}
+
+/* ─── Forced-colours mode (Windows High Contrast, Chrome forced-colors) ────── */
 @media (forced-colors: active) {
+  /* ── rv-legend-swatch overrides ── */
   .rv-legend-swatch {
     background-color: Canvas;
     forced-color-adjust: none;
   }
 
   .rv-legend-swatch--principal {
-    background-image: repeating-linear-gradient(
-      135deg,
-      CanvasText 0,
-      CanvasText 1px,
-      transparent 1px,
-      transparent 5px
-    );
+    background-image: repeating-linear-gradient(135deg,
+        CanvasText 0,
+        CanvasText 1px,
+        transparent 1px,
+        transparent 5px);
   }
 
   .rv-legend-swatch--interest {
-    background-image: repeating-linear-gradient(
-        45deg,
+    background-image: repeating-linear-gradient(45deg,
         CanvasText 0,
         CanvasText 1px,
         transparent 1px,
-        transparent 4px
+        transparent 4px),
+      repeating-linear-gradient(-45deg,
+        CanvasText 0,
+        CanvasText 1px,
+        transparent 1px,
+        transparent 4px);
+  }
+}
+
+  /* ── rp-progress overrides — keep patterns, map colors to system tokens ── */
+  .rp-progress--low,
+  .rp-progress--medium,
+  .rp-progress--high,
+  .rp-progress--ghost {
+    forced-color-adjust: none;
+    background-color: Highlight;
+  }
+
+  .rp-progress--low {
+    background-image: radial-gradient(circle, CanvasText 1px, transparent 1px);
+    background-size: 8px 8px;
+  }
+
+  .rp-progress--medium {
+    background-image: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 3px,
+      CanvasText 3px,
+      CanvasText 4px
+    );
+  }
+
+  .rp-progress--high {
+    background-image:
+      repeating-linear-gradient(45deg, transparent, transparent 2px, CanvasText 2px, CanvasText 3px),
+      repeating-linear-gradient(-45deg, transparent, transparent 2px, CanvasText 2px, CanvasText 3px);
+  }
+
+  .rp-progress--ghost {
+    background-color: GrayText;
+    background-image: none;
+    opacity: 0.4;
+  }
+
+  /* ── rp-severity overrides ── */
+  .rp-severity--info,
+  .rp-severity--success,
+  .rp-severity--warning,
+  .rp-severity--danger {
+    forced-color-adjust: none;
+  }
+
+  .rp-severity--info {
+    background-image: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 10px,
+      CanvasText 10px,
+      CanvasText 11px
+    );
+  }
+
+  .rp-severity--success {
+    background-image: radial-gradient(circle, CanvasText 1px, transparent 1px);
+    background-size: 10px 10px;
+  }
+
+  .rp-severity--warning {
+    background-image: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 6px,
+      CanvasText 6px,
+      CanvasText 7px
+    );
+  }
+
+  .rp-severity--danger {
+    background-image:
+      repeating-linear-gradient(45deg, transparent, transparent 4px, CanvasText 4px, CanvasText 5px),
+      repeating-linear-gradient(-45deg, transparent, transparent 4px, CanvasText 4px, CanvasText 5px);
+  }
+}
+
+/* RiskGauge color-blind safe patterns for sector arcs */
+/* These patterns distinguish risk levels beyond color alone (WCAG 1.4.1) */
+
+.risk-gauge-pattern--high {
+  /* High risk zone (success/green): diagonal stripes */
+  stroke-dasharray: 4, 3;
+  stroke-dashoffset: 0;
+}
+
+.risk-gauge-pattern--medium {
+  /* Medium risk zone (warning/amber): dots pattern */
+  stroke-dasharray: 1, 6;
+  stroke-dashoffset: 0;
+  stroke-linecap: round;
+}
+
+.risk-gauge-pattern--low {
+  /* Low risk zone (error/red): crosshatch-like alternating dashes */
+  stroke-dasharray: 8, 4;
+  stroke-dashoffset: 0;
+}
+
+@media (forced-colors: active) {
+  .risk-gauge-pattern--high,
+  .risk-gauge-pattern--medium,
+  .risk-gauge-pattern--low {
+    stroke-dasharray: none;
+    stroke: CanvasText;
+  }
+}
+
+/* ─── LoginPage status banners (GrantFox FWC26 / WCAG 1.4.1) ───────────────
+ *
+ * The LoginPage renders three possible status banners above the form:
+ *   error   — authentication failed / network error (red)
+ *   success — password-reset confirmation, email-verified, etc. (green)
+ *   info    — account-locked warning, rate-limit notice, etc. (blue)
+ *
+ * Each banner pairs the existing color tint with a shape-coded pattern so
+ * color-blind users can distinguish the severity without relying on the
+ * red/green/blue tint alone.  Pattern families match the taxonomy used in
+ * the Dashboard v7 patterns (see ACCESSIBILITY.md § Pattern fills):
+ *
+ *   error   → cross-hatch (two directions) — dense, urgent signal
+ *   success → micro-dot grid — light, positive "checkmark scatter"
+ *   info    → horizontal rules — "lines of information"
+ *
+ * Patterns are rendered as a secondary background-image on top of the
+ * existing background-color. Opacity is kept low (12–18%) so the text
+ * contrast against the card surface is not affected.
+ *
+ * Forced-colors mode: patterns use CanvasText so stripes survive the OS
+ * color palette override.  High-contrast (ContrastContext) bumps opacity.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+.lp-banner--error {
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 4px,
+      rgba(248, 81, 73, 0.14) 4px,
+      rgba(248, 81, 73, 0.14) 5px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 4px,
+      rgba(248, 81, 73, 0.14) 4px,
+      rgba(248, 81, 73, 0.14) 5px
+    );
+}
+
+.lp-banner--success {
+  background-image: radial-gradient(
+    circle,
+    rgba(63, 185, 80, 0.18) 1px,
+    transparent 1px
+  );
+  background-size: 10px 10px;
+}
+
+.lp-banner--info {
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 10px,
+    rgba(88, 166, 255, 0.12) 10px,
+    rgba(88, 166, 255, 0.12) 11px
+  );
+}
+
+/* ─── LoginPage submit button — pending (loading) pattern ─────────────────
+ *
+ * When PendingButton is in the pending state, the button background is
+ * tinted with a single-direction diagonal-stripe pattern that conveys
+ * "in progress / moving" visually.  This is the same 45° stripe family
+ * used for pending/warning states elsewhere in the pattern taxonomy.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+.lp-btn--pending {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 4px,
+    rgba(255, 255, 255, 0.12) 4px,
+    rgba(255, 255, 255, 0.12) 6px
+  );
+}
+
+/* ─── ContrastContext (high-contrast theme) overrides ───────────────────── */
+
+html[data-contrast="high"] .lp-banner--error {
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 4px,
+      rgba(248, 81, 73, 0.40) 4px,
+      rgba(248, 81, 73, 0.40) 5px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 4px,
+      rgba(248, 81, 73, 0.40) 4px,
+      rgba(248, 81, 73, 0.40) 5px
+    );
+}
+
+html[data-contrast="high"] .lp-banner--success {
+  background-image: radial-gradient(
+    circle,
+    rgba(63, 185, 80, 0.45) 1px,
+    transparent 1px
+  );
+  background-size: 10px 10px;
+}
+
+html[data-contrast="high"] .lp-banner--info {
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 10px,
+    rgba(88, 166, 255, 0.38) 10px,
+    rgba(88, 166, 255, 0.38) 11px
+  );
+}
+
+html[data-contrast="high"] .lp-btn--pending {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 4px,
+    rgba(255, 255, 255, 0.28) 4px,
+    rgba(255, 255, 255, 0.28) 6px
+  );
+}
+
+/* ─── Forced-colours mode (Windows High Contrast / Chrome forced-colors) ── */
+
+@media (forced-colors: active) {
+  .lp-banner--error,
+  .lp-banner--success,
+  .lp-banner--info,
+  .lp-btn--pending {
+    forced-color-adjust: none;
+  }
+
+  .lp-banner--error {
+    background-image:
+      repeating-linear-gradient(
+        45deg,
+        transparent,
+        transparent 4px,
+        CanvasText 4px,
+        CanvasText 5px
       ),
       repeating-linear-gradient(
         -45deg,
-        CanvasText 0,
-        CanvasText 1px,
-        transparent 1px,
-        transparent 4px
+        transparent,
+        transparent 4px,
+        CanvasText 4px,
+        CanvasText 5px
       );
+  }
+
+  .lp-banner--success {
+    background-image: radial-gradient(
+      circle,
+      CanvasText 1px,
+      transparent 1px
+    );
+    background-size: 10px 10px;
+  }
+
+  .lp-banner--info {
+    background-image: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 10px,
+      CanvasText 10px,
+      CanvasText 11px
+    );
+  }
+
+  .lp-btn--pending {
+    background-image: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 4px,
+      CanvasText 4px,
+      CanvasText 5px
+    );
+  }
+}
+
+/* ─── RepayCalendar status chips (GrantFox FWC26 / WCAG 1.4.1) ─────────────
+ *
+ * The RepayCalendar renders an optional per-event status chip (paid /
+ * upcoming / due-soon / overdue). Each pairs its existing color tint with
+ * a shape-coded pattern so the four statuses are distinguishable without
+ * relying on color alone, following the same taxonomy as the tx-status /
+ * lp-banner pattern families above:
+ *
+ *   paid      → micro-dot grid (success / positive)
+ *   upcoming  → horizontal rules (info / neutral)
+ *   due-soon  → diagonal stripes (warning / caution)
+ *   overdue   → cross-hatch (danger / urgent)
+ * ──────────────────────────────────────────────────────────────────────── */
+
+.repay-status-pattern--paid {
+  background-image: radial-gradient(circle, rgba(63, 185, 80, 0.22) 1px, transparent 1px);
+  background-size: 8px 8px;
+}
+
+.repay-status-pattern--upcoming {
+  background-image: repeating-linear-gradient(0deg,
+      transparent,
+      transparent 6px,
+      rgba(88, 166, 255, 0.18) 6px,
+      rgba(88, 166, 255, 0.18) 7px);
+}
+
+.repay-status-pattern--due-soon {
+  background-image: repeating-linear-gradient(45deg,
+      transparent,
+      transparent 4px,
+      rgba(210, 153, 34, 0.2) 4px,
+      rgba(210, 153, 34, 0.2) 5px);
+}
+
+.repay-status-pattern--overdue {
+  background-image:
+    repeating-linear-gradient(45deg,
+      transparent,
+      transparent 3px,
+      rgba(248, 81, 73, 0.18) 3px,
+      rgba(248, 81, 73, 0.18) 4px),
+    repeating-linear-gradient(-45deg,
+      transparent,
+      transparent 3px,
+      rgba(248, 81, 73, 0.18) 3px,
+      rgba(248, 81, 73, 0.18) 4px);
+}
+
+@media (forced-colors: active) {
+
+  .repay-status-pattern--paid,
+  .repay-status-pattern--upcoming,
+  .repay-status-pattern--due-soon,
+  .repay-status-pattern--overdue {
+    forced-color-adjust: none;
+    background-color: Canvas;
+    border: 1px solid CanvasText;
+  }
+
+  .repay-status-pattern--paid {
+    background-image: radial-gradient(circle, CanvasText 1px, transparent 1px);
+    background-size: 8px 8px;
+  }
+
+  .repay-status-pattern--upcoming {
+    background-image: repeating-linear-gradient(0deg,
+        transparent,
+        transparent 6px,
+        CanvasText 6px,
+        CanvasText 7px);
+  }
+
+  .repay-status-pattern--due-soon {
+    background-image: repeating-linear-gradient(45deg,
+        transparent,
+        transparent 4px,
+        CanvasText 4px,
+        CanvasText 5px);
+  }
+
+  .repay-status-pattern--overdue {
+    background-image:
+      repeating-linear-gradient(45deg, transparent, transparent 3px, CanvasText 3px, CanvasText 4px),
+      repeating-linear-gradient(-45deg, transparent, transparent 3px, CanvasText 3px, CanvasText 4px);
   }
 }

@@ -7,11 +7,19 @@ import { describe, it, expect } from 'vitest';
 import {
   computeLtvSnapshot,
   computeSubstitutionFee,
+  computeSlippage,
+  isWithinSlippage,
+  isStaleQuote,
+  classifySubstitutionError,
   fmtLtv,
   fmtLtvDelta,
   findAssetByName,
   categoryIcon,
   AVAILABLE_COLLATERAL_ASSETS,
+  SLIPPAGE_PRESETS,
+  DEFAULT_SLIPPAGE,
+  MAX_RETRY_ATTEMPTS,
+  STALE_QUOTE_THRESHOLD_MS,
 } from './collateral';
 import type { CollateralAsset } from '../types/collateral';
 
@@ -213,5 +221,184 @@ describe('AVAILABLE_COLLATERAL_ASSETS', () => {
     AVAILABLE_COLLATERAL_ASSETS.forEach(a => {
       expect(a.value).toBeGreaterThan(0);
     });
+  });
+});
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+describe('slippage constants', () => {
+  it('SLIPPAGE_PRESETS contains expected values', () => {
+    expect(SLIPPAGE_PRESETS).toEqual([0.5, 1, 2, 5]);
+  });
+
+  it('DEFAULT_SLIPPAGE is 1', () => {
+    expect(DEFAULT_SLIPPAGE).toBe(1);
+  });
+
+  it('MAX_RETRY_ATTEMPTS is 3', () => {
+    expect(MAX_RETRY_ATTEMPTS).toBe(3);
+  });
+
+  it('STALE_QUOTE_THRESHOLD_MS is 60 seconds', () => {
+    expect(STALE_QUOTE_THRESHOLD_MS).toBe(60_000);
+  });
+});
+
+// ─── computeSlippage ─────────────────────────────────────────────────────────
+
+describe('computeSlippage', () => {
+  it('returns 0 slippage when LTVs are identical', () => {
+    const result = computeSlippage(0.5, 0.5, 1);
+    expect(result.slippagePp).toBeCloseTo(0);
+    expect(result.isExceeded).toBe(false);
+  });
+
+  it('computes positive slippage when current LTV is higher', () => {
+    const result = computeSlippage(0.5, 0.55, 1);
+    // |0.55 - 0.5| * 100 = 5 pp
+    expect(result.slippagePp).toBeCloseTo(5);
+    expect(result.isExceeded).toBe(true);
+  });
+
+  it('computes positive slippage when current LTV is lower', () => {
+    const result = computeSlippage(0.5, 0.45, 1);
+    expect(result.slippagePp).toBeCloseTo(5);
+    expect(result.isExceeded).toBe(true);
+  });
+
+  it('isExceeded is false when slippage equals tolerance exactly', () => {
+    const result = computeSlippage(0.5, 0.505, 5);
+    // |0.505 - 0.5| * 100 = 5 pp, tolerance = 5 pp → not exceeded (strict >)
+    expect(result.isExceeded).toBe(false);
+  });
+
+  it('isExceeded is true when slippage is 0.01 pp over tolerance', () => {
+    const result = computeSlippage(0.5, 0.5101, 1);
+    expect(result.slippagePp).toBeGreaterThan(1);
+    expect(result.isExceeded).toBe(true);
+  });
+
+  it('includes reviewLtvRatio and currentLtvRatio in the result', () => {
+    const result = computeSlippage(0.42, 0.47, 2);
+    expect(result.reviewLtvRatio).toBe(0.42);
+    expect(result.currentLtvRatio).toBe(0.47);
+  });
+
+  it('passes through the tolerancePp value', () => {
+    const result = computeSlippage(0.5, 0.5, 5);
+    expect(result.tolerancePp).toBe(5);
+  });
+});
+
+// ─── isWithinSlippage ────────────────────────────────────────────────────────
+
+describe('isWithinSlippage', () => {
+  it('returns true when slippage is within tolerance', () => {
+    expect(isWithinSlippage(0.5, 0.505, 1)).toBe(true);
+  });
+
+  it('returns false when slippage exceeds tolerance', () => {
+    expect(isWithinSlippage(0.5, 0.52, 1)).toBe(false);
+  });
+
+  it('returns true when LTVs are identical', () => {
+    expect(isWithinSlippage(0.7, 0.7, 0.5)).toBe(true);
+  });
+});
+
+// ─── isStaleQuote ────────────────────────────────────────────────────────────
+
+describe('isStaleQuote', () => {
+  it('returns false when the quote is fresh', () => {
+    const now = 1_000_000;
+    expect(isStaleQuote(now - 10_000, now)).toBe(false);
+  });
+
+  it('returns true when the quote exceeds the threshold', () => {
+    const now = 1_000_000;
+    expect(isStaleQuote(now - 61_000, now)).toBe(true);
+  });
+
+  it('returns false when the quote is exactly at the threshold', () => {
+    const now = 1_000_000;
+    expect(isStaleQuote(now - STALE_QUOTE_THRESHOLD_MS, now)).toBe(false);
+  });
+
+  it('returns true when the quote is 1 ms over the threshold', () => {
+    const now = 1_000_000;
+    expect(isStaleQuote(now - STALE_QUOTE_THRESHOLD_MS - 1, now)).toBe(true);
+  });
+
+  it('uses Date.now() when nowMs is not provided', () => {
+    // Just verify it doesn't throw and returns a boolean
+    const result = isStaleQuote(Date.now() - 1000);
+    expect(typeof result).toBe('boolean');
+  });
+});
+
+// ─── classifySubstitutionError ────────────────────────────────────────────────
+
+describe('classifySubstitutionError', () => {
+  it('classifies network errors', () => {
+    const result = classifySubstitutionError(new Error('Network error'));
+    expect(result.reason).toBe('network');
+    expect(result.retryable).toBe(true);
+    expect(result.message).toContain('network');
+  });
+
+  it('classifies timeout errors', () => {
+    const result = classifySubstitutionError(new Error('Request timed out'));
+    expect(result.reason).toBe('timeout');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('classifies permission errors', () => {
+    const result = classifySubstitutionError(new Error('Permission denied'));
+    expect(result.reason).toBe('permission');
+    expect(result.retryable).toBe(false);
+  });
+
+  it('classifies validation errors', () => {
+    const result = classifySubstitutionError(new Error('Invalid input'));
+    expect(result.reason).toBe('validation');
+    expect(result.retryable).toBe(false);
+  });
+
+  it('classifies slippage errors', () => {
+    const result = classifySubstitutionError(new Error('Price moved beyond slippage tolerance'));
+    expect(result.reason).toBe('slippage');
+    expect(result.retryable).toBe(false);
+  });
+
+  it('classifies unknown errors', () => {
+    const result = classifySubstitutionError(new Error('Something random'));
+    expect(result.reason).toBe('unknown');
+    expect(result.retryable).toBe(true);
+  });
+
+  it('handles non-Error values gracefully', () => {
+    const result = classifySubstitutionError('string error');
+    expect(result.reason).toBe('unknown');
+    expect(result.message).toBeDefined();
+  });
+
+  it('handles null/undefined gracefully', () => {
+    const result = classifySubstitutionError(null);
+    expect(result.reason).toBe('unknown');
+    expect(result.message).toBeDefined();
+  });
+
+  it('detects HTTP status codes in message text', () => {
+    const result403 = classifySubstitutionError(new Error('Error 403 Forbidden'));
+    expect(result403.reason).toBe('permission');
+
+    const result422 = classifySubstitutionError(new Error('HTTP 422 Unprocessable'));
+    expect(result422.reason).toBe('validation');
+  });
+
+  it('detects ECONNREFUSED as network error', () => {
+    const result = classifySubstitutionError(new Error('connect ECONNREFUSED'));
+    expect(result.reason).toBe('network');
+    expect(result.retryable).toBe(true);
   });
 });

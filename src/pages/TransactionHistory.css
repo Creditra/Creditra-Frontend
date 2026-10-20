@@ -933,7 +933,41 @@
 }
 
 /* ─── Responsive Design ─────────────────────────────────────────────────────── */
+/*
+ * Breakpoint audit (GrantFox FWC26, issue #628):
+ *   ≥1400 px → wide:   expanded stat cards, larger filter gaps, full table
+ *   1024 px  → medium:  stats 2-col, detail grid 2-col
+ *   768 px   → tablet:  single-col stats, stacked filters, horizontal scroll table
+ *   480 px   → phone:   compact header, tighter padding, stacked pagination
+ *   360 px   → small:   further compacted for very narrow viewports
+ */
 
+/* ── Wide viewports (≥1400 px) — extra breathing room ────────────────── */
+@media (min-width: 1400px) {
+    .transaction-history-page {
+        max-width: 1600px;
+    }
+
+    .th-stats {
+        gap: var(--space-xl);
+    }
+
+    .th-filters {
+        gap: var(--space-xl);
+        padding: var(--space-xl) var(--space-2xl);
+    }
+
+    .th-filter-group {
+        min-width: 180px;
+    }
+
+    .th-table th,
+    .tx-row td {
+        padding: var(--space-lg) var(--space-xl);
+    }
+}
+
+/* ── Medium viewports (≤1024 px) ────────────────────────────────────── */
 @media (max-width: 1024px) {
     .th-stats {
         grid-template-columns: repeat(2, 1fr);
@@ -990,6 +1024,7 @@
     }
 }
 
+/* ── Phone viewports (≤480 px) ───────────────────────────────────────── */
 @media (max-width: 480px) {
     .th-header h1 {
         font-size: 1.25rem;
@@ -1010,6 +1045,78 @@
     .th-pagination {
         flex-direction: column;
         gap: var(--space-md);
+    }
+
+    .export-actions {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .export-btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .th-table {
+        min-width: 600px;
+    }
+}
+
+/* ── Small phone viewports (≤360 px) — maximum compaction ───────────────── */
+@media (max-width: 360px) {
+    .transaction-history-page {
+        padding: 0 var(--space-md) var(--space-lg);
+    }
+
+    .th-header h1 {
+        font-size: 1.1rem;
+    }
+
+    .th-header .subtitle {
+        font-size: 0.75rem;
+    }
+
+    .th-stat-card {
+        padding: var(--space-sm) var(--space-md);
+        gap: var(--space-sm);
+    }
+
+    .th-stat-icon {
+        width: 32px;
+        height: 32px;
+        font-size: 0.9rem;
+    }
+
+    .th-stat-value {
+        font-size: 0.95rem;
+    }
+
+    .th-stat-label {
+        font-size: 0.65rem;
+    }
+
+    .th-filters {
+        padding: var(--space-md);
+        gap: var(--space-md);
+    }
+
+    .th-filter-chip {
+        padding: var(--space-xs) var(--space-sm);
+        font-size: 0.7rem;
+        min-height: 36px;
+    }
+
+    .th-table {
+        min-width: 520px;
+    }
+
+    .th-page-btn {
+        padding: var(--space-xs) var(--space-md);
+        font-size: 0.7rem;
+    }
+
+    .th-page-info {
+        font-size: 0.75rem;
     }
 }
 
@@ -1038,5 +1145,28 @@
 
     .tx-row {
         page-break-inside: avoid;
+    }
+}
+
+/* Keyboard guidance for the search combobox. */
+.th-search-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+}
+
+.th-search-shortcuts {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+    .th-search-shortcuts {
+        justify-content: flex-start;
     }
 }

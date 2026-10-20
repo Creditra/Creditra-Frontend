@@ -41,12 +41,12 @@ const mockTransactions: RichTransaction[] = [
 
 const renderRail = (props: {
   transactions?: RichTransaction[];
-  loading?: boolean;
+  isLoading?: boolean;
 }) => render(
   <BrowserRouter>
     <RecentTransactionsRail
       transactions={props.transactions ?? []}
-      loading={props.loading ?? false}
+      isLoading={props.isLoading ?? false}
     />
   </BrowserRouter>,
 );
@@ -68,13 +68,13 @@ describe('RecentTransactionsRail', () => {
   });
 
   it('renders skeleton placeholders when loading', () => {
-    const { container } = renderRail({ loading: true });
+    const { container } = renderRail({ isLoading: true });
     const skeletons = container.querySelectorAll('.skeleton');
     expect(skeletons.length).toBeGreaterThan(0);
   });
 
   it('applies the recent-transactions-rail class to the root', () => {
-    const { container } = renderRail({ loading: true });
+    const { container } = renderRail({ isLoading: true });
     expect(container.querySelector('.recent-transactions-rail')).toBeInTheDocument();
   });
 

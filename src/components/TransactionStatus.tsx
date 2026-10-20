@@ -16,14 +16,25 @@
  *   dc-success-notice,
  *   dc-btn, dc-btn--primary, dc-btn--full, dc-btn--icon-gap
  *
+ * Color-blind accessibility (WCAG 2.1 SC 1.4.1):
+ *   The icon circle uses both a color-tint class AND a pattern-fill class
+ *   (from src/styles/patterns.css) so each status is identifiable by shape,
+ *   not color alone:
+ *     pending → concentric dots  (dc-status-icon-bg--pattern-pending)
+ *     success → diagonal stripes (dc-status-icon-bg--pattern-success)
+ *     error   → crosshatch       (dc-status-icon-bg--pattern-error)
+ *
  * Accessibility:
  *   - The outer div has role="status" + aria-live="polite" so the result is
  *     announced when it replaces the loading spinner.
  *   - Icons are aria-hidden="true"; all meaningful state info is in text.
+ *   - forced-colors overrides in patterns.css preserve pattern geometry in
+ *     Windows High Contrast mode.
  */
 
 import { Transaction } from "@/types/draw-credit.types";
 import { CheckCircle2, AlertCircle, Clock, RotateCcw } from "lucide-react";
+import "@/styles/patterns.css";
 
 interface TransactionStatusProps {
   transaction: Transaction;
@@ -34,24 +45,34 @@ interface TransactionStatusProps {
  * Maps a transaction status to the CSS modifier and icon for that outcome.
  * All colour references go through the dc-status-icon-bg--* and
  * dc-status-icon--* token classes (var(--accent/success/error)).
+ *
+ * patternMod maps to the dc-status-icon-bg--pattern-* classes in
+ * src/styles/patterns.css, providing a geometry cue beyond colour alone
+ * (WCAG 2.1 SC 1.4.1 – Use of Color).
  */
 const STATUS_CONFIG = {
   pending: {
     Icon: Clock,
     title: "Processing",
     colorMod: "accent",
+    /** Concentric dots — conveys cyclical "in progress" motion. */
+    patternMod: "pending",
     message: "Your draw request is being processed.",
   },
   success: {
     Icon: CheckCircle2,
     title: "Draw Successful",
     colorMod: "success",
+    /** Diagonal stripes (45°, upward sweep) — positive direction cue. */
+    patternMod: "success",
     message: "Funds have been disbursed to your account.",
   },
   error: {
     Icon: AlertCircle,
     title: "Draw Failed",
     colorMod: "error",
+    /** Crosshatch (45° + 135°) — dense warning texture, distinct from success. */
+    patternMod: "error",
     message: null, // filled from transaction.message at render time
   },
 } as const;
@@ -61,7 +82,7 @@ export function TransactionStatus({
   onNewDraw,
 }: TransactionStatusProps) {
   const config = STATUS_CONFIG[transaction.status];
-  const { Icon, title, colorMod } = config;
+  const { Icon, title, colorMod, patternMod } = config;
 
   const message =
     transaction.status === "error"
@@ -78,9 +99,12 @@ export function TransactionStatus({
       role="status"
       aria-live="polite"
     >
-      {/* Status icon circle */}
+      {/* Status icon circle — colour tint + pattern fill for color-blind accessibility */}
       <div className="dc-status-icon-wrap" style={{ display: "flex", justifyContent: "center" }}>
-        <div className={`dc-status-icon-bg dc-status-icon-bg--${colorMod}`}>
+        <div
+          className={`dc-status-icon-bg dc-status-icon-bg--${colorMod} dc-status-icon-bg--pattern-${patternMod}`}
+          data-status={transaction.status}
+        >
           <Icon
             className={`dc-status-icon dc-status-icon--${colorMod}`}
             aria-hidden="true"
@@ -107,7 +131,7 @@ export function TransactionStatus({
         {/* Amount drawn */}
         <div className="dc-status-detail-row">
           <p className="dc-status-detail-row__label">Amount Drawn</p>
-          <p className="dc-status-detail-row__value dc-status-detail-row__value--large">
+          <p className="dc-status-detail-row__value dc-status-detail-row__value--large tabular-nums">
             ${transaction.amount.toLocaleString()}
           </p>
         </div>

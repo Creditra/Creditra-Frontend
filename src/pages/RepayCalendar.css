@@ -1,0 +1,84 @@
+/* ─── RepayCalendar ──────────────────────────────────────────────────────── */
+
+.repay-calendar__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: var(--space-1, 0.25rem) var(--space-2, 0.5rem);
+  margin-bottom: var(--space-2, 0.5rem);
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--muted, #8b949e);
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm, 0.375rem);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.repay-calendar__back:hover {
+  color: var(--text, #e6edf3);
+}
+
+.repay-calendar__back:focus-visible {
+  outline: 2px solid var(--accent, #58a6ff);
+  outline-offset: 2px;
+}
+
+.repay-calendar__icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-lg, 0.75rem);
+  background: var(--accent-tint, rgba(88, 166, 255, 0.12));
+  color: var(--accent, #58a6ff);
+  margin-bottom: var(--space-2, 0.5rem);
+}
+
+.repay-calendar__summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4, 1rem);
+  padding: var(--space-4, 1rem);
+  border-radius: var(--radius-lg, 0.75rem);
+  border: 1px solid var(--border, #30363d);
+  background: var(--surface, #161b22);
+}
+
+.repay-calendar__summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 0.25rem);
+}
+
+.repay-calendar__summary-label {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--muted, #8b949e);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.repay-calendar__summary-value {
+  font-size: var(--text-lg, 1.125rem);
+  font-weight: 700;
+  color: var(--text, #e6edf3);
+}
+
+@media (max-width: 480px) {
+  .repay-calendar__summary {
+    grid-template-columns: 1fr;
+    gap: var(--space-3, 0.75rem);
+  }
+}
+
+.repay-calendar__status-chip {
+  display: inline-block;
+  padding: var(--space-1, 0.25rem) var(--space-2, 0.5rem);
+  border-radius: var(--radius-sm, 0.375rem);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}

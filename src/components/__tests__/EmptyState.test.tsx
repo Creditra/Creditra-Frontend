@@ -164,6 +164,62 @@ describe('EmptyState', () => {
     expect(region).toHaveClass('empty-state');
   });
 
+  it('renders the decorative accent-rule when tone is provided', () => {
+    renderInRouter(
+      <EmptyState
+        tone="info"
+        illustration={<span aria-hidden="true" />}
+        title="Info state"
+        description="Body."
+      />,
+    );
+
+    const region = screen.getByRole('status');
+    const rule = region.querySelector('.empty-state__accent-rule');
+    expect(rule).toBeInTheDocument();
+  });
+
+  it('does not render the accent-rule when tone is omitted', () => {
+    renderInRouter(
+      <EmptyState
+        illustration={<span aria-hidden="true" />}
+        title="No tone"
+        description="Body."
+      />,
+    );
+
+    const region = screen.getByRole('status');
+    const rule = region.querySelector('.empty-state__accent-rule');
+    expect(rule).not.toBeInTheDocument();
+  });
+
+  it('positions the accent-rule between the illustration and the eyebrow', () => {
+    renderInRouter(
+      <EmptyState
+        tone="info"
+        eyebrow="Section"
+        illustration={<span data-testid="mock-illus" aria-hidden="true" />}
+        title="Position"
+        description="Check order."
+      />,
+    );
+
+    const region = screen.getByRole('status');
+    const children = Array.from(region.children);
+    const ruleIdx = children.findIndex(
+      (c) => c.className === 'empty-state__accent-rule',
+    );
+    const illusIdx = children.findIndex(
+      (c) => c.querySelector('[data-testid="mock-illus"]'),
+    );
+    const eyebrowIdx = children.findIndex(
+      (c) => c.className === 'empty-state__eyebrow',
+    );
+
+    expect(ruleIdx).toBeGreaterThan(illusIdx);
+    expect(ruleIdx).toBeLessThan(eyebrowIdx);
+  });
+
   it('uses role="status" with aria-live="polite" by default', () => {
     renderInRouter(
       <EmptyState

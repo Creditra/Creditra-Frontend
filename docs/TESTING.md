@@ -84,6 +84,7 @@ The test setup lives in `src/test/setup.ts` and is loaded via the
 | `src/components/ErrorBoundary.test.tsx` | Render-error fallback |
 | `src/components/Skeleton.test.tsx` | Skeleton dimensions + prefers-reduced-motion |
 | `src/components/StatusBadge.test.tsx` | Color/glyph mapping per status |
+| `src/components/TransactionStatus.patterns.test.tsx` | Pattern-fill classes (WCAG 1.4.1) for pending/success/error transaction outcomes; `data-status` attribute; `role="status"` + `aria-live`; text-based identification; icon `aria-hidden` |
 | `src/components/__tests__/WalletConnectionModal.test.tsx` | Focus trap, escape close, install-state visual differentiation |
 | `src/hooks/__tests__/useFocusTrap.test.tsx` | Tab cycling, Shift+Tab cycling, Escape, return-focus |
 | `src/pages/CreditLineCompare.test.tsx` | Side-by-side compare page: picker UI, table rendering, diff highlighting, scorecard, swap/clear actions, invalid params, a11y, edge cases (49 tests) |

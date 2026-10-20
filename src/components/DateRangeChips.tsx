@@ -1,4 +1,4 @@
-import { useEffect, useId } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { DatePicker } from './DatePicker';
 import './DateRangeChips.css';
 
@@ -19,6 +19,7 @@ interface DateRangeChipsProps {
   onPresetChange: (preset: DatePreset) => void;
   onCustomStartDateChange: (value: string) => void;
   onCustomEndDateChange: (value: string) => void;
+  onFilterChange?: () => void;
 }
 
 export function DateRangeChips({
@@ -28,14 +29,30 @@ export function DateRangeChips({
   onPresetChange,
   onCustomStartDateChange,
   onCustomEndDateChange,
+  onFilterChange,
 }: DateRangeChipsProps) {
   const labelId = useId();
+  const isFirstRender = useRef(true);
+  const onFilterChangeRef = useRef(onFilterChange);
+
+  useEffect(() => {
+    onFilterChangeRef.current = onFilterChange;
+  }, [onFilterChange]);
 
   useEffect(() => {
     if (selectedPreset === 'custom') {
       document.getElementById('custom-start-date')?.focus();
     }
   }, [selectedPreset]);
+
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    // Filters have changed; reset any external history cursors to avoid stale data.
+    onFilterChangeRef.current?.();
+  }, [selectedPreset, customStartDate, customEndDate]);
 
   return (
     <div className="date-range-chips">

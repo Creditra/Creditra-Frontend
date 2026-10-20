@@ -14,7 +14,7 @@
  * Route: /linked-accounts
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link as LinkIcon, Unlink, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
 import {
   fetchLinkedAccounts,
@@ -27,6 +27,9 @@ import {
 import type { LinkedAccount, AccountProvider, AccountLinkError } from '../types/linkedAccount';
 import { Skeleton } from '../components/Skeleton';
 import { PendingButton } from '../components/PendingButton';
+import { LiveRegion } from '../components/LiveRegion';
+import { Tooltip } from '../components/Tooltip';
+import { useConfirm } from '../components/ConfirmDialog';
 import { accountStripeStyle, colorFromId } from '../utils/colorFromId';
 import './LinkedAccounts.css';
 
@@ -152,6 +155,10 @@ function ProviderCard({
 /**
  * Main LinkedAccounts page component.
  */
+/**
+ * Sticky bottom action bar that appears when the header scrolls out of view.
+ * Provides quick access to primary actions: connect new account, disconnect all.
+ */
 export function LinkedAccounts() {
   const [accounts, setAccounts] = useState<LinkedAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -159,8 +166,11 @@ export function LinkedAccounts() {
   const [loadingAccountId, setLoadingAccountId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [scrolled, setScrolled] = useState(false);
   
   const messageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   // Fetch linked accounts on mount
   useEffect(() => {
@@ -174,6 +184,19 @@ export function LinkedAccounts() {
         clearTimeout(messageTimeoutRef.current);
       }
     };
+  }, []);
+
+  // Sticky bar visibility: appears when header scrolls out of view
+  useEffect(() => {
+    const onScroll = () => {
+      const el = headerRef.current;
+      if (el) {
+        setScrolled(el.getBoundingClientRect().bottom < 0);
+      }
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
   const loadAccounts = async () => {
@@ -224,10 +247,12 @@ export function LinkedAccounts() {
     const account = accounts.find(acc => acc.id === accountId);
     if (!account) return;
 
-    // Confirmation dialog
-    const confirmed = window.confirm(
-      `Are you sure you want to disconnect your ${PROVIDER_INFO[account.provider].name} account? You can reconnect it later.`
-    );
+    const providerName = PROVIDER_INFO[account.provider].name;
+    const confirmed = await confirm({
+      title: `Disconnect ${providerName}?`,
+      body: `Disconnecting ${providerName} may lower your credit evaluation score. You can reconnect later.`,
+      confirmLabel: `Disconnect ${providerName}`,
+    });
 
     if (!confirmed) return;
 
@@ -237,7 +262,7 @@ export function LinkedAccounts() {
       setError(null);
       
       await disconnectAccount(accountId);
-      showSuccessMessage(`${PROVIDER_INFO[account.provider].name} account disconnected`);
+      showSuccessMessage(`${providerName} account disconnected`);
       await loadAccounts();
     } catch (err) {
       setError(`Failed to disconnect account. Please try again.`);
@@ -272,12 +297,45 @@ export function LinkedAccounts() {
     }
   };
 
+  const handleDisconnectAll = async () => {
+    const connectedAccounts = accounts.filter(acc => acc.status === 'connected');
+    if (connectedAccounts.length === 0) return;
+
+    const count = connectedAccounts.length;
+    const accountWord = count === 1 ? 'account' : 'accounts';
+    const confirmed = await confirm({
+      title: `Disconnect all ${count} ${accountWord}?`,
+      body: `Disconnecting ${count} linked ${accountWord} may lower your credit evaluation score. You can reconnect later.`,
+      confirmLabel: 'Disconnect All',
+    });
+    if (!confirmed) return;
+
+    try {
+      setActionLoading(true);
+      setError(null);
+      
+      await Promise.all(connectedAccounts.map(acc => disconnectAccount(acc.id)));
+      showSuccessMessage('All accounts disconnected successfully');
+      await loadAccounts();
+    } catch (err) {
+      setError('Failed to disconnect some accounts. Please try again.');
+      console.error('Disconnect all error:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const connectedCount = useMemo(
+    () => accounts.filter((a) => a.status === 'connected').length,
+    [accounts],
+  );
+
   const availableProviders: AccountProvider[] = ['google', 'github', 'twitter', 'facebook'];
 
   return (
     <div className="linked-accounts">
       {/* Header */}
-      <div className="linked-accounts__header">
+      <div className="linked-accounts__header" ref={headerRef} data-testid="linked-accounts-header">
         <div>
           <h1>Linked Accounts</h1>
           <p className="subtitle">
@@ -357,20 +415,21 @@ export function LinkedAccounts() {
             </div>
           </div>
         ) : (
-          <div className="linked-accounts__grid" role="list">
+          <div className="linked-accounts__grid" role="list" aria-label="Available providers">
             {availableProviders.map((provider) => {
               const account = accounts.find(acc => acc.provider === provider && acc.status !== 'disconnected');
               return (
-                <ProviderCard
-                  key={provider}
-                  provider={provider}
-                  account={account || null}
-                  onConnect={handleConnect}
-                  onDisconnect={handleDisconnect}
-                  onReconnect={handleReconnect}
-                  isLoading={actionLoading}
-                  loadingAccountId={loadingAccountId}
-                />
+                <div key={provider} role="listitem">
+                  <ProviderCard
+                    provider={provider}
+                    account={account || null}
+                    onConnect={handleConnect}
+                    onDisconnect={handleDisconnect}
+                    onReconnect={handleReconnect}
+                    isLoading={actionLoading}
+                    loadingAccountId={loadingAccountId}
+                  />
+                </div>
               );
             })}
           </div>
@@ -390,6 +449,68 @@ export function LinkedAccounts() {
           </div>
         </div>
       </div>
+
+      {/* ── Sticky Bottom Action Bar ─────────────────────────────────── */}
+      <div
+        className={`sticky-action-bar ${scrolled ? 'sticky-action-bar--visible' : ''}`}
+        role="toolbar"
+        aria-label="Linked accounts actions"
+        data-testid="sticky-action-bar"
+      >
+        <div className="sticky-action-bar__inner">
+          <div className="sticky-action-bar__status">
+            {connectedCount > 0 ? (
+              <span className="sticky-action-bar__count">
+                <CheckCircle className="icon-sm" aria-hidden="true" />
+                {connectedCount} connected
+              </span>
+            ) : (
+              <span className="sticky-action-bar__count">
+                No accounts linked
+              </span>
+            )}
+          </div>
+          <div className="sticky-action-bar__actions">
+            <Tooltip
+              label="Connect a new account"
+              position="top"
+              hoverDelay={400}
+              longPressDelay={500}
+            >
+              <PendingButton
+                onClick={() => handleConnect('google')}
+                disabled={actionLoading}
+                pending={false}
+                className="btn-secondary btn-sm"
+                aria-label="Connect new account from toolbar"
+              >
+                <LinkIcon className="icon-sm" aria-hidden="true" />
+                <span className="sticky-action-bar__label">Connect</span>
+              </PendingButton>
+            </Tooltip>
+            {connectedCount > 0 && (
+              <Tooltip
+                label="Disconnect all linked accounts"
+                position="top"
+                hoverDelay={400}
+                longPressDelay={500}
+              >
+                <button
+                  onClick={handleDisconnectAll}
+                  disabled={actionLoading}
+                  className="btn-danger btn-sm"
+                  aria-label="Disconnect all accounts from toolbar"
+                >
+                  <Unlink className="icon-sm" aria-hidden="true" />
+                  <span className="sticky-action-bar__label">Disconnect All</span>
+                </button>
+              </Tooltip>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {confirmDialog}
     </div>
   );
 }

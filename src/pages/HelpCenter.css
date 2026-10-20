@@ -6,6 +6,18 @@
   padding: 1.5rem;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .help-center__layout {
   max-width: 72rem;
   margin: 0 auto;
@@ -232,16 +244,57 @@
 .help-center__faq-item {
   border-bottom: 1px solid var(--border);
   padding: 0.75rem 0;
+  scroll-margin-top: 6rem;
 }
 
 .help-center__faq-item:last-child {
   border-bottom: none;
 }
 
+.help-center__faq-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.help-center__faq-anchor {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.5rem;
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid transparent;
+  flex-shrink: 0;
+}
+
+.help-center__faq-anchor:hover {
+  color: var(--accent);
+  background: rgba(88, 166, 255, 0.08);
+}
+
+.help-center__faq-anchor[aria-current="true"] {
+  color: var(--accent);
+  font-weight: 700;
+  background: rgba(88, 166, 255, 0.15);
+  border-color: rgba(88, 166, 255, 0.3);
+}
+
+.help-center__faq-anchor:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .help-center__faq-btn {
   display: flex;
   justify-content: space-between;
-  width: 100%;
+  flex: 1;
   text-align: left;
   min-height: 44px;
   align-items: center;
@@ -249,9 +302,19 @@
   border: none;
   background: none;
   cursor: pointer;
-  padding: 0;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm, 4px);
   color: var(--text);
   font: inherit;
+}
+
+.help-center__faq-btn[aria-current="true"] {
+  background: rgba(88, 166, 255, 0.08);
+}
+
+.help-center__faq-btn[aria-current="true"] .help-center__faq-q {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .help-center__faq-btn:focus-visible {
@@ -286,6 +349,10 @@
   margin-top: 0.75rem;
   color: var(--muted);
   line-height: var(--lh-body);
+}
+
+.help-center__faq-copy {
+  margin-top: 0.75rem;
 }
 
 .help-center__faq-transcript {

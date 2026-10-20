@@ -24,3 +24,8 @@
   line-height: 1;
   flex-shrink: 0;
 }
+
+.status-badge--icon-only {
+  padding: 0.15rem;
+  gap: 0;
+}

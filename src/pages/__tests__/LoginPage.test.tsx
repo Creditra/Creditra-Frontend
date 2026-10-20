@@ -99,6 +99,43 @@ describe('LoginPage — rendering', () => {
 });
 
 // ---------------------------------------------------------------------------
+// GrantFox FWC26 Campaign — Responsive Image (srcset) tests (#704)
+// ---------------------------------------------------------------------------
+
+describe('LoginPage — responsive campaign image (GrantFox FWC26 / #704)', () => {
+  it('renders the Stellar Wave campaign hero image with accessible alt text', () => {
+    renderPage();
+    const image = screen.getByAltText(/GrantFox FWC26 Stellar Wave campaign banner/i);
+    expect(image).toBeInTheDocument();
+  });
+
+  it('includes responsive srcset attribute with multiple width candidates', () => {
+    renderPage();
+    const image = screen.getByAltText(/GrantFox FWC26 Stellar Wave campaign banner/i);
+    const srcset = image.getAttribute('srcset');
+    expect(srcset).toBeTruthy();
+    expect(srcset).toContain('480w');
+    expect(srcset).toContain('768w');
+    expect(srcset).toContain('1200w');
+  });
+
+  it('configures sizes attribute for responsive layout breakpoints', () => {
+    renderPage();
+    const image = screen.getByAltText(/GrantFox FWC26 Stellar Wave campaign banner/i);
+    const sizes = image.getAttribute('sizes');
+    expect(sizes).toBeTruthy();
+    expect(sizes).toContain('100vw');
+    expect(sizes).toContain('400px');
+  });
+
+  it('provides a default fallback src attribute', () => {
+    renderPage();
+    const image = screen.getByAltText(/GrantFox FWC26 Stellar Wave campaign banner/i) as HTMLImageElement;
+    expect(image.getAttribute('src')).toContain('/assets/images/stellar-wave-md.jpg');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Password field — WCAG 2.1 AA: aria-describedby always present
 // ---------------------------------------------------------------------------
 
@@ -205,12 +242,15 @@ describe('LoginPage — password field aria-describedby with error state', () =>
     render(
       <FormField
         id="password"
+        name="password"
         label="Password"
         type="password"
         required
         helpText="Enter the password for your account"
         error="Incorrect password"
-        inputProps={{ autoComplete: 'current-password' }}
+        value=""
+        onChange={() => {}}
+        autoComplete="current-password"
       />,
     );
 
@@ -228,12 +268,15 @@ describe('LoginPage — password field aria-describedby with error state', () =>
     render(
       <FormField
         id="password"
+        name="password"
         label="Password"
         type="password"
         required
         helpText="Enter the password for your account"
         error="Incorrect password"
-        inputProps={{ autoComplete: 'current-password' }}
+        value=""
+        onChange={() => {}}
+        autoComplete="current-password"
       />,
     );
 

@@ -1,8 +1,22 @@
-import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
-import { Link, useSearchParams, useLocation, useNavigate } from "react-router-dom";
+import React, {
+  useState,
+  useMemo,
+  useRef,
+  useCallback,
+  useEffect,
+} from "react";
+import {
+  Link,
+  useSearchParams,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import { CopyToClipboard } from "../components/CopyToClipboard";
 import { DateRangeChips, type DatePreset } from "../components/DateRangeChips";
-import { AmountRangeChips, type AmountRangePreset } from "../components/AmountRangeChips";
+import {
+  AmountRangeChips,
+  type AmountRangePreset,
+} from "../components/AmountRangeChips";
 import { useDebounceValue } from "../hooks/useDebounceValue";
 import { toCsv, downloadCsv } from "../utils/csv";
 import { useNotifications } from "../context/NotificationContext";
@@ -12,11 +26,23 @@ import type {
   TransactionStatus,
   TransactionType,
 } from "../types/creditLine";
-import { startOfDay, startOfMonth, startOfWeek } from "../utils/dates";
+import {
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  getCalendarGroup,
+  relativeTime as formatCalendarRelative,
+} from "../utils/dates";
 import { COLOR, fmt, fmtDate, fmtDateTime } from "../utils/tokens";
 import "./TransactionHistory.css";
 import { NoActivity, NoDataGraph, NoLines } from "../components/illustrations";
+import { TransactionHistorySkeleton } from "../components/TransactionHistorySkeleton";
 import { LiveRegion } from "../components/LiveRegion";
+import { KbdHint } from "../components/KbdHint";
+import {
+  DEFAULT_HISTORY_PAGE_SIZE,
+  paginateByCursor,
+} from "../utils/cursorPagination";
 
 /**
  * TransactionHistory Page Component
@@ -108,6 +134,22 @@ const STATUS_COLORS: Record<TransactionStatus, { bg: string; color: string }> =
     Failed: { bg: "rgba(248,81,73,0.15)", color: COLOR.danger },
   };
 
+/**
+ * CSS pattern classes for each transaction status.
+ *
+ * These classes add a pure-CSS geometric pattern on top of the coloured
+ * background so that the three statuses are distinguishable without
+ * relying on colour alone (WCAG 2.1 SC 1.4.1 — Use of Color).
+ *
+ * The classes are defined in src/styles/patterns.css and are globally
+ * available via index.css.
+ */
+const STATUS_PATTERNS: Record<TransactionStatus, string> = {
+  Completed: "tx-status-pattern--completed",
+  Pending: "tx-status-pattern--pending",
+  Failed: "tx-status-pattern--failed",
+};
+
 const TYPE_FILTER_OPTIONS: Array<{
   value: "all" | Exclude<TransactionType, "StatusChange">;
   label: string;
@@ -122,7 +164,10 @@ const TYPE_FILTER_OPTIONS: Array<{
 type TypeFilter = (typeof TYPE_FILTER_OPTIONS)[number]["value"];
 type RangePreset = "this-week" | "this-month" | "all-time" | "custom";
 
-const RANGE_PRESET_OPTIONS: Array<{ value: Exclude<RangePreset, "custom">; label: string }> = [
+const RANGE_PRESET_OPTIONS: Array<{
+  value: Exclude<RangePreset, "custom">;
+  label: string;
+}> = [
   { value: "this-week", label: "This Week" },
   { value: "this-month", label: "This Month" },
   { value: "all-time", label: "All Time" },
@@ -152,36 +197,15 @@ type AmountFilter = (typeof AMOUNT_FILTER_OPTIONS)[number]["value"];
 // ─── Helper Functions ─────────────────────────────────────────────────────────
 
 const relativeTime = (iso: string): string => {
-  const now = new Date();
-  const txDate = new Date(iso);
-  const diffMs = now.getTime() - txDate.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHrs = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHrs / 24);
-
-  if (diffDays === 0) {
-    if (diffHrs === 0) {
-      if (diffMins < 1) return "Just now";
-      return `${diffMins}m ago`;
-    }
-    return `${diffHrs}h ago`;
-  }
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays} days ago`;
-  return fmtDate(iso);
+  // Issue #1189: delegate to the shared calendar-aware helper.
+  // Handles future timestamps ("in 3m") and "just now" correctly.
+  return formatCalendarRelative(iso);
 };
 
 const getDateGroup = (iso: string): string => {
-  const now = new Date();
-  const txDate = new Date(iso);
-  const diffMs = now.getTime() - txDate.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return "This Week";
-  if (diffDays < 30) return "This Month";
-  return "Older";
+  // Issue #1189: local calendar boundaries, with 'Upcoming' + 'Unknown date'
+  // for future-dated and unparseable rows.
+  return getCalendarGroup(iso, new Date());
 };
 
 function getExportFilename(transactions: TransactionWithLine[]): string {
@@ -282,7 +306,7 @@ function TransactionRow({
         </td>
         <td className="tx-status">
           <span
-            className="tx-status-badge"
+            className={`tx-status-badge ${STATUS_PATTERNS[tx.status]}`}
             style={{
               background: STATUS_COLORS[tx.status].bg,
               color: STATUS_COLORS[tx.status].color,
@@ -401,10 +425,40 @@ function TransactionRow({
 /** Stable element ID that associates the export button with its helper text. */
 const CSV_EXPORT_EMPTY_REASON_ID = "csv-export-empty-reason";
 
+/**
+ * Rows rendered per page of the transaction table.
+ *
+ * Module-level so the first-paint skeleton can reserve exactly one page of
+ * rows (issue #854) — a shorter skeleton would let the table container grow on
+ * reveal and push the rest of the page down.
+ */
+const ITEMS_PER_PAGE = DEFAULT_HISTORY_PAGE_SIZE;
+
 export function TransactionHistory() {
   const location = useLocation();
   const navigate = useNavigate();
   const { addToast } = useNotifications();
+
+  /**
+   * First-paint loading guard.
+   *
+   * `isLoading` starts as `true` and is cleared to `false` in a
+   * zero-delay `useEffect` (runs after the first committed render).
+   * This gives the browser one frame to paint the skeleton before the
+   * full component tree is committed, preventing a flash of unstyled
+   * content on initial navigation.
+   *
+   * In a real application this flag would be wired to an async data
+   * fetch; here it simulates that pattern against the static mock data.
+   */
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    // Simulate async data resolution on first mount.
+    // Replace with the real data-fetch completion signal when the API is wired up.
+    const id = setTimeout(() => setIsLoading(false), 0);
+    return () => clearTimeout(id);
+  }, []);
 
   // ─── Filter and UI State ───
   const [selectedLine, setSelectedLine] = useState<string>("all");
@@ -442,7 +496,10 @@ export function TransactionHistory() {
 
   const [expandedTx, setExpandedTx] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 15;
+  const [pageCursors, setPageCursors] = useState<Array<string | undefined>>([
+    undefined,
+  ]);
+  const itemsPerPage = ITEMS_PER_PAGE;
 
   const [liveAnnouncement, setLiveAnnouncement] = useState("");
   const isFirstRender = useRef(true);
@@ -468,7 +525,11 @@ export function TransactionHistory() {
     const params = new URLSearchParams(location.search);
     const rangeParam = params.get("range");
 
-    if (rangeParam === "this-week" || rangeParam === "this-month" || rangeParam === "all-time") {
+    if (
+      rangeParam === "this-week" ||
+      rangeParam === "this-month" ||
+      rangeParam === "all-time"
+    ) {
       setPresetRange(rangeParam);
       setDateRange("custom");
       return;
@@ -516,8 +577,6 @@ export function TransactionHistory() {
     setSearchQuery(debouncedSearch);
     setCurrentPage(1);
   }, [debouncedSearch]);
-
-
 
   /**
    * Build a deduplicated list of suggestion strings from the full transaction
@@ -568,7 +627,10 @@ export function TransactionHistory() {
       if (selectedStatus !== "all" && tx.status !== selectedStatus)
         return false;
       if (selectedAmount === "lt100" && tx.amount >= 100) return false;
-      if (selectedAmount === "100-1000" && (tx.amount < 100 || tx.amount > 1000))
+      if (
+        selectedAmount === "100-1000" &&
+        (tx.amount < 100 || tx.amount > 1000)
+      )
         return false;
       if (selectedAmount === "gt1000" && tx.amount <= 1000) return false;
       if (searchQuery) {
@@ -663,10 +725,41 @@ export function TransactionHistory() {
   ]);
 
   const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
-  const paginatedTransactions = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return filteredTransactions.slice(start, start + itemsPerPage);
-  }, [filteredTransactions, currentPage]);
+  const filterKey = JSON.stringify([
+    selectedLine,
+    selectedType,
+    selectedStatus,
+    selectedAmount,
+    dateRange,
+    presetRange,
+    customStartDate,
+    customEndDate,
+    selectedAmountRange,
+    isCustomAmountRangeActive,
+    customAmountMin,
+    customAmountMax,
+    searchQuery,
+  ]);
+  const previousFilterKey = useRef(filterKey);
+  useEffect(() => {
+    if (previousFilterKey.current === filterKey) return;
+    previousFilterKey.current = filterKey;
+    setCurrentPage(1);
+    setPageCursors([undefined]);
+    setExpandedTx(null);
+  }, [filterKey]);
+
+  const currentPageResult = useMemo(
+    () =>
+      paginateByCursor(filteredTransactions, {
+        cursor: pageCursors[currentPage - 1],
+        pageSize: itemsPerPage,
+        getDate: (tx) => tx.date,
+        getId: (tx) => tx.id,
+      }),
+    [filteredTransactions, pageCursors, currentPage, itemsPerPage],
+  );
+  const paginatedTransactions = currentPageResult.items;
 
   const paginatedGrouped = useMemo(() => {
     const groups: Record<string, TransactionWithLine[]> = {};
@@ -675,6 +768,7 @@ export function TransactionHistory() {
       if (!groups[group]) groups[group] = [];
       groups[group].push(tx);
     });
+    // Issue #1189: fixed display order — Upcoming first, Unknown date last.
     return groups;
   }, [paginatedTransactions]);
 
@@ -802,7 +896,13 @@ export function TransactionHistory() {
           break;
       }
     },
-    [isSuggestionsOpen, suggestions, activeSuggestionIndex, commitSuggestion, dismissSuggestions],
+    [
+      isSuggestionsOpen,
+      suggestions,
+      activeSuggestionIndex,
+      commitSuggestion,
+      dismissSuggestions,
+    ],
   );
 
   const hasLines = MOCK_CREDIT_LINES.length > 0;
@@ -852,13 +952,15 @@ export function TransactionHistory() {
     } else if (currentPage !== prevStates.current.currentPage) {
       message = `Page ${currentPage} of ${totalPages} loaded. ${resultCountText}.`;
     } else if (selectedType !== prevStates.current.selectedType) {
-      const typeLabel = selectedType === "all" ? "All" : TX_TYPE_LABELS[selectedType];
+      const typeLabel =
+        selectedType === "all" ? "All" : TX_TYPE_LABELS[selectedType];
       message = `Filtered by transaction type ${typeLabel}. ${resultCountText}.`;
     } else if (selectedLine !== prevStates.current.selectedLine) {
       const lineLabel =
         selectedLine === "all"
           ? "All"
-          : MOCK_CREDIT_LINES.find((cl) => cl.id === selectedLine)?.name || selectedLine;
+          : MOCK_CREDIT_LINES.find((cl) => cl.id === selectedLine)?.name ||
+            selectedLine;
       message = `Filtered by credit line ${lineLabel}. ${resultCountText}.`;
     } else if (selectedStatus !== prevStates.current.selectedStatus) {
       message = `Filtered by status ${selectedStatus === "all" ? "All" : selectedStatus}. ${resultCountText}.`;
@@ -866,7 +968,8 @@ export function TransactionHistory() {
       const amountLabel =
         selectedAmount === "all"
           ? "All"
-          : AMOUNT_FILTER_OPTIONS.find((o) => o.value === selectedAmount)?.label || selectedAmount;
+          : AMOUNT_FILTER_OPTIONS.find((o) => o.value === selectedAmount)
+              ?.label || selectedAmount;
       message = `Filtered by amount ${amountLabel}. ${resultCountText}.`;
     } else if (selectedAmountRange !== prevStates.current.selectedAmountRange) {
       const rangeLabels: Record<string, string> = {
@@ -875,10 +978,12 @@ export function TransactionHistory() {
         "5k-25k": "$5k to $25k",
         "25k-plus": "Over $25k",
       };
-      const rangeLabel = rangeLabels[selectedAmountRange] || selectedAmountRange;
+      const rangeLabel =
+        rangeLabels[selectedAmountRange] || selectedAmountRange;
       message = `Filtered by amount range ${rangeLabel}. ${resultCountText}.`;
     } else if (
-      isCustomAmountRangeActive !== prevStates.current.isCustomAmountRangeActive ||
+      isCustomAmountRangeActive !==
+        prevStates.current.isCustomAmountRangeActive ||
       customAmountMin !== prevStates.current.customAmountMin ||
       customAmountMax !== prevStates.current.customAmountMax
     ) {
@@ -981,7 +1086,9 @@ export function TransactionHistory() {
     const parts: string[] = [];
 
     if (selectedType !== "all") {
-      parts.push(`filtered by ${TX_TYPE_LABELS[selectedType as TransactionType]}`);
+      parts.push(
+        `filtered by ${TX_TYPE_LABELS[selectedType as TransactionType]}`,
+      );
     }
 
     const dateLabels: Record<string, string> = {
@@ -1049,7 +1156,13 @@ export function TransactionHistory() {
     }
 
     const nextSearch = params.toString();
-    navigate({ pathname: location.pathname, search: nextSearch ? `?${nextSearch}` : "" }, { replace: true });
+    navigate(
+      {
+        pathname: location.pathname,
+        search: nextSearch ? `?${nextSearch}` : "",
+      },
+      { replace: true },
+    );
   };
 
   const clearFilters = () => {
@@ -1078,6 +1191,16 @@ export function TransactionHistory() {
       return next;
     });
   };
+
+  if (isLoading) {
+    /*
+     * The skeleton mirrors this page's own DOM and class names, so its
+     * geometry is driven by TransactionHistory.css rather than a parallel
+     * stylesheet (issue #854).  `rows` is passed explicitly so the placeholder
+     * table reserves a full page and the reveal does not resize the container.
+     */
+    return <TransactionHistorySkeleton rows={ITEMS_PER_PAGE} />;
+  }
 
   if (!hasLines) {
     return (
@@ -1176,7 +1299,10 @@ export function TransactionHistory() {
           </span>
           <div className="th-stat-content">
             <span className="th-stat-label">Total Drawn</span>
-            <span className="th-stat-value num-tabular" style={{ color: COLOR.accent }}>
+            <span
+              className="th-stat-value num-tabular"
+              style={{ color: COLOR.accent }}
+            >
               {fmt(stats.totalDrawn)}
             </span>
           </div>
@@ -1190,7 +1316,10 @@ export function TransactionHistory() {
           </span>
           <div className="th-stat-content">
             <span className="th-stat-label">Total Repaid</span>
-            <span className="th-stat-value num-tabular" style={{ color: COLOR.success }}>
+            <span
+              className="th-stat-value num-tabular"
+              style={{ color: COLOR.success }}
+            >
               {fmt(stats.totalRepaid)}
             </span>
           </div>
@@ -1207,7 +1336,10 @@ export function TransactionHistory() {
           </span>
           <div className="th-stat-content">
             <span className="th-stat-label">Total Interest</span>
-            <span className="th-stat-value num-tabular" style={{ color: COLOR.warning }}>
+            <span
+              className="th-stat-value num-tabular"
+              style={{ color: COLOR.warning }}
+            >
               {fmt(stats.totalInterest)}
             </span>
           </div>
@@ -1341,10 +1473,17 @@ export function TransactionHistory() {
 
         <div className="th-filter-group th-filter-group-wide">
           <div className="th-subgroup">
-            <span className="th-filter-label" id="transaction-range-filter-label">
+            <span
+              className="th-filter-label"
+              id="transaction-range-filter-label"
+            >
               Presets
             </span>
-            <div className="th-chip-group" role="group" aria-labelledby="transaction-range-filter-label">
+            <div
+              className="th-chip-group"
+              role="group"
+              aria-labelledby="transaction-range-filter-label"
+            >
               {RANGE_PRESET_OPTIONS.map((option) => (
                 <button
                   key={option.value}
@@ -1367,10 +1506,17 @@ export function TransactionHistory() {
             </div>
           </div>
           <div className="th-subgroup">
-            <span className="th-filter-label" id="transaction-date-filter-label">
+            <span
+              className="th-filter-label"
+              id="transaction-date-filter-label"
+            >
               Date Range
             </span>
-            <div className="th-chip-group" role="group" aria-labelledby="transaction-date-filter-label">
+            <div
+              className="th-chip-group"
+              role="group"
+              aria-labelledby="transaction-date-filter-label"
+            >
               {[
                 { value: "today" as DatePreset, label: "Today" },
                 { value: "7d" as DatePreset, label: "7d" },
@@ -1382,7 +1528,9 @@ export function TransactionHistory() {
                   key={option.value}
                   type="button"
                   className="th-filter-chip"
-                  aria-pressed={presetRange === "custom" && dateRange === option.value}
+                  aria-pressed={
+                    presetRange === "custom" && dateRange === option.value
+                  }
                   onClick={() => {
                     setPresetRange("custom");
                     setDateRange(option.value);
@@ -1500,9 +1648,32 @@ export function TransactionHistory() {
             }
           }}
         >
-          <label htmlFor={SEARCH_INPUT_ID} className="th-filter-label">
-            Search
-          </label>
+          <div className="th-search-label-row">
+            <label htmlFor={SEARCH_INPUT_ID} className="th-filter-label">
+              Search
+            </label>
+            <div
+              className="th-search-shortcuts"
+              role="group"
+              aria-label="Search keyboard shortcuts"
+            >
+              <KbdHint
+                keys={["↑", "↓"]}
+                label="Navigate"
+                description="Use Arrow Up and Arrow Down to navigate search suggestions"
+              />
+              <KbdHint
+                keys="Enter"
+                label="Select"
+                description="Press Enter to select the active search suggestion"
+              />
+              <KbdHint
+                keys="Esc"
+                label="Close"
+                description="Press Escape to close search suggestions"
+              />
+            </div>
+          </div>
           {/* combobox wrapper — positions the floating listbox */}
           <div className="th-search-combobox">
             <input
@@ -1609,15 +1780,11 @@ export function TransactionHistory() {
 
       <div className="th-table-container">
         {filteredTransactions.length === 0 ? (
-          <div 
-            className="empty-state"
-            role="status"
-            aria-live="polite"
-          >
+          <div className="empty-state" role="status" aria-live="polite">
             <NoDataGraph className="empty-state-illustration--muted" />
             <h2>No transactions found</h2>
             <p>
-              We couldn't find any transactions matching your current filters. 
+              We couldn't find any transactions matching your current filters.
               Try another transaction type, date range, or search term.
             </p>
             {hasActiveFilters && (
@@ -1676,10 +1843,17 @@ export function TransactionHistory() {
                 </span>
                 <button
                   className="th-page-btn"
-                  onClick={() =>
-                    setCurrentPage((p) => Math.min(totalPages, p + 1))
+                  onClick={() => {
+                    if (!currentPageResult.nextCursor) return;
+                    setPageCursors((cursors) => [
+                      ...cursors.slice(0, currentPage),
+                      currentPageResult.nextCursor as string,
+                    ]);
+                    setCurrentPage((p) => Math.min(totalPages, p + 1));
+                  }}
+                  disabled={
+                    currentPage === totalPages || !currentPageResult.hasNextPage
                   }
-                  disabled={currentPage === totalPages}
                 >
                   Next
                 </button>

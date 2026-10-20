@@ -26,6 +26,7 @@ interface AmountRangeChipsProps {
   onPresetChange: (preset: AmountRangePreset) => void;
   onCustomRangeApply: (range: AmountRangeValue) => void;
   onCustomRangeClear: () => void;
+  onResetHistoryCursors?: () => void;
 }
 
 const formatAmountLabel = (value: string): string => {
@@ -56,6 +57,7 @@ export function AmountRangeChips({
   onPresetChange,
   onCustomRangeApply,
   onCustomRangeClear,
+  onResetHistoryCursors,
 }: AmountRangeChipsProps) {
   const labelId = useId();
   const modalId = `${labelId.replace(/:/g, "")}-amount-range-modal`;
@@ -72,6 +74,18 @@ export function AmountRangeChips({
 
   useBodyScrollLock({ isLocked: isModalOpen });
   useInertBackdrop({ isInert: isModalOpen, modalId });
+
+  const activeFilterKey = isCustomActive
+    ? `custom:${customMin}:${customMax}`
+    : `preset:${selectedPreset}`;
+  const previousFilterKeyRef = useRef(activeFilterKey);
+
+  useEffect(() => {
+    if (previousFilterKeyRef.current !== activeFilterKey) {
+      previousFilterKeyRef.current = activeFilterKey;
+      onResetHistoryCursors?.();
+    }
+  }, [activeFilterKey, onResetHistoryCursors]);
 
   useEffect(() => {
     if (!isModalOpen) return;

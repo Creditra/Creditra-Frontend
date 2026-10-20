@@ -13,9 +13,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNotifications } from '../../context/NotificationContext';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { useNotificationActionHandler } from '../../hooks/useNotificationActionHandler';
 import { useInertBackdrop } from '../../hooks/useInertBackdrop';
 import type { Notification, NotificationCategory } from '../../types/notification';
 import { CATEGORY_ICON, TYPE_COLOR, TYPE_ICON } from './notificationIcons';
+import { KbdHint } from '../KbdHint';
 import './NotificationCenter.css';
 
 const PANEL_ID = 'notification-center';
@@ -117,6 +119,8 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     onEscape: closePanel,
   });
 
+  const { handleAction } = useNotificationActionHandler();
+
   useBodyScrollLock({ isLocked: isPanelOpen });
   useInertBackdrop({ isInert: isPanelOpen, modalId: PANEL_ID });
 
@@ -206,6 +210,21 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     markAllAsRead();
     announce(count);
   }, [notifications, unreadCount, addToast, dismissToast, undoRead, markAllAsRead, announce]);
+
+  // Keyboard shortcut: Shift+R to mark all as read when panel is open
+  useEffect(() => {
+    if (!isPanelOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.shiftKey && e.key === 'r' && unreadCount > 0) {
+        e.preventDefault();
+        handleMarkAllAsRead();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isPanelOpen, unreadCount, handleMarkAllAsRead]);
 
   const handleClearAll = useCallback(() => {
     const prior = [...notifications];
@@ -309,7 +328,7 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
           <div className="nc-header-left">
             <span className="nc-title">Notifications</span>
             {unreadCount > 0 && (
-              <span className="nc-badge" aria-label={`${unreadCount} unread`}>
+              <span className="nc-badge tabular-nums" aria-label={`${unreadCount} unread`}>
                 {unreadCount}
               </span>
             )}
@@ -330,7 +349,17 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
               disabled={unreadCount === 0}
               aria-label={`Mark all notifications as read${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
             >
-              Mark all read
+              <span className="nc-btn-content">
+                Mark all read
+                {unreadCount > 0 && (
+                  <KbdHint 
+                    keys={['Shift', 'R']} 
+                    variant="badge"
+                    className="nc-shortcut-hint"
+                    aria-label="Keyboard shortcut: Shift then R"
+                  />
+                )}
+              </span>
             </button>
             {notifications.length > 0 && (
               <button
@@ -420,7 +449,7 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
                     <div className="nc-item-header">
                       <span className="nc-item-title">{n.title}</span>
                       <time
-                        className="nc-item-time"
+                        className="nc-item-time tabular-nums"
                         dateTime={n.timestamp}
                         aria-label={`Received ${relativeTime(n.timestamp)}`}
                       >
@@ -432,10 +461,10 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
                       <button
                         className="nc-item-action"
                         style={{ color: colors.text }}
-                        onClick={e => { e.stopPropagation(); n.action!.onClick(); }}
-                        aria-label={`${n.action.label} for notification: ${n.title}`}
+                        onClick={e => { e.stopPropagation(); handleAction(n.action as any); }}
+                        aria-label={`${n.action?.label} for notification: ${n.title}`}
                       >
-                        {n.action.label} →
+                        {n.action?.label} →
                       </button>
                     )}
                   </div>

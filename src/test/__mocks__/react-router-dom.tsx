@@ -14,8 +14,16 @@ import { createElement, Fragment } from 'react';
  */
 let currentPathname = '/';
 let currentSearch = '';
+let currentHash = '';
 
 function applyEntry(entry: string) {
+  const hashIndex = entry.indexOf('#');
+  if (hashIndex >= 0) {
+    currentHash = entry.slice(hashIndex);
+    entry = entry.slice(0, hashIndex);
+  } else {
+    currentHash = '';
+  }
   const qIndex = entry.indexOf('?');
   currentPathname = qIndex >= 0 ? entry.slice(0, qIndex) : entry;
   currentSearch = qIndex >= 0 ? entry.slice(qIndex) : '';
@@ -82,7 +90,26 @@ export function Navigate(_props: Record<string, unknown>) {
 
 export function useSearchParams() {
   const params = new URLSearchParams(currentSearch);
-  return [params, (_: URLSearchParams) => {}] as const;
+  const setSearchParams = (
+    next: URLSearchParams | string | Record<string, string>,
+    _opts?: { replace?: boolean }
+  ) => {
+    if (next instanceof URLSearchParams) {
+      const s = next.toString();
+      currentSearch = s ? `?${s}` : '';
+    } else if (typeof next === 'string') {
+      currentSearch = next ? (next.startsWith('?') ? next : `?${next}`) : '';
+    } else if (next && typeof next === 'object') {
+      const sp = new URLSearchParams(next);
+      const s = sp.toString();
+      currentSearch = s ? `?${s}` : '';
+    }
+  };
+  return [params, setSearchParams] as const;
+}
+
+export function __getMockSearch() {
+  return currentSearch;
 }
 
 export function useNavigate() {
@@ -93,11 +120,32 @@ export function useLocation() {
   return {
     pathname: currentPathname,
     search: currentSearch,
-    hash: '',
+    hash: currentHash,
     state: null,
   };
+}
+
+/**
+ * Test helper — sets the mock location to the given pathname + search.
+ *
+ * Call this between renders in a test to simulate client-side navigation.
+ *
+ * @example
+ * ```ts
+ * import { __setMockLocation } from 'react-router-dom';
+ *
+ * __setMockLocation('/transactions');
+ * rerender({ pathname: '/transactions' });
+ * ```
+ */
+export function __setMockLocation(pathname: string, search = '') {
+  currentPathname = pathname;
+  currentSearch = search;
 }
 
 export function useParams() {
   return {};
 }
+
+export { matchPath } from './matchPath';
+

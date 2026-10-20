@@ -25,10 +25,14 @@
  * it without needing JS class manipulation on every child element.
  */
 
-import React, { useState, useRef, useCallback, useId } from 'react';
+import React, { useState, useRef, useCallback, useId, useMemo, useEffect } from 'react';
 import { COLOR } from '@/utils/tokens';
 import { KbdHint } from './KbdHint';
+import { LiveRegion } from './LiveRegion';
 import { useReducedMotion } from '@/context/ReducedMotionContext';
+import { EmptyState } from './EmptyState';
+import { NoDataGraph } from './illustrations';
+import { Skeleton } from './Skeleton';
 import './RepaymentVisualizer.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -77,6 +81,15 @@ export interface RepaymentVisualizerProps {
    * Example: "Home improvement loan — 48 months · $4,230 total interest"
    */
   caption?: string;
+  /**
+   * Loading / first-paint control (FWC26 / issue #609).
+   *
+   * - `true`  — always show the themed skeleton
+   * - `false` — skip the first-paint skeleton (useful in unit tests)
+   * - omitted — show a one-frame first-paint skeleton via `setTimeout(0)` so
+   *   the chart layout does not pop in before the browser paints placeholders
+   */
+  loading?: boolean;
 }
 
 // ─── Schedule generator ────────────────────────────────────────────────────────
@@ -392,8 +405,6 @@ function TooltipBubble({ data }: { data: TooltipData }) {
 
   return (
     <div
-      role="status"
-      aria-live="polite"
       className="p-2 sm:p-3 text-xs min-w-[140px] sm:min-w-[160px]"
       style={{
         background: 'var(--surface-raised, #1c2230)',
@@ -581,15 +592,92 @@ function VisibleTable({ schedule, limit = 12 }: VisibleTableProps) {
 
 // ─── Empty state ───────────────────────────────────────────────────────────────
 
-function EmptyState() {
+function EmptyStatePrompt() {
   return (
-    <p
-      className="text-center p-4 sm:p-8"
-      style={{ color: `var(--muted, ${COLOR.muted})`, fontSize: 'var(--text-sm)' }}
-    >
-      Enter a valid principal, APR, and monthly payment to see the repayment plan.
-    </p>
+    <EmptyState
+      data-testid="repayment-visualizer-empty"
+      illustration={<NoDataGraph />}
+      eyebrow="Repayment Plan"
+      title="No repayment data yet"
+      description="Enter a valid principal, APR, and monthly payment to see your projected repayment plan, including monthly breakdowns and interest calculations."
+    />
   );
+}
+
+// ─── First-paint skeleton (FWC26 / issue #609) ─────────────────────────────────
+
+/**
+ * Themed shimmer matching the final RepaymentVisualizer card geometry so
+ * first paint does not jump when the schedule chart commits (CLS ≈ 0).
+ *
+ * Shape parity:
+ *  - Card shell uses `--surface` / `--border` / `--radius-lg`
+ *  - Chart placeholder height matches the SVG viewBox height (`H = 220`)
+ *  - Header / meta / legend rows mirror the loaded layout spacing
+ */
+export function RepaymentVisualizerSkeleton() {
+  return (
+    <section
+      className="p-4 sm:p-5 md:p-6 rv-skeleton"
+      role="status"
+      aria-busy="true"
+      aria-label="Loading repayment plan visualizer"
+      data-testid="repayment-visualizer-skeleton"
+      style={{
+        background: `var(--surface, ${COLOR.surface})`,
+        border: `1px solid var(--border, ${COLOR.border})`,
+        borderRadius: 'var(--radius-lg)',
+      }}
+    >
+      <div aria-hidden="true" className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
+        <Skeleton width={140} height={20} shape="rounded" />
+        <Skeleton width={160} height={14} shape="rounded" />
+      </div>
+      <Skeleton
+        width="100%"
+        height={220}
+        shape="rounded"
+        className="rv-skeleton__chart"
+        aria-hidden={true}
+      />
+      <div aria-hidden="true" className="mt-3 sm:mt-4 flex flex-wrap items-center justify-between gap-3">
+        <Skeleton width={180} height={12} shape="rounded" />
+        <Skeleton width={120} height={12} shape="rounded" />
+      </div>
+      <Skeleton width={110} height={14} shape="rounded" className="mt-4" aria-hidden={true} />
+    </section>
+  );
+}
+
+// ─── SR live-region message builder ──────────────────────────────────────────
+
+/** Formatter shared by liveMessage and tooltip caption. */
+const usdFmt = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 0,
+});
+
+/**
+ * Builds the plain-text message for the polite `aria-live` region.
+ *
+ * - Empty schedule → empty string (nothing to announce).
+ * - Active tooltip → month-specific principal + interest breakdown.
+ * - Normal state   → plan summary (term + total interest).
+ */
+function buildLiveMessage(
+  schedule: ScheduleRow[],
+  tooltip: TooltipData | null,
+  termMonths: number,
+  totalInterest: number,
+): string {
+  if (schedule.length === 0) return '';
+
+  if (tooltip) {
+    return `Month ${tooltip.month}: principal remaining ${usdFmt.format(tooltip.principal)}, cumulative interest ${usdFmt.format(tooltip.cumulativeInterest)}.`;
+  }
+
+  return `Repayment plan: ${termMonths} month${termMonths !== 1 ? 's' : ''}, ${usdFmt.format(totalInterest)} total interest.`;
 }
 
 // ─── Main component ────────────────────────────────────────────────────────────
@@ -604,6 +692,11 @@ function EmptyState() {
  * `chartAriaLabel` — overrides the default `aria-label` on the SVG element.
  * `caption` — overrides the auto-generated `<caption>` in the SR-only table.
  *
+ * Loading / first paint (FWC26 / issue #609)
+ * ──────────────────────────────────────────
+ * When `loading` is omitted, a one-frame themed skeleton paints first so the
+ * chart does not pop in. Pass `loading={false}` to skip that gate (tests).
+ *
  * Reduced-motion
  * ──────────────
  * Reads `isReducedMotionActive` from `ReducedMotionContext`. When true, CSS
@@ -617,16 +710,35 @@ export function RepaymentVisualizer({
   maxMonths = 360,
   chartAriaLabel,
   caption,
+  loading,
 }: RepaymentVisualizerProps) {
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
   const tooltipId = useId();
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [bootstrapping, setBootstrapping] = useState(() => loading !== false);
+
+  // First-paint / controlled loading gate — yields one frame for the skeleton.
+  useEffect(() => {
+    if (loading === true) {
+      setBootstrapping(true);
+      return;
+    }
+    if (loading === false) {
+      setBootstrapping(false);
+      return;
+    }
+    const id = setTimeout(() => setBootstrapping(false), 0);
+    return () => clearTimeout(id);
+  }, [loading, principal, apr, monthlyPayment]);
 
   // Detect reduced-motion preference from OS or in-app override.
   // When true, the chart renders statically (no CSS animations).
   const { isReducedMotionActive } = useReducedMotion();
 
-  const schedule = buildSchedule(principal, apr, monthlyPayment, maxMonths);
+  const schedule = useMemo(
+    () => buildSchedule(principal, apr, monthlyPayment, maxMonths),
+    [principal, apr, monthlyPayment, maxMonths],
+  );
 
   // Long-press for mobile tooltip
   const handleTouchStart = useCallback(
@@ -659,6 +771,15 @@ export function RepaymentVisualizer({
   const totalInterest = schedule[schedule.length - 1]?.cumulativeInterest ?? 0;
   const termMonths = schedule.length;
 
+  // ── ARIA live-region announcement ──
+  const liveMessage = useMemo(() => {
+    return buildLiveMessage(schedule, tooltip, termMonths, totalInterest);
+  }, [schedule, tooltip, termMonths, totalInterest]);
+
+  if (loading === true || bootstrapping) {
+    return <RepaymentVisualizerSkeleton />;
+  }
+
   return (
     <section
       aria-label="Repayment plan visualizer"
@@ -669,6 +790,9 @@ export function RepaymentVisualizer({
         borderRadius: 'var(--radius-lg)',
       }}
     >
+      {/* Announce state changes (schedule calc, month inspection) to screen readers */}
+      <LiveRegion message={liveMessage} politeness="polite" />
+
       <header className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <h2
@@ -699,7 +823,7 @@ export function RepaymentVisualizer({
       </header>
 
       {schedule.length === 0 ? (
-        <EmptyState />
+        <EmptyStatePrompt />
       ) : (
         <>
           {/* Chart wrapper — carries data-reduced-motion for CSS targeting */}

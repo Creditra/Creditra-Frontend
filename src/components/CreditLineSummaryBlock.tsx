@@ -109,19 +109,19 @@ export function CreditLineSummaryBlock({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
         <div className="rounded-lg border border-border bg-background/60 p-3">
           <p className="text-muted">Limit</p>
-          <p className="text-base font-semibold text-foreground mt-1">
+          <p className="text-base font-semibold text-foreground mt-1 tabular-nums">
             {formatMoney(creditLine.limit)}
           </p>
         </div>
         <div className="rounded-lg border border-border bg-background/60 p-3">
           <p className="text-muted">Utilized</p>
-          <p className="text-base font-semibold text-foreground mt-1">
+          <p className="text-base font-semibold text-foreground mt-1 tabular-nums">
             {formatMoney(projectedUtilized)}
           </p>
         </div>
         <div className="rounded-lg border border-border bg-background/60 p-3">
           <p className="text-muted">Available</p>
-          <p className="text-base font-semibold text-foreground mt-1">
+          <p className="text-base font-semibold text-foreground mt-1 tabular-nums">
             {formatMoney(projectedAvailable)}
           </p>
         </div>

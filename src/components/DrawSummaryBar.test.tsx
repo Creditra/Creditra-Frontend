@@ -82,21 +82,7 @@ describe("DrawSummaryBar", () => {
       expect(container.firstChild).toBeNull();
     });
 
-    it("renders nothing at md breakpoint and above", () => {
-      mockUseMediaQuery.mockReturnValue(false);
-
-      const { container } = render(
-        <DrawSummaryBar
-          creditLine={standardLine}
-          amount={1000}
-          step="amount"
-        />,
-      );
-
-      expect(container.firstChild).toBeNull();
-    });
-
-    it("shows the bar on the `amount` step below md once a line is selected", () => {
+    it("shows the bar on the `amount` step once a line is selected", () => {
       const { container } = render(
         <DrawSummaryBar
           creditLine={standardLine}

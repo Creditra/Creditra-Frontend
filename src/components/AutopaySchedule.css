@@ -90,6 +90,7 @@
 /* Table wrapper — horizontal scroll on small screens */
 .autopay-schedule__table-wrapper {
   overflow-x: auto;
+  overflow-y: visible;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   /* Keyboard-scrollable for accessibility */
@@ -146,6 +147,7 @@
 }
 
 .autopay-schedule__td--right {
+  position: relative;
   text-align: right;
 }
 
@@ -156,12 +158,28 @@
 }
 
 /* Row states */
+.autopay-schedule__row {
+  position: relative;
+  cursor: pointer;
+  outline: none;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
 .autopay-schedule__row:last-child .autopay-schedule__td {
   border-bottom: none;
 }
 
-.autopay-schedule__row:hover .autopay-schedule__td {
-  background: rgba(88, 166, 255, 0.04);
+.autopay-schedule__row:hover .autopay-schedule__td,
+.autopay-schedule__row:focus-visible .autopay-schedule__td,
+.autopay-schedule__row--active .autopay-schedule__td {
+  background: rgba(88, 166, 255, 0.08);
+}
+
+.autopay-schedule__row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm, 4px);
+  z-index: 10;
 }
 
 .autopay-schedule__row--upcoming .autopay-schedule__td {

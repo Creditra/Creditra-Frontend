@@ -679,4 +679,373 @@ describe('WalletConnectionModal Accessibility', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
+
+  // ── Hover-preview card ─────────────────────────────────────────────────
+
+  describe('wallet hover-preview card', () => {
+    function withFreighterDetected() {
+      vi.spyOn(walletUtils, 'getRecentWalletOrder').mockReturnValue([]);
+      vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(null);
+    }
+
+    beforeEach(() => {
+      window.localStorage.clear();
+      withFreighterDetected();
+    });
+
+    it('renders a preview card for each wallet option', () => {
+      const { container } = render(
+        <TestWrapper
+          isOpen={true}
+          onClose={mockOnClose}
+          onConnect={mockOnConnect}
+          detectedWallets={['freighter']}
+        />,
+      );
+
+      const previews = container.querySelectorAll('.wallet-preview');
+      // 4 wallets → 4 preview cards
+      expect(previews).toHaveLength(4);
+    });
+
+    it('each preview card has role="tooltip" and is hidden from AT by default', () => {
+      const { container } = render(
+        <TestWrapper
+          isOpen={true}
+          onClose={mockOnClose}
+          onConnect={mockOnConnect}
+          detectedWallets={['freighter']}
+        />,
+      );
+
+      const previews = container.querySelectorAll('.wallet-preview');
+      previews.forEach((card) => {
+        expect(card).toHaveAttribute('role', 'tooltip');
+        expect(card).toHaveAttribute('aria-hidden', 'true');
+      });
+    });
+
+    it('links the wallet button to its preview card via aria-describedby', () => {
+      render(
+        <TestWrapper
+          isOpen={true}
+          onClose={mockOnClose}
+          onConnect={mockOnConnect}
+          detectedWallets={['freighter']}
+        />,
+      );
+
+      const freighterBtn = screen.getByLabelText('Connect with Freighter');
+      const describedBy = freighterBtn.getAttribute('aria-describedby') ?? '';
+      // Should reference both the status id and the preview id.
+      const ids = describedBy.split(/\s+/);
+      const previewId = ids.find((id) => id.startsWith('wallet-preview-'));
+      expect(previewId).toBeTruthy();
+      const previewEl = document.getElementById(previewId!);
+      expect(previewEl).toBeInTheDocument();
+      expect(previewEl).toHaveAttribute('role', 'tooltip');
+    });
+
+    it('preview card shows the wallet name in its header', () => {
+      render(
+        <TestWrapper
+          isOpen={true}
+          onClose={mockOnClose}
+          onConnect={mockOnConnect}
+          detectedWallets={['freighter']}
+        />,
+      );
+
+      // The first visible wallet header name in the DOM
+      const headers = document.querySelectorAll('.wallet-preview__name');
+      expect(headers.length).toBe(4);
+
+      // Freighter should be one of them
+      const names = Array.from(headers).map((h) => h.textContent);
+      expect(names).toContain('Freighter');
+      expect(names).toContain('Albedo');
+      expect(names).toContain('xBull');
+      expect(names).toContain('Rabet');
+    });
+
+    it('preview card lists wallet-specific features', () => {
+      render(
+        <TestWrapper
+          isOpen={true}
+          onClose={mockOnClose}
+          onConnect={mockOnConnect}
+          detectedWallets={['freighter']}
+        />,
+      );
+
+      // Each wallet has 3 features → expect 12 feature items total
+      const features = document.querySelectorAll('.wallet-preview__feature');
+      expect(features.length).toBe(12);
+
+      // Freighter-specific features should be present
+      const featureTexts = Array.from(features).map((f) => f.textContent);
+      expect(featureTexts.some((t) => t?.includes('Soroban'))).toBe(true);
+      expect(featureTexts.some((t) => t?.includes('Ledger'))).toBe(true);
+    });
+  });
+});
+
+describe('WalletConnectionModal — error propagation (#1231)', () => {
+  const mockOnClose = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('keeps modal open when wallet connection fails', async () => {
+    const mockOnConnect = vi.fn().mockRejectedValue(
+      new Error('Connection failed')
+    );
+
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={['freighter']}
+      />
+    );
+
+    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    fireEvent.click(freighterButton);
+
+    await waitFor(() => {
+      expect(mockOnConnect).toHaveBeenCalledWith('freighter', { remember: false });
+    });
+
+    // Modal should still be open (no onClose call)
+    expect(mockOnClose).not.toHaveBeenCalled();
+
+    // Error should be displayed
+    await waitFor(() => {
+      const errorAlert = screen.getByRole('alert');
+      expect(errorAlert).toBeInTheDocument();
+      expect(errorAlert).toHaveTextContent('Connection failed');
+    });
+  });
+
+  it('displays user_rejected error message', async () => {
+    const rejectionError = new (class extends Error {
+      type = 'user_rejected';
+      constructor() {
+        super("You cancelled the request in your wallet. Try again when you're ready.");
+        this.name = 'WalletConnectError';
+      }
+    })();
+
+    const mockOnConnect = vi.fn().mockRejectedValue(rejectionError);
+
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={['freighter']}
+      />
+    );
+
+    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    fireEvent.click(freighterButton);
+
+    await waitFor(() => {
+      const errorAlert = screen.getByRole('alert');
+      expect(errorAlert).toHaveTextContent(/cancelled.*wallet/i);
+    });
+
+    // Modal stays open
+    expect(mockOnClose).not.toHaveBeenCalled();
+  });
+
+  it('displays not_found error message with install link context', async () => {
+    const notFoundError = new Error('Freighter wallet not found. Please install the extension.');
+    
+    const mockOnConnect = vi.fn().mockRejectedValue(notFoundError);
+
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={[]}
+      />
+    );
+
+    const freighterButton = screen.getByLabelText('Install Freighter wallet');
+    fireEvent.click(freighterButton);
+
+    await waitFor(() => {
+      const errorAlert = screen.getByRole('alert');
+      expect(errorAlert).toHaveTextContent(/not found.*install/i);
+    });
+  });
+
+  it('displays wrong_network error message', async () => {
+    const networkError = new Error('Switch your wallet to Testnet and try again.');
+    
+    const mockOnConnect = vi.fn().mockRejectedValue(networkError);
+
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={['freighter']}
+      />
+    );
+
+    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    fireEvent.click(freighterButton);
+
+    await waitFor(() => {
+      const errorAlert = screen.getByRole('alert');
+      expect(errorAlert).toHaveTextContent(/Testnet/i);
+    });
+  });
+
+  it('closes modal on successful connection', async () => {
+    const mockOnConnect = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={['freighter']}
+      />
+    );
+
+    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    fireEvent.click(freighterButton);
+
+    await waitFor(() => {
+      expect(mockOnConnect).toHaveBeenCalled();
+    });
+
+    // Modal should close on success
+    await waitFor(() => {
+      expect(mockOnClose).toHaveBeenCalled();
+    });
+  });
+
+  it('re-enables wallet buttons after connection failure', async () => {
+    const mockOnConnect = vi.fn().mockRejectedValue(
+      new Error('Connection failed')
+    );
+
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={['freighter', 'albedo']}
+      />
+    );
+
+    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    const albedoButton = screen.getByLabelText('Connect with Albedo');
+
+    // Initially not disabled
+    expect(freighterButton).not.toBeDisabled();
+    expect(albedoButton).not.toBeDisabled();
+
+    // Click and wait for failure
+    fireEvent.click(freighterButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+    });
+
+    // Buttons should be re-enabled after error
+    expect(freighterButton).not.toBeDisabled();
+    expect(albedoButton).not.toBeDisabled();
+  });
+
+  it('clears previous error when retrying connection', async () => {
+    let attemptCount = 0;
+    const mockOnConnect = vi.fn().mockImplementation(async () => {
+      attemptCount++;
+      if (attemptCount === 1) {
+        throw new Error('First attempt failed');
+      }
+      // Second attempt succeeds
+      return Promise.resolve();
+    });
+
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={['freighter']}
+      />
+    );
+
+    const freighterButton = screen.getByLabelText('Connect with Freighter');
+
+    // First attempt fails
+    fireEvent.click(freighterButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('First attempt failed');
+    });
+
+    // Second attempt should clear the error and succeed
+    fireEvent.click(freighterButton);
+
+    await waitFor(() => {
+      expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    // Error should be cleared
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('handles generic Error instances', async () => {
+    const mockOnConnect = vi.fn().mockRejectedValue(
+      new Error('Generic error message')
+    );
+
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={['freighter']}
+      />
+    );
+
+    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    fireEvent.click(freighterButton);
+
+    await waitFor(() => {
+      const errorAlert = screen.getByRole('alert');
+      expect(errorAlert).toHaveTextContent('Generic error message');
+    });
+  });
+
+  it('handles non-Error rejection values', async () => {
+    const mockOnConnect = vi.fn().mockRejectedValue('String error');
+
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={['freighter']}
+      />
+    );
+
+    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    fireEvent.click(freighterButton);
+
+    await waitFor(() => {
+      const errorAlert = screen.getByRole('alert');
+      expect(errorAlert).toHaveTextContent(/Failed to connect.*freighter/i);
+    });
+  });
 });

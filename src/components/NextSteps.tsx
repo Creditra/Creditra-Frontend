@@ -13,7 +13,7 @@ interface NextStepsProps {
 export function NextSteps({ totalAvailable, totalUtilized }: NextStepsProps) {
   const { overallStatus } = useKyc();
   const [hasLinkedAccount, setHasLinkedAccount] = useState<boolean | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
@@ -21,14 +21,14 @@ export function NextSteps({ totalAvailable, totalUtilized }: NextStepsProps) {
       .then((accounts) => {
         if (isMounted) {
           setHasLinkedAccount(accounts.length > 0);
-          setLoading(false);
+          setIsLoading(false);
         }
       })
       .catch((err) => {
         console.error("Failed to fetch linked accounts for NextSteps:", err);
         if (isMounted) {
           setHasLinkedAccount(false);
-          setLoading(false);
+          setIsLoading(false);
         }
       });
 
@@ -73,7 +73,7 @@ export function NextSteps({ totalAvailable, totalUtilized }: NextStepsProps) {
   };
 
   // If loading, render a skeleton state
-  if (loading || hasLinkedAccount === null) {
+  if (isLoading || hasLinkedAccount === null) {
     return (
       <div className="next-steps-card skeleton-loading" aria-busy="true" aria-label="Loading next steps">
         <div className="next-steps-header-skeleton" />

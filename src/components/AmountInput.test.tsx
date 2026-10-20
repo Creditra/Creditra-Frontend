@@ -1,6 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AmountInput, AmountInputSkeleton } from "./AmountInput";
+import * as ReducedMotionContext from "../context/ReducedMotionContext";
+import { readFileSync } from "fs";
+import { resolve } from "path";
 
 describe("AmountInput", () => {
   const creditLine = {
@@ -134,7 +137,9 @@ describe("AmountInput", () => {
     });
 
     expect(screen.getByText("Draw amount looks good")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /continue/i })).not.toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /continue/i }),
+    ).not.toBeDisabled();
   });
 
   it("enables continue button only when amount is valid", () => {
@@ -179,7 +184,9 @@ describe("AmountInput", () => {
     });
 
     expect(input.value).toBe("1500.00");
-    expect(screen.getByText("Pasted value sanitized to $1,500.00")).toBeInTheDocument();
+    expect(
+      screen.getByText("Pasted value sanitized to $1,500.00"),
+    ).toBeInTheDocument();
   });
 
   it("rejects non-numeric pasted text and announces the error", () => {
@@ -207,6 +214,20 @@ describe("AmountInput", () => {
     expect(
       screen.getByText("Invalid amount pasted. Please enter a numeric value."),
     ).toBeInTheDocument();
+  });
+
+  it("renders a suggested buffer hint to make reserve guidance clearer", () => {
+    render(
+      <AmountInput
+        creditLine={creditLine}
+        onAmountChange={vi.fn()}
+        onNext={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Suggested buffer")).toBeInTheDocument();
+    expect(screen.getByText(/keep a small safety buffer/i)).toBeInTheDocument();
   });
 
   it("renders explicit +/- stepper buttons with accessible labels", () => {
@@ -360,22 +381,31 @@ describe("AmountInput", () => {
 
   describe("Skeleton Loading State (v7)", () => {
     it("renders loading skeleton on first paint when isLoading is true", () => {
-      render(
-        <AmountInput
-          creditLine={creditLine}
-          isLoading={true}
-        />,
-      );
+      render(<AmountInput creditLine={creditLine} isLoading={true} />);
 
       const skeletonRegion = screen.getByTestId("amount-input-skeleton");
       expect(skeletonRegion).toBeInTheDocument();
       expect(skeletonRegion).toHaveAttribute("aria-busy", "true");
-      expect(skeletonRegion).toHaveAttribute("aria-label", "Loading amount input");
+      expect(skeletonRegion).toHaveAttribute(
+        "aria-label",
+        "Loading amount input",
+      );
       expect(screen.queryByLabelText(/draw amount/i)).not.toBeInTheDocument();
     });
 
-    it("renders skeleton when creditLine is not yet provided", () => {
-      render(<AmountInput isLoading={false} />);
+    it("renders themed empty state when creditLine is not yet provided and not loading", () => {
+      const onBack = vi.fn();
+      render(<AmountInput isLoading={false} onBack={onBack} />);
+
+      const emptyRegion = screen.getByTestId("amount-input-empty");
+      expect(emptyRegion).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "No credit line selected" })).toBeInTheDocument();
+      expect(screen.getByText(/Select a credit line from the dashboard/)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Go back" })).toBeInTheDocument();
+    });
+
+    it("renders skeleton when creditLine is not yet provided but loading", () => {
+      render(<AmountInput isLoading={true} />);
 
       const skeletonRegion = screen.getByTestId("amount-input-skeleton");
       expect(skeletonRegion).toBeInTheDocument();
@@ -389,45 +419,46 @@ describe("AmountInput", () => {
       expect(skeletonRegion).toBeInTheDocument();
       expect(skeletonRegion).toHaveAttribute("role", "region");
       expect(skeletonRegion).toHaveAttribute("aria-busy", "true");
-      expect(skeletonRegion).toHaveAttribute("aria-label", "Loading amount input");
+      expect(skeletonRegion).toHaveAttribute(
+        "aria-label",
+        "Loading amount input",
+      );
     });
   });
 
   describe("Design Tokens & Typography Spacing (v7)", () => {
     it("pins root container spacing and header typography to design tokens", () => {
-      render(
-        <AmountInput
-          creditLine={creditLine}
-          onAmountChange={vi.fn()}
-        />,
-      );
+      render(<AmountInput creditLine={creditLine} onAmountChange={vi.fn()} />);
 
       const heading = screen.getByRole("heading", { name: /enter amount/i });
-      expect(heading).toHaveClass("text-2xl", "sm:text-3xl", "font-bold", "text-foreground", "leading-[var(--lh-heading)]", "tracking-tight");
+      expect(heading).toHaveClass(
+        "text-2xl",
+        "sm:text-3xl",
+        "font-bold",
+        "text-foreground",
+        "leading-[var(--lh-heading)]",
+        "tracking-tight",
+      );
     });
 
     it("applies design token classes to input box, dollar prefix, and stepper controls", () => {
-      render(
-        <AmountInput
-          creditLine={creditLine}
-          onAmountChange={vi.fn()}
-        />,
-      );
+      render(<AmountInput creditLine={creditLine} onAmountChange={vi.fn()} />);
 
       const input = screen.getByLabelText(/draw amount/i);
       expect(input).toHaveClass("tabular-nums", "leading-[var(--lh-display)]");
 
-      const maxButton = screen.getByRole("button", { name: /set amount to maximum/i });
-      expect(maxButton).toHaveClass("text-accent", "focus-visible:ring-accent", "min-h-[44px]");
+      const maxButton = screen.getByRole("button", {
+        name: /set amount to maximum/i,
+      });
+      expect(maxButton).toHaveClass(
+        "text-accent",
+        "focus-visible:ring-accent",
+        "min-h-[44px]",
+      );
     });
 
     it("maps severity validation tones to semantic status color tokens", () => {
-      render(
-        <AmountInput
-          creditLine={creditLine}
-          onAmountChange={vi.fn()}
-        />,
-      );
+      render(<AmountInput creditLine={creditLine} onAmountChange={vi.fn()} />);
 
       const input = screen.getByLabelText(/draw amount/i);
 
@@ -448,16 +479,189 @@ describe("AmountInput", () => {
       );
 
       const presetButton = screen.getByRole("button", { name: /25 percent/i });
-      expect(presetButton).toHaveClass("border-border", "hover:border-accent", "focus-visible:ring-accent", "min-h-[44px]");
+      expect(presetButton).toHaveClass(
+        "border-border",
+        "hover:border-accent",
+        "focus-visible:ring-accent",
+        "min-h-[44px]",
+      );
 
       const continueButton = screen.getByRole("button", { name: /continue/i });
-      expect(continueButton).toHaveClass("bg-accent", "focus-visible:ring-accent", "min-h-[44px]");
+      expect(continueButton).toHaveClass(
+        "bg-accent",
+        "focus-visible:ring-accent",
+        "min-h-[44px]",
+      );
 
       const backButton = screen.getByRole("button", { name: /back/i });
-      expect(backButton).toHaveClass("border-border", "text-foreground", "focus-visible:ring-accent", "min-h-[44px]");
+      expect(backButton).toHaveClass(
+        "border-border",
+        "text-foreground",
+        "focus-visible:ring-accent",
+        "min-h-[44px]",
+      );
     });
 
     it("renders constraint boxes with typography rhythm tokens and tabular numerals", () => {
+      render(<AmountInput creditLine={creditLine} onAmountChange={vi.fn()} />);
+
+      const minLabel = screen.getByText("Minimum draw");
+      expect(minLabel).toHaveClass(
+        "text-[11px]",
+        "font-semibold",
+        "uppercase",
+        "tracking-wider",
+        "text-muted",
+        "leading-[var(--lh-small)]",
+      );
+    });
+  });
+
+  describe("Reduced Motion (v7)", () => {
+    it("adds data-reduced-motion=true attribute on root when reduced motion is active", () => {
+      vi.spyOn(ReducedMotionContext, "useReducedMotion").mockReturnValue({
+        motionOverride: "reduced",
+        toggleMotionOverride: vi.fn(),
+        setMotionOverride: vi.fn(),
+        isReducedMotionActive: true,
+      });
+
+      const { container } = render(
+        <AmountInput
+          creditLine={creditLine}
+          onAmountChange={vi.fn()}
+          onNext={vi.fn()}
+          onBack={vi.fn()}
+        />,
+      );
+
+      const root = container.querySelector(".amount-input-root");
+      expect(root).toHaveAttribute("data-reduced-motion", "true");
+
+      vi.restoreAllMocks();
+    });
+
+    it("omits data-reduced-motion attribute when reduced motion is not active", () => {
+      vi.spyOn(ReducedMotionContext, "useReducedMotion").mockReturnValue({
+        motionOverride: "system",
+        toggleMotionOverride: vi.fn(),
+        setMotionOverride: vi.fn(),
+        isReducedMotionActive: false,
+      });
+
+      const { container } = render(
+        <AmountInput
+          creditLine={creditLine}
+          onAmountChange={vi.fn()}
+          onNext={vi.fn()}
+          onBack={vi.fn()}
+        />,
+      );
+
+      const root = container.querySelector(".amount-input-root");
+      expect(root).not.toHaveAttribute("data-reduced-motion");
+
+      vi.restoreAllMocks();
+    });
+
+    it("renders transition classes on stepper and action buttons when motion is active", () => {
+      vi.spyOn(ReducedMotionContext, "useReducedMotion").mockReturnValue({
+        motionOverride: "system",
+        toggleMotionOverride: vi.fn(),
+        setMotionOverride: vi.fn(),
+        isReducedMotionActive: false,
+      });
+
+      render(
+        <AmountInput
+          creditLine={creditLine}
+          onAmountChange={vi.fn()}
+          onNext={vi.fn()}
+          onBack={vi.fn()}
+        />,
+      );
+
+      const decreaseBtn = screen.getByRole("button", { name: /decrease amount/i });
+      const increaseBtn = screen.getByRole("button", { name: /increase amount/i });
+      const continueBtn = screen.getByRole("button", { name: /continue/i });
+
+      expect(decreaseBtn.className).toContain("transition-all");
+      expect(increaseBtn.className).toContain("transition-all");
+      expect(continueBtn.className).toContain("transition-all");
+
+      vi.restoreAllMocks();
+    });
+
+    it("omits transition classes on buttons when reduced motion is active", () => {
+      vi.spyOn(ReducedMotionContext, "useReducedMotion").mockReturnValue({
+        motionOverride: "reduced",
+        toggleMotionOverride: vi.fn(),
+        setMotionOverride: vi.fn(),
+        isReducedMotionActive: true,
+      });
+
+      render(
+        <AmountInput
+          creditLine={creditLine}
+          onAmountChange={vi.fn()}
+          onNext={vi.fn()}
+          onBack={vi.fn()}
+        />,
+      );
+
+      const decreaseBtn = screen.getByRole("button", { name: /decrease amount/i });
+      const increaseBtn = screen.getByRole("button", { name: /increase amount/i });
+      const continueBtn = screen.getByRole("button", { name: /continue/i });
+
+      expect(decreaseBtn.className).not.toContain("transition-all");
+      expect(increaseBtn.className).not.toContain("transition-all");
+      expect(continueBtn.className).not.toContain("transition-all");
+
+      vi.restoreAllMocks();
+    });
+
+    it("AmountInput CSS file includes prefers-reduced-motion reduce rule", () => {
+      const cssPath = resolve(__dirname, "AmountInput.css");
+      const css = readFileSync(cssPath, "utf-8");
+      expect(css).toContain("prefers-reduced-motion: reduce");
+      expect(css).toContain("transition-duration: 0s");
+    });
+  });
+
+  describe("Responsive Breakpoints (v7)", () => {
+    it("uses grid-cols-2 on narrow viewports and xs:grid-cols-4 for preset chips", () => {
+      render(
+        <AmountInput
+          creditLine={creditLine}
+          onAmountChange={vi.fn()}
+          onNext={vi.fn()}
+          onBack={vi.fn()}
+        />,
+      );
+
+      const presetButton = screen.getByRole("button", { name: /25 percent/i });
+      const presetGrid = presetButton.closest(".grid");
+      expect(presetGrid).toHaveClass("grid-cols-2");
+      expect(presetGrid).toHaveClass("xs:grid-cols-4");
+    });
+
+    it("stacks action buttons vertically on narrow and row on wider viewports", () => {
+      render(
+        <AmountInput
+          creditLine={creditLine}
+          onAmountChange={vi.fn()}
+          onNext={vi.fn()}
+          onBack={vi.fn()}
+        />,
+      );
+
+      const backButton = screen.getByRole("button", { name: /back/i });
+      const actionRow = backButton.closest(".flex.flex-col");
+      expect(actionRow).toHaveClass("flex-col");
+      expect(actionRow).toHaveClass("xs:flex-row");
+    });
+
+    it("constraint cards use single-column grid on narrow viewports with sm:grid-cols-3", () => {
       render(
         <AmountInput
           creditLine={creditLine}
@@ -465,8 +669,52 @@ describe("AmountInput", () => {
         />,
       );
 
-      const minLabel = screen.getByText("Minimum draw");
-      expect(minLabel).toHaveClass("text-[11px]", "font-semibold", "uppercase", "tracking-wider", "text-muted", "leading-[var(--lh-small)]");
+      const constraintsGrid = document.getElementById("draw-amount-constraints");
+      expect(constraintsGrid).toHaveClass("grid");
+      expect(constraintsGrid).toHaveClass("sm:grid-cols-3");
     });
+
+    it("stepper buttons resize from w-10/h-10 on narrow to xs:w-11/xs:h-11", () => {
+      render(
+        <AmountInput
+          creditLine={creditLine}
+          onAmountChange={vi.fn()}
+          onNext={vi.fn()}
+          onBack={vi.fn()}
+        />,
+      );
+
+      const decreaseBtn = screen.getByRole("button", { name: /decrease amount/i });
+      expect(decreaseBtn).toHaveClass("w-10", "h-10");
+      expect(decreaseBtn).toHaveClass("xs:w-11", "xs:h-11");
+    });
+
+    it("action buttons are full width on narrow and auto on wider viewports", () => {
+      render(
+        <AmountInput
+          creditLine={creditLine}
+          onAmountChange={vi.fn()}
+          onNext={vi.fn()}
+          onBack={vi.fn()}
+        />,
+      );
+
+      const continueBtn = screen.getByRole("button", { name: /continue/i });
+      expect(continueBtn).toHaveClass("w-full");
+      expect(continueBtn).toHaveClass("xs:w-auto");
+    });
+  });
+  it("renders keyboard shortcut hint for arrow key stepper controls", () => {
+    render(
+      <AmountInput
+        creditLine={creditLine}
+        onAmountChange={vi.fn()}
+        onNext={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("↑ / ↓")).toBeInTheDocument();
+    expect(screen.getByText("Adjust amount")).toBeInTheDocument();
   });
 });

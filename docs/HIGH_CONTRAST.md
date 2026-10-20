@@ -144,3 +144,29 @@ override value to the `[data-contrast="high"]` block in `src/index.css`. Include
 computed contrast ratio in the comment block at the top of that section.
 
 Never add component-internal hex values to the `[data-contrast="high"]` block.
+
+---
+
+## OS-level `prefers-contrast: more`
+
+The in-app toggle above is opt-in. Independently, components may respond to the
+operating system's own increased-contrast setting via the
+`@media (prefers-contrast: more)` query. This is where component-internal
+treatments that a token swap can't reach (arc thickness, low-opacity decoration,
+`--muted` text) are hardened.
+
+### RiskGauge (`src/components/RiskGauge.css`)
+
+Under `prefers-contrast: more` the gauge applies explicit **border** and **text**
+overrides:
+
+| Element | Default | `prefers-contrast: more` | Why |
+|---|---|---|---|
+| Track arc `.risk-gauge-bg` | `stroke: var(--border)` (#30363d, ≈1.3:1), width `10` | `stroke: var(--text)` (≈12.5:1), width `12` | The empty track is otherwise nearly invisible. |
+| Risk-band arcs `.risk-gauge-sector-arc` | `opacity: 0.15` (0.35 hover/focus) | `opacity: 0.6` (1 hover/focus) | Makes band boundaries distinguishable. |
+| Caption `.risk-gauge-label` | `fill: var(--muted)` (≈4.6:1) | `fill: var(--text)` (AAA) | Full-strength label text. |
+| Meta labels `.rm-label` | `color: var(--muted)` | `color: var(--text)` | Full-strength Trend / Last Updated labels. |
+
+The score number already uses `var(--text)`, so it needs no override. Contrast
+gains and the presence of the media block are covered by
+`src/components/RiskGauge.contrast.test.ts`.

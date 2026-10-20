@@ -33,22 +33,23 @@
   border: none;
   color: var(--muted);
   cursor: pointer;
-  padding: 0.5rem 1rem;
+  padding: 0.5rem 0.75rem;
   font-size: 0.9rem;
-  border-radius: 4px;
+  border-radius: 6px;
   transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.skip-icon {
+  font-size: 0.8rem;
+  line-height: 1;
 }
 
 .skip-btn:hover {
   color: var(--text);
   background: var(--border);
-}
-
-.skip-btn:focus-visible,
-.primary-btn:focus-visible,
-.secondary-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 .progress-label {
@@ -114,6 +115,14 @@
   color: var(--muted);
   font-weight: 600;
   font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.indicator:hover:not(.active) {
+  border-color: var(--accent);
+  color: var(--text);
+  background: rgba(88, 166, 255, 0.1);
 }
 
 .indicator.active {
@@ -235,4 +244,3 @@
     transition: none !important;
     transform: none !important;
   }
-

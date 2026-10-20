@@ -1,5 +1,6 @@
 import type { CreditLineStatus } from '../types/creditLine';
 import { STATUS_COLOR } from '../utils/tokens';
+import { Tooltip } from './Tooltip';
 import './StatusBadge.css';
 
 const STATUS_CUE: Record<CreditLineStatus, string> = {
@@ -15,6 +16,8 @@ interface StatusBadgeProps {
   status: CreditLineStatus;
   /** Optional class name appended to the pill — for layout adjustments. */
   className?: string;
+  /** If true, visually hides the label and shows only the cue icon, relying on the Tooltip for text. */
+  iconOnly?: boolean;
 }
 
 /**
@@ -30,22 +33,23 @@ interface StatusBadgeProps {
  * `aria-label="Credit line status: {status}"` so screen readers
  * announce the state in plain language, not via the glyph alone.
  */
-export function StatusBadge({ status, className = '' }: StatusBadgeProps) {
+export function StatusBadge({ status, className = '', iconOnly = false }: StatusBadgeProps) {
   const { bg, color, border } = STATUS_COLOR[status];
-  const classes = ['status-badge', className].filter(Boolean).join(' ');
+  const classes = ['status-badge', iconOnly ? 'status-badge--icon-only' : '', className].filter(Boolean).join(' ');
   const cue = STATUS_CUE[status];
 
   return (
-    <span
-      className={classes}
-      style={{ background: bg, color, borderColor: border }}
-      aria-label={`Credit line status: ${status}`}
-      title={`Status: ${status}`}
-    >
-      <span className="status-badge__cue" aria-hidden="true">
-        {cue}
+    <Tooltip label={`Status: ${status}`} position="top" disabled={!iconOnly}>
+      <span
+        className={classes}
+        style={{ background: bg, color, borderColor: border }}
+        aria-label={`Credit line status: ${status}`}
+      >
+        <span className="status-badge__cue" aria-hidden="true">
+          {cue}
+        </span>
+        {!iconOnly && <span>{status}</span>}
       </span>
-      <span>{status}</span>
-    </span>
+    </Tooltip>
   );
 }

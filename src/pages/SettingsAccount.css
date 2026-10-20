@@ -1,0 +1,170 @@
+/*
+  SettingsAccount.css
+  ──────────────────
+  Styles for the account settings page with collapsible sections.
+  All colours use semantic tokens from index.css.
+*/
+
+/* ── Page shell ──────────────────────────────────────────────────────────── */
+
+.settings-account {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-4);
+}
+
+.settings-account__title {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--text);
+  margin-bottom: var(--space-2);
+}
+
+.settings-account__description {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  margin-bottom: var(--space-8);
+  line-height: var(--leading-normal);
+}
+
+/* ── Collapsible section ─────────────────────────────────────────────────── */
+
+.settings-account__collapsible {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-3);
+  background: var(--surface);
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+
+.settings-account__collapsible:hover {
+  border-color: var(--accent-border);
+}
+
+/* ── Toggle button ───────────────────────────────────────────────────────── */
+
+.settings-account__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+  text-align: left;
+  min-height: 44px;
+  transition: background 0.15s ease;
+}
+
+.settings-account__toggle:hover {
+  background: var(--accent-tint);
+}
+
+.settings-account__toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.settings-account__toggle-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: var(--accent-tint);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.settings-account__toggle-label {
+  flex: 1;
+}
+
+/* ── Chevron ─────────────────────────────────────────────────────────────── */
+
+.settings-account__chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform 0.25s ease;
+}
+
+.settings-account__chevron--open {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+
+/* ── Panel (collapsible content) ─────────────────────────────────────────── */
+
+.settings-account__panel {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 0.3s ease;
+}
+
+.settings-account__panel--expanded {
+  max-height: 2000px; /* large enough for any section content */
+}
+
+.settings-account__panel-inner {
+  padding: 0 var(--space-5) var(--space-5) var(--space-5);
+}
+
+/* ── Toggle grid (Accessibility toggles) ─────────────────────────────────── */
+
+.settings-account__toggle-grid {
+  display: grid;
+  gap: var(--space-6);
+}
+
+/* ── Privacy text ────────────────────────────────────────────────────────── */
+
+.settings-account__privacy-text {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  line-height: var(--leading-normal);
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-account__collapsible {
+    transition: none;
+  }
+
+  .settings-account__toggle {
+    transition: none;
+  }
+
+  .settings-account__chevron {
+    transition: none;
+  }
+
+  .settings-account__panel {
+    transition: none;
+  }
+}
+
+/* In-app override via ReducedMotionContext (data-motion="reduced") */
+
+[data-motion="reduced"] .settings-account__collapsible {
+  transition: none !important;
+}
+
+[data-motion="reduced"] .settings-account__toggle {
+  transition: none !important;
+}
+
+[data-motion="reduced"] .settings-account__chevron {
+  transition: none !important;
+}
+
+[data-motion="reduced"] .settings-account__panel {
+  transition: none !important;
+}

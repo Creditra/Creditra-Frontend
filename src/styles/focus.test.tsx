@@ -101,6 +101,18 @@ describe('focus.css — design tokens and utility classes', () => {
     expect(css).toContain('.view-all-link:focus-visible');
   });
 
+  it('defines CreditLines-specific .cl-primary-btn focus rule', () => {
+    expect(css).toContain('.cl-primary-btn:focus-visible');
+  });
+
+  it('defines CreditLines-specific .cl-filters select focus rule', () => {
+    expect(css).toContain('.cl-filters select:focus-visible');
+  });
+
+  it('defines CreditLines-specific .cl-sort-dir focus rule', () => {
+    expect(css).toContain('.cl-sort-dir:focus-visible');
+  });
+
   it('does NOT suppress focus rings under prefers-reduced-motion', () => {
     // The reduced-motion block must not contain any outline or box-shadow rule
     const rmIdx = css.indexOf('@media (prefers-reduced-motion: reduce)');
@@ -185,3 +197,194 @@ describe('Dashboard — focus-ring classes on interactive elements (FWC26)', () 
     expect(indexCss).toMatch(/@import ["']\.\/styles\/focus\.css["']/);
   });
 });
+
+// ── CreditLines integration tests ─────────────────────────────────────────
+
+describe('CreditLines — focus-ring classes on interactive elements (FWC26)', () => {
+  const cssPath = resolve(__dirname, '../styles/focus.css');
+  const css = readFileSync(cssPath, 'utf-8');
+
+  it('defines CreditLines-specific focus rules in focus.css', () => {
+    expect(css).toContain('.cl-primary-btn:focus-visible');
+    expect(css).toContain('.cl-sort-dir:focus-visible');
+    expect(css).toContain('.cl-card:focus-visible');
+  });
+
+  it('defines focus rule for filter dropdown selects', () => {
+    expect(css).toContain('.cl-filters select:focus-visible');
+  });
+
+  it('defines focus rule for compare checkboxes in CreditLineCard rows', () => {
+    expect(css).toContain('.cl-row-select input:focus-visible');
+  });
+
+  it('defines focus fallback for CreditLineRowMenu 3-dot trigger button', () => {
+    // The trigger uses aria-haspopup="true" — our fallback ensures
+    // a visible ring even if Tailwind utilities are unavailable.
+    expect(css).toContain('.cl-card [aria-haspopup="true"]:focus-visible');
+  });
+});
+
+// ── DrawCreditPage integration tests ──────────────────────────────────────
+
+describe('DrawCreditPage — focus-visible rules (FWC26 / issue #592)', () => {
+  const cssPath = resolve(__dirname, '../styles/focus.css');
+  const css = readFileSync(cssPath, 'utf-8');
+
+  it('defines DrawCreditPage-scoped credit-line focus rule', () => {
+    expect(css).toContain('.dc-page .dc-credit-line-item:focus-visible');
+  });
+
+  it('defines DrawCreditPage-scoped button and preset focus rules', () => {
+    expect(css).toContain('.dc-page .dc-btn:focus-visible');
+    expect(css).toContain('.dc-page .dc-preset-btn:focus-visible');
+  });
+
+  it('defines DrawCreditPage-scoped terms checkbox focus rule', () => {
+    expect(css).toContain('.dc-page .dc-terms-label__checkbox:focus-visible');
+  });
+
+  it('defines DrawCreditPage AmountInput control focus selectors', () => {
+    expect(css).toContain('button[aria-label="Decrease amount"]:focus-visible');
+    expect(css).toContain('button[aria-label="Increase amount"]:focus-visible');
+    expect(css).toContain(
+      'button[aria-label="Set amount to maximum available credit"]:focus-visible',
+    );
+  });
+
+  it('uses shared focus-ring tokens (not hard-coded hex only)', () => {
+    const drawBlockStart = css.indexOf('DrawCreditPage interactive elements');
+    expect(drawBlockStart).toBeGreaterThan(-1);
+    const drawBlock = css.slice(drawBlockStart);
+    expect(drawBlock).toContain('--focus-ring-width');
+    expect(drawBlock).toContain('--focus-ring-color');
+    expect(drawBlock).toContain('--focus-ring-offset');
+  });
+});
+
+// ── RepayPage integration tests ──────────────────────────────────────────
+
+// ── OnboardingFlow integration tests ────────────────────────────────────
+
+describe('OnboardingFlow — focus-visible rules (FWC26)', () => {
+  const cssPath = resolve(__dirname, '../styles/focus.css');
+  const css = readFileSync(cssPath, 'utf-8');
+
+  it('defines OnboardingFlow-scoped skip button focus rule', () => {
+    expect(css).toContain('.onboarding-overlay .skip-btn:focus-visible');
+  });
+
+  it('defines OnboardingFlow-scoped primary button focus rule', () => {
+    expect(css).toContain('.onboarding-overlay .primary-btn:focus-visible');
+  });
+
+  it('defines OnboardingFlow-scoped secondary button focus rule', () => {
+    expect(css).toContain('.onboarding-overlay .secondary-btn:focus-visible');
+  });
+
+  it('defines OnboardingFlow-scoped step indicator focus rule', () => {
+    expect(css).toContain('.onboarding-overlay .indicator:focus-visible');
+  });
+
+  it('uses shared focus-ring tokens in OnboardingFlow rules', () => {
+    const obBlockStart = css.indexOf('OnboardingFlow interactive elements');
+    expect(obBlockStart).toBeGreaterThan(-1);
+    const obBlock = css.slice(obBlockStart);
+    expect(obBlock).toContain('--focus-ring-width');
+    expect(obBlock).toContain('--focus-ring-color');
+    expect(obBlock).toContain('--focus-ring-offset');
+    expect(obBlock).toContain('!important');
+  });
+
+  it('defines indicator border-radius as full/round', () => {
+    const obBlockStart = css.indexOf('OnboardingFlow interactive elements');
+    expect(obBlockStart).toBeGreaterThan(-1);
+    const obBlock = css.slice(obBlockStart);
+    expect(obBlock).toContain('border-radius: var(--radius-full, 9999px)');
+  });
+
+  it('all interactive elements carry both class and :focus-visible selector', () => {
+    // Each interactive selector must use :focus-visible (not :focus)
+    // regex matches each selector before the opening brace
+    const obBlockStart = css.indexOf('OnboardingFlow interactive elements');
+    const obBlockEnd = css.indexOf('/* ── Reduced-motion', obBlockStart);
+    const obBlock = css.slice(obBlockStart, obBlockEnd > obBlockStart ? obBlockEnd : undefined);
+    const focusVisibleMatches = obBlock.match(/:focus-visible/g);
+    expect(focusVisibleMatches).not.toBeNull();
+    // There should be at least one :focus-visible per element type (4 total)
+    expect(focusVisibleMatches!.length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('RepayPage — focus-visible rules (FWC26 / issue #512)', () => {
+  const cssPath = resolve(__dirname, '../styles/focus.css');
+  const css = readFileSync(cssPath, 'utf-8');
+
+  it('defines RepayPage-scoped back button focus rule', () => {
+    expect(css).toContain('.repay-page .rp-back-btn:focus-visible');
+  });
+
+  it('defines RepayPage-scoped credit line card focus rule', () => {
+    expect(css).toContain('.repay-page .rp-cl-card:focus-visible');
+  });
+
+  it('defines RepayPage-scoped preset button focus rule', () => {
+    expect(css).toContain('.repay-page .rp-preset-btn:focus-visible');
+  });
+
+  it('defines RepayPage-scoped Smart Pay button focus rule', () => {
+    expect(css).toContain('.repay-page .rp-smart-pay-btn:focus-visible');
+  });
+
+  it('defines RepayPage-scoped amount input focus rule', () => {
+    expect(css).toContain('.repay-page .rp-amount-input:focus-visible');
+  });
+
+  it('defines RepayPage-scoped review button focus rule', () => {
+    expect(css).toContain('.repay-page .rp-review-btn:focus-visible');
+  });
+
+  it('defines RepayPage-scoped preview button focus rule', () => {
+    expect(css).toContain('.repay-page .rp-preview-btn:focus-visible');
+  });
+
+  it('defines RepayPage-scoped toggle switch focus rule', () => {
+    expect(css).toContain('.repay-page .rp-toggle-switch:focus-visible');
+  });
+
+  it('defines RepayPage-scoped help button focus rule', () => {
+    expect(css).toContain('.repay-page .rp-help-btn:focus-visible');
+  });
+
+  it('defines RepayPage-scoped cancel button focus rule', () => {
+    expect(css).toContain('.repay-page .rp-cancel-btn:focus-visible');
+  });
+
+  it('defines RepayPage-scoped confirm button focus rule', () => {
+    expect(css).toContain('.repay-page .rp-confirm-btn:focus-visible');
+  });
+
+  it('defines RepayPage-scoped back-input button focus rule', () => {
+    expect(css).toContain('.repay-page .rp-back-input-btn:focus-visible');
+  });
+
+  it('defines RepayPage-scoped dashboard button focus rule', () => {
+    expect(css).toContain('.repay-page .rp-dashboard-btn:focus-visible');
+  });
+
+  it('defines RepayPage-scoped new-repay button focus rule', () => {
+    expect(css).toContain('.repay-page .rp-new-repay-btn:focus-visible');
+  });
+
+  it('uses shared focus-ring tokens in RepayPage rules', () => {
+    const repayBlockStart = css.indexOf('RepayPage interactive elements');
+    expect(repayBlockStart).toBeGreaterThan(-1);
+    const repayBlock = css.slice(repayBlockStart);
+    expect(repayBlock).toContain('--focus-ring-width');
+    expect(repayBlock).toContain('--focus-ring-color');
+    expect(repayBlock).toContain('--focus-ring-offset');
+    // Verify it uses !important like DrawCreditPage rules
+    expect(repayBlock).toContain('!important');
+  });
+});
+

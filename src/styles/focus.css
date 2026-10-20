@@ -148,6 +148,44 @@
   border-radius: var(--focus-ring-radius, 6px);
 }
 
+/* ── OnboardingFlow interactive elements ─────────────────────────────────── */
+/*
+  GrantFox FWC26 (Stellar Wave) — "Visible focus outline on keyboard-only
+  nav for OnboardingFlow" requirement.
+
+  Every interactive element inside the onboarding dialog that is reachable
+  via Tab must show a visible focus ring on keyboard navigation (:focus-visible).
+
+  Covered here:
+    .skip-btn             — "Skip" dismiss button (top-right)
+    .primary-btn          — "Next" / "Get Started" action button
+    .secondary-btn        — "Back" navigation button
+    .indicator            — Per-step circular indicator (step 1, 2, 3)
+
+  All rules use :focus-visible so mouse/touch interactions are unaffected.
+  All colours reference design tokens so they respond to [data-contrast="high"].
+*/
+
+.onboarding-overlay .skip-btn:focus-visible,
+.onboarding-overlay .primary-btn:focus-visible,
+.onboarding-overlay .secondary-btn:focus-visible,
+.onboarding-overlay .indicator:focus-visible {
+  outline: var(--focus-ring-width, 2px) solid
+    var(--focus-ring-color, var(--accent, #58a6ff)) !important;
+  outline-offset: var(--focus-ring-offset, 3px) !important;
+  box-shadow: none !important;
+}
+
+.onboarding-overlay .skip-btn:focus-visible,
+.onboarding-overlay .primary-btn:focus-visible,
+.onboarding-overlay .secondary-btn:focus-visible {
+  border-radius: var(--radius-md, 8px);
+}
+
+.onboarding-overlay .indicator:focus-visible {
+  border-radius: var(--radius-full, 9999px);
+}
+
 /* ── Reduced-motion ──────────────────────────────────────────────────────── */
 /*
   Focus indicators must remain visible even under prefers-reduced-motion;
@@ -228,4 +266,150 @@
   outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #58a6ff);
   outline-offset: var(--focus-ring-offset, 3px);
   border-radius: var(--focus-ring-radius, 6px);
+}
+
+/* ── CreditLines interactive elements ────────────────────────────────────── */
+/*
+  GrantFox FWC26 (Stellar Wave) — "Visible focus outline on keyboard-only
+  nav for CreditLines" requirement.
+
+  Every interactive element on the CreditLines page that is reachable via
+  Tab must show a visible focus ring on keyboard navigation (:focus-visible).
+
+  Covered here:
+    .cl-primary-btn             — header action buttons / links
+    .cl-sort-dir                — sort-direction toggle button
+    .cl-card                    — credit-line cards (keyboard-focusable container)
+    .cl-filters select          — status / sort-by dropdowns
+    .cl-row-select input        — per-card compare checkboxes
+    [aria-haspopup="true"]      — CreditLineRowMenu 3-dot trigger (belt-and-suspenders
+                                  fallback in case Tailwind utilities aren't active)
+*/
+
+.cl-primary-btn:focus-visible,
+.cl-sort-dir:focus-visible,
+.cl-card:focus-visible,
+.cl-filters select:focus-visible,
+.cl-row-select input:focus-visible,
+.cl-card [aria-haspopup="true"]:focus-visible {
+  outline: var(--focus-ring-width, 2px) solid var(--focus-ring-color, #58a6ff);
+  outline-offset: var(--focus-ring-offset, 3px);
+  border-radius: var(--focus-ring-radius, 6px);
+}
+
+/* ── DrawCreditPage interactive elements ─────────────────────────────────── */
+/*
+  GrantFox FWC26 (Stellar Wave) — "Visible focus outline on keyboard-only
+  nav for DrawCreditPage" requirement (issue #592).
+
+  Scoped under `.dc-page` so rings only apply inside the draw wizard.
+  Selectors cover credit-line cards, action buttons, presets, terms
+  checkbox, sticky summary bar, and AmountInput stepper / Max / preset
+  controls. `:focus-visible` keeps pointer interactions unchanged while
+  shared tokens preserve contrast across default, dark, and high-contrast.
+*/
+
+.dc-page .dc-credit-line-item:focus-visible,
+.dc-page .dc-btn:focus-visible,
+.dc-page .dc-preset-btn:focus-visible,
+.dc-page .dc-terms-label__checkbox:focus-visible,
+.dc-page .draw-summary-bar:focus-visible,
+.dc-page button[aria-label="Decrease amount"]:focus-visible,
+.dc-page button[aria-label="Increase amount"]:focus-visible,
+.dc-page button[aria-label="Set amount to maximum available credit"]:focus-visible,
+.dc-page button[aria-label^="Set amount to"]:focus-visible {
+  outline: var(--focus-ring-width, 2px) solid
+    var(--focus-ring-color, var(--accent, #58a6ff)) !important;
+  outline-offset: var(--focus-ring-offset, 3px) !important;
+  box-shadow: none !important;
+}
+
+.dc-page .dc-credit-line-item:focus-visible,
+.dc-page .dc-preset-btn:focus-visible,
+.dc-page .dc-btn:focus-visible {
+  border-radius: var(--radius-lg, 12px);
+}
+
+.dc-page button[aria-label="Decrease amount"]:focus-visible,
+.dc-page button[aria-label="Increase amount"]:focus-visible,
+.dc-page button[aria-label="Set amount to maximum available credit"]:focus-visible,
+.dc-page button[aria-label^="Set amount to"]:focus-visible {
+  border-radius: var(--radius-md, 8px);
+}
+
+.dc-page .dc-terms-label__checkbox:focus-visible {
+  border-radius: var(--radius-sm, 4px);
+}
+
+/* ── RepayPage interactive elements ──────────────────────────────────────── */
+/*
+  GrantFox FWC26 (Stellar Wave) — "Visible focus outline on keyboard-only
+  nav for RepayPage" requirement (issue #512).
+
+  Every interactive element on RepayPage that is reachable via Tab must
+  show a visible focus ring on keyboard navigation (:focus-visible).
+
+  Scoped under `.repay-page` so rings only apply inside the repay flow.
+  Selectors cover:
+
+    .rp-back-btn              — All back-navigation buttons
+    .rp-cl-card               — Credit line selection cards
+    .rp-preset-btn            — Percentage preset buttons (25%, 50%, 75%, MAX)
+    .rp-smart-pay-btn         — Smart Pay suggested-amount button
+    .rp-amount-input          — Amount input field
+    .rp-review-btn            — "Review Repayment" primary action
+    .rp-preview-btn           — "Preview Consequences Modal" secondary action
+    .rp-toggle-switch         — Auto-schedule toggle switch
+    .rp-help-btn              — "I need help" text button
+    .rp-cancel-btn            — Cancel text button
+    .rp-confirm-btn           — "Confirm Repayment" in review step
+    .rp-back-input-btn        — "Back to input" button in review step
+    .rp-dashboard-btn         — "Back to Dashboard" in success step
+    .rp-new-repay-btn         — "Make another repayment" in success step
+
+  All rules use :focus-visible so mouse/touch interactions are unaffected.
+  All colours reference design tokens so they respond to [data-contrast="high"].
+*/
+
+.repay-page .rp-back-btn:focus-visible,
+.repay-page .rp-cl-card:focus-visible,
+.repay-page .rp-preset-btn:focus-visible,
+.repay-page .rp-smart-pay-btn:focus-visible,
+.repay-page .rp-amount-input:focus-visible,
+.repay-page .rp-review-btn:focus-visible,
+.repay-page .rp-preview-btn:focus-visible,
+.repay-page .rp-toggle-switch:focus-visible,
+.repay-page .rp-help-btn:focus-visible,
+.repay-page .rp-cancel-btn:focus-visible,
+.repay-page .rp-confirm-btn:focus-visible,
+.repay-page .rp-back-input-btn:focus-visible,
+.repay-page .rp-dashboard-btn:focus-visible,
+.repay-page .rp-new-repay-btn:focus-visible {
+  outline: var(--focus-ring-width, 2px) solid
+    var(--focus-ring-color, var(--accent, #58a6ff)) !important;
+  outline-offset: var(--focus-ring-offset, 3px) !important;
+  box-shadow: none !important;
+}
+
+.repay-page .rp-back-btn:focus-visible,
+.repay-page .rp-cl-card:focus-visible,
+.repay-page .rp-preset-btn:focus-visible,
+.repay-page .rp-smart-pay-btn:focus-visible,
+.repay-page .rp-review-btn:focus-visible,
+.repay-page .rp-preview-btn:focus-visible,
+.repay-page .rp-confirm-btn:focus-visible,
+.repay-page .rp-back-input-btn:focus-visible,
+.repay-page .rp-dashboard-btn:focus-visible,
+.repay-page .rp-new-repay-btn:focus-visible {
+  border-radius: var(--radius-lg, 12px);
+}
+
+.repay-page .rp-amount-input:focus-visible,
+.repay-page .rp-toggle-switch:focus-visible {
+  border-radius: var(--radius-md, 8px);
+}
+
+.repay-page .rp-help-btn:focus-visible,
+.repay-page .rp-cancel-btn:focus-visible {
+  border-radius: var(--radius-sm, 4px);
 }

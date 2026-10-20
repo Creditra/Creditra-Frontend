@@ -203,6 +203,7 @@
   flex: 1;
   overflow-y: auto;
   padding: var(--space-lg) 0;
+  padding-bottom: calc(var(--space-xl) + 104px);
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
@@ -331,6 +332,9 @@
 
 /* ── Footer / Resume CTA ────────────────────────────────────────────────── */
 .kyc-drawer__footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
   flex-shrink: 0;
   padding: var(--space-lg) var(--space-xl);
   /* Add home-indicator clearance for iOS PWA standalone mode */
@@ -339,7 +343,20 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  background: var(--surface);
+  background: rgba(22, 27, 34, 0.95);
+  box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transform: translateY(16px);
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.kyc-drawer__footer--sticky-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
 }
 
 .kyc-drawer__resume-btn {
@@ -379,7 +396,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 36px;
+  min-height: 44px;
   font-size: 0.8rem;
   color: var(--muted);
   text-decoration: none;
@@ -472,11 +489,48 @@
   }
 }
 
+/* ── Narrow screens (<=375px) ──────────────────────────────────────────── */
+@media (max-width: 375px) {
+  .kyc-drawer__header {
+    padding: var(--space-lg) var(--space-md);
+  }
+
+  .kyc-drawer__title {
+    font-size: 1rem;
+  }
+
+  .kyc-drawer__subtitle {
+    font-size: 0.75rem;
+  }
+
+  .kyc-drawer__status-row {
+    padding: var(--space-md);
+  }
+
+  .kyc-step {
+    padding: var(--space-md);
+  }
+
+  .kyc-step:not(:last-child)::after {
+    left: calc(var(--space-md) + 11px);
+  }
+
+  .kyc-drawer__body {
+    padding-left: var(--space-md);
+    padding-right: var(--space-md);
+  }
+
+  .kyc-drawer__footer {
+    padding: var(--space-lg) var(--space-md);
+  }
+}
+
 /* ── Reduced motion ─────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .kyc-drawer,
   .kyc-drawer-backdrop,
-  .kyc-drawer__progress-bar-fill {
+  .kyc-drawer__progress-bar-fill,
+  .kyc-drawer__footer {
     animation: none;
     transition: none;
   }
@@ -485,7 +539,8 @@
 /* Reduced Motion Override */
 [data-motion="reduced"] .kyc-drawer,
 [data-motion="reduced"] .kyc-drawer-backdrop,
-[data-motion="reduced"] .kyc-drawer__progress-bar-fill {
+[data-motion="reduced"] .kyc-drawer__progress-bar-fill,
+[data-motion="reduced"] .kyc-drawer__footer {
     animation: none;
     transition: none;
   }

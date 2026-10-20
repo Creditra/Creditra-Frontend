@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { NoActivity } from "./illustrations";
 import { MOCK_CREDIT_LINES } from "../data/mockData";
@@ -131,7 +131,22 @@ function getTitle(group: ActivityGroup): string {
 }
 
 export function ActivityFeed() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filterKeyString = ["range", "start", "end"]
+    .map((key) => searchParams.get(key) ?? "")
+    .join("|");
+  const prevFilterKeyStringRef = useRef(filterKeyString);
+
+  useEffect(() => {
+    if (prevFilterKeyStringRef.current !== filterKeyString) {
+      prevFilterKeyStringRef.current = filterKeyString;
+      if (searchParams.has("cursor")) {
+        const nextSearchParams = new URLSearchParams(searchParams);
+        nextSearchParams.delete("cursor");
+        setSearchParams(nextSearchParams, { replace: true });
+      }
+    }
+  }, [filterKeyString, searchParams, setSearchParams]);
 
   const events = useMemo<FeedEvent[]>(() => {
     return MOCK_CREDIT_LINES.flatMap((line) =>

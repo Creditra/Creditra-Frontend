@@ -114,7 +114,7 @@ used on:
 
 - `AmountInput` — draw field, available limit, validation metrics (`.tabular-nums.amount`)
 - `TransactionHistory` — `tx-amount` / `th-stat-value` via `.num-tabular`
-- `CreditLines` — Limit / Utilized / Available metric values
+- `CreditLines` — Limit / Utilized / Available metric values plus utilization and APR/risk detail values via `.cl-amount`
 - `ConfirmationStep`, `RepayModal`, `RepaySuccessShareCard` — amount summaries
 - Dashboard summary cards via `.num-display` / `.num-tabular`
 
@@ -170,6 +170,7 @@ Every component below lives in `src/components/`.
 | `SuccessState` | Post-action confirmation | `role="status" aria-live="polite"` |
 | `TransactionStatus` | Pending / success / failure for draws and repays | Step indicator + retry CTA |
 | `ErrorBoundary` | Class-component render guard | Renders `ErrorPage` with semantic landmarks |
+| `TermsBanner` | Banner for terms updates + acceptance | Persistent banner for GrantFox FWC26 campaign with Review Modal and keyboard-trapped overlay |
 
 ### Overlay
 

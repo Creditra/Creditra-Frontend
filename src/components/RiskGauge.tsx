@@ -39,9 +39,8 @@
  * Focus ring (keyboard accessibility)
  * ─────────────────────────────────────────────────────────────────────────────
  * The SVG is made keyboard-focusable via `tabIndex={0}`.  A CSS `:focus-visible`
- * rule in RiskGauge.css renders a visible ring around the whole gauge using
- * `box-shadow` (since CSS `outline` has inconsistent cross-browser support on
- * SVG elements).
+ * rule renders a visible ring around the whole gauge using `box-shadow` (since
+ * SVG elements have inconsistent `outline` support across browsers).
  *
  * Three interactive gauge sectors (low / medium / high risk) are grouped in
  * individual `<g>` elements that are also keyboard-focusable (tabIndex={0}).
@@ -50,14 +49,34 @@
  * `:focus-visible` on the parent `<g>`.  Pressing Enter or Space on a focused
  * sector triggers `onSectorActivate` if provided.
  *
- * Exported: RiskGauge, RiskGaugeProps
- * New API:  `onSectorActivate?: (sector: RiskSector) => void`
- *           `showSectors?: boolean`  (default true)
+ * Focus ring implementation
+ * ─────────────────────────────────────────────────────────────────────────────
+ * The focus ring uses shared design tokens defined in `src/styles/focus.css`:
+ *   - `--focus-ring-color`   → accent color (default #58a6ff, white in high-contrast)
+ *   - `--focus-ring-width`   → 2px (WCAG 2.4.11 minimum)
+ *   - `--focus-ring-offset`  → 3px
+ *   - `--focus-ring-radius`  → 6px
+ *
+ * These tokens ensure consistent focus appearance across all components.
+ * The `:focus-visible` pseudo-class ensures rings only appear during keyboard
+ * navigation, not on mouse/touch interactions.
+ *
+ * WCAG 2.1 AA Compliance:
+ *   - Focus indicator area ≥ perimeter × 2px (WCAG 2.4.11)
+ *   - High contrast (5.9:1 default, 21:1 in high-contrast mode)
+ *   - Visible only on keyboard navigation (:focus-visible)
+ *   - Not suppressed by prefers-reduced-motion (focus rings must remain visible)
+ *
+ * @see src/styles/focus.css for shared focus-ring design tokens
+ * @see https://www.w3.org/TR/WCAG21/#focus-visible
  */
 
-import { useEffect, useMemo, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useReducedMotion } from '../context/ReducedMotionContext';
+import { LiveRegion } from './LiveRegion';
+import { RiskGaugeSkeleton } from './Skeleton';
 import './RiskGauge.css';
+import '../styles/patterns.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,6 +84,7 @@ import './RiskGauge.css';
 export type RiskSector = 'low' | 'medium' | 'high';
 
 export interface RiskGaugeProps {
+  loading?: boolean;
   /** Risk score 0–100. Values outside this range are clamped. */
   score: number;
   trend: 'improving' | 'declining' | 'stable';
@@ -277,7 +297,7 @@ function SectorGroup({ sector, isActive, onActivate, titleId }: SectorGroupProps
 
       {/* The visible sector arc band */}
       <path
-        className="risk-gauge-sector-arc"
+        className={`risk-gauge-sector-arc risk-gauge-pattern--${sector.id}`}
         d={sectorPath}
         stroke={sector.colorVar}
         aria-hidden="true"
@@ -357,6 +377,7 @@ function RiskGaugeSRTable({ normalizedScore, activeSector }: RiskGaugeSRTablePro
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function RiskGauge({
+  loading,
   score,
   trend,
   lastUpdated,
@@ -365,6 +386,10 @@ export function RiskGauge({
   ariaLabel,
   showSRTable = true,
 }: RiskGaugeProps) {
+  if (loading) {
+    return <RiskGaugeSkeleton />;
+  }
+
   const normalizedScore = Math.min(100, Math.max(0, score));
   const offset = CIRCUMFERENCE - (normalizedScore / 100) * CIRCUMFERENCE;
   const colorVar = gaugeColorVar(normalizedScore);
@@ -416,11 +441,21 @@ export function RiskGauge({
     [ariaLabel, normalizedScore, trendLabel, lastUpdated],
   );
 
-  /** Which sector does the current score fall in? */
+  const [liveMessage, setLiveMessage] = useState<string>(srDescription);
+
+  // Announce the main score description whenever it changes
+  useMemo(() => {
+    setLiveMessage(srDescription);
+  }, [srDescription]);
+
   const activeSector: RiskSector =
     normalizedScore >= 70 ? 'high' : normalizedScore >= 50 ? 'medium' : 'low';
 
   function handleSectorActivate(sector: RiskSector) {
+    const sectorDef = SECTORS.find((s) => s.id === sector);
+    if (sectorDef) {
+      setLiveMessage(`Activated ${sectorDef.label}, scores ${sectorDef.range}`);
+    }
     onSectorActivate?.(sector);
   }
 
@@ -442,9 +477,7 @@ export function RiskGauge({
     <div className="risk-gauge-container">
       {/* Screen-reader description outside SVG for AT implementations that
           skip <title> inside inline SVG. */}
-      <p className="sr-only" aria-live="polite" aria-atomic="true">
-        {srDescription}
-      </p>
+      <LiveRegion message={liveMessage} />
 
       {/*
         SR-only table listing the three risk bands with ranges.

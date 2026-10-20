@@ -44,7 +44,7 @@ export function PreviewSection({ creditLine, amount }: PreviewSectionProps) {
           <div className="dc-stat-card__header">
             <div>
               <p className="dc-stat-card__label">Draw Amount</p>
-              <p className="dc-stat-card__value">
+              <p className="dc-stat-card__value tabular-nums">
                 ${amount.toLocaleString()}
               </p>
             </div>
@@ -60,7 +60,7 @@ export function PreviewSection({ creditLine, amount }: PreviewSectionProps) {
           <div className="dc-stat-card__header">
             <div>
               <p className="dc-stat-card__label">New Utilization</p>
-              <p className="dc-stat-card__value">
+              <p className="dc-stat-card__value tabular-nums">
                 {newUtilization}%
               </p>
             </div>
@@ -76,7 +76,7 @@ export function PreviewSection({ creditLine, amount }: PreviewSectionProps) {
       <div className="dc-util-section">
         <div className="dc-util-row">
           <span className="dc-util-row__label">Current utilization</span>
-          <span className="dc-util-row__value">{creditLine.utilization}%</span>
+          <span className="dc-util-row__value tabular-nums">{creditLine.utilization}%</span>
         </div>
         <div
           className="dc-progress-track dc-progress-track--lg"
@@ -98,11 +98,11 @@ export function PreviewSection({ creditLine, amount }: PreviewSectionProps) {
         <div className="dc-util-row">
           <span className="dc-util-row__label">After draw</span>
           <span
-            className={
+            className={`num-tabular ${
               isHighAfterDraw
-                ? "dc-util-row__value--warning"
-                : "dc-util-row__value"
-            }
+                ? "dc-util-row__value--warning tabular-nums"
+                : "dc-util-row__value tabular-nums"
+            }`}
           >
             {newUtilization}%
           </span>

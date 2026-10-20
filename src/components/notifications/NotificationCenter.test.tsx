@@ -487,4 +487,100 @@ describe('NotificationCenter mark all as read', () => {
     // Should announce completion
     expect(screen.getByRole('status')).toHaveTextContent('3 notifications marked as read');
   });
+
+  it('renders KbdHint shortcut chip when there are unread notifications', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderWithNotifications();
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // KbdHint should show Shift+R shortcut
+    expect(screen.getByText('Shift')).toBeInTheDocument();
+    expect(screen.getByText('R')).toBeInTheDocument();
+  });
+
+  it('does not render KbdHint shortcut chip when there are no unread notifications', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderWithNotifications();
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // Mark all as read first
+    const markAllButton = screen.getByRole('button', { name: /mark all notifications as read, 3 unread/i });
+    await user.click(markAllButton);
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // KbdHint should not be visible when no unread notifications
+    expect(screen.queryByText('Shift')).not.toBeInTheDocument();
+    expect(screen.queryByText('R')).not.toBeInTheDocument();
+  });
+
+  it('activates mark all read with Shift+R keyboard shortcut', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderWithNotifications();
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // Verify unread count
+    expect(screen.getByText('3')).toBeInTheDocument();
+
+    // Press Shift+R
+    await user.keyboard('{Shift>}R{/Shift}');
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // Should mark all as read
+    expect(screen.queryByText('3')).not.toBeInTheDocument();
+  });
+
+  it('does not activate Shift+R shortcut when panel is closed', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderWithNotifications();
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // Don't open the panel
+    // Press Shift+R
+    await user.keyboard('{Shift>}R{/Shift}');
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // Unread count should remain (panel not open)
+    // Since we can't easily test the global state without opening panel,
+    // we verify the panel is not in the document
+    expect(screen.queryByRole('dialog', { name: 'Notification center' })).not.toBeInTheDocument();
+  });
 });

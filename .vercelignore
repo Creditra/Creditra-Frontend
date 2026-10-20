@@ -1,0 +1,8 @@
+DESIGN
+node_modules
+dist
+docs
+"Design System"
+.git
+.env
+.env.*

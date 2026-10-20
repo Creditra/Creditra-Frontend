@@ -14,7 +14,7 @@
  *   - High-contrast and dark-mode tokens used throughout (no inline hex).
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
 import { StatusBadge } from '../components/StatusBadge';
@@ -541,6 +541,7 @@ function Scorecard({ lineA, lineB }: { lineA: CreditLine; lineB: CreditLine }) {
  */
 export default function CreditLineCompare() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [pickerOverride, setPickerOverride] = useState(false);
 
   const idA = searchParams.get('a') ?? '';
   const idB = searchParams.get('b') ?? '';
@@ -556,14 +557,22 @@ export default function CreditLineCompare() {
 
   const bothFound = lineA !== null && lineB !== null;
 
+  useEffect(() => {
+    if (!idA && !idB) {
+      setPickerOverride(false);
+    }
+  }, [idA, idB]);
+
   /** Swap the two lines in the URL, keeping the rest of the UI intact. */
   function handleSwap() {
-    setSearchParams({ a: idB, b: idA });
+    setSearchParams({ a: idB, b: idA }, { replace: true });
+    setPickerOverride(false);
   }
 
   /** Clear selection and return to the picker. */
   function handleClear() {
-    setSearchParams({});
+    setSearchParams({}, { replace: true });
+    setPickerOverride(true);
   }
 
   return (
@@ -618,7 +627,7 @@ export default function CreditLineCompare() {
       </div>
 
       {/* ── Picker or Comparison ── */}
-      {bothFound ? (
+      {bothFound && !pickerOverride ? (
         <>
           <CompareTable lineA={lineA} lineB={lineB} />
           <Scorecard lineA={lineA} lineB={lineB} />

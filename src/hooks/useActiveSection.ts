@@ -8,8 +8,18 @@ export function useActiveSection(
 ): string | null {
   const [activeId, setActiveId] = useState<string | null>(null);
 
+  const idsKey = sectionIds.join(",");
+  const rootMargin = options?.rootMargin ?? DEFAULT_ROOT_MARGIN;
+
   useEffect(() => {
-    if (sectionIds.length === 0) return;
+    if (!idsKey) return;
+
+    const ids = idsKey.split(",").filter(Boolean);
+    if (ids.length === 0) return;
+
+    if (typeof window === "undefined" || typeof IntersectionObserver === "undefined") {
+      return;
+    }
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -28,13 +38,13 @@ export function useActiveSection(
         }
       },
       {
-        rootMargin: options?.rootMargin ?? DEFAULT_ROOT_MARGIN,
+        rootMargin,
         threshold: [0, 0.25, 0.5, 0.75, 1],
       },
     );
 
     const elements: Element[] = [];
-    for (const id of sectionIds) {
+    for (const id of ids) {
       const el = document.getElementById(id);
       if (el) {
         observer.observe(el);
@@ -43,10 +53,12 @@ export function useActiveSection(
     }
 
     return () => {
-      for (const el of elements) observer.unobserve(el);
+      for (const el of elements) {
+        observer.unobserve(el);
+      }
       observer.disconnect();
     };
-  }, [sectionIds, options?.rootMargin]);
+  }, [idsKey, rootMargin]);
 
   return activeId;
 }

@@ -137,4 +137,28 @@ describe('tabular-nums CSS utility', () => {
     expect(input).toHaveClass('tabular-nums');
     expect(input).toHaveClass('amount');
   });
+
+  it('applies tabular-nums to quick amount preset chips', () => {
+    const creditLine = {
+      id: 'cl-001',
+      name: 'Business Line of Credit',
+      limit: 50000,
+      available: 35000,
+      utilization: 30,
+      riskBand: 'Standard' as const,
+      termMonths: 24,
+    };
+
+    render(
+      <AmountInput
+        creditLine={creditLine}
+        onAmountChange={() => {}}
+        onNext={() => {}}
+        onBack={() => {}}
+      />,
+    );
+
+    const preset25 = screen.getByRole('button', { name: /25 percent/i });
+    expect(preset25).toHaveClass('tabular-nums');
+  });
 });

@@ -31,6 +31,7 @@ import {
   type WalletType,
 } from '@/utils/wallet';
 import type { WalletInfo } from '@/types/wallet';
+import { WalletConnectError } from '@/types/wallet';
 import './WalletConnectionModal.css';
 
 // Wallet provider definitions
@@ -42,6 +43,7 @@ interface WalletOption {
   icon: string;
   description: string;
   installUrl: string;
+  features: string[];
 }
 
 /**
@@ -55,6 +57,7 @@ const DEFAULT_WALLET_ORDER: WalletOption[] = [
     icon: '/assets/wallets/freighter.svg',
     description: 'Browser extension wallet for Stellar',
     installUrl: 'https://www.freighter.app',
+    features: ['Supports Soroban smart contracts', 'Ledger hardware wallet compatible', 'Open source'],
   },
   {
     id: 'albedo',
@@ -62,6 +65,7 @@ const DEFAULT_WALLET_ORDER: WalletOption[] = [
     icon: '/assets/wallets/albedo.svg',
     description: 'Web-based Stellar wallet',
     installUrl: 'https://albedo.link',
+    features: ['No installation required', 'Hardware wallet support', 'Built-in asset swap'],
   },
   {
     id: 'xbull',
@@ -69,6 +73,7 @@ const DEFAULT_WALLET_ORDER: WalletOption[] = [
     icon: '/assets/wallets/xbull.svg',
     description: 'Mobile and desktop Stellar wallet',
     installUrl: 'https://xbull.app',
+    features: ['Cross-platform (mobile + desktop)', 'Built-in DApp browser', 'Multi-account support'],
   },
   {
     id: 'rabet',
@@ -76,6 +81,7 @@ const DEFAULT_WALLET_ORDER: WalletOption[] = [
     icon: '/assets/wallets/rabet.svg',
     description: 'Stellar wallet for desktop',
     installUrl: 'https://rabet.io',
+    features: ['Lightweight desktop application', 'Clean minimal interface', 'Beginner-friendly setup'],
   },
 ];
 
@@ -111,8 +117,10 @@ interface WalletConnectionModalProps {
    * Callback when a wallet is selected.  Implementers should respect the
    * `options.remember` flag and persist it via the safe wrappers in
    * `src/utils/storage.ts`.
+   * 
+   * Returns a Promise so the modal can distinguish success from failure.
    */
-  onConnect: (provider: WalletProvider, options?: WalletConnectOptions) => void;
+  onConnect: (provider: WalletProvider, options?: WalletConnectOptions) => Promise<void>;
   /** Ref to the trigger button that opened the modal (for return focus) */
   triggerRef?: React.RefObject<HTMLElement | null>;
   /** Currently detected/available wallets */
@@ -223,6 +231,7 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
   }, [onClose]);
 
   // Wallet selection handler — forwards the opt-in flag to the consumer.
+  // On failure, the error is displayed in an alert and the modal stays open.
   const handleWalletSelect = useCallback(
     async (provider: WalletProvider) => {
       setError(null);
@@ -230,14 +239,23 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
 
       try {
         await onConnect(provider, { remember: rememberChoice });
+        // Success: close the modal
         handleClose();
       } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : `Failed to connect to ${provider}. Please try again.`
-        );
-        setConnectingId(null);
+        // Connection failed: show error message and keep modal open
+        let errorMessage: string;
+        
+        if (err instanceof WalletConnectError) {
+          // Use the user-facing message from the classified error
+          errorMessage = err.message;
+        } else if (err instanceof Error) {
+          errorMessage = err.message;
+        } else {
+          errorMessage = `Failed to connect to ${provider}. Please try again.`;
+        }
+        
+        setError(errorMessage);
+        setConnectingId(null); // Re-enable buttons
       }
     },
     [onConnect, handleClose, rememberChoice],
@@ -268,8 +286,6 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
 
   // Don't render if not open
   if (!isOpen) return null;
-
-  const selectedProvider = wallets.find(w => w.type === selectedWallet);
 
   return (
     <div
@@ -427,8 +443,10 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
             const isConnecting = connectingId === wallet.id;
             const isDisabled = connectingId !== null;
 
+            const previewId = `wallet-preview-${wallet.id}`;
+
             return (
-              <li key={wallet.id} role="none">
+              <li key={wallet.id} role="none" className="wallet-option-wrapper">
                 <button
                   className={`wallet-option ${isDetected ? 'wallet-option--detected' : 'wallet-option--undetected'}`}
                   style={{ minHeight: '44px', minWidth: '44px' }}
@@ -441,7 +459,7 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
                       ? `Connect with ${wallet.name}${isConnecting ? ', connecting' : ''}`
                       : `Install ${wallet.name} wallet`
                   }
-                  aria-describedby={`wallet-status-${wallet.id}`}
+                  aria-describedby={`wallet-status-${wallet.id} ${previewId}`}
                   type="button"
                 >
                   {/* Icon */}
@@ -490,6 +508,33 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
                     )}
                   </span>
                 </button>
+
+                {/* Hover-preview card — shows wallet features on hover/focus */}
+                <div
+                  id={previewId}
+                  className="wallet-preview"
+                  role="tooltip"
+                  aria-hidden="true"
+                >
+                  <div className="wallet-preview__header">
+                    <img
+                      src={wallet.icon}
+                      alt=""
+                      width="28"
+                      height="28"
+                      aria-hidden="true"
+                    />
+                    <span className="wallet-preview__name">{wallet.name}</span>
+                  </div>
+                  <ul className="wallet-preview__features">
+                    {wallet.features.map((feat) => (
+                      <li key={feat} className="wallet-preview__feature">
+                        <span className="wallet-preview__check" aria-hidden="true">✓</span>
+                        {feat}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </li>
             );
           })}

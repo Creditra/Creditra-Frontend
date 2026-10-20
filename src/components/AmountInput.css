@@ -1,0 +1,36 @@
+/**
+ * AmountInput — reduced-motion styles
+ *
+ * When either the OS/browser `prefers-reduced-motion: reduce` media query
+ * is active OR the in-app reduced-motion override is enabled via
+ * `ReducedMotionContext`, all transition animations on interactive
+ * elements are suppressed.
+ *
+ * Two independent mechanisms:
+ *   1. `@media (prefers-reduced-motion: reduce)` — OS-level preference.
+ *   2. `[data-reduced-motion="true"]` — in-app override set by the React
+ *      component when `useReducedMotion()` reports `isReducedMotionActive`.
+ *
+ * WCAG 2.3.3 (AAA) – Animation from Interactions: suppressing non-essential
+ * animation when the user requests it.
+ */
+
+/* ─── OS-level reduced-motion ────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .amount-input-root *,
+  .amount-input-root *::before,
+  .amount-input-root *::after {
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+  }
+}
+
+/* ─── In-app reduced-motion override ─────────────────────────────────────── */
+
+.amount-input-root[data-reduced-motion="true"] *,
+.amount-input-root[data-reduced-motion="true"] *::before,
+.amount-input-root[data-reduced-motion="true"] *::after {
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}

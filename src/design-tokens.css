@@ -1,0 +1,22 @@
+/* src/design-tokens.css */
+
+/* Import OpenDyslexic font – using CDN */
+@import url('https://cdn.jsdelivr.net/npm/open-dyslexic@0.10.0/open-dyslexic.css');
+
+:root {
+  /* Base font family used throughout the app */
+  --font-family-base: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  /* Dyslexia‑friendly alternative */
+  --font-family-easy-read: "OpenDyslexic", system-ui, -apple-system, sans-serif;
+
+  /* Default typographic rhythm */
+  --letter-spacing-wide: 0.02em;
+  --line-height-base: 1.5;
+}
+
+/* Easy‑read overrides – applied when .easy-read class is present on <html> */
+.easy-read {
+  --font-family-base: var(--font-family-easy-read);
+  --letter-spacing-wide: 0.04em; /* looser tracking */
+  --line-height-base: 1.6;   /* taller line‑height */
+}

@@ -23,18 +23,24 @@ import { readJson, writeJson } from '../utils/storage';
 
 export type Theme = 'default';
 
+// Font mode – default or dyslexia‑friendly
+export type FontMode = 'default' | 'easyRead';
+
 interface ThemeContextType {
   theme: Theme;
   setTheme: (theme: Theme) => void;
+  fontMode: FontMode;
+  setFontMode: (mode: FontMode) => void;
 }
-
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-const THEME_STORAGE_KEY = 'creditra-theme' as const;
 
 // ─── Context ─────────────────────────────────────────────────────────────────
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const THEME_STORAGE_KEY = 'creditra-theme' as const;
+const FONT_MODE_STORAGE_KEY = 'creditra-font-mode' as const;
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -42,19 +48,31 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() =>
     readJson<Theme>(THEME_STORAGE_KEY, 'default'),
   );
+  const [fontMode, setFontModeState] = useState<FontMode>(() =>
+    readJson<FontMode>(FONT_MODE_STORAGE_KEY, 'default'),
+  );
 
+  // Apply theme class and font mode class to <html>
   useEffect(() => {
-    // Theme is applied as a class on <html> so Tailwind utilities can target it.
     const root = document.documentElement;
+    // Theme handling (existing)
     root.classList.remove('theme-default');
     root.classList.add(`theme-${theme}`);
     writeJson<Theme>(THEME_STORAGE_KEY, theme);
-  }, [theme]);
+    // Font mode handling
+    if (fontMode === 'easyRead') {
+      root.classList.add('easy-read');
+    } else {
+      root.classList.remove('easy-read');
+    }
+    writeJson<FontMode>(FONT_MODE_STORAGE_KEY, fontMode);
+  }, [theme, fontMode]);
 
   const setTheme = (next: Theme) => setThemeState(next);
+  const setFontMode = (next: FontMode) => setFontModeState(next);
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme, fontMode, setFontMode }}>
       {children}
     </ThemeContext.Provider>
   );

@@ -1,0 +1,178 @@
+/* ─── LastActivityStamp ──────────────────────────────────────────────────────
+ *
+ * Renders a compact "Last activity: X ago" row with an "i" trigger that
+ * reveals the full absolute datetime as a tooltip.
+ *
+ * Token map (mirrors src/index.css and src/utils/tokens.ts):
+ *   --muted    → subdued labels and icon tint
+ *   --text     → primary text / tooltip content
+ *   --surface  → tooltip background
+ *   --border   → tooltip border
+ *   --accent   → trigger hover / focus ring
+ *   --bg       → tooltip caret background
+ *   --lh-small → 1.5 — small-text line height
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.last-activity-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: var(--lh-small);
+  /* Prevent the stamp from wrapping mid-word */
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+/* ─── Icon ─────────────────────────────────────────────────────────────────── */
+
+.last-activity-stamp__icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+/* ─── Text content ─────────────────────────────────────────────────────────── */
+
+.last-activity-stamp__text {
+  /* Allow the relative string to have slightly brighter emphasis */
+  color: var(--muted);
+}
+
+.last-activity-stamp__relative {
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* ─── Tooltip host — wraps the trigger + tooltip bubble ───────────────────── */
+
+.last-activity-stamp__tooltip-host {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 2px;
+}
+
+/* ─── Trigger — "i" info affordance ───────────────────────────────────────── */
+
+.last-activity-stamp__trigger {
+  /* 44×44 px transparent touch target; the visible 18 px "i" circle is the
+     inner span, so the hit area never draws over the neighbouring text. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -13px -13px -13px -11px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: default;
+  flex-shrink: 0;
+}
+
+.last-activity-stamp__trigger > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(88, 166, 255, 0.5);
+  border-radius: 999px;
+}
+
+.last-activity-stamp__trigger:hover > span,
+.last-activity-stamp__trigger:focus-visible > span {
+  background: rgba(88, 166, 255, 0.12);
+  border-color: var(--accent);
+}
+
+.last-activity-stamp__trigger:focus-visible {
+  outline: none;
+}
+
+.last-activity-stamp__trigger:focus-visible > span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ─── Tooltip bubble ─────────────────────────────────────────────────────── */
+
+.last-activity-stamp__tooltip {
+  position: absolute;
+  /* Align left edge of tooltip with left edge of the trigger */
+  left: 50%;
+  bottom: calc(100% + 10px);
+  z-index: 30;
+  width: max-content;
+  max-width: min(220px, calc(100vw - 2rem));
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: var(--lh-small);
+  white-space: nowrap;
+  /* Hidden by default; revealed by hover/focus-within */
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+/* Caret pointing down */
+.last-activity-stamp__tooltip::after {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 8px;
+  height: 8px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  content: '';
+  transform: translate(-50%, -4px) rotate(45deg);
+}
+
+/* Show on hover or when the trigger is focused */
+.last-activity-stamp__tooltip-host:hover .last-activity-stamp__tooltip,
+.last-activity-stamp__tooltip-host:focus-within .last-activity-stamp__tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ─── Motion preference ─────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .last-activity-stamp__tooltip {
+    transition: none;
+  }
+}
+
+/* ─── Forced-colors (Windows High Contrast) ─────────────────────────────── */
+
+@media (forced-colors: active) {
+  .last-activity-stamp__trigger {
+    border-color: ButtonText;
+    color: ButtonText;
+    forced-color-adjust: none;
+  }
+
+  .last-activity-stamp__tooltip {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+}

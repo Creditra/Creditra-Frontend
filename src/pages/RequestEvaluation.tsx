@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AccessibleTooltip } from '@/components/AccessibleTooltip';
 import { FormMessage } from '@/components/FormMessage';
 import { PendingButton } from '@/components/PendingButton';
 import { Skeleton } from '@/components/Skeleton';
 import { useReducedMotion } from '@/context/ReducedMotionContext';
 import { FileUploadZone } from '@/components/FileUploadZone';
+import { offlineMutation } from '@/utils/offline';
+import { useOnline } from '@/hooks/useOnline';
 
 type Step = 1 | 2 | 3 | 4 | 5;
 type EvalState = 'idle' | 'running' | 'success' | 'rejected' | 'error';
@@ -80,7 +82,13 @@ interface EvalResult {
 
 export function RequestEvaluation() {
   const { isReducedMotionActive } = useReducedMotion();
-  const [step, setStep] = useState<Step>(1);
+  const { queueAction } = useOnline();
+  const [searchParams] = useSearchParams();
+  // Attestation remediation CTAs deep-link here with `?step=2` (Optional
+  // Information), where the revenue attestation upload and identity bond
+  // checkbox live. Other steps depend on in-progress evaluation state and
+  // aren't valid deep-link targets.
+  const [step, setStep] = useState<Step>(() => (searchParams.get('step') === '2' ? 2 : 1));
   const [evalState, setEvalState] = useState<EvalState>('idle');
   const [progress, setProgress] = useState(0);
   const [eta, setEta] = useState(45); // seconds
@@ -90,6 +98,7 @@ export function RequestEvaluation() {
   const [agreeTermsPreviewed, setAgreeTermsPreviewed] = useState(false);
   const timerRef = useRef<number | null>(null);
   const navigate = useNavigate();
+  const [evaluationError, setEvaluationError] = useState('');
 
   const totalSteps = 5;
   const stepTitle = useMemo(() => {
@@ -162,7 +171,21 @@ export function RequestEvaluation() {
   };
 
   const startEvaluation = () => {
-    setStep(3);
+    // Guard the evaluation submission: when offline, never start a fake
+    // evaluation. It is queued for retry on reconnect and a clear error is shown.
+    void offlineMutation({
+      fn: async () => {
+        setStep(3);
+      },
+      onOffline: () => {
+        queueAction(() => {
+          startEvaluation();
+        }, 'eval-start');
+        setEvaluationError('You are offline, so the evaluation cannot start yet. It has been queued and will begin when your connection is restored.');
+      },
+      offlineMessage:
+        'You are offline, so the evaluation cannot start yet. It has been queued and will begin when your connection is restored.',
+    });
   };
 
   const acceptCreditLine = () => {
@@ -208,6 +231,11 @@ export function RequestEvaluation() {
               </ul>
               <p style={{ margin: 0, color: COLOR.muted }}>Estimated evaluation time: ≈ 45 seconds</p>
             </div>
+            {evaluationError && (
+              <div role="alert" aria-live="assertive" style={{ marginTop: '0.75rem', padding: '0.75rem 1rem', borderRadius: 8, border: `1px solid ${COLOR.danger}`, background: 'rgba(248,81,73,0.1)', color: COLOR.danger, fontSize: '0.875rem' }}>
+                {evaluationError}
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
               <button style={btn.secondary} onClick={() => navigate(-1)}>Cancel</button>
               <button style={btn.primary} onClick={() => setStep(2)}>Start</button>

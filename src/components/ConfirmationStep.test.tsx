@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { ConfirmationStep } from "./ConfirmationStep";
 import { useWallet } from "@/context/WalletContext";
+import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
 
 // Mock WalletContext — ConfirmationStep reads wallet status to show a hint
 vi.mock("@/context/WalletContext", () => ({
@@ -17,10 +18,14 @@ vi.mock("@/lib/draw-credit-pricing", () => ({
     estimatedMonthlyInterest: 104.17,
     riskBand: "Standard",
     termMonths: 24,
+    utilizationAdjustmentLabel: "Low utilization adjustment",
+    termAdjustmentLabel: "Standard-term pricing adjustment",
   })),
 }));
 
-(useWallet as ReturnType<typeof vi.fn>).mockReturnValue({ status: "connected" });
+const mockGetDrawPricingQuote = vi.mocked(getDrawPricingQuote);
+
+const mockUseWallet = vi.mocked(useWallet);
 
 const creditLine = {
   id: "cl-001",
@@ -32,6 +37,16 @@ const creditLine = {
   termMonths: 24,
 };
 
+const watchCreditLine = {
+  id: "cl-003",
+  name: "Working Capital",
+  limit: 75000,
+  available: 12000,
+  utilization: 84,
+  riskBand: "Watch" as const,
+  termMonths: 12,
+};
+
 /** Returns footer action buttons, excluding icon-only buttons (e.g. tooltips). */
 function getActionButtons() {
   return screen.getAllByRole("button").filter(
@@ -41,10 +56,12 @@ function getActionButtons() {
   );
 }
 
+// ── Basic render ──────────────────────────────────────────────────────────────
+
 describe("ConfirmationStep", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (useWallet as ReturnType<typeof vi.fn>).mockReturnValue({ status: "connected" });
+    mockUseWallet.mockReturnValue({ status: "connected" });
   });
 
   it("renders the Review and confirm heading", () => {
@@ -63,7 +80,7 @@ describe("ConfirmationStep", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows the draw amount and estimated fee", () => {
+  it("shows the draw amount", () => {
     render(
       <ConfirmationStep
         creditLine={creditLine}
@@ -74,9 +91,470 @@ describe("ConfirmationStep", () => {
       />,
     );
 
-    expect(screen.getByText("$10,000.00")).toBeInTheDocument();
+    expect(screen.getByTestId("draw-amount-display")).toHaveTextContent(
+      "$10,000.00",
+    );
+  });
+
+  it("shows the estimated fee from pricing quote", () => {
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
     // Fee comes from mocked getDrawPricingQuote → $100
-    expect(screen.getByText("$100.00")).toBeInTheDocument();
+    expect(screen.getByTestId("fee-display")).toHaveTextContent("$100.00");
+  });
+
+  it("shows the APR from pricing quote", () => {
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("apr-display")).toHaveTextContent("12.5%");
+  });
+
+  it("shows the estimated monthly interest", () => {
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("monthly-interest-display")).toHaveTextContent(
+      "$104.17",
+    );
+  });
+});
+
+// ── Cost breakdown section ────────────────────────────────────────────────────
+
+describe("ConfirmationStep — cost breakdown section", () => {
+  beforeEach(() => {
+    mockUseWallet.mockReturnValue({ status: "connected" });
+  });
+
+  it("renders the 'Cost breakdown' section heading", () => {
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("region", { name: /cost breakdown/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the new balance after fee", () => {
+    // utilized = 50000 - 35000 = 15000, amount = 10000, fee = 100
+    // newBalance = 15000 + 10000 + 100 = 25100
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("new-balance-display")).toHaveTextContent(
+      "$25,100.00",
+    );
+  });
+
+  it("shows term in months", () => {
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("24 months")).toBeInTheDocument();
+  });
+});
+
+// ── Risk-band badge ───────────────────────────────────────────────────────────
+
+describe("ConfirmationStep — risk-band badge", () => {
+  beforeEach(() => {
+    mockUseWallet.mockReturnValue({ status: "connected" });
+  });
+
+  it("renders a risk-band badge", () => {
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    const badge = screen.getByTestId("risk-band-badge");
+    expect(badge).toBeInTheDocument();
+  });
+
+  it("risk-band badge shows 'Standard band' for Standard risk line", () => {
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("risk-band-badge")).toHaveTextContent(
+      "Standard band",
+    );
+  });
+
+  it("risk-band badge has accessible aria-label describing the band", () => {
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    const badge = screen.getByTestId("risk-band-badge");
+    expect(badge).toHaveAttribute("aria-label", expect.stringMatching(/risk band: standard/i));
+  });
+});
+
+// ── Watch-band risk-adjusted fee notice ───────────────────────────────────────
+
+describe("ConfirmationStep — Watch-band risk fee notice", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseWallet.mockReturnValue({ status: "connected" });
+    // Return Watch risk band from pricing
+    mockGetDrawPricingQuote.mockReturnValue({
+      fee: 50,
+      apr: 14.5,
+      estimatedMonthlyInterest: 60.42,
+      riskBand: "Watch",
+      termMonths: 12,
+      utilizationAdjustmentLabel: "High utilization adjustment",
+      termAdjustmentLabel: "Short-term pricing adjustment",
+    });
+  });
+
+  it("shows the risk-adjusted fee notice for Watch-band credit lines", () => {
+    render(
+      <ConfirmationStep
+        creditLine={watchCreditLine}
+        amount={5000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("risk-fee-notice")).toBeInTheDocument();
+    expect(screen.getByTestId("risk-fee-notice")).toHaveTextContent(
+      /risk-adjusted pricing/i,
+    );
+  });
+
+  it("does NOT show the risk-adjusted fee notice for Standard-band lines", () => {
+    // Restore Standard mock for this test
+    mockGetDrawPricingQuote.mockReturnValue({
+      fee: 100,
+      apr: 12.5,
+      estimatedMonthlyInterest: 104.17,
+      riskBand: "Standard",
+      termMonths: 24,
+      utilizationAdjustmentLabel: "Low utilization adjustment",
+      termAdjustmentLabel: "Standard-term pricing adjustment",
+    });
+
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId("risk-fee-notice")).not.toBeInTheDocument();
+  });
+});
+
+// ── APR disclosure collapsible ────────────────────────────────────────────────
+
+describe("ConfirmationStep — APR disclosure collapsible", () => {
+  beforeEach(() => {
+    mockUseWallet.mockReturnValue({ status: "connected" });
+  });
+
+  function renderStep(overrides = {}) {
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+        {...overrides}
+      />,
+    );
+  }
+
+  it("renders the 'How is my APR calculated?' toggle button", () => {
+    renderStep();
+
+    expect(
+      screen.getByTestId("apr-disclosure-toggle"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("apr-disclosure-toggle"),
+    ).toHaveTextContent(/how is my apr calculated/i);
+  });
+
+  it("APR breakdown body is NOT visible by default (collapsed)", () => {
+    renderStep();
+
+    expect(screen.queryByTestId("apr-breakdown-body")).not.toBeInTheDocument();
+  });
+
+  it("toggle button has aria-expanded=false when collapsed", () => {
+    renderStep();
+
+    const toggle = screen.getByTestId("apr-disclosure-toggle");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("clicking the toggle reveals the APR breakdown", async () => {
+    const user = userEvent.setup();
+    renderStep();
+
+    await user.click(screen.getByTestId("apr-disclosure-toggle"));
+
+    expect(screen.getByTestId("apr-breakdown-body")).toBeInTheDocument();
+  });
+
+  it("toggle button has aria-expanded=true when open", async () => {
+    const user = userEvent.setup();
+    renderStep();
+
+    await user.click(screen.getByTestId("apr-disclosure-toggle"));
+
+    expect(screen.getByTestId("apr-disclosure-toggle")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+
+  it("shows base rate, utilization adjustment, and term adjustment when open", async () => {
+    const user = userEvent.setup();
+    renderStep();
+
+    await user.click(screen.getByTestId("apr-disclosure-toggle"));
+
+    expect(screen.getByTestId("apr-base-rate")).toBeInTheDocument();
+    expect(screen.getByTestId("apr-utilization-adj")).toBeInTheDocument();
+    expect(screen.getByTestId("apr-term-adj")).toBeInTheDocument();
+    expect(screen.getByTestId("apr-total")).toBeInTheDocument();
+  });
+
+  it("total APR in breakdown matches the main APR display", async () => {
+    const user = userEvent.setup();
+    renderStep();
+
+    await user.click(screen.getByTestId("apr-disclosure-toggle"));
+
+    const total = screen.getByTestId("apr-total");
+    const mainApr = screen.getByTestId("apr-display");
+    expect(total).toHaveTextContent("12.5%");
+    expect(mainApr).toHaveTextContent("12.5%");
+  });
+
+  it("shows utilization adjustment label from pricing quote", async () => {
+    const user = userEvent.setup();
+    renderStep();
+
+    await user.click(screen.getByTestId("apr-disclosure-toggle"));
+
+    expect(
+      screen.getByText(/low utilization adjustment/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows term adjustment label from pricing quote", async () => {
+    const user = userEvent.setup();
+    renderStep();
+
+    await user.click(screen.getByTestId("apr-disclosure-toggle"));
+
+    expect(
+      screen.getByText(/standard-term pricing adjustment/i),
+    ).toBeInTheDocument();
+  });
+
+  it("clicking toggle again collapses the breakdown", async () => {
+    const user = userEvent.setup();
+    renderStep();
+
+    const toggle = screen.getByTestId("apr-disclosure-toggle");
+    await user.click(toggle);
+    expect(screen.getByTestId("apr-breakdown-body")).toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(screen.queryByTestId("apr-breakdown-body")).not.toBeInTheDocument();
+  });
+});
+
+// ── Utilization progress bars ─────────────────────────────────────────────────
+
+describe("ConfirmationStep — utilization progress bars", () => {
+  beforeEach(() => {
+    mockUseWallet.mockReturnValue({ status: "connected" });
+  });
+
+  it("renders the 'Credit utilization' section", () => {
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("region", { name: /credit utilization/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows current utilization percentage", () => {
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    // creditLine.utilization = 30
+    expect(screen.getByText("30%")).toBeInTheDocument();
+  });
+
+  it("shows projected utilization after draw", () => {
+    // utilized = 15000, draw = 10000, fee = 100 → newBalance = 25100
+    // newUtilization = round(25100 / 50000 * 100) = 50
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("utilization-after-pct")).toHaveTextContent(
+      "50%",
+    );
+  });
+
+  it("renders two accessible progressbar elements", () => {
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    const bars = screen.getAllByRole("progressbar");
+    expect(bars).toHaveLength(2);
+  });
+
+  it("does NOT show high-utilization warning when below 80%", () => {
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByTestId("high-utilization-warning"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows high-utilization warning when projected utilization exceeds 80%", () => {
+    // For this to trigger: newBalance / limit > 0.80
+    // limit=50000, utilized=15000, draw=30000, fee=100 → newBalance=45100 → 90%
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={30000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByTestId("high-utilization-warning"),
+    ).toBeInTheDocument();
+  });
+
+  it("high-utilization warning has role=alert for immediate AT announcement", () => {
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={30000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    const warning = screen.getByTestId("high-utilization-warning");
+    expect(warning).toHaveAttribute("role", "alert");
   });
 });
 
@@ -84,7 +562,7 @@ describe("ConfirmationStep", () => {
 
 describe("ConfirmationStep — button order (docs/BUTTON_ORDER.md)", () => {
   beforeEach(() => {
-    (useWallet as ReturnType<typeof vi.fn>).mockReturnValue({ status: "connected" });
+    mockUseWallet.mockReturnValue({ status: "connected" });
   });
 
   function renderStep(overrides = {}) {
@@ -105,36 +583,33 @@ describe("ConfirmationStep — button order (docs/BUTTON_ORDER.md)", () => {
 
     const buttons = getActionButtons();
     const cancelIdx = buttons.findIndex((b) => b.textContent?.trim() === "Cancel");
-    const backIdx   = buttons.findIndex((b) => b.textContent?.trim() === "Back");
+    const backIdx = buttons.findIndex((b) => b.textContent?.trim() === "Back");
 
     expect(cancelIdx).toBeGreaterThanOrEqual(0);
     expect(backIdx).toBeGreaterThanOrEqual(0);
-    // Cancel must precede Back (leftmost safe exit, then step navigation)
     expect(cancelIdx).toBeLessThan(backIdx);
   });
 
   it("renders Back before the primary Draw button in the DOM", () => {
     renderStep();
 
-    const buttons  = getActionButtons();
-    const backIdx  = buttons.findIndex((b) => b.textContent?.trim() === "Back");
-    const drawIdx  = buttons.findIndex((b) => /draw/i.test(b.textContent ?? ""));
+    const buttons = getActionButtons();
+    const backIdx = buttons.findIndex((b) => b.textContent?.trim() === "Back");
+    const drawIdx = buttons.findIndex((b) => /draw/i.test(b.textContent ?? ""));
 
     expect(backIdx).toBeGreaterThanOrEqual(0);
     expect(drawIdx).toBeGreaterThanOrEqual(0);
-    // Back must precede the primary action
     expect(backIdx).toBeLessThan(drawIdx);
   });
 
   it("full order: Cancel → Back → Draw", () => {
     renderStep();
 
-    const buttons    = getActionButtons();
-    const cancelIdx  = buttons.findIndex((b) => b.textContent?.trim() === "Cancel");
-    const backIdx    = buttons.findIndex((b) => b.textContent?.trim() === "Back");
-    const drawIdx    = buttons.findIndex((b) => /draw/i.test(b.textContent ?? ""));
+    const buttons = getActionButtons();
+    const cancelIdx = buttons.findIndex((b) => b.textContent?.trim() === "Cancel");
+    const backIdx = buttons.findIndex((b) => b.textContent?.trim() === "Back");
+    const drawIdx = buttons.findIndex((b) => /draw/i.test(b.textContent ?? ""));
 
-    // Rule: Cancel < Back < Primary (docs/BUTTON_ORDER.md)
     expect(cancelIdx).toBeLessThan(backIdx);
     expect(backIdx).toBeLessThan(drawIdx);
   });
@@ -190,5 +665,70 @@ describe("ConfirmationStep — button order (docs/BUTTON_ORDER.md)", () => {
     await user.click(screen.getByRole("button", { name: /draw/i }));
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── Wallet signing hint ───────────────────────────────────────────────────────
+
+describe("ConfirmationStep — wallet signing hint", () => {
+  it("shows 'Your wallet will ask you to sign next' when wallet is connected", () => {
+    mockUseWallet.mockReturnValue({
+      status: "connected",
+    });
+
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/your wallet will ask you to sign next/i),
+    ).toBeInTheDocument();
+  });
+
+  it("does NOT show wallet hint when wallet is disconnected", () => {
+    mockUseWallet.mockReturnValue({
+      status: "disconnected",
+    });
+
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByText(/your wallet will ask you to sign next/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does NOT show wallet hint while loading", () => {
+    mockUseWallet.mockReturnValue({
+      status: "connected",
+    });
+
+    render(
+      <ConfirmationStep
+        creditLine={creditLine}
+        amount={10000}
+        onConfirm={vi.fn()}
+        onBack={vi.fn()}
+        onCancel={vi.fn()}
+        isLoading
+      />,
+    );
+
+    expect(
+      screen.queryByText(/your wallet will ask you to sign next/i),
+    ).not.toBeInTheDocument();
   });
 });

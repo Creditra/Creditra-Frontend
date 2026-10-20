@@ -7,6 +7,10 @@ import type {
   CollateralAsset,
   CollateralAssetCategory,
   LtvSnapshot,
+  SlippageResult,
+  SlippageTolerance,
+  SubstitutionError,
+  SubstitutionFailureReason,
   SubstitutionFee,
 } from '../types/collateral';
 
@@ -175,4 +179,171 @@ export function categoryIcon(category: CollateralAssetCategory): string {
     case 'treasury':    return '🏛️';
     default:            return '💎';
   }
+}
+
+// ─── Slippage ────────────────────────────────────────────────────────────────
+
+/**
+ * Selectable slippage tolerance presets, shown as chips on the Review step.
+ * Each value is in percentage points (e.g. 1 = 1 pp tolerance).
+ */
+export const SLIPPAGE_PRESETS: SlippageTolerance[] = [0.5, 1, 2, 5];
+
+/** Default slippage tolerance applied when the user does not explicitly choose one. */
+export const DEFAULT_SLIPPAGE: SlippageTolerance = 1;
+
+/**
+ * Maximum number of submission attempts before the retry button is hidden
+ * and a "contact support" message is shown instead.
+ */
+export const MAX_RETRY_ATTEMPTS = 3;
+
+/**
+ * Maximum age (ms) of a reviewed LTV snapshot before it is considered stale
+ * and must be re-fetched before the user can submit.
+ */
+export const STALE_QUOTE_THRESHOLD_MS = 60_000; // 60 seconds
+
+/**
+ * Compute the slippage between a review-time LTV and a submit-time LTV.
+ *
+ * @param reviewLtv    LTV ratio captured when the user entered the Review step.
+ * @param currentLtv   Re-fetched LTV ratio just before submission.
+ * @param tolerancePp  Allowed slippage in percentage points (e.g. 1 = 1 %).
+ */
+export function computeSlippage(
+  reviewLtv: number,
+  currentLtv: number,
+  tolerancePp: number,
+): SlippageResult {
+  const slippagePp = Math.abs((currentLtv - reviewLtv) * 100);
+  return {
+    reviewLtvRatio: reviewLtv,
+    currentLtvRatio: currentLtv,
+    slippagePp,
+    isExceeded: slippagePp > tolerancePp,
+    tolerancePp,
+  };
+}
+
+/**
+ * Convenience predicate: returns true when the slippage is within tolerance.
+ */
+export function isWithinSlippage(
+  reviewLtv: number,
+  currentLtv: number,
+  tolerancePp: number,
+): boolean {
+  return !computeSlippage(reviewLtv, currentLtv, tolerancePp).isExceeded;
+}
+
+/**
+ * Returns true when the review-time snapshot is older than
+ * `STALE_QUOTE_THRESHOLD_MS` and should be refreshed.
+ */
+export function isStaleQuote(reviewTimestampMs: number, nowMs?: number): boolean {
+  const now = nowMs ?? Date.now();
+  return now - reviewTimestampMs > STALE_QUOTE_THRESHOLD_MS;
+}
+
+// ─── Error classification ────────────────────────────────────────────────────
+
+/**
+ * Message templates for each failure reason. The `{message}` placeholder
+ * in the raw error is interpolated if present; otherwise the template
+ * body is used as-is.
+ */
+const ERROR_TEMPLATES: Record<
+  SubstitutionFailureReason,
+  { message: string; retryable: boolean }
+> = {
+  network: {
+    message:
+      'A network error prevented the substitution from completing. Check your connection and try again.',
+    retryable: true,
+  },
+  validation: {
+    message:
+      'The substitution was rejected due to a validation error. Review your collateral selection and try again.',
+    retryable: false,
+  },
+  permission: {
+    message:
+      'You do not have permission to modify this credit line. Contact your administrator.',
+    retryable: false,
+  },
+  timeout: {
+    message:
+      'The request timed out. The network may be congested — try again in a moment.',
+    retryable: true,
+  },
+  slippage: {
+    message:
+      'Collateral prices have moved beyond your slippage tolerance. Re-review the comparison before submitting.',
+    retryable: false,
+  },
+  unknown: {
+    message:
+      'An unexpected error occurred. Please try again or contact support if the issue persists.',
+    retryable: true,
+  },
+};
+
+/**
+ * Classify a raw error (from a catch block or API response) into a
+ * structured `SubstitutionError` with a reason discriminant, a
+ * human-safe message, and a retryability flag.
+ *
+ * @param raw  The caught error or unknown value.
+ */
+export function classifySubstitutionError(
+  raw: unknown,
+): SubstitutionError {
+  const message = raw instanceof Error ? raw.message : String(raw);
+  const lower = message.toLowerCase();
+
+  let reason: SubstitutionFailureReason;
+
+  if (lower.includes('timeout') || lower.includes('timed out')) {
+    reason = 'timeout';
+  } else if (
+    lower.includes('network') ||
+    lower.includes('fetch') ||
+    lower.includes('econnrefused') ||
+    lower.includes('econnreset') ||
+    lower.includes('enotfound')
+  ) {
+    reason = 'network';
+  } else if (
+    lower.includes('permission') ||
+    lower.includes('unauthorized') ||
+    lower.includes('forbidden') ||
+    lower.includes('403')
+  ) {
+    reason = 'permission';
+  } else if (
+    lower.includes('validation') ||
+    lower.includes('invalid') ||
+    lower.includes('rejected') ||
+    lower.includes('400') ||
+    lower.includes('422')
+  ) {
+    reason = 'validation';
+  } else if (
+    lower.includes('slippage') ||
+    lower.includes('price moved') ||
+    lower.includes('stale')
+  ) {
+    reason = 'slippage';
+  } else {
+    reason = 'unknown';
+  }
+
+  const template = ERROR_TEMPLATES[reason];
+
+  return {
+    reason,
+    message: template.message,
+    retryable: template.retryable,
+  };
 }

@@ -106,4 +106,10 @@ export interface CreditLine {
   nextPaymentAmount?: number;
   /** ISO 8601 timestamp when the next interest accrual is expected. */
   nextInterestAccrualDate?: string;
+  /**
+   * ISO 8601 timestamp of the most recent user-visible activity on this line
+   * (draw, repay, status change, etc.).  When absent the UI falls back to
+   * `updatedAt` so the field is always displayable.
+   */
+  lastActivityAt?: string;
 }

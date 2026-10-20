@@ -12,6 +12,7 @@
  * canonical catalogue.
  */
 import type { CreditLineStatus, UtilizationLevel } from '../types/creditLine';
+import type { AttestationStatus } from '../types/attestation';
 import type React from 'react';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -46,6 +47,12 @@ export const STATUS_COLOR: Record<CreditLineStatus, { bg: string; color: string;
   Defaulted: { bg: 'rgba(248,81,73,0.14)', color: '#ffb0aa', border: 'rgba(248,81,73,0.46)' },
   Closed: { bg: 'rgba(139,148,158,0.16)', color: '#c4ccd6', border: 'rgba(139,148,158,0.42)' },
   Frozen: { bg: 'rgba(88,166,255,0.12)', color: '#79c0ff', border: 'rgba(88,166,255,0.38)' },
+};
+
+export const ATTESTATION_STATUS_COLOR: Record<AttestationStatus, { bg: string; color: string; border: string }> = {
+  Verified: { bg: 'rgba(63,185,80,0.16)', color: '#8ee99d', border: 'rgba(63,185,80,0.44)' },
+  Expiring: { bg: 'rgba(210,153,34,0.16)', color: '#f0c96a', border: 'rgba(210,153,34,0.46)' },
+  Missing: { bg: 'rgba(248,81,73,0.14)', color: '#ffb0aa', border: 'rgba(248,81,73,0.46)' },
 };
 
 /**
@@ -116,14 +123,38 @@ export const relativeTime = (iso: string): string => {
 // ─── Utilization helpers ──────────────────────────────────────────────────────
 
 export const getUtilizationLevel = (utilized: number, limit: number): UtilizationLevel => {
-  const pct = utilized / limit;
+  const pct = limit === 0 ? 0 : utilized / limit;
   if (pct < 0.4) return 'low';
   if (pct < 0.75) return 'medium';
   return 'high';
 };
 
 export const utilizationPct = (utilized: number, limit: number) =>
-  limit === 0 ? 0 : Math.round((utilized / limit) * 100);
+  limit <= 0 ? 0 : Math.round((utilized / limit) * 100);
+
+export interface UtilizationDisplay {
+  /** True utilization percentage (may exceed 100 when over limit). */
+  pct: number;
+  /** Bar fill width, clamped to 0–100. */
+  barPct: number;
+  /** Semantic level derived from the true percentage. */
+  level: UtilizationLevel;
+  /** Amount by which utilized exceeds limit (0 when at or under limit). */
+  overLimitBy: number;
+  /** Remaining available credit, clamped at 0. */
+  available: number;
+}
+
+export const getUtilizationDisplay = (utilized: number, limit: number): UtilizationDisplay => {
+  const pct = utilizationPct(utilized, limit);
+  return {
+    pct,
+    barPct: Math.min(100, Math.max(0, pct)),
+    level: getUtilizationLevel(utilized, limit),
+    overLimitBy: limit > 0 ? Math.max(0, utilized - limit) : 0,
+    available: limit > 0 ? Math.max(0, limit - utilized) : 0,
+  };
+};
 
 // ─── Per-line accent stripe palette ──────────────────────────────────────────
 //

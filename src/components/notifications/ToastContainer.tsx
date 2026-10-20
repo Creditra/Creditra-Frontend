@@ -4,7 +4,7 @@ import type { Toast } from "../../types/notification";
 import { TYPE_COLOR, TYPE_ICON } from "./notificationIcons";
 import "./ToastContainer.css";
 
-function ToastItem({
+export function ToastItem({
   toast,
   onDismiss,
 }: {

@@ -1,4 +1,36 @@
 import type { CreditLine, AprHistoryEntry } from '../types/creditLine';
+import type { Attestation } from '../types/attestation';
+
+// ─── History cursor state ────────────────────────────────────────────────────
+/**
+ * Stores the next pagination cursor per history filter signature. When filters
+ * change, call `resetHistoryCursors` so stale cursors cannot be reused.
+ */
+const historyCursors = new Map<string, string | null>();
+
+/**
+ * Clears history cursors. With no arguments, clears all cursors. When a filter
+ * key is supplied, only that filter's cursor is cleared.
+ */
+export function resetHistoryCursors(filterKey?: string): void {
+  if (filterKey === undefined) {
+    historyCursors.clear();
+  } else {
+    historyCursors.delete(filterKey);
+  }
+}
+
+export function getHistoryCursor(filterKey: string): string | null {
+  return historyCursors.get(filterKey) ?? null;
+}
+
+export function setHistoryCursor(filterKey: string, cursor: string | null): void {
+  if (cursor === null) {
+    historyCursors.delete(filterKey);
+  } else {
+    historyCursors.set(filterKey, cursor);
+  }
+}
 
 // ─── APR history generation helper ───────────────────────────────────────────
 /**
@@ -33,6 +65,25 @@ function generateAprHistory(
     });
   }
   return entries;
+}
+
+/**
+ * Canonical deterministic ordering for credit lines.
+ *
+ * The unique id is the primary sort key; openedAt and name are tie-breakers
+ * for duplicate or malformed ids so the sort never depends on array position.
+ */
+export function compareCreditLines(a: CreditLine, b: CreditLine): number {
+  const aId = String(a.id);
+  const bId = String(b.id);
+  if (aId !== bId) return aId < bId ? -1 : 1;
+  const aOpenedAt = String(a.openedAt);
+  const bOpenedAt = String(b.openedAt);
+  if (aOpenedAt !== bOpenedAt) return aOpenedAt < bOpenedAt ? -1 : 1;
+  const aName = String(a.name);
+  const bName = String(b.name);
+  if (aName !== bName) return aName < bName ? -1 : 1;
+  return 0;
 }
 
 export const MOCK_CREDIT_LINES: CreditLine[] = [
@@ -180,6 +231,30 @@ export const MOCK_CREDIT_LINES: CreditLine[] = [
       { status: 'Active', date: '2025-01-15', note: 'Line opened and activated' },
     ],
     aprHistory: generateAprHistory(7.5, 365, 606),
+  },
+].sort(compareCreditLines);
+
+// ─── Attestations mock data ───────────────────────────────────────────────────
+
+export const MOCK_ATTESTATIONS: Attestation[] = [
+  {
+    id: 'identity-bond',
+    label: 'Identity Bond',
+    lastVerifiedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    expiresAt: new Date(Date.now() + 150 * 24 * 60 * 60 * 1000).toISOString(),
+    remediationStep: 2,
+  },
+  {
+    id: 'revenue-proof',
+    label: 'Revenue Proof',
+    lastVerifiedAt: new Date(Date.now() - 170 * 24 * 60 * 60 * 1000).toISOString(),
+    expiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+    remediationStep: 2,
+  },
+  {
+    id: 'bank-ownership',
+    label: 'Bank Account Ownership',
+    remediationStep: 2,
   },
 ];
 

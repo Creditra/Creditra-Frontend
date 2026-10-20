@@ -212,6 +212,40 @@
   margin: 0;
 }
 
+/* Narrow phones (e.g. iPhone SE, 375px and below): the preview card's
+   default padding/min-height was tuned for tablet-and-up and left too
+   little room for content on the smallest supported viewports, and the
+   whole card (tabIndex=0, role="region") is itself the primary tap
+   target — keep it comfortably above the 44px WCAG minimum instead of
+   collapsing to its content size. */
+@media (max-width: 375px) {
+  .autopay-page__preview-card {
+    min-height: 44px;
+    padding: var(--space-4, 1rem) !important;
+    border-radius: var(--radius-md, 8px);
+  }
+
+  .autopay-page__preview-placeholder {
+    min-height: 44px;
+    gap: var(--space-sm);
+    padding: var(--space-lg) var(--space-md);
+  }
+
+  .autopay-page__preview-placeholder-icon {
+    font-size: 1.5rem;
+  }
+
+  .autopay-page__preview-placeholder-text {
+    font-size: 0.8125rem;
+    max-width: 100%;
+  }
+
+  .autopay-page__preview-overlay {
+    padding: var(--space-2, 0.5rem) !important;
+    font-size: 0.75rem !important;
+  }
+}
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .autopay-page,

@@ -33,29 +33,29 @@ describe('CreditLines — empty state (issue #313)', () => {
       const user = userEvent.setup();
       render(<MemoryRouter><CreditLines /></MemoryRouter>);
       await user.selectOptions(getStatusSelect(), 'Defaulted');
-      expect(screen.getByText('No matching credit lines')).toBeInTheDocument();
+      expect(await screen.findByText('No matching credit lines')).toBeInTheDocument();
     });
 
     it('renders the Clear Filters button when no matches', async () => {
       const user = userEvent.setup();
       render(<MemoryRouter><CreditLines /></MemoryRouter>);
       await user.selectOptions(getStatusSelect(), 'Defaulted');
-      expect(screen.getByRole('button', { name: 'Clear Filters' })).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: 'Clear Filters' })).toBeInTheDocument();
     });
 
     it('clears filters when Clear Filters is clicked', async () => {
       const user = userEvent.setup();
       render(<MemoryRouter><CreditLines /></MemoryRouter>);
       await user.selectOptions(getStatusSelect(), 'Defaulted');
-      await user.click(screen.getByRole('button', { name: 'Clear Filters' }));
-      expect(screen.getByText('Test Active Line')).toBeInTheDocument();
+      await user.click(await screen.findByRole('button', { name: 'Clear Filters' }));
+      expect(await screen.findByText('Test Active Line')).toBeInTheDocument();
     });
 
     it('sets the region aria-label for accessibility', async () => {
       const user = userEvent.setup();
       render(<MemoryRouter><CreditLines /></MemoryRouter>);
       await user.selectOptions(getStatusSelect(), 'Defaulted');
-      expect(screen.getByRole('region', { name: 'No matching credit lines' })).toBeInTheDocument();
+      expect(await screen.findByRole('region', { name: 'No matching credit lines' })).toBeInTheDocument();
     });
   });
 });

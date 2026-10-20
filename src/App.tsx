@@ -1,33 +1,38 @@
-import { useEffect, useRef, useState } from "react";
-import { BrowserRouter, Route, Routes, Link, NavLink } from "react-router-dom";
-import { Dashboard } from "./pages/Dashboard";
+import { useEffect, useRef, useState, lazy, Suspense } from "react";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { CommandPalette } from "./components/CommandPalette";
+import { RouteAnnouncer, RouteHeadProvider } from "./components/RouteAnnouncer";
 import { WalletProvider } from "./context/WalletContext";
+import { ThemeProvider } from "./context/ThemeContext";
+import { ContrastProvider } from "./context/ContrastContext";
 import { KycProvider } from "./context/KycContext";
 import { NotificationProvider } from "./context/NotificationContext";
-import { WalletButton } from "./components/WalletButton";
-import { QuickRepayTrigger } from "./components/QuickRepayTrigger";
-import { KycDrawer, KycTriggerButton } from "./components/KycDrawer";
-import { NetworkMismatchBanner } from "./components/NetworkMismatchBanner";
-import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
-import DrawCreditPage from "./pages/DrawCreditPage";
-import CreditLines from "./pages/CreditLines";
-import { TransactionHistory } from "./pages/TransactionHistory";
-import { RequestEvaluation } from "./pages/RequestEvaluation";
+import { ReducedMotionProvider } from "./context/ReducedMotionContext";
+import { KycDrawer } from "./components/KycDrawer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { NotFound } from "./pages/NotFound";
-import HelpCenter from "./pages/HelpCenter";
 import { ShortcutHelpOverlay } from "./components/ShortcutHelpOverlay";
-import { DutchAuctions } from "./pages/DutchAuctions";
-import RepayPage from "./pages/RepayPage";
-import { LinkedAccounts } from "./pages/LinkedAccounts";
-import NotificationPreferences from "./pages/NotificationPreferences";
 import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
-import { SessionTimeoutBanner } from "./components/SessionTimeoutBanner";
 import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatchBanner";
-import DataPrivacySettings from "./pages/settings/Data";
-import SessionsSettings from "./pages/settings/Sessions";
 import { Header } from "./layouts/Header";
-import CreditLineCompare from "./pages/CreditLineCompare";
+import { Skeleton } from "./components/Skeleton";
+
+import { ROUTE_MANIFEST } from "./routes/manifest";
+
+// ── Code-split route components (non-critical for first paint) ────────────────
+const NotFound = lazy(() => import("./pages/NotFound").then(m => ({ default: m.NotFound })));
+const SessionTimeoutBanner = lazy(() => import("./components/SessionTimeoutBanner").then(m => ({ default: m.SessionTimeoutBanner })));
+
+// ── Suspense Fallback for Route Loading ───────────────────────────────────────
+/** Minimal skeleton shown while route chunks load (preserves first paint). */
+function RouteLoadingFallback() {
+  return (
+    <div style={{ padding: "2rem 0" }}>
+      <Skeleton style={{ width: "200px", height: "32px", marginBottom: "0.5rem", borderRadius: "6px" }} />
+      <Skeleton style={{ width: "300px", height: "16px", marginBottom: "2rem", borderRadius: "4px" }} />
+      <Skeleton style={{ width: "100%", height: "200px", borderRadius: "8px" }} />
+    </div>
+  );
+}
 
 const isEditableTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) return false;
@@ -50,28 +55,15 @@ const isEditableTarget = (target: EventTarget | null) => {
  *       <ContrastProvider> — high-contrast override, [data-contrast="high"]
  *         <WalletProvider> — wallet lifecycle visible to every route
  *           <BrowserRouter>
- *             <RouteHeadProvider> — per-route title/description/announcement
- *               <RouteAnnouncer /> — bound to the URL + override context
- *               <header />         — persistent nav chrome
- *               <main>
- *                 <Routes />        — current route
- *               </main>
- *             </RouteHeadProvider>
+ *             <header />   — persistent nav chrome
+ *             <main>
+ *               <Routes /> — current route
+ *             </main>
  *           </BrowserRouter>
  *         </WalletProvider>
  *       </ContrastProvider>
  *     </ThemeProvider>
  *   </ErrorBoundary>
- *
- * Note on the RouteStack pair (RouteHeadProvider + RouteAnnouncer):
- *   Previously the RouteAnnouncer component was defined but never
- *   mounted in the running app; pages relied on whatever browser
- *   title survived from the last navigation.  GitHub issue #451
- *   ("Add per-route RouteAnnouncer") asked us to (a) actually mount
- *   it so every navigation triggers a screen-reader announcement,
- *   and (b) let individual pages push custom titles + descriptions
- *   via `useRouteHead`.  The provider context here enables (b) without
- *   forcing every page into a wrapper.
  *
  * See docs/ARCHITECTURE.md for the full component topology.
  */
@@ -88,19 +80,14 @@ function App() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       // Cmd+K / Ctrl+K → toggle command palette
-      if ((event.metaKey || event.ctrlKey) && event.key === "k") {
+      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
         event.preventDefault();
         paletteTriggerRef.current = document.activeElement as HTMLElement;
         setIsPaletteOpen((open) => !open);
         return;
       }
 
-      if (
-        event.defaultPrevented ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.altKey
-      ) {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
         return;
       }
       if (event.key !== "?") return;
@@ -117,145 +104,82 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <WalletProvider>
-        <KycProvider>
-          <NotificationProvider>
-            <BrowserRouter>
-              <div className="app">
-                <header className="header">
-                  <Link to="/" className="logo">
-                    Creditra
-                  </Link>
-                  <nav className="header-nav">
-                    {/*
-                      NavLink with render function allows us to:
-                      1. Apply active class for styling (accent + underline + weight)
-                      2. Set aria-current="page" on active links for accessibility
+      <ThemeProvider>
+        <ContrastProvider>
+          <WalletProvider>
+            <KycProvider>
+              <NotificationProvider>
+                <ReducedMotionProvider>
+                  <BrowserRouter>
+                    <RouteHeadProvider>
+                      <RouteAnnouncer />
+                      <div className="app">
+                        <Header
+                          settingsTriggerRef={settingsTriggerRef}
+                          kycTriggerRef={kycTriggerRef}
+                          onSettingsClick={() => {
+                            setOpenedFromSettingsLink(true);
+                            setIsShortcutHelpOpen(true);
+                          }}
+                          onKycClick={() => setIsKycDrawerOpen(true)}
+                        />
 
-                      This satisfies WCAG 2.1 AA requirements:
-                      - 1.4.1: Use of Color - active state uses color + other visual indicators
-                      - 2.4.7: Focus Visible - outline differs from active underline
-                      - 2.4.8: Location - aria-current="page" indicates current page
-                    */}
-                    <NavLink
-                      to="/"
-                      end
-                      className={({ isActive }) =>
-                        isActive ? "header-nav-link active" : "header-nav-link"
-                      }
-                    >
-                      Dashboard
-                    </NavLink>
-                    <NavLink
-                      to="/transactions"
-                      className={({ isActive }) =>
-                        isActive ? "header-nav-link active" : "header-nav-link"
-                      }
-                    >
-                      Transactions
-                    </NavLink>
-                    <NavLink
-                      to="/credit-lines"
-                      className={({ isActive }) =>
-                        isActive ? "header-nav-link active" : "header-nav-link"
-                      }
-                    >
-                      Credit Lines
-                    </NavLink>
-                    <NavLink
-                      to="/open-credit"
-                      className={({ isActive }) =>
-                        isActive ? "header-nav-link active" : "header-nav-link"
-                      }
-                    >
-                      Open Credit Line
-                    </NavLink>
-                    <NavLink
-                      to="/dutch-auctions"
-                      className={({ isActive }) =>
-                        isActive ? "header-nav-link active" : "header-nav-link"
-                      }
-                    >
-                      Dutch Auctions
-                    </NavLink>
-                  </nav>
-                  <button
-                    ref={settingsTriggerRef}
-                    type="button"
-                    className="header-nav-link"
-                    onClick={() => {
-                      setOpenedFromSettingsLink(true);
-                      setIsShortcutHelpOpen(true);
-                    }}
-                  >
-                    Settings
-                  </button>
-                  <button
-                    type="button"
-                    className="header-nav-link header-cmdk-btn"
-                    aria-label="Open command palette"
-                    aria-keyshortcuts="Control+K Meta+K"
-                    onClick={(e) => {
-                      paletteTriggerRef.current = e.currentTarget;
-                      setIsPaletteOpen(true);
-                    }}
-                  >
-                    <span aria-hidden="true">Search</span>
-                    <kbd className="header-cmdk-kbd" aria-hidden="true">⌘K</kbd>
-                  </button>
-                  <KycTriggerButton
-                    triggerRef={kycTriggerRef}
-                    onClick={() => setIsKycDrawerOpen(true)}
-                  />
-                  <QuickRepayTrigger />
-                  <WalletButton />
-                </header>
-
-                {/* Wallet auto-reconnect timeout banner — self-dismissing,
-                    non-blocking; only visible when reconnect takes > 8 s. */}
-                <WalletReconnectBanner />
-                <main className="main">
-                  <NetworkMismatchBanner />
-                  <Routes>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/transactions" element={<TransactionHistory />} />
-                    <Route path="/credit-lines" element={<CreditLines />} />
-                    <Route path="/help" element={<HelpCenter />} />
-                    <Route path="/draw-credit" element={<DrawCreditPage />} />
-                    <Route
-                      path="/draw-credit/success"
-                      element={<DrawCreditPage />}
-                    />
-                    <Route path="/open-credit" element={<RequestEvaluation />} />
-                    <Route path="/dutch-auctions" element={<DutchAuctions />} />
-                    <Route path="/linked-accounts" element={<LinkedAccounts />} />
-                    {/* Issue #581: Repay flow (now reachable from header /
-                        the "Repay" action on Credit Lines). */}
-                    <Route path="/repay" element={<RepayPage />} />
-                    <Route path="*" element={<NotFound />} />
-                  </Routes>
-                </main>
-                <ShortcutHelpOverlay
-                  isOpen={isShortcutHelpOpen}
-                  onClose={() => setIsShortcutHelpOpen(false)}
-                  triggerRef={openedFromSettingsLink ? settingsTriggerRef : undefined}
-                />
-                <KycDrawer
-                  isOpen={isKycDrawerOpen}
-                  onClose={() => setIsKycDrawerOpen(false)}
-                  onResume={(stepId) => {
-                    // Navigate to the KYC page with the step pre-selected.
-                    // Replace with router.push('/kyc?step=' + stepId) when the
-                    // full KYC page exists.
-                    console.info('[KYC] Resume at step:', stepId);
-                  }}
-                  triggerRef={kycTriggerRef}
-                />
-              </div>
-            </BrowserRouter>
-          </NotificationProvider>
-        </KycProvider>
-      </WalletProvider>
+                        {/* Wallet auto-reconnect timeout banner — self-dismissing,
+                            non-blocking; only visible when reconnect takes > 8 s. */}
+                        <WalletReconnectBanner />
+                        {/* Session-timeout warning banner — visible 60 s before
+                            the wallet extension silently disconnects (#227). */}
+                        <Suspense fallback={null}>
+                          <SessionTimeoutBanner />
+                        </Suspense>
+                        <main className="main">
+                          <NetworkMismatchBanner />
+                          <Suspense fallback={<RouteLoadingFallback />}>
+                            <Routes>
+                              {ROUTE_MANIFEST.map((route) => {
+                                const RouteComponent = route.Component;
+                                return (
+                                  <Route
+                                    key={route.path}
+                                    path={route.path}
+                                    element={<RouteComponent />}
+                                  />
+                                );
+                              })}
+                              <Route path="*" element={<NotFound />} />
+                            </Routes>
+                          </Suspense>
+                        </main>
+                        <ShortcutHelpOverlay
+                          isOpen={isShortcutHelpOpen}
+                          onClose={() => setIsShortcutHelpOpen(false)}
+                          triggerRef={openedFromSettingsLink ? settingsTriggerRef : undefined}
+                        />
+                        <KycDrawer
+                          isOpen={isKycDrawerOpen}
+                          onClose={() => setIsKycDrawerOpen(false)}
+                          onResume={(stepId) => {
+                            // Navigate to the KYC page with the step pre-selected.
+                            // Replace with router.push('/kyc?step=' + stepId) when the
+                            // full KYC page exists.
+                            console.info('[KYC] Resume at step:', stepId);
+                          }}
+                          triggerRef={kycTriggerRef}
+                        />
+                        <CommandPalette
+                          isOpen={isPaletteOpen}
+                          onClose={() => setIsPaletteOpen(false)}
+                          triggerRef={paletteTriggerRef}
+                        />
+                      </div>
+                    </RouteHeadProvider>
+                  </BrowserRouter>
+                </ReducedMotionProvider>
+              </NotificationProvider>
+            </KycProvider>
+          </WalletProvider>
+        </ContrastProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

@@ -39,4 +39,42 @@ describe('KbdHint', () => {
     const { container } = render(<KbdHint keys="Enter" className="custom-hint" />);
     expect(container.firstChild).toHaveClass('custom-hint');
   });
+
+  it('renders ⌘ for Cmd/Ctrl on Mac', () => {
+    // Mock navigator.platform for Mac
+    const originalPlatform = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', {
+      value: 'MacIntel',
+      configurable: true,
+    });
+
+    render(<KbdHint keys={['Cmd', 'K']} label="Search" />);
+    expect(screen.getByText('⌘')).toBeInTheDocument();
+    
+    if (originalPlatform) {
+      Object.defineProperty(navigator, 'platform', originalPlatform);
+    } else {
+      // @ts-ignore
+      delete navigator.platform;
+    }
+  });
+
+  it('renders Ctrl for Cmd/Ctrl on Windows', () => {
+    // Mock navigator.platform for Windows
+    const originalPlatform = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', {
+      value: 'Win32',
+      configurable: true,
+    });
+
+    render(<KbdHint keys={['Cmd', 'K']} label="Search" />);
+    expect(screen.getByText('Ctrl')).toBeInTheDocument();
+    
+    if (originalPlatform) {
+      Object.defineProperty(navigator, 'platform', originalPlatform);
+    } else {
+      // @ts-ignore
+      delete navigator.platform;
+    }
+  });
 });

@@ -1,0 +1,359 @@
+/* RepayPreviewModal.css - Design-token & Accessibility-first styling */
+
+.repay-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: repayPreviewFadeIn 0.2s ease;
+}
+
+.repay-preview-dialog {
+  background: var(--surface, #161b22);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  animation: repayPreviewSlideUp 0.3s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Hide scrollbar visually while retaining scrolling functionality */
+.repay-preview-dialog::-webkit-scrollbar {
+  display: none;
+}
+.repay-preview-dialog {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Header */
+.repay-preview-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border, #30363d);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--surface, #161b22);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.repay-preview-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text, #e6edf3);
+}
+
+.repay-preview-subtitle {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted, #8b949e);
+}
+
+.repay-preview-close-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted, #8b949e);
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.1rem;
+  transition: all 0.2s ease;
+}
+
+.repay-preview-close-btn:hover {
+  background: var(--border, #30363d);
+  color: var(--text, #e6edf3);
+}
+
+.repay-preview-close-btn:focus-visible {
+  outline: 2px solid var(--accent, #58a6ff);
+  outline-offset: 2px;
+}
+
+/* Modal Body */
+.repay-preview-body {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Hero Repayment Amount Display */
+.repay-preview-hero {
+  background: var(--bg, #0d1117);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 10px;
+  padding: 1.25rem;
+  text-align: center;
+  position: relative;
+}
+
+.repay-preview-hero-label {
+  margin: 0 0 0.4rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted, #8b949e);
+  font-weight: 600;
+}
+
+.repay-preview-hero-amount {
+  margin: 0 0 0.5rem;
+  font-size: 2.25rem;
+  font-weight: 700;
+  color: var(--text, #e6edf3);
+  line-height: 1.1;
+}
+
+.repay-preview-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.repay-preview-badge--full {
+  background: rgba(63, 185, 80, 0.15);
+  color: var(--success, #3fb950);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+}
+
+.repay-preview-badge--partial {
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--accent, #58a6ff);
+  border: 1px solid rgba(88, 166, 255, 0.3);
+}
+
+/* Section Cards */
+.repay-preview-section {
+  background: var(--bg, #0d1117);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.repay-preview-section-title {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted, #8b949e);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Impact Metrics Grid */
+.repay-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+@media (max-width: 480px) {
+  .repay-preview-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.repay-preview-stat-box {
+  background: var(--surface, #161b22);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+
+.repay-preview-stat-label {
+  margin: 0 0 0.25rem;
+  font-size: 0.75rem;
+  color: var(--muted, #8b949e);
+}
+
+.repay-preview-stat-value {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text, #e6edf3);
+}
+
+.repay-preview-stat-sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.75rem;
+  color: var(--success, #3fb950);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Row Item */
+.repay-preview-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+  padding: 0.4rem 0;
+}
+
+.repay-preview-row:not(:last-child) {
+  border-bottom: 1px dashed var(--border, #30363d);
+}
+
+.repay-preview-row-label {
+  color: var(--muted, #8b949e);
+}
+
+.repay-preview-row-value {
+  font-weight: 600;
+  color: var(--text, #e6edf3);
+}
+
+/* Progress Track for Utilization */
+.repay-preview-util-track {
+  height: 8px;
+  background: var(--border, #30363d);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  margin-top: 0.5rem;
+}
+
+.repay-preview-util-before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--error, #f85149);
+  opacity: 0.3;
+  transition: width 0.4s ease;
+}
+
+.repay-preview-util-after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--success, #3fb950);
+  transition: width 0.4s ease;
+}
+
+/* Alert Callout */
+.repay-preview-alert {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  border-radius: 8px;
+  padding: 0.75rem;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.repay-preview-alert--warning {
+  background: rgba(210, 153, 34, 0.1);
+  border: 1px solid rgba(210, 153, 34, 0.3);
+  color: var(--warning, #d29922);
+}
+
+.repay-preview-alert--info {
+  background: rgba(88, 166, 255, 0.1);
+  border: 1px solid rgba(88, 166, 255, 0.3);
+  color: var(--accent, #58a6ff);
+}
+
+/* Footer / Actions */
+.repay-preview-footer {
+  padding: 1.25rem 1.5rem;
+  border-top: 1px solid var(--border, #30363d);
+  display: flex;
+  gap: 0.75rem;
+  background: var(--surface, #161b22);
+}
+
+.repay-preview-btn {
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  transition: all 0.2s ease;
+}
+
+.repay-preview-btn--back {
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--border, #30363d);
+  color: var(--text, #e6edf3);
+}
+
+.repay-preview-btn--back:hover {
+  background: var(--border, #30363d);
+}
+
+.repay-preview-btn--confirm {
+  flex: 2;
+  background: var(--accent, #58a6ff);
+  color: var(--bg, #0d1117);
+  border: none;
+}
+
+.repay-preview-btn--confirm:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.repay-preview-btn--confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.repay-preview-btn:focus-visible {
+  outline: 2px solid var(--accent, #58a6ff);
+  outline-offset: 2px;
+}
+
+/* High Contrast Mode */
+[data-contrast="high"] .repay-preview-dialog {
+  border: 2px solid var(--text, #e6edf3);
+}
+
+[data-contrast="high"] .repay-preview-btn--confirm {
+  border: 2px solid #ffffff;
+  font-weight: 700;
+}
+
+/* Keyframes */
+@keyframes repayPreviewFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes repayPreviewSlideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}

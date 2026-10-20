@@ -94,9 +94,29 @@
   transform: translate(-50%, -4px) rotate(45deg);
 }
 
-.accessible-tooltip:hover .accessible-tooltip__content,
-.accessible-tooltip:focus-within .accessible-tooltip__content {
+.accessible-tooltip__content.is-visible {
   opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* Bottom placement — flips the content below the trigger and mirrors the arrow. */
+.accessible-tooltip--bottom .accessible-tooltip__content {
+  bottom: auto;
+  top: calc(100% + 8px);
+  transform: translate(-50%, -4px);
+}
+
+.accessible-tooltip--bottom .accessible-tooltip__content::after {
+  top: auto;
+  bottom: 100%;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  transform: translate(-50%, 4px) rotate(45deg);
+}
+
+.accessible-tooltip--bottom .accessible-tooltip__content.is-visible {
   transform: translate(-50%, 0);
 }
 

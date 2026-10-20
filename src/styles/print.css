@@ -1,0 +1,260 @@
+/* src/styles/print.css
+   Print stylesheet for AmountConfirm and print media optimization across Creditra.
+   Import in index.css: @import './styles/print.css';
+
+   Key objectives for AmountConfirm print view:
+   1. Hide UI chrome: navigation bars, headers, footers, close/cancel/action buttons, backdrops, tooltips.
+   2. Expand collapsibles: details elements, collapsible panels, accordions, breakdown lists.
+   3. Format for paper: dark text on white background, no box shadows/gradients, prevent awkward page breaks.
+*/
+
+@media print {
+  /* ==========================================================================
+     1. Hide UI Chrome & Interactive Controls
+     ========================================================================== */
+
+  /* General app chrome */
+  header,
+  nav,
+  footer,
+  .header,
+  .header-nav,
+  .bottom-nav,
+  .nav-bar,
+  .sidebar,
+  .no-print,
+  .chrome,
+  .sr-only {
+    display: none !important;
+  }
+
+  /* AmountConfirm-specific chrome and interactive elements */
+  .amount-confirm__chrome,
+  .amount-confirm__actions,
+  .amount-confirm__btn,
+  .amount-confirm__print-btn,
+  .amount-confirm__back-btn,
+  .typed-amount-confirm-overlay,
+  .typed-amount-confirm-dialog__close,
+  .typed-amount-confirm-dialog__actions,
+  .typed-amount-confirm__input-wrap,
+  .typed-amount-confirm__hint,
+  .typed-amount-confirm__helper,
+  button:not(.print-preserve),
+  input,
+  select,
+  textarea {
+    display: none !important;
+  }
+
+  /* BalanceChart print view keeps report data while removing controls used
+     only for interactive exploration on screen. */
+  .balance-chart .balance-chart__chrome,
+  .balance-chart .balance-chart__toolbar,
+  .balance-chart .balance-chart__filters,
+  .balance-chart .balance-chart__actions,
+  .balance-chart .balance-chart__close,
+  .balance-chart button:not(.print-preserve),
+  .balance-chart input,
+  .balance-chart select {
+    display: none !important;
+  }
+
+  /* Hide toggle icons, chevrons, and expansion trigger buttons */
+  .amount-confirm__chevron,
+  .amount-confirm__toggle-icon,
+  .collapsible__chevron,
+  .collapsible__toggle-icon,
+  .apr-breakdown__toggle,
+  .apr-breakdown__component-expand,
+  .help-center__faq-chevron {
+    display: none !important;
+  }
+
+  /* ==========================================================================
+     2. Expand Collapsibles & Accordions
+     ========================================================================== */
+
+  /* Native HTML <details> element expansion */
+  details {
+    display: block !important;
+  }
+
+  details > summary {
+    display: block !important;
+    list-style: none !important;
+    font-weight: 700;
+    cursor: default;
+  }
+
+  details > summary::-webkit-details-marker,
+  details > summary::marker {
+    display: none !important;
+  }
+
+  details > *:not(summary),
+  details[open] > *,
+  details:not([open]) > * {
+    display: block !important;
+    max-height: none !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Custom collapsible classes & ARIA expandable components */
+  .collapsible,
+  .collapsible-content,
+  .collapsible-panel,
+  .accordion-content,
+  .expandable-content,
+  .amount-confirm__collapsible,
+  .amount-confirm__collapsible-content,
+  .amount-confirm__details-content,
+  .amount-confirm__breakdown-content,
+  .apr-breakdown__panel,
+  .apr-breakdown__explanation,
+  [aria-expanded="false"] + .collapsible-content,
+  [aria-expanded="false"] + .amount-confirm__collapsible-content,
+  [aria-expanded="false"] + [role="region"] {
+    display: block !important;
+    max-height: none !important;
+    height: auto !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    overflow: visible !important;
+    clip: auto !important;
+    clip-path: none !important;
+    transition: none !important;
+    animation: none !important;
+  }
+
+  /* Scope the same expansion behavior to BalanceChart custom panels. */
+  .balance-chart details,
+  .balance-chart .balance-chart__collapsible,
+  .balance-chart .balance-chart__panel,
+  .balance-chart .balance-chart__legend,
+  .balance-chart [role="region"] {
+    display: block !important;
+    max-height: none !important;
+    height: auto !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    overflow: visible !important;
+    clip: auto !important;
+    clip-path: none !important;
+    transition: none !important;
+    animation: none !important;
+  }
+
+  .balance-chart .balance-chart__toggle,
+  .balance-chart .balance-chart__chevron {
+    display: none !important;
+  }
+
+  /* Ensure collapsible titles remain bold and prominent on paper */
+  .amount-confirm__collapsible-title,
+  .collapsible__title,
+  .collapsible-header {
+    font-weight: 700 !important;
+    color: #000 !important;
+    margin-bottom: 0.5rem !important;
+  }
+
+  /* ==========================================================================
+     3. AmountConfirm Page & Card Paper Formatting
+     ========================================================================== */
+
+  body,
+  .amount-confirm-page,
+  .amount-confirm {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 10pt;
+    line-height: 1.5;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    box-shadow: none !important;
+  }
+
+  /* Clean up card containers for paper rendering */
+  .card,
+  .card-large,
+  .amount-confirm__card,
+  .amount-confirm__summary-card,
+  .amount-confirm__dialog,
+  .typed-amount-confirm-dialog {
+    background: #ffffff !important;
+    border: 1px solid #cccccc !important;
+    box-shadow: none !important;
+    padding: 1rem !important;
+    margin: 0 0 1rem 0 !important;
+    transform: none !important;
+    color: #000000 !important;
+    border-radius: 4px !important;
+  }
+
+  /* Typography for print readability */
+  h1, h2, h3, h4, h5, h6,
+  .amount-confirm__title,
+  .amount-confirm__subtitle,
+  .amount-confirm__heading {
+    color: #000000 !important;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  .amount-confirm__title {
+    font-size: 18pt !important;
+    font-weight: 700 !important;
+    margin-bottom: 0.5rem !important;
+  }
+
+  .amount-confirm__amount-value {
+    font-size: 24pt !important;
+    font-weight: 800 !important;
+    color: #000000 !important;
+  }
+
+  /* High contrast links */
+  a {
+    color: #000000 !important;
+    text-decoration: underline;
+  }
+
+  /* ==========================================================================
+     4. Page Continuity & Section Layout
+     ========================================================================== */
+
+  .amount-confirm__section,
+  .amount-confirm__card,
+  .amount-confirm__breakdown,
+  .amount-confirm__collapsible,
+  .amount-confirm__summary-row,
+  section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .balance-chart,
+  .balance-chart__card,
+  .balance-chart__panel,
+  .balance-chart__legend {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Tables & data rows formatting */
+  table, .amount-confirm__table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  th, td, .amount-confirm__table-cell {
+    border-bottom: 1px solid #e0e0e0 !important;
+    padding: 6pt 0 !important;
+    color: #000000 !important;
+  }
+}

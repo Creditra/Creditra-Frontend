@@ -47,6 +47,24 @@ export interface RepayAmountValidationResult {
 }
 
 const MIN_AMOUNT = 1;
+const MIN_AMOUNT_CENTS = MIN_AMOUNT * 100;
+
+/** Convert a dollar amount to whole cents (integer-exact). */
+const toCents = (dollars: number): number => Math.round(dollars * 100);
+
+/** Convert whole cents back to a dollar amount for display. */
+const fromCents = (cents: number): number => cents / 100;
+
+/**
+ * Parse a user-entered monetary string into whole cents so that all
+ * subsequent arithmetic/comparisons are integer-exact instead of relying on
+ * floating-point dollars. Blank or unparseable input yields 0.
+ */
+const parseAmountToCents = (input: string): number => {
+  if (input.trim() === '') return 0;
+  const parsed = Number.parseFloat(input);
+  return Number.isNaN(parsed) ? 0 : Math.round(parsed * 100);
+};
 
 /**
  * Threshold above which repayments require the user to type the exact amount
@@ -163,12 +181,25 @@ export function getRepayAmountValidation(
   totalDue: number,
   walletBalance: number,
 ): RepayAmountValidationResult {
-  const amount = Number.parseFloat(amountInput) || 0;
+  // Do all validation arithmetic/comparisons in whole cents so boundary
+  // checks (full payoff, exceeds debt/wallet) are exact rather than subject
+  // to floating-point drift. Only the values surfaced to the UI are converted
+  // back to dollars.
+  const amountCents = parseAmountToCents(amountInput);
   const hasEnteredAmount = amountInput.trim() !== '';
-  const remainingDebt = Math.max(totalDue - amount, 0);
-  const remainingWalletBalance = Math.max(walletBalance - amount, 0);
-  const maxRepayAmount = Math.min(totalDue, walletBalance);
+  const totalDueCents = toCents(totalDue);
+  const walletBalanceCents = toCents(walletBalance);
+
+  const remainingDebtCents = Math.max(totalDueCents - amountCents, 0);
+  const remainingWalletBalanceCents = Math.max(walletBalanceCents - amountCents, 0);
+  const maxRepayAmountCents = Math.min(totalDueCents, walletBalanceCents);
   const recommendedWalletReserve = getWalletReserveFloor(walletBalance);
+
+  const amount = fromCents(amountCents);
+  const remainingDebt = fromCents(remainingDebtCents);
+  const remainingWalletBalance = fromCents(remainingWalletBalanceCents);
+  const maxRepayAmount = fromCents(maxRepayAmountCents);
+  const recommendedWalletReserveCents = toCents(recommendedWalletReserve);
 
   let feedback: ValidationFeedback = {
     severity: 'info',
@@ -176,31 +207,31 @@ export function getRepayAmountValidation(
     message: `Repay between ${formatMoney(MIN_AMOUNT)} and ${formatMoney(maxRepayAmount)}. Keep enough wallet balance available for fees and short-term liquidity.`,
   };
 
-  if (hasEnteredAmount && amount < MIN_AMOUNT) {
+  if (hasEnteredAmount && amountCents < MIN_AMOUNT_CENTS) {
     feedback = {
       severity: 'danger',
       title: 'Minimum amount required',
       message: `Enter at least ${formatMoney(MIN_AMOUNT)} to continue.`,
     };
-  } else if (hasEnteredAmount && amount > totalDue) {
+  } else if (hasEnteredAmount && amountCents > totalDueCents) {
     feedback = {
       severity: 'danger',
       title: 'Exceeds outstanding debt',
       message: `Reduce the repayment to ${formatMoney(totalDue)} or less.`,
     };
-  } else if (hasEnteredAmount && amount > walletBalance) {
+  } else if (hasEnteredAmount && amountCents > walletBalanceCents) {
     feedback = {
       severity: 'danger',
       title: 'Exceeds wallet balance',
       message: `Reduce the repayment to ${formatMoney(walletBalance)} or less.`,
     };
-  } else if (hasEnteredAmount && remainingWalletBalance < recommendedWalletReserve) {
+  } else if (hasEnteredAmount && remainingWalletBalanceCents < recommendedWalletReserveCents) {
     feedback = {
       severity: 'warning',
       title: 'Low wallet reserve',
       message: `This leaves ${formatMoney(remainingWalletBalance)} in your wallet, below the suggested reserve of ${formatMoney(recommendedWalletReserve)}.`,
     };
-  } else if (hasEnteredAmount && remainingDebt === 0) {
+  } else if (hasEnteredAmount && remainingDebtCents === 0) {
     feedback = {
       severity: 'success',
       title: 'Full repayment',
@@ -217,7 +248,11 @@ export function getRepayAmountValidation(
   return {
     amount,
     hasEnteredAmount,
-    isValid: hasEnteredAmount && amount >= MIN_AMOUNT && amount <= totalDue && amount <= walletBalance,
+    isValid:
+      hasEnteredAmount &&
+      amountCents >= MIN_AMOUNT_CENTS &&
+      amountCents <= totalDueCents &&
+      amountCents <= walletBalanceCents,
     minAmount: MIN_AMOUNT,
     maxRepayAmount,
     remainingDebt,
