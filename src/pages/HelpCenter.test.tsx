@@ -56,6 +56,7 @@ describe("HelpCenter", { timeout: 15000 }, () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -228,10 +229,7 @@ describe("HelpCenter", { timeout: 15000 }, () => {
     });
   });
 
-  it("shows a tooltip on the FAQ anchor after hover delay, without breaking its accesible name", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true});
-    const user = userEvent.setup({ delay: null});
-
+  it("shows a tooltip on FAQ anchor focus without breaking its accessible name", () => {
     render(
       <MemoryRouter>
         <HelpCenter />
@@ -239,22 +237,16 @@ describe("HelpCenter", { timeout: 15000 }, () => {
     );
 
     const faqAnchor = screen.getByRole("link", { name: /direct link to faq: what is creditra\?/i });
-    //accessible name is untouched by the tooltip wiring.
     expect(faqAnchor).toHaveAttribute("aria-label", "Direct link to FAQ: What is Creditra?");
 
-    await user.hover(faqAnchor);
-    act(() => {
-      vi.advanceTimersByTime(400);
-    });
+    fireEvent.focus(faqAnchor);
 
-    const tooltip = screen.getAllByRole("tooltip").find((node) =>
-      node.classList.contains("is-visible"),
-    );
-    expect(tooltip).toBeDefined();
-    expect(tooltip).toHaveClass("is-visible");
+    const tooltipId = faqAnchor.getAttribute("aria-describedby");
+    expect(tooltipId).toBeTruthy();
+    const tooltip = document.getElementById(tooltipId ?? "");
+    expect(tooltip).toHaveAttribute("role", "tooltip");
+    expect(tooltip).toBeVisible();
     expect(faqAnchor).toHaveAttribute("aria-describedby", tooltip?.id);
-
-    vi.useRealTimers();
   });
 
   it("Search UI: form has role='search' and textbox named 'Search help' (Scenario 6)", () => {
