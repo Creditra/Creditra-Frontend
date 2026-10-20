@@ -48,7 +48,7 @@ import { TransactionStatus } from "@/components/TransactionStatus";
 import { InlineHelpOverlay } from "@/components/InlineHelpOverlay";
 import { KbdHint } from "@/components/KbdHint";
 import { LiveRegion } from "@/components/LiveRegion";
-import { CreditLine, DrawStep, Transaction } from "@/types/draw-credit.types";
+import { CreditLine, DrawStep, Transaction, DrawQuote } from "@/types/draw-credit.types";
 import { mockCreditLines } from "@/lib/draw-credit-mock-data";
 import { normalizeCreditLineAvailability } from "@/lib/credit-line-availability";
 import { getDrawAmountValidation } from "@/utils/amountValidation";
@@ -57,6 +57,7 @@ import { useOnline } from "@/hooks/useOnline";
 import { WhyApr } from "@/components/WhyApr";
 import { DrawSummaryBar } from "@/components/DrawSummaryBar";
 import { useDrawWizardMicroProgress } from "@/hooks/useDrawWizardMicroProgress";
+import { quoteDraw } from "@/services/credit";
 import "@/components/DrawWizardMicroProgress.css";
 import "@/styles/focus.css";
 import "./DrawCreditPage.css";
@@ -187,6 +188,12 @@ export default function DrawCreditPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const amountInputRef = useRef<HTMLInputElement>(null);
 
+  // Quote state
+  const [quote, setQuote] = useState<DrawQuote | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const quoteRequestedForRef = useRef<{ lineId: string; amount: number } | null>(null);
+
   const { debouncedAnnouncement: microProgressAnnouncement } =
     useDrawWizardMicroProgress({
       selectedCreditLine,
@@ -210,7 +217,76 @@ export default function DrawCreditPage() {
   const handleAmountNext = (selectedAmount: number) => {
     setAmount(selectedAmount);
     setStep("confirm");
+    // Reset quote state when entering confirm step
+    setQuote(null);
+    setQuoteError(null);
+    setConfirmationAcknowledged(false);
   };
+
+  // Fetch quote when entering confirm step
+  useEffect(() => {
+    if (step !== "confirm" || !selectedCreditLine || amount <= 0) {
+      return;
+    }
+
+    // Check if we already have a valid quote for this line and amount
+    const requestKey = { lineId: selectedCreditLine.id, amount };
+    if (
+      quote &&
+      quoteRequestedForRef.current?.lineId === requestKey.lineId &&
+      quoteRequestedForRef.current?.amount === requestKey.amount
+    ) {
+      // Quote already exists for this line+amount, don't re-fetch
+      return;
+    }
+
+    // Request new quote
+    quoteRequestedForRef.current = requestKey;
+    setQuoteLoading(true);
+    setQuoteError(null);
+
+    const fetchQuote = async () => {
+      try {
+        const newQuote = await quoteDraw(
+          "mock-owner", // TODO: use actual wallet public key
+          selectedCreditLine.id,
+          amount,
+        );
+        
+        // Only set quote if this is still the current request
+        if (
+          quoteRequestedForRef.current?.lineId === selectedCreditLine.id &&
+          quoteRequestedForRef.current?.amount === amount
+        ) {
+          setQuote(newQuote);
+          setQuoteError(null);
+        }
+      } catch (error) {
+        // Only set error if this is still the current request
+        if (
+          quoteRequestedForRef.current?.lineId === selectedCreditLine.id &&
+          quoteRequestedForRef.current?.amount === amount
+        ) {
+          setQuoteError(
+            error instanceof Error ? error.message : 'Failed to fetch quote'
+          );
+          setQuote(null);
+        }
+      } finally {
+        setQuoteLoading(false);
+      }
+    };
+
+    fetchQuote();
+  }, [step, selectedCreditLine, amount, quote]);
+
+  const handleRefreshQuote = useCallback(() => {
+    if (!selectedCreditLine || amount <= 0) return;
+    
+    // Clear quote to force refetch
+    setQuote(null);
+    quoteRequestedForRef.current = null;
+  }, [selectedCreditLine, amount]);
 
   const [isOfflineBlocked, setIsOfflineBlocked] = useState(false);
 
@@ -224,6 +300,30 @@ export default function DrawCreditPage() {
     // State-transition invariant: only the confirm step may submit, and it
     // requires a credit line and a positive amount.
     if (step !== "confirm" || !line || amount <= 0) return;
+
+    // Quote validation: refuse submission if quote is missing, expired, or mismatched
+    if (!quote) {
+      console.error('Cannot submit: no quote available');
+      return;
+    }
+
+    // Check quote expiry with 5s clock skew tolerance
+    const expiryTime = new Date(quote.expiresAt).getTime();
+    const now = Date.now();
+    const timeLeft = expiryTime - now - 5000;
+    if (timeLeft <= 0) {
+      console.error('Cannot submit: quote has expired');
+      return;
+    }
+
+    // Validate quote was issued for the current line and amount
+    if (
+      quoteRequestedForRef.current?.lineId !== line.id ||
+      quoteRequestedForRef.current?.amount !== amount
+    ) {
+      console.error('Cannot submit: quote does not match current line or amount');
+      return;
+    }
 
     // Submit-time validation (defense in depth). The amount step guards user
     // input, but re-validating here ensures an out-of-bounds amount restored
@@ -244,7 +344,7 @@ export default function DrawCreditPage() {
     try {
       await offlineMutation({
         fn: async () => {
-          // Simulate API call
+          // Simulate API call with quoteId
           await new Promise((resolve) => setTimeout(resolve, 2000));
 
           const succeeded = Math.random() > 0.2;
@@ -256,6 +356,9 @@ export default function DrawCreditPage() {
             message: succeeded ? undefined : "Insufficient funds available",
             timestamp: new Date(),
           };
+
+          // In production, pass quote.quoteId to the backend
+          console.log('Submitting draw with quoteId:', quote.quoteId);
 
           setTransaction(newTransaction);
           setIsLoading(false);
@@ -303,11 +406,25 @@ export default function DrawCreditPage() {
       setStep("select");
       setSelectedCreditLine(null);
       setConfirmationAcknowledged(false);
+<<<<<<< HEAD
+      // Clear quote state
+      setQuote(null);
+      setQuoteError(null);
+      quoteRequestedForRef.current = null;
+    } else if (step === "confirm") {
+      setStep("amount");
+      setConfirmationAcknowledged(false);
+      // Clear quote state when going back
+      setQuote(null);
+      setQuoteError(null);
+      quoteRequestedForRef.current = null;
+=======
       setSubmitError(null);
     } else if (step === "confirm") {
       setStep("amount");
       setConfirmationAcknowledged(false);
       setSubmitError(null);
+>>>>>>> c08c94e32fc2b6882697da9fee8b9a8034121c51
     }
   }, [step]);
 
@@ -506,6 +623,10 @@ export default function DrawCreditPage() {
                 isLoading={isLoading}
                 agreedToTerms={confirmationAcknowledged}
                 onAgreedToTermsChange={setConfirmationAcknowledged}
+                quote={quote}
+                quoteError={quoteError}
+                quoteLoading={quoteLoading}
+                onRefreshQuote={handleRefreshQuote}
               />
               <div className="dc-kbd-bar" aria-label="Keyboard shortcuts">
                 <KbdHint

@@ -27,16 +27,22 @@
  */
 
 import { AccessibleTooltip } from "@/components/AccessibleTooltip";
-import { CreditLine } from "@/types/draw-credit.types";
-import { AlertCircle, ChevronDown, ChevronUp, Info, ShieldCheck } from "lucide-react";
+import { CreditLine, DrawQuote } from "@/types/draw-credit.types";
+import { AlertCircle, ChevronDown, ChevronUp, Info, ShieldCheck, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { CreditLineSummaryBlock } from "@/components/CreditLineSummaryBlock";
 import { PendingButton } from "@/components/PendingButton";
 import { formatMoney } from "@/utils/amountValidation";
+<<<<<<< HEAD
+import { useQuoteCountdown } from "@/hooks/useQuoteCountdown";
+import { useReducedMotion } from "@/context/ReducedMotionContext";
+import { Skeleton } from "@/components/Skeleton";
+=======
 import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
 import { getRiskEducationState, RISK_EDUCATION_VERSION } from "@/state/riskEducation";
 import { useWalletIdentityKey } from "@/hooks/useWalletIdentityKey";
 import { useEffect } from "react";
+>>>>>>> c08c94e32fc2b6882697da9fee8b9a8034121c51
 
 interface ConfirmationStepProps {
   /** The credit line the user is drawing from. */
@@ -66,11 +72,24 @@ interface ConfirmationStepProps {
   /** Notified when the user toggles the terms checkbox. */
   onAgreedToTermsChange?: (agreed: boolean) => void;
   /**
+<<<<<<< HEAD
+   * Authoritative pricing quote with quoteId and expiry.
+   * When null, a loading skeleton is shown.
+   */
+  quote?: DrawQuote | null;
+  /** Error message when quote fetch fails. */
+  quoteError?: string | null;
+  /** Loading state for quote fetch. */
+  quoteLoading?: boolean;
+  /** Callback to retry fetching the quote. */
+  onRefreshQuote?: () => void;
+=======
    * Opens the default-risk education modal. When provided and the wallet has
    * not acknowledged the current content version, a non-blocking nudge is
    * rendered above the terms checkbox.
    */
   onReviewRiskEducation?: () => void;
+>>>>>>> c08c94e32fc2b6882697da9fee8b9a8034121c51
 }
 
 /** Map a DrawPricingRiskBand to a human-readable label and visual tone. */
@@ -154,7 +173,14 @@ export function ConfirmationStep({
   isLoading = false,
   agreedToTerms: agreedToTermsProp,
   onAgreedToTermsChange,
+<<<<<<< HEAD
+  quote: quoteProp,
+  quoteError,
+  quoteLoading = false,
+  onRefreshQuote,
+=======
   onReviewRiskEducation,
+>>>>>>> c08c94e32fc2b6882697da9fee8b9a8034121c51
 }: ConfirmationStepProps) {
   const [agreedToTermsInternal, setAgreedToTermsInternal] = useState(false);
   const agreedToTerms = agreedToTermsProp ?? agreedToTermsInternal;
@@ -165,6 +191,25 @@ export function ConfirmationStep({
     }
   };
 
+<<<<<<< HEAD
+  const { isReducedMotionActive } = useReducedMotion();
+  
+  // Use quote countdown hook
+  const { formattedTime, isExpired, announcement } = useQuoteCountdown(
+    quoteProp?.expiresAt,
+    isReducedMotionActive,
+  );
+
+  // Reset terms checkbox when quote expires
+  const quote = quoteProp;
+  const wasExpiredRef = useState(false);
+  if (isExpired && !wasExpiredRef[0]) {
+    setAgreedToTerms(false);
+    wasExpiredRef[1](true);
+  } else if (!isExpired && wasExpiredRef[0]) {
+    wasExpiredRef[1](false);
+  }
+=======
   const walletIdentityKey = useWalletIdentityKey();
   const [riskEducationState, setRiskEducationState] = useState<{
     acknowledgedVersion?: number;
@@ -177,6 +222,7 @@ export function ConfirmationStep({
   }, [walletIdentityKey]);
   const needsRiskEducation =
     riskEducationState.acknowledgedVersion !== RISK_EDUCATION_VERSION;
+>>>>>>> c08c94e32fc2b6882697da9fee8b9a8034121c51
 
   /** Controls the "How is my APR calculated?" collapsible section. */
   const [aprDisclosureOpen, setAprDisclosureOpen] = useState(false);
@@ -184,25 +230,17 @@ export function ConfirmationStep({
   const utilizedBalance = creditLine.limit - creditLine.available;
   const safeAmount = Math.max(Number.isFinite(amount) ? amount : 0, 0);
 
-  const {
-    fee,
-    apr,
-    estimatedMonthlyInterest,
-    riskBand,
-    termMonths,
-    utilizationAdjustmentLabel,
-    termAdjustmentLabel,
-  } = getDrawPricingQuote(creditLine, safeAmount);
+  // Extract values from quote or show loading state
+  const fee = quote?.fee ?? 0;
+  const apr = quote?.apr ?? 0;
+  const estimatedMonthlyInterest = quote?.estimatedMonthlyInterest ?? 0;
+  const riskBand = quote?.riskBand ?? 'Standard';
+  const termMonths = quote?.termMonths ?? 12;
+  const adjustments = quote?.adjustments ?? [];
 
-  // Reconstruct the base APR before adjustments for the disclosure panel.
-  const utilizationAdjPts =
-    creditLine.utilization >= 80
-      ? 2
-      : creditLine.utilization >= 50
-        ? 1.25
-        : 0.5;
-  const termAdjPts = termMonths > 24 ? 2.5 : termMonths > 12 ? 1.5 : 0.5;
-  const baseApr = Math.round((apr - utilizationAdjPts - termAdjPts) * 100) / 100;
+  // Calculate base APR from adjustments
+  const adjustmentTotal = adjustments.reduce((sum, adj) => sum + adj.points, 0);
+  const baseApr = Math.round((apr - adjustmentTotal) * 100) / 100;
 
   const newBalance = utilizedBalance + safeAmount + fee;
   const remainingAvailable = Math.max(creditLine.limit - newBalance, 0);
@@ -212,7 +250,72 @@ export function ConfirmationStep({
   const riskBandMeta = getRiskBandMeta(riskBand);
   const isWatchBand = riskBand === "Watch";
   const isHighUtilization = newUtilization > 80;
-  const canConfirm = agreedToTerms && !isLoading;
+  const canConfirm = agreedToTerms && !isLoading && !isExpired && !!quote;
+
+  // Show loading skeleton while quote is being fetched
+  if (quoteLoading || !quote) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <p className="text-sm font-semibold uppercase text-muted">Step 4</p>
+          <h2 className="mt-1 text-2xl font-bold text-foreground sm:text-3xl">
+            Review and confirm
+          </h2>
+          <p className="text-muted mt-2">
+            Fetching pricing quote...
+          </p>
+        </div>
+        <CreditLineSummaryBlock creditLine={creditLine} amount={amount} />
+        <div className="rounded-xl border border-border bg-surface p-5 space-y-5">
+          <Skeleton style={{ width: '60%', height: '1.5rem' }} />
+          <Skeleton style={{ width: '100%', height: '8rem' }} />
+          <Skeleton style={{ width: '100%', height: '12rem' }} />
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state with retry option
+  if (quoteError) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <p className="text-sm font-semibold uppercase text-muted">Step 4</p>
+          <h2 className="mt-1 text-2xl font-bold text-foreground sm:text-3xl">
+            Review and confirm
+          </h2>
+        </div>
+        <CreditLineSummaryBlock creditLine={creditLine} amount={amount} />
+        <div
+          role="alert"
+          className="rounded-xl border border-red-500/30 bg-red-500/10 p-5 space-y-4"
+        >
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 shrink-0" aria-hidden="true" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-500">Failed to fetch quote</p>
+              <p className="text-sm text-red-500/90 mt-1">{quoteError}</p>
+            </div>
+          </div>
+          {onRefreshQuote && (
+            <button
+              type="button"
+              onClick={onRefreshQuote}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-500 font-medium text-sm transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" aria-hidden="true" />
+              Retry
+            </button>
+          )}
+        </div>
+        <div className="dc-actions dc-actions--stacked">
+          <button onClick={onBack} type="button" className="dc-btn dc-btn--secondary dc-actions__slot">
+            Back
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -239,12 +342,35 @@ export function ConfirmationStep({
         aria-labelledby="cost-breakdown-heading"
         className="rounded-xl border border-border bg-surface p-5 space-y-5"
       >
-        <h3
-          id="cost-breakdown-heading"
-          className="text-sm font-semibold uppercase text-muted tracking-wide"
-        >
-          Cost breakdown
-        </h3>
+        <div className="flex items-center justify-between">
+          <h3
+            id="cost-breakdown-heading"
+            className="text-sm font-semibold uppercase text-muted tracking-wide"
+          >
+            Cost breakdown
+          </h3>
+          {/* Quote countdown */}
+          {!isExpired && (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted">Quote valid for</span>
+              <span
+                className="font-semibold tabular-nums text-foreground"
+                aria-live="polite"
+                aria-atomic="false"
+              >
+                {formattedTime}
+              </span>
+            </div>
+          )}
+          {isExpired && (
+            <span className="text-sm font-semibold text-yellow-500">Quote expired</span>
+          )}
+        </div>
+        {announcement && (
+          <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+            {announcement}
+          </div>
+        )}
 
         {/* Primary number — draw amount + risk-band badge */}
         <div className="flex items-end justify-between gap-4">
@@ -361,18 +487,14 @@ export function ConfirmationStep({
                     {baseApr}%
                   </dd>
                 </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted">{utilizationAdjustmentLabel}</dt>
-                  <dd className="font-semibold text-foreground tabular-nums" data-testid="apr-utilization-adj">
-                    +{utilizationAdjPts}%
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted">{termAdjustmentLabel}</dt>
-                  <dd className="font-semibold text-foreground tabular-nums" data-testid="apr-term-adj">
-                    +{termAdjPts}%
-                  </dd>
-                </div>
+                {adjustments.map((adj, idx) => (
+                  <div key={idx} className="flex justify-between gap-4">
+                    <dt className="text-muted">{adj.label}</dt>
+                    <dd className="font-semibold text-foreground tabular-nums">
+                      +{adj.points}%
+                    </dd>
+                  </div>
+                ))}
                 <div className="flex justify-between gap-4 border-t border-border pt-2">
                   <dt className="font-semibold text-foreground">Total APR</dt>
                   <dd className="font-bold text-foreground tabular-nums" data-testid="apr-total">
@@ -538,20 +660,38 @@ export function ConfirmationStep({
           Back
         </button>
         <div className="dc-actions__slot">
-          <PendingButton
-            type="button"
-            onClick={onConfirm}
-            pending={isLoading}
-            pendingLabel="Processing draw..."
-            disabled={!canConfirm}
-            className="dc-btn dc-btn--primary dc-btn--full"
-          >
-            Confirm draw
-          </PendingButton>
-          {!agreedToTerms && !isLoading && (
-            <p className="dc-hint dc-hint--right">
-              Accept terms to enable confirmation.
-            </p>
+          {isExpired && onRefreshQuote ? (
+            <button
+              type="button"
+              onClick={onRefreshQuote}
+              className="dc-btn dc-btn--primary dc-btn--full"
+            >
+              <RefreshCw className="w-4 h-4 inline-block mr-2" aria-hidden="true" />
+              Refresh quote
+            </button>
+          ) : (
+            <>
+              <PendingButton
+                type="button"
+                onClick={onConfirm}
+                pending={isLoading}
+                pendingLabel="Processing draw..."
+                disabled={!canConfirm}
+                className="dc-btn dc-btn--primary dc-btn--full"
+              >
+                Confirm draw
+              </PendingButton>
+              {!agreedToTerms && !isLoading && !isExpired && (
+                <p className="dc-hint dc-hint--right">
+                  Accept terms to enable confirmation.
+                </p>
+              )}
+              {isExpired && (
+                <p className="dc-hint dc-hint--right text-yellow-500">
+                  Quote expired. Refresh to continue.
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>

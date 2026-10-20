@@ -19,8 +19,13 @@ import { useWallet } from "../context/WalletContext";
 import { RiskExplainerOverlay } from "../components/RiskExplainerOverlay";
 import { ContinuePrompt } from "../components/ContinuePrompt";
 import { MOCK_ATTESTATIONS } from "../data/mockData";
+<<<<<<< HEAD
+import type { Transaction, CreditLine } from "../types/creditLine";
+import { fetchCreditLines, type CreditLinesResult } from "../services/credit";
+=======
 import { useCreditLines, useCreditTransactions } from "@/hooks/useCreditLines";
 import type { Transaction } from "../types/creditLine";
+>>>>>>> c08c94e32fc2b6882697da9fee8b9a8034121c51
 import {
   COLOR,
   UTIL_COLOR,
@@ -95,6 +100,12 @@ export function Dashboard() {
 
   const { wallet, status: walletStatus } = useWallet();
   const navigate = useNavigate();
+<<<<<<< HEAD
+  
+  const [creditLines, setCreditLines] = useState<CreditLine[]>([]);
+  const [skippedRecords, setSkippedRecords] = useState(0);
+  const [isLoadingData, setIsLoadingData] = useState(true);
+=======
   const {
     lines: creditLines,
     lastUpdatedAt: creditSyncedAt,
@@ -106,12 +117,45 @@ export function Dashboard() {
     lastUpdatedAt: activitySyncedAt,
     refetch: refetchTransactions,
   } = useCreditTransactions();
+>>>>>>> c08c94e32fc2b6882697da9fee8b9a8034121c51
 
   const [status, setStatus] = useState<
     "idle" | "loading" | "success" | "error"
   >("idle");
   const [announcement, setAnnouncement] = useState<string>("");
   const [isExplainOpen, setIsExplainOpen] = useState(false);
+  
+  // Load credit lines with validation
+  useEffect(() => {
+    let mounted = true;
+    
+    const loadData = async () => {
+      try {
+        setIsLoadingData(true);
+        const result = await fetchCreditLines();
+        
+        if (mounted) {
+          setCreditLines(result.creditLines);
+          setSkippedRecords(result.skipped);
+        }
+      } catch (error) {
+        console.error('Failed to load credit lines:', error);
+        if (mounted) {
+          setCreditLines([]);
+        }
+      } finally {
+        if (mounted) {
+          setIsLoadingData(false);
+        }
+      }
+    };
+    
+    loadData();
+    
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleCreditRefresh = useCallback(async () => {
     try {
