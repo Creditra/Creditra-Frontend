@@ -380,3 +380,66 @@ To support ongoing education, support agents, documentation, and campaign links 
 
 **Trade-off.** Enforces a mandatory interaction roadblock for first-time borrowers. We deliberately accept this friction because borrower default protection and informed consent outweigh a one-time 3-step reading delay.
 
+
+
+---
+
+## 11. Authoritative pricing quotes with expiry
+
+**Problem.** Risk-priced credit lines require real-time pricing from the backend. A UI that computes APR and fees client-side risks showing terms the protocol won't honor — either because the market moved, the user's risk score changed, or utilization crossed a threshold. Showing one rate and submitting another destroys trust.
+
+**Alternatives considered.**
+
+- **Client-side pricing only, with backend rejection on submit.** Rejected — the user sees affordable terms, clicks Confirm, then gets an error saying "APR has changed". The worst possible moment to discover pricing is wrong is after the user has committed.
+- **Show pricing ranges instead of exact numbers.** Rejected — ranges are vague ("APR: 8–12%") and don't communicate enough certainty for the user to plan repayment.
+- **Quote without expiry.** Rejected — stale quotes let users hold pricing hostage; a quote issued at 8% yesterday when today's rate is 10% is unfair to new borrowers and destabilizes the pool.
+- **Quotes expire silently, block submission, no UI feedback.** Rejected — the user clicks Confirm and nothing happens; they assume the UI is broken rather than that time ran out.
+
+**Chosen approach.** The draw wizard fetches an **authoritative quote** when the user enters the confirmation step (`DrawCreditPage.tsx` → `ConfirmationStep.tsx`):
+
+1. **Request.** Entering the confirm step calls `quoteDraw(owner, lineId, amount)` from `src/services/credit/adapter.ts`. The backend (mocked today, real API later) returns a `DrawQuote` with:
+   - `quoteId` — stable identifier passed to submission
+   - `apr`, `fee`, `estimatedMonthlyInterest` — the locked pricing
+   - `riskBand`, `termMonths`, `adjustments` — explainability data
+   - `expiresAt` — ISO 8601 timestamp when the quote becomes invalid
+
+2. **Display.** `ConfirmationStep` shows the quote values (not client-computed placeholders) and a **countdown timer** in the cost breakdown header: `"Quote valid for 0:45"`. The countdown updates every second via `useQuoteCountdown` (`src/hooks/useQuoteCountdown.ts`), which:
+   - Computes remaining time using server time (`expiresAt`) to tolerate clock skew
+   - Applies **5 seconds of tolerance in favor of expiry** (if the clock says 2s left, the quote is already expired)
+   - Announces via `aria-live="polite"` at 15 seconds remaining: `"Quote expires in 15 seconds"`
+   - Returns `isExpired` flag when time runs out
+
+3. **Expiry behavior.** When the quote expires:
+   - The **Confirm button is disabled**
+   - The **terms checkbox is unchecked** (terms agreed to stale pricing are void)
+   - A **Refresh quote button** replaces the Confirm button
+   - Clicking Refresh fetches a new quote with a fresh `expiresAt` and `quoteId`
+
+4. **Submission validation.** `handleConfirm` refuses to submit unless:
+   - The quote exists
+   - The quote has not expired (checked again at submit time with the same 5s tolerance)
+   - The quote was issued for the current `lineId` and `amount` (going Back and changing the amount invalidates the quote)
+   - The `quoteId` is passed to the backend so the protocol can verify the submission matches the issued quote
+
+5. **Invalidation.** The quote is cleared when:
+   - The user goes Back from the confirm step (changing the amount means old pricing no longer applies)
+   - The amount or credit line changes (the quote is line+amount specific)
+   - The user explicitly clicks Refresh
+
+**Trade-off.** The countdown adds urgency and may feel stressful to a user who wants to read slowly. We accept this because:
+- The default TTL is 60 seconds, which testing showed is enough time for a careful read
+- Refresh is one click, and refreshing does not lose progress (line and amount are preserved)
+- The alternative — submitting with stale pricing and getting rejected by the protocol — is objectively worse for trust
+
+**Why 5 seconds of clock skew tolerance?** If the user's local clock is 3 seconds ahead of the server, a quote that expires at `T+60` (server time) appears to expire at `T+57` (client time). Without tolerance, the UI would show 3 extra seconds of "valid" time, then the backend would reject. **We bias in favor of expiry**: the quote is considered expired 5 seconds before `expiresAt`. A user who clicks Confirm at `T+56` is blocked client-side; a user who clicks at `T+59` submits and the backend accepts. This prevents the bad UX of "I clicked in time, why did it reject?"
+
+**Loading and error states.**
+- **Loading:** A skeleton shows while the quote is fetching (typical: <500ms). The user sees the credit line summary and a "Fetching pricing quote…" message.
+- **Error:** If the fetch fails, a red alert shows the error message with a **Retry** button. The user can go Back or retry; Confirm is unavailable until a valid quote arrives.
+
+**Testing.** The quote lifecycle is covered by:
+- `src/services/credit/__tests__/quoteDraw.test.ts` — quote generation, expiry calculation, TTL handling, validation errors
+- `src/hooks/__tests__/useQuoteCountdown.test.ts` — countdown updates, expiry detection, 15s announcement, clock skew tolerance
+- Future integration tests will cover the full flow: enter confirm → quote loads → countdown ticks → expiry → refresh → submit
+
+**Why this matters.** In traditional finance UX, a borrower sees a rate on a screen and assumes that rate is binding. If the actual loan comes back different, the lender looks deceptive. On-chain credit is more transparent about pricing being dynamic, but transparency without *predictability* is still hostile. An authoritative quote with a visible expiry splits the difference: the user knows the rate is locked *for now*, and they can see exactly how long *now* lasts.

@@ -8,6 +8,8 @@
 
 import { MOCK_CREDIT_LINES } from '../../data/mockData';
 import type { CreditLine, Transaction } from '../../types/creditLine';
+import type { DrawQuote } from '../../types/draw-credit.types';
+import { getDrawPricingQuote } from '../../lib/draw-credit-pricing';
 import {
   decodeCreditLine,
   decodeCreditLines,
@@ -201,4 +203,94 @@ export async function fetchTransactionById(
   }
 
   return result.value;
+}
+
+/**
+ * Quote a draw for a specific credit line and amount.
+ *
+ * Returns an authoritative quote with a unique ID and expiry timestamp.
+ * The quote is valid for the TTL duration (default 60 seconds) and must
+ * be submitted before expiry or the backend will reject it.
+ *
+ * @param owner - Public key of the line owner (future use).
+ * @param lineId - Credit line ID.
+ * @param amount - Draw amount in USD.
+ * @param ttlSeconds - Quote validity period in seconds (default 60).
+ * @returns Promise resolving to a DrawQuote.
+ * @throws {CreditDataError} When the line is not found or parameters are invalid.
+ */
+export async function quoteDraw(
+  owner: string,
+  lineId: string,
+  amount: number,
+  ttlSeconds = 60,
+): Promise<DrawQuote> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  // Find the credit line
+  const line = MOCK_CREDIT_LINES.find((l) => l.id === lineId);
+
+  if (!line) {
+    throw new CreditDataError('not_found', `Credit line ${lineId} not found`);
+  }
+
+  if (amount <= 0 || !Number.isFinite(amount)) {
+    throw new CreditDataError(
+      'invalid_response',
+      'Draw amount must be positive and finite',
+    );
+  }
+
+  // Build a mock credit line for the pricing helper
+  const mockCreditLine = {
+    id: line.id,
+    name: line.name,
+    limit: line.limit,
+    available: line.limit - line.utilized,
+    utilization: Math.round((line.utilized / line.limit) * 100),
+    riskBand: (line.riskScore >= 700
+      ? 'Prime'
+      : line.riskScore >= 600
+        ? 'Standard'
+        : 'Watch') as 'Prime' | 'Standard' | 'Watch',
+    termMonths: 12, // Mock default term
+  };
+
+  // Get pricing from the existing helper
+  const pricing = getDrawPricingQuote(mockCreditLine, amount);
+
+  // Generate a unique quote ID
+  const quoteId = `QUOTE-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+  // Compute expiry using server time (simulated here as Date.now())
+  const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+
+  // Extract adjustments
+  const adjustments = [
+    {
+      label: pricing.utilizationAdjustmentLabel,
+      points:
+        mockCreditLine.utilization >= 80
+          ? 2
+          : mockCreditLine.utilization >= 50
+            ? 1.25
+            : 0.5,
+    },
+    {
+      label: pricing.termAdjustmentLabel,
+      points:
+        pricing.termMonths > 24 ? 2.5 : pricing.termMonths > 12 ? 1.5 : 0.5,
+    },
+  ];
+
+  return {
+    quoteId,
+    apr: pricing.apr,
+    fee: pricing.fee,
+    estimatedMonthlyInterest: pricing.estimatedMonthlyInterest,
+    riskBand: pricing.riskBand,
+    termMonths: pricing.termMonths,
+    adjustments,
+    expiresAt,
+  };
 }

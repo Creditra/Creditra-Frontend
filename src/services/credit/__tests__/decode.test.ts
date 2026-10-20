@@ -256,7 +256,8 @@ describe('decodeCreditLine', () => {
       const result = decodeCreditLine(line);
       
       if (!result.ok) {
-        console.error('Failed to decode:', line.id, result.issues);
+        console.error('Failed to decode:', line.id, JSON.stringify(result.issues, null, 2));
+        console.error('Line data:', JSON.stringify(line, null, 2));
       }
       
       expect(result.ok).toBe(true);

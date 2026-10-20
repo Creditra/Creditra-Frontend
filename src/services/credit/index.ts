@@ -10,6 +10,7 @@ export {
   fetchAllTransactions,
   fetchTransactionsByCreditLine,
   fetchTransactionById,
+  quoteDraw,
   type CreditLinesResult,
   type TransactionsResult,
 } from './adapter';
