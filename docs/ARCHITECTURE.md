@@ -118,22 +118,65 @@ interface WalletContextType {
   wallet: WalletInfo | null;
   status: 'disconnected' | 'connecting' | 'connected' | 'error';
   error: WalletError | null;
-  connect: (type: WalletType) => Promise<void>;
+  connect: (type: WalletType, options?: ConnectOptions) => Promise<ConnectResult>;
   disconnect: () => void;
   clearError: () => void;
 }
+
+type ConnectResult =
+  | { ok: true; wallet: WalletInfo }
+  | { ok: false; error: WalletConnectError };
 ```
 
-`WalletError` is a discriminated union — consumers branch on `error.type` to render
-specific recovery UI:
+`connect()` returns a result object that distinguishes success from failure. On success,
+`{ ok: true, wallet }` is returned. On failure, `{ ok: false, error }` is returned and
+the context's `error` and `status` fields are also updated for backward compatibility
+with existing consumers.
+
+`WalletConnectError` is a proper Error subclass (so `instanceof` checks work) with a
+`type` discriminator that classifies the failure category:
 
 ```ts
-type WalletError =
-  | { type: 'not_found';        message: string }
-  | { type: 'connection_failed'; message: string }
-  | { type: 'wrong_network';     message: string }
-  | { type: 'user_rejected';     message: string };
+class WalletConnectError extends Error {
+  type: 'not_found' | 'connection_failed' | 'wrong_network' | 'user_rejected';
+  message: string;
+}
 ```
+
+### Error classification and user-facing copy
+
+Raw errors from wallet extensions are classified by `classifyWalletError()` in
+`src/utils/wallet.ts`. The helper examines error codes and messages to detect:
+
+- **`user_rejected`** — EIP-1193 code 4001, or messages containing "reject", "decline",
+  "cancel", "denied"
+- **`not_found`** — messages containing "not found" or "not installed"
+- **`wrong_network`** — messages containing "network", "testnet", or "mainnet"
+- **`connection_failed`** — catch-all for unknown failures
+
+Each error type maps to a user-facing message centralized in `ERROR_MESSAGES`:
+
+| Error Type | User-Facing Copy |
+| --- | --- |
+| `user_rejected` | "You cancelled the request in your wallet. Try again when you're ready." |
+| `not_found` | "Wallet extension not found. Please install it first." |
+| `wrong_network` | "Switch your wallet to Testnet and try again." |
+| `connection_failed` | "Failed to connect. Please try again." |
+
+Raw error details are logged in development but never shown to users.
+
+### Error propagation flow
+
+1. **`connectWallet()`** in `src/utils/wallet.ts` throws `WalletConnectError` on failure
+2. **`WalletContext.connect()`** catches errors, classifies them via
+   `classifyWalletError()`, sets context state, and returns `{ ok: false, error }`
+3. **`WalletButton.handleWalletConnect()`** checks the result and only opens the
+   onboarding flow when `ok === true`. On failure, it re-throws the error
+4. **`WalletConnectionModal.handleWalletSelect()`** catches the error, displays it in a
+   `role="alert"` region, and keeps the modal open with buttons re-enabled
+
+This ensures users are never pushed into onboarding after a failed connection, and the
+modal provides actionable feedback instead of closing silently.
 
 ### NotificationContext
 
