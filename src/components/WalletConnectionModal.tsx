@@ -20,7 +20,7 @@
  *              1.4.11 (Non-text Contrast), 2.5.5 (Target Size)
  */
 
-import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
@@ -222,6 +222,66 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
     setShowFullList(primaryWallet === null);
     setRememberChoice(false);
   }, [isOpen, primaryWallet]);
+
+  // Roving tabindex state for the wallet options list.
+  // Stores the index of the currently focused/active wallet item.
+  const [focusedIndex, setFocusedIndex] = useState<number>(0);
+  const walletButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // Reset focusedIndex to the first available (enabled) wallet item whenever the modal opens or list changes.
+  useEffect(() => {
+    if (!isOpen) return;
+    setFocusedIndex(0);
+  }, [isOpen, orderedWallets]);
+
+  // Handle roving focus keyboard navigation (ArrowDown, ArrowUp, Home, End)
+  const handleKeyDownList = useCallback(
+    (e: React.KeyboardEvent) => {
+      // Find all selectable (enabled / not aria-disabled) item indices
+      const enabledIndices: number[] = [];
+      orderedWallets.forEach((_, idx) => {
+        // While connecting, non-connecting buttons are disabled
+        const isButtonDisabled = connectingId !== null;
+        if (!isButtonDisabled) {
+          enabledIndices.push(idx);
+        }
+      });
+
+      if (enabledIndices.length === 0) return;
+
+      let nextIndex: number | undefined;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const currentPos = enabledIndices.indexOf(focusedIndex);
+        if (currentPos === -1) {
+          nextIndex = enabledIndices[0];
+        } else {
+          nextIndex = enabledIndices[(currentPos + 1) % enabledIndices.length];
+        }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const currentPos = enabledIndices.indexOf(focusedIndex);
+        if (currentPos === -1) {
+          nextIndex = enabledIndices[enabledIndices.length - 1];
+        } else {
+          nextIndex = enabledIndices[(currentPos - 1 + enabledIndices.length) % enabledIndices.length];
+        }
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        nextIndex = enabledIndices[0];
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        nextIndex = enabledIndices[enabledIndices.length - 1];
+      }
+
+      if (nextIndex !== undefined) {
+        setFocusedIndex(nextIndex);
+        walletButtonRefs.current[nextIndex]?.focus();
+      }
+    },
+    [orderedWallets, connectingId, focusedIndex],
+  );
 
   // Close handler with error reset
   const handleClose = useCallback(() => {
@@ -433,31 +493,47 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
         <ul
           id="wallet-modal-list"
           className="wallet-modal-list"
-          role="listbox"
           aria-label="Available wallet providers"
           hidden={primaryWallet !== null && !showFullList}
           data-testid="wallet-modal-list"
+          onKeyDown={handleKeyDownList}
         >
-          {orderedWallets.map((wallet) => {
+          {orderedWallets.map((wallet, index) => {
             const isDetected = detectedWallets.includes(wallet.id);
             const isConnecting = connectingId === wallet.id;
-            const isDisabled = connectingId !== null;
+            const isConnectionInProgress = connectingId !== null;
+            const isDisabled = isConnectionInProgress;
+            const isOtherDisabled = isConnectionInProgress && !isConnecting;
 
             const previewId = `wallet-preview-${wallet.id}`;
 
             return (
-              <li key={wallet.id} role="none" className="wallet-option-wrapper">
+              <li key={wallet.id} className="wallet-option-wrapper">
                 <button
+                  ref={(el) => {
+                    walletButtonRefs.current[index] = el;
+                  }}
+                  tabIndex={focusedIndex === index ? 0 : -1}
                   className={`wallet-option ${isDetected ? 'wallet-option--detected' : 'wallet-option--undetected'}`}
                   style={{ minHeight: '44px', minWidth: '44px' }}
-                  onClick={() =>
-                    isDetected ? handleWalletSelect(wallet.id) : handleInstall(wallet)
-                  }
+                  onClick={() => {
+                    setFocusedIndex(index);
+                    if (isDetected) {
+                      handleWalletSelect(wallet.id);
+                    } else {
+                      handleInstall(wallet);
+                    }
+                  }}
+                  onFocus={() => {
+                    setFocusedIndex(index);
+                  }}
                   disabled={isDisabled}
+                  aria-disabled={isOtherDisabled ? 'true' : undefined}
+                  aria-busy={isConnecting ? 'true' : undefined}
                   aria-label={
                     isDetected
-                      ? `Connect with ${wallet.name}${isConnecting ? ', connecting' : ''}`
-                      : `Install ${wallet.name} wallet`
+                      ? `${wallet.name}, installed${isConnecting ? ', connecting' : ''}`
+                      : `${wallet.name}, not installed, opens install page`
                   }
                   aria-describedby={`wallet-status-${wallet.id} ${previewId}`}
                   type="button"

@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
+import axe from 'axe-core';
 import { WalletConnectionModal, WalletProvider } from '../WalletConnectionModal';
 import type { WalletType } from '@/utils/wallet';
 import * as walletUtils from '@/utils/wallet';
@@ -51,7 +52,7 @@ describe('WalletConnectionModal Accessibility', () => {
   const mockOnConnect = vi.fn().mockResolvedValue(undefined);
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   // WCAG 4.1.2: Name, Role, Value
@@ -70,7 +71,7 @@ describe('WalletConnectionModal Accessibility', () => {
   });
 
   // WCAG 2.1.2: No Keyboard Trap
-  it('traps focus within the modal', async () => {
+  it('traps focus within the modal with one tab stop for the wallet list', async () => {
     const user = userEvent.setup();
     render(
       <TestWrapper
@@ -83,10 +84,7 @@ describe('WalletConnectionModal Accessibility', () => {
 
     const closeButton = screen.getByLabelText('Close wallet connection dialog');
     const rememberCheckbox = screen.getByTestId('wallet-remember-checkbox');
-    const freighterButton = screen.getByLabelText('Connect with Freighter');
-    const albedoButton = screen.getByLabelText('Connect with Albedo');
-    const xbullButton = screen.getByLabelText('Install xBull wallet');
-    const rabetButton = screen.getByLabelText('Install Rabet wallet');
+    const freighterButton = screen.getByRole('button', { name: /^Freighter, installed/i });
     const learnLink = screen.getByRole('link', { name: /visit the wallet setup guide/i });
 
     // Focus should start on first focusable element
@@ -94,9 +92,8 @@ describe('WalletConnectionModal Accessibility', () => {
       expect(document.activeElement).toBe(closeButton);
     });
 
-    // Tab cycles forward through all focusable elements.  The
-    // remember-my-choice checkbox is a new tab stop inserted before the
-    // wallet list.
+    // Tab cycles forward through focusable controls.
+    // Notice the wallet list only represents ONE tab stop (roving tabIndex).
     await user.tab();
     expect(document.activeElement).toBe(rememberCheckbox);
 
@@ -104,20 +101,229 @@ describe('WalletConnectionModal Accessibility', () => {
     expect(document.activeElement).toBe(freighterButton);
 
     await user.tab();
-    expect(document.activeElement).toBe(albedoButton);
-
-    await user.tab();
-    expect(document.activeElement).toBe(xbullButton);
-
-    await user.tab();
-    expect(document.activeElement).toBe(rabetButton);
-
-    await user.tab();
     expect(document.activeElement).toBe(learnLink);
 
     // Tab from last element cycles back to first
     await user.tab();
     expect(document.activeElement).toBe(closeButton);
+  });
+
+  // Scenario 1: Open modal - list has role list and 4 listitems; no listbox role
+  it('Scenario 1: list has role list and 4 listitems, with no listbox role', () => {
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={['freighter']}
+      />
+    );
+
+    const list = screen.getByRole('list', { name: 'Available wallet providers' });
+    expect(list).toBeInTheDocument();
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+
+    const items = screen.getAllByRole('listitem');
+    expect(items).toHaveLength(4);
+  });
+
+  // Scenario 2: Accessible names - each button name includes "installed" or "not installed"
+  it('Scenario 2: each button accessible name includes "installed" or "not installed"', () => {
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={['freighter', 'albedo']}
+      />
+    );
+
+    const freighterBtn = screen.getByRole('button', { name: /^Freighter, installed/i });
+    expect(freighterBtn).toBeInTheDocument();
+
+    const albedoBtn = screen.getByRole('button', { name: /^Albedo, installed/i });
+    expect(albedoBtn).toBeInTheDocument();
+
+    const xbullBtn = screen.getByRole('button', { name: /^xBull, not installed, opens install page/i });
+    expect(xbullBtn).toBeInTheDocument();
+
+    const rabetBtn = screen.getByRole('button', { name: /^Rabet, not installed, opens install page/i });
+    expect(rabetBtn).toBeInTheDocument();
+  });
+
+  // Scenario 3: Focus first wallet, ArrowDown moves to the second
+  it('Scenario 3: Focus first wallet, ArrowDown moves focus to the second', async () => {
+    const user = userEvent.setup();
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={['freighter', 'albedo']}
+      />
+    );
+
+    const closeButton = screen.getByLabelText('Close wallet connection dialog');
+    await waitFor(() => {
+      expect(document.activeElement).toBe(closeButton);
+    });
+
+    const freighterBtn = screen.getByRole('button', { name: /^Freighter, installed/i });
+    const albedoBtn = screen.getByRole('button', { name: /^Albedo, installed/i });
+
+    freighterBtn.focus();
+    expect(document.activeElement).toBe(freighterBtn);
+
+    await user.keyboard('{ArrowDown}');
+    expect(document.activeElement).toBe(albedoBtn);
+  });
+
+  // Scenario 4: ArrowUp on the first wraps to the last
+  it('Scenario 4: ArrowUp on the first wraps to the last', async () => {
+    const user = userEvent.setup();
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={['freighter', 'albedo']}
+      />
+    );
+
+    const closeButton = screen.getByLabelText('Close wallet connection dialog');
+    await waitFor(() => {
+      expect(document.activeElement).toBe(closeButton);
+    });
+
+    const freighterBtn = screen.getByRole('button', { name: /^Freighter, installed/i });
+    const rabetBtn = screen.getByRole('button', { name: /^Rabet, not installed/i });
+
+    freighterBtn.focus();
+    expect(document.activeElement).toBe(freighterBtn);
+
+    await user.keyboard('{ArrowUp}');
+    expect(document.activeElement).toBe(rabetBtn);
+  });
+
+  // Scenario 5: Home and End jump to first and last
+  it('Scenario 5: Home and End jump to first and last', async () => {
+    const user = userEvent.setup();
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={['freighter', 'albedo']}
+      />
+    );
+
+    const closeButton = screen.getByLabelText('Close wallet connection dialog');
+    await waitFor(() => {
+      expect(document.activeElement).toBe(closeButton);
+    });
+
+    const freighterBtn = screen.getByRole('button', { name: /^Freighter, installed/i });
+    const albedoBtn = screen.getByRole('button', { name: /^Albedo, installed/i });
+    const rabetBtn = screen.getByRole('button', { name: /^Rabet, not installed/i });
+
+    albedoBtn.focus();
+    expect(document.activeElement).toBe(albedoBtn);
+
+    await user.keyboard('{End}');
+    expect(document.activeElement).toBe(rabetBtn);
+
+    await user.keyboard('{Home}');
+    expect(document.activeElement).toBe(freighterBtn);
+  });
+
+  // Scenario 6: Tab from a wallet button leaves the list to the next control
+  it('Scenario 6: Tab from a wallet button leaves the list to the next control', async () => {
+    const user = userEvent.setup();
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={['freighter', 'albedo']}
+      />
+    );
+
+    const closeButton = screen.getByLabelText('Close wallet connection dialog');
+    await waitFor(() => {
+      expect(document.activeElement).toBe(closeButton);
+    });
+
+    const albedoBtn = screen.getByRole('button', { name: /^Albedo, installed/i });
+    const learnLink = screen.getByRole('link', { name: /visit the wallet setup guide/i });
+
+    // Focus a wallet item in the middle
+    albedoBtn.focus();
+    expect(document.activeElement).toBe(albedoBtn);
+
+    // Tab leaves the list to the setup guide link
+    await user.tab();
+    expect(document.activeElement).toBe(learnLink);
+  });
+
+  // Scenario 7: Connection in progress - other buttons aria-disabled, connecting has aria-busy; arrows skip disabled
+  it('Scenario 7: Connection in progress sets aria-busy and aria-disabled, arrows skip disabled buttons', async () => {
+    const user = userEvent.setup();
+    let resolveConnection: () => void;
+    const slowConnect = vi.fn().mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveConnection = resolve;
+        }),
+    );
+
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={slowConnect}
+        detectedWallets={['freighter', 'albedo']}
+      />
+    );
+
+    const freighterBtn = screen.getByRole('button', { name: /^Freighter, installed/i });
+    const albedoBtn = screen.getByRole('button', { name: /^Albedo, installed/i });
+
+    // Click freighter to initiate connection
+    await user.click(freighterBtn);
+
+    // freighterButton has connecting state
+    await waitFor(() => {
+      expect(freighterBtn).toHaveAttribute('aria-busy', 'true');
+    });
+
+    // Other buttons have aria-disabled="true"
+    expect(albedoBtn).toHaveAttribute('aria-disabled', 'true');
+
+    // Arrow navigation while connection is in progress does not leave the connecting button since others are disabled
+    await user.keyboard('{ArrowDown}');
+    expect(document.activeElement).toBe(freighterBtn);
+
+    // Finish connection to clean up
+    resolveConnection!();
+  });
+
+  // Scenario 8: axe on the open modal reports no aria-required-children or aria-allowed-role violations
+  it('Scenario 8: axe on the open modal reports no violations', async () => {
+    const { container } = render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={['freighter', 'albedo']}
+      />
+    );
+
+    const results = await axe.run(container);
+    const relevantViolations = results.violations.filter(
+      (v) => v.id === 'aria-required-children' || v.id === 'aria-allowed-role',
+    );
+    expect(relevantViolations).toHaveLength(0);
+    expect(results.violations).toHaveLength(0);
   });
 
   // WCAG 2.1.2: No Keyboard Trap (Shift+Tab)
@@ -215,7 +421,7 @@ describe('WalletConnectionModal Accessibility', () => {
       />
     );
 
-    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    const freighterButton = screen.getByRole('button', { name: /^Freighter, installed/i });
     expect(freighterButton).toHaveClass('wallet-option--detected');
 
     // Should have text "Detected" visible
@@ -236,7 +442,7 @@ describe('WalletConnectionModal Accessibility', () => {
       />
     );
 
-    const albedoButton = screen.getByLabelText('Install Albedo wallet');
+    const albedoButton = screen.getByRole('button', { name: /^Albedo, not installed/i });
     expect(albedoButton).toHaveClass('wallet-option--undetected');
 
     // Should have text "Install to connect" (multiple wallets show this, check at least one)
@@ -260,7 +466,7 @@ describe('WalletConnectionModal Accessibility', () => {
       />
     );
 
-    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    const freighterButton = screen.getByRole('button', { name: /^Freighter, installed/i });
     // Inline style is used so jsdom can read it (CSS files aren't processed in jsdom)
     expect(parseInt(freighterButton.style.minHeight, 10)).toBeGreaterThanOrEqual(44);
     expect(parseInt(freighterButton.style.minWidth, 10)).toBeGreaterThanOrEqual(44);
@@ -292,7 +498,7 @@ describe('WalletConnectionModal Accessibility', () => {
       />
     );
 
-    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    const freighterButton = screen.getByRole('button', { name: /^Freighter, installed/i });
     await user.click(freighterButton);
 
     await waitFor(() => {
@@ -459,7 +665,7 @@ describe('WalletConnectionModal Accessibility', () => {
         />,
       );
 
-      await user.click(screen.getByLabelText('Connect with Freighter'));
+      await user.click(screen.getByRole('button', { name: /^Freighter, installed/i }));
       await waitFor(() => {
         expect(mockOnConnect).toHaveBeenLastCalledWith('freighter', { remember: false });
       });
@@ -479,7 +685,7 @@ describe('WalletConnectionModal Accessibility', () => {
       await user.click(screen.getByTestId('wallet-remember-checkbox'));
       expect(screen.getByTestId('wallet-remember-checkbox')).toBeChecked();
 
-      await user.click(screen.getByLabelText('Connect with Freighter'));
+      await user.click(screen.getByRole('button', { name: /^Freighter, installed/i }));
       await waitFor(() => {
         expect(mockOnConnect).toHaveBeenLastCalledWith('freighter', { remember: true });
       });
@@ -607,7 +813,7 @@ describe('WalletConnectionModal Accessibility', () => {
       />
     );
 
-    const xbullButton = screen.getByLabelText('Install xBull wallet');
+    const xbullButton = screen.getByRole('button', { name: /^xBull, not installed/i });
     await user.click(xbullButton);
 
     expect(windowOpenSpy).toHaveBeenCalledWith(
@@ -632,7 +838,7 @@ describe('WalletConnectionModal Accessibility', () => {
       />
     );
 
-    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    const freighterButton = screen.getByRole('button', { name: /^Freighter, installed/i });
     fireEvent.click(freighterButton);
 
     await waitFor(() => {
@@ -655,7 +861,7 @@ describe('WalletConnectionModal Accessibility', () => {
       />
     );
 
-    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    const freighterButton = screen.getByRole('button', { name: /^Freighter, installed/i });
     fireEvent.click(freighterButton);
 
     // Should show spinner
@@ -735,7 +941,7 @@ describe('WalletConnectionModal Accessibility', () => {
         />,
       );
 
-      const freighterBtn = screen.getByLabelText('Connect with Freighter');
+      const freighterBtn = screen.getByRole('button', { name: /^Freighter, installed/i });
       const describedBy = freighterBtn.getAttribute('aria-describedby') ?? '';
       // Should reference both the status id and the preview id.
       const ids = describedBy.split(/\s+/);
@@ -811,7 +1017,7 @@ describe('WalletConnectionModal — error propagation (#1231)', () => {
       />
     );
 
-    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    const freighterButton = screen.getByRole('button', { name: /^Freighter, installed/i });
     fireEvent.click(freighterButton);
 
     await waitFor(() => {
@@ -849,7 +1055,7 @@ describe('WalletConnectionModal — error propagation (#1231)', () => {
       />
     );
 
-    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    const freighterButton = screen.getByRole('button', { name: /^Freighter, installed/i });
     fireEvent.click(freighterButton);
 
     await waitFor(() => {
@@ -871,11 +1077,11 @@ describe('WalletConnectionModal — error propagation (#1231)', () => {
         isOpen={true}
         onClose={mockOnClose}
         onConnect={mockOnConnect}
-        detectedWallets={[]}
+        detectedWallets={['freighter']}
       />
     );
 
-    const freighterButton = screen.getByLabelText('Install Freighter wallet');
+    const freighterButton = screen.getByRole('button', { name: /^Freighter, installed/i });
     fireEvent.click(freighterButton);
 
     await waitFor(() => {
@@ -898,7 +1104,7 @@ describe('WalletConnectionModal — error propagation (#1231)', () => {
       />
     );
 
-    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    const freighterButton = screen.getByRole('button', { name: /^Freighter, installed/i });
     fireEvent.click(freighterButton);
 
     await waitFor(() => {
@@ -919,7 +1125,7 @@ describe('WalletConnectionModal — error propagation (#1231)', () => {
       />
     );
 
-    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    const freighterButton = screen.getByRole('button', { name: /^Freighter, installed/i });
     fireEvent.click(freighterButton);
 
     await waitFor(() => {
@@ -946,8 +1152,8 @@ describe('WalletConnectionModal — error propagation (#1231)', () => {
       />
     );
 
-    const freighterButton = screen.getByLabelText('Connect with Freighter');
-    const albedoButton = screen.getByLabelText('Connect with Albedo');
+    const freighterButton = screen.getByRole('button', { name: /^Freighter, installed/i });
+    const albedoButton = screen.getByRole('button', { name: /^Albedo, installed/i });
 
     // Initially not disabled
     expect(freighterButton).not.toBeDisabled();
@@ -985,7 +1191,7 @@ describe('WalletConnectionModal — error propagation (#1231)', () => {
       />
     );
 
-    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    const freighterButton = screen.getByRole('button', { name: /^Freighter, installed/i });
 
     // First attempt fails
     fireEvent.click(freighterButton);
@@ -1019,7 +1225,7 @@ describe('WalletConnectionModal — error propagation (#1231)', () => {
       />
     );
 
-    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    const freighterButton = screen.getByRole('button', { name: /^Freighter, installed/i });
     fireEvent.click(freighterButton);
 
     await waitFor(() => {
@@ -1040,7 +1246,7 @@ describe('WalletConnectionModal — error propagation (#1231)', () => {
       />
     );
 
-    const freighterButton = screen.getByLabelText('Connect with Freighter');
+    const freighterButton = screen.getByRole('button', { name: /^Freighter, installed/i });
     fireEvent.click(freighterButton);
 
     await waitFor(() => {
