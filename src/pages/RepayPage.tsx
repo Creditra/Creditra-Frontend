@@ -38,6 +38,12 @@ import {
   SETTLEMENT_ASSET,
 } from '@/lib/repayable-balance';
 import {
+  getRepayableLines,
+  isRepayable,
+  isDelinquentLine,
+} from '@/lib/repay-eligibility';
+import { StatusBadge } from '@/components/StatusBadge';
+import {
   saveRepayDraft,
   loadRepayDraft,
   clearRepayDraft,
@@ -141,15 +147,27 @@ export default function RepayPage() {
   const previewTriggerRef = useRef<HTMLButtonElement>(null);
   const { isReducedMotionActive } = useReducedMotion();
 
-  const creditLines = useMemo(
-    () => MOCK_CREDIT_LINES.filter((cl) => cl.status === 'Active' && cl.utilized > 0),
-    [],
-  );
+  // ── Repayable lines — single predicate used by picker and deep-link ──
+  // Issue #1185: getRepayableLines (utilized > 0 && status !== Closed) replaces
+  // the old Active-only filter so Suspended and Defaulted lines are visible.
+  const creditLines = useMemo(() => getRepayableLines(MOCK_CREDIT_LINES), []);
 
-  const selectedLine = useMemo(
-    () => MOCK_CREDIT_LINES.find((cl) => cl.id === selectedId) ?? null,
-    [selectedId],
-  );
+  // When a ?line= deep-link names an unrepayable line we keep selectedLine null
+  // so the picker renders with an explanatory status message instead of opening
+  // the form for a line that has no outstanding balance (e.g. Closed).
+  const selectedLine = useMemo(() => {
+    if (!selectedId) return null;
+    const line = MOCK_CREDIT_LINES.find((cl) => cl.id === selectedId) ?? null;
+    if (!line || !isRepayable(line)) return null;
+    return line;
+  }, [selectedId]);
+
+  // True when the user arrived via ?line= but the named line is not repayable.
+  const unrepayableDeepLink = useMemo(() => {
+    if (!preselectedId) return false;
+    const line = MOCK_CREDIT_LINES.find((cl) => cl.id === preselectedId) ?? null;
+    return line !== null && !isRepayable(line);
+  }, [preselectedId]);
 
   const repayableBalance = getRepayableBalance(balances ?? null, SETTLEMENT_ASSET);
   const hasRepayableBalance =
@@ -629,48 +647,75 @@ export default function RepayPage() {
             }}
           />
         ) : (
-          <div className="mt-4 space-y-3">
-            {creditLines.map((cl) => {
-              const utilization = Math.round((cl.utilized / cl.limit) * 100);
-              // Task cb-v7: map utilization level to pattern class so the bar
-              // conveys severity via texture, not colour alone (WCAG 1.4.1).
-              const barClass =
-                utilization > 80
-                  ? 'rp-progress--high'
-                  : utilization > 50
-                    ? 'rp-progress--medium'
-                    : 'rp-progress--low';
-              return (
-                <button
-                  key={cl.id}
-                  type="button"
-                  onClick={() => setSelectedId(cl.id)}
-                  className={`rp-cl-card w-full rounded-lg border border-border bg-surface p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${motionClasses(isReducedMotionActive, 'transition-all hover:border-accent hover:bg-accent/5')}`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-foreground">{cl.name}</p>
-                      <p className="mt-0.5 text-sm text-muted">{cl.id}</p>
+          <>
+            {/* Issue #1185: unrepayable ?line= deep-link — status message + picker */}
+            {unrepayableDeepLink && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="mb-2 flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning"
+                data-testid="repay-unrepayable-notice"
+              >
+                <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>This line has no outstanding balance.</span>
+              </div>
+            )}
+            <div className="mt-4 space-y-3">
+              {creditLines.map((cl) => {
+                const utilization = Math.round((cl.utilized / cl.limit) * 100);
+                // Task cb-v7: map utilization level to pattern class so the bar
+                // conveys severity via texture, not colour alone (WCAG 1.4.1).
+                const barClass =
+                  utilization > 80
+                    ? 'rp-progress--high'
+                    : utilization > 50
+                      ? 'rp-progress--medium'
+                      : 'rp-progress--low';
+                const delinquent = isDelinquentLine(cl);
+                return (
+                  <button
+                    key={cl.id}
+                    type="button"
+                    onClick={() => setSelectedId(cl.id)}
+                    className={`rp-cl-card w-full rounded-lg border bg-surface p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${delinquent ? 'border-warning/60' : 'border-border'} ${motionClasses(isReducedMotionActive, 'transition-all hover:border-accent hover:bg-accent/5')}`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        {/* Issue #1185: status badge — text conveys state, not colour alone (WCAG 1.4.1) */}
+                        <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                          <StatusBadge status={cl.status} />
+                          {delinquent && (
+                            <span
+                              className="rp-overdue-label inline-flex items-center rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning"
+                              aria-label="Overdue — repayment needed"
+                            >
+                              Overdue
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-semibold text-foreground">{cl.name}</p>
+                        <p className="mt-0.5 text-sm text-muted">{cl.id}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-foreground num-tabular">
+                          {formatMoney(cl.utilized)}
+                        </p>
+                        <p className="text-sm text-muted"><span className="num-tabular">{utilization}%</span> utilized</p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-foreground num-tabular">
-                        {formatMoney(cl.utilized)}
-                      </p>
-                      <p className="text-sm text-muted"><span className="num-tabular">{utilization}%</span> utilized</p>
+                    {/* Task cb-v7: pattern fill on progress bar */}
+                    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-border">
+                      <div
+                        className={`h-full rounded-full transition-all ${barClass}`}
+                        style={{ width: `${utilization}%` }}
+                        aria-hidden="true"
+                      />
                     </div>
-                  </div>
-                  {/* Task cb-v7: pattern fill on progress bar */}
-                  <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-border">
-                    <div
-                      className={`h-full rounded-full transition-all ${barClass}`}
-                      style={{ width: `${utilization}%` }}
-                      aria-hidden="true"
-                    />
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                  </button>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     );
