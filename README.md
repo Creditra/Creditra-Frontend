@@ -105,12 +105,18 @@ npm run lint       # eslint .
 ```env
 VITE_API_URL=http://localhost:3000          # backend base URL, read via import.meta.env
 VITE_REPAY_CONFIRM_THRESHOLD=5000           # USD amount above which repayments require typed confirmation (default: 5000)
+VITE_SETTLEMENT_ASSET_CODE=USDC              # repayable wallet asset code (default: USDC)
+VITE_SETTLEMENT_ASSET_ISSUER=GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5 # default: testnet USDC issuer
 ```
 
 `VITE_REPAY_CONFIRM_THRESHOLD` controls the typed-amount guard in the repayment flow.
 When a repayment amount meets or exceeds this value, the review step shows a confirmation
 input where the user must type the exact amount before the "Confirm Repayment" button
 enables. Set to `0` to disable the guard entirely (not recommended for production).
+
+The repay form and Quick Repay use only the wallet balance matching both the configured
+settlement-asset code and issuer. Configure the issuer for the settlement asset on the
+target network; the default issuer is Circle USDC on Stellar testnet.
 
 ---
 

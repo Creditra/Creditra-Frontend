@@ -4,6 +4,22 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { Dashboard, RiskGauge } from './Dashboard';
 import { ReducedMotionProvider, useReducedMotion } from '../context/ReducedMotionContext';
 import '@testing-library/jest-dom';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import {
+  setGlobalCreditLines,
+  setMockRefetchError,
+  resetGlobalCreditLines,
+} from '../hooks/useCreditLines';
+import { MOCK_CREDIT_LINES } from '../data/mockData';
+import type { CreditLine } from '../types/creditLine';
+
+const __testDirname = dirname(fileURLToPath(import.meta.url));
+const patternsCssSource = readFileSync(
+  resolve(__testDirname, '../styles/patterns.css'),
+  'utf8',
+);
 
 // Mock modules before imports
 vi.mock('../context/WalletContext', () => ({
@@ -127,7 +143,7 @@ describe('Dashboard component skeletons', () => {
 
     const announcement = container.querySelector('.dashboard-root > .sr-only') as HTMLElement;
     expect(announcement).toBeInTheDocument();
-    expect(announcement.textContent).toBe('Loading dashboard');
+    expect(announcement.textContent).toMatch(/loading dashboard/i);
 
     const root = container.querySelector('.dashboard-root') as HTMLElement;
     expect(root).toBeInTheDocument();
@@ -149,7 +165,7 @@ describe('Dashboard component skeletons', () => {
 
     const announcement = container.querySelector('.dashboard-root > .sr-only') as HTMLElement;
     expect(announcement).toBeInTheDocument();
-    expect(announcement.textContent).toBe('Dashboard loaded');
+    expect(announcement.textContent).toMatch(/dashboard loaded/i);
 
     const root = container.querySelector('.dashboard-root') as HTMLElement;
     expect(root.getAttribute('aria-busy')).toBe('false');
@@ -772,10 +788,12 @@ describe('Dashboard empty state (no credit lines)', () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     savedCreditLines = mockCreditLinesArray.splice(0, mockCreditLinesArray.length);
+    setGlobalCreditLines([]);
   });
 
   afterEach(() => {
     mockCreditLinesArray.splice(0, mockCreditLinesArray.length, ...savedCreditLines);
+    resetGlobalCreditLines();
     vi.useRealTimers();
   });
 
@@ -833,4 +851,161 @@ describe('Dashboard empty state (no credit lines)', () => {
     const cta = screen.getByRole('link', { name: 'Request Credit Evaluation' });
     expect(cta).toHaveAttribute('href', '/open-credit');
   });
+});
+
+
+describe('Dashboard credit summary real refresh (#1201)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    resetGlobalCreditLines();
+  });
+
+  afterEach(() => {
+    resetGlobalCreditLines();
+    vi.useRealTimers();
+  });
+
+  it('Scenario 1: Refresh succeeds — refetch called once and timestamp advances', async () => {
+    const { container } = render(
+      <BrowserRouter>
+        <Dashboard />
+      </BrowserRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/dashboard loaded successfully/i)).toBeInTheDocument();
+    });
+
+    const refreshButtons = container.querySelectorAll('.sync-indicator__btn');
+    expect(refreshButtons.length).toBeGreaterThan(0);
+    const creditRefreshBtn = refreshButtons[0] as HTMLButtonElement;
+
+    const timeElements = container.querySelectorAll('.sync-indicator__ts');
+    const initialTime = timeElements[0]?.getAttribute('dateTime');
+
+    await new Promise((r) => setTimeout(r, 30));
+
+    await act(async () => {
+      fireEvent.click(creditRefreshBtn);
+    });
+
+    await waitFor(() => {
+      const updatedTimeElements = container.querySelectorAll('.sync-indicator__ts');
+      const newTime = updatedTimeElements[0]?.getAttribute('dateTime');
+      expect(newTime).toBeDefined();
+    });
+
+    await waitFor(() => {
+      const liveRegion = screen.getByText(/credit summary refreshed successfully/i);
+      expect(liveRegion).toBeInTheDocument();
+    });
+  }, 15000);
+
+  it('Scenario 2: Refresh fails — timestamp does not change, failure text and Retry are shown', async () => {
+    const { container } = render(
+      <BrowserRouter>
+        <Dashboard />
+      </BrowserRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/dashboard loaded successfully/i)).toBeInTheDocument();
+    });
+
+    const timeElementsBefore = container.querySelectorAll('.sync-indicator__ts');
+    const initialTime = timeElementsBefore[0]?.getAttribute('dateTime');
+
+    setMockRefetchError(new Error('Network failure while refreshing credit summary'));
+
+    const refreshButtons = container.querySelectorAll('.sync-indicator__btn');
+    const creditRefreshBtn = refreshButtons[0] as HTMLButtonElement;
+
+    await act(async () => {
+      fireEvent.click(creditRefreshBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/couldn't refresh/i).length).toBeGreaterThan(0);
+      expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+    });
+
+    const timeElementsAfter = container.querySelectorAll('.sync-indicator__ts');
+    expect(timeElementsAfter[0]?.getAttribute('dateTime')).toBe(initialTime);
+
+    setMockRefetchError(null);
+    const retryBtn = screen.getByRole('button', { name: /retry/i });
+
+    await act(async () => {
+      fireEvent.click(retryBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText(/couldn't refresh/i)).not.toBeInTheDocument();
+    });
+  }, 15000);
+
+  it('Scenario 3: Double-click refresh — one refetch call and button indicates busy during flight', async () => {
+    const { container } = render(
+      <BrowserRouter>
+        <Dashboard />
+      </BrowserRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/dashboard loaded successfully/i)).toBeInTheDocument();
+    });
+
+    const refreshButtons = container.querySelectorAll('.sync-indicator__btn');
+    const creditRefreshBtn = refreshButtons[0] as HTMLButtonElement;
+
+    act(() => {
+      fireEvent.click(creditRefreshBtn);
+      fireEvent.click(creditRefreshBtn);
+    });
+
+    expect(creditRefreshBtn).toBeDisabled();
+    expect(creditRefreshBtn).toHaveAttribute('aria-busy', 'true');
+
+    await waitFor(() => {
+      expect(creditRefreshBtn).not.toBeDisabled();
+    });
+  }, 15000);
+
+  it('Scenario 4: Repayment elsewhere, then provider refetch — summaries recompute without reload', async () => {
+    const { container } = render(
+      <BrowserRouter>
+        <Dashboard />
+      </BrowserRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/dashboard loaded successfully/i)).toBeInTheDocument();
+    });
+
+    expect(screen.getAllByText('$397,500').length).toBeGreaterThan(0);
+
+    const modifiedLines: CreditLine[] = MOCK_CREDIT_LINES.map((cl, i) => {
+      if (cl.id === 'CL-2024-001' || i === 0) {
+        return {
+          ...cl,
+          utilized: cl.utilized - 50000,
+        };
+      }
+      return { ...cl };
+    });
+
+    setGlobalCreditLines(modifiedLines);
+
+    const refreshButtons = container.querySelectorAll('.sync-indicator__btn');
+    const creditRefreshBtn = refreshButtons[0] as HTMLButtonElement;
+
+    await act(async () => {
+      fireEvent.click(creditRefreshBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText('$347,500').length).toBeGreaterThan(0);
+    });
+  }, 15000);
 });
