@@ -128,3 +128,70 @@ export function useParams() {
   return {};
 }
 
+/**
+ * Minimal `matchPath` implementation.
+ *
+ * The real react-router-dom resolves patterns such as
+ * `/dutch-auctions/:auctionId`; the announcer uses it to map a pathname to
+ * its route metadata, so the stub needs the same behaviour for the route
+ * patterns to be testable.
+ */
+export type MatchPathOptions = {
+  path: string;
+  end?: boolean;
+  caseSensitive?: boolean;
+};
+
+export type MatchPathResult = {
+  params: Record<string, string>;
+  path: string;
+  pathname: string;
+};
+
+function decodeParam(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+export function matchPath(
+  pattern: string | MatchPathOptions,
+  pathname: string,
+): MatchPathResult | null {
+  const options: MatchPathOptions =
+    typeof pattern === 'string' ? { path: pattern } : pattern;
+  const end = options.end !== false;
+  const caseSensitive = options.caseSensitive === true;
+
+  const paramNames: string[] = [];
+  const source = options.path
+    .split('/')
+    .filter((segment, index) => index === 0 || segment !== '')
+    .map((segment) => {
+      if (segment.startsWith(':')) {
+        const optional = segment.endsWith('?');
+        paramNames.push(optional ? segment.slice(1, -1) : segment.slice(1));
+        return optional ? '(?:([^\\/]+))?' : '([^\\/]+)';
+      }
+      return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    })
+    .join('/');
+
+  const regex = new RegExp(
+    `^${source}${end ? '\\/?$' : '(?:\\/.*)?$'}`,
+    caseSensitive ? '' : 'i',
+  );
+  const match = regex.exec(pathname);
+  if (!match) return null;
+
+  const params: Record<string, string> = {};
+  paramNames.forEach((name, index) => {
+    const value = match[index + 1];
+    if (value !== undefined) params[name] = decodeParam(value);
+  });
+
+  return { params, path: options.path, pathname: match[0] };
+}
+

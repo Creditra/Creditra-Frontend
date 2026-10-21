@@ -129,6 +129,12 @@ export const ROUTE_METADATA: RouteMetadata[] = [
     description:
       "Monitor Creditra Dutch auction opportunities, bids, clearing prices, and market activity.",
   },
+  {
+    path: "/dutch-auctions/:auctionId",
+    pageName: "Dutch Auction Detail",
+    description:
+      "Review a Creditra Dutch auction: collateral, price decay schedule, clearing price, and purchase.",
+  },
 ];
 
 export const NOT_FOUND_METADATA: Omit<RouteMetadata, "path"> = {
@@ -147,15 +153,18 @@ const getRouteMetadata = (pathname: string) =>
 export function RouteAnnouncer() {
   const location = useLocation();
   const headCtx = useContext(RouteHeadContext);
-  const override = headCtx?.head;
+  const override = headCtx?.head ?? null;
   const [announcement, setAnnouncement] = useState("");
 
   useEffect(() => {
     const metadata = getRouteMetadata(location.pathname);
-    const title = titleFor(metadata.pageName);
-    useDocumentTitle(title, metadata.description);
+    // A page may push its own head (e.g. the Dutch auction detail page sets
+    // the title to the NFT name); the static metadata is the fallback.
+    const title = override?.title ?? titleFor(metadata.pageName);
+    const description = override?.description ?? metadata.description;
+    useDocumentTitle(title, description);
     setAnnouncement(`${metadata.pageName} page loaded`);
-  }, [location.pathname]);
+  }, [location.pathname, override?.title, override?.description]);
 
   return (
     <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">

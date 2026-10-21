@@ -1,61 +1,40 @@
-
-import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import type { DutchAuction } from '../types/dutchAuction';
 import { COLOR, fmt } from '../utils/tokens';
-import { PendingButton } from './PendingButton';
+import { shortenAddress } from '../utils/format-address';
+import { DutchAuctionPurchaseButton } from './DutchAuctionPurchaseButton';
+import { DutchAuctionStatusBadge } from './DutchAuctionStatusBadge';
+import { useDutchAuctionLivePrice } from '../hooks/useDutchAuctionLivePrice';
 
 interface DutchAuctionCardProps {
   auction: DutchAuction;
   onPurchase?: (auctionId: string, price: number) => void;
+  /**
+   * Query string of the auctions list this card is rendered in (e.g.
+   * `?filter=active`). It is carried over to the detail page so the
+   * "Back to auctions" link can restore the list exactly as it was.
+   */
+  listSearch?: string;
 }
 
-const calculateCurrentPrice = (auction: DutchAuction): number => {
-  const now = Date.now();
-  const start = new Date(auction.startTime).getTime();
-  const end = new Date(auction.endTime).getTime();
-  
-  if (now < start) return auction.startPrice;
-  if (now > end) return auction.floorPrice;
-  
-  const elapsed = now - start;
-  const total = end - start;
-  const progress = elapsed / total;
-  
-  return auction.startPrice - progress * (auction.startPrice - auction.floorPrice);
+/**
+ * Build the deep link to the detail page of an auction.
+ *
+ * The id is percent-encoded (it comes from the feed, but a link must never
+ * carry a raw path segment), and the list query string is passed along as a
+ * `from` parameter so the detail page can send the visitor back to the
+ * list they came from.
+ */
+export const buildAuctionDetailHref = (auctionId: string, listSearch = ''): string => {
+  const base = `/dutch-auctions/${encodeURIComponent(auctionId)}`;
+  if (!listSearch) return base;
+
+  return `${base}?from=${encodeURIComponent(`/dutch-auctions${listSearch}`)}`;
 };
 
-const formatTimeLeft = (endTime: string): string => {
-  const now = Date.now();
-  const end = new Date(endTime).getTime();
-  const diff = end - now;
-  
-  if (diff <= 0) return 'Ended';
-  
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  
-  const h = hours;
-  const m = minutes % 60;
-  const s = seconds % 60;
-  
-  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-};
-
-export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onPurchase }) => {
-  const [currentPrice, setCurrentPrice] = useState(calculateCurrentPrice(auction));
-  const [timeLeft, setTimeLeft] = useState(formatTimeLeft(auction.endTime));
-
-  useEffect(() => {
-    if (auction.status !== 'Active') return;
-
-    const interval = setInterval(() => {
-      setCurrentPrice(calculateCurrentPrice(auction));
-      setTimeLeft(formatTimeLeft(auction.endTime));
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [auction]);
+export function DutchAuctionCard({ auction, onPurchase, listSearch = '' }: DutchAuctionCardProps) {
+  const { currentPrice, timeLeft } = useDutchAuctionLivePrice(auction);
+  const detailHref = buildAuctionDetailHref(auction.id, listSearch);
 
   return (
     <div className="card" style={{ padding: '1rem', marginBottom: '1rem' }}>
@@ -75,32 +54,18 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ marginBottom: '0.5rem' }}>
               <h3 style={{ margin: 0, color: COLOR.text, fontSize: '1.1rem' }}>
-                {auction.nft.name}
+                <Link
+                  to={detailHref}
+                  style={{ color: COLOR.accent, textDecoration: 'none' }}
+                >
+                  {auction.nft.name}
+                </Link>
               </h3>
               <p style={{ margin: 0, color: COLOR.muted, fontSize: '0.85rem' }}>
                 {auction.nft.collection} · Token #{auction.nft.tokenId}
               </p>
             </div>
-            <div
-              style={{
-                padding: '0.25rem 0.5rem',
-                borderRadius: '4px',
-                fontSize: '0.75rem',
-                fontWeight: 500,
-                background: auction.status === 'Active' 
-                  ? 'rgba(63,185,80,0.16)' 
-                  : auction.status === 'Completed'
-                  ? 'rgba(88,166,255,0.16)'
-                  : 'rgba(248,81,73,0.16)',
-                color: auction.status === 'Active' 
-                  ? '#8ee99d'
-                  : auction.status === 'Completed'
-                  ? '#58a6ff'
-                  : '#ffb0aa',
-              }}
-            >
-              {auction.status}
-            </div>
+            <DutchAuctionStatusBadge status={auction.status} />
           </div>
 
           <p style={{ margin: '0.5rem 0', color: COLOR.text, fontSize: '0.9rem' }}>
@@ -140,7 +105,7 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
                   Winner
                 </p>
                 <p style={{ margin: 0, color: COLOR.text, fontSize: '0.9rem' }}>
-                  {`${auction.winner.slice(0, 6)}...${auction.winner.slice(-4)}`}
+                  {shortenAddress(auction.winner)}
                 </p>
               </div>
             )}
@@ -148,17 +113,15 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
 
           {auction.status === 'Active' && (
             <div style={{ marginTop: '1rem' }}>
-              <PendingButton
-                onClick={() => onPurchase?.(auction.id, currentPrice)}
-                style={{ width: '100%' }}
-              >
-                Purchase Now for {fmt(currentPrice)}
-              </PendingButton>
+              <DutchAuctionPurchaseButton
+                auctionId={auction.id}
+                price={currentPrice}
+                onPurchase={onPurchase}
+              />
             </div>
           )}
         </div>
       </div>
     </div>
   );
-};
-
+}

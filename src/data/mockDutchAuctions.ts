@@ -1,5 +1,6 @@
 
 import type { DutchAuction } from '../types/dutchAuction';
+import { AUCTION_ID_MAX_LENGTH, safeDecodeURIComponent } from '../utils/dutchAuction';
 
 const now = Date.now();
 
@@ -61,4 +62,27 @@ export const MOCK_DUTCH_AUCTIONS: DutchAuction[] = [
     finalPrice: 225,
   },
 ];
+
+/**
+ * Look up a single auction by id.
+ *
+ * Used by the `/dutch-auctions/:auctionId` detail route, where the id comes
+ * straight from the URL and is therefore untrusted:
+ *
+ * - the id is percent-decoded first (a link may carry `DA%2D001`);
+ * - ids longer than {@link AUCTION_ID_MAX_LENGTH} are rejected before any
+ *   lookup happens;
+ * - the comparison is exact and case sensitive;
+ * - unknown ids return `undefined` so the caller can render a not-found
+ *   state instead of crashing.
+ */
+export function getAuctionById(id: string): DutchAuction | undefined {
+  const trimmed = typeof id === 'string' ? id.trim() : '';
+  if (!trimmed || trimmed.length > AUCTION_ID_MAX_LENGTH) return undefined;
+
+  const decoded = safeDecodeURIComponent(trimmed);
+  if (!decoded || decoded.length > AUCTION_ID_MAX_LENGTH) return undefined;
+
+  return MOCK_DUTCH_AUCTIONS.find((auction) => auction.id === decoded);
+}
 

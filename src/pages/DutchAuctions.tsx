@@ -1,13 +1,16 @@
 
-import React, { useState } from 'react';
+import { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { DutchAuctionCard } from '../components/DutchAuctionCard';
 import { EmptyState } from '@/components/EmptyState';
 import { NoDataGraph } from '@/components/illustrations';
 import { MOCK_DUTCH_AUCTIONS } from '../data/mockDutchAuctions';
+import { announceAuctionPurchase } from '../utils/dutchAuction';
 import { COLOR } from '../utils/tokens';
 
-export const DutchAuctions: React.FC = () => {
+export const DutchAuctions = () => {
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
+  const location = useLocation();
 
   const filteredAuctions = MOCK_DUTCH_AUCTIONS.filter(auction => {
     if (filter === 'active') return auction.status === 'Active';
@@ -16,7 +19,7 @@ export const DutchAuctions: React.FC = () => {
   });
 
   const handlePurchase = (auctionId: string, price: number) => {
-    alert(`Purchased auction ${auctionId} for ${price} USD!`);
+    announceAuctionPurchase(auctionId, price);
   };
 
   return (
@@ -77,6 +80,7 @@ export const DutchAuctions: React.FC = () => {
             <DutchAuctionCard
               key={auction.id}
               auction={auction}
+              listSearch={location.search}
               onPurchase={handlePurchase}
             />
           ))

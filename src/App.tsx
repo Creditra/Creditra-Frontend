@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { BrowserRouter, Route, Routes, Link, NavLink } from "react-router-dom";
 import { useScrollRestoration } from "./hooks/useScrollRestoration";
 import { Dashboard } from "./pages/Dashboard";
@@ -24,7 +24,6 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { NotFound } from "./pages/NotFound";
 import HelpCenter from "./pages/HelpCenter";
 import { ShortcutHelpOverlay } from "./components/ShortcutHelpOverlay";
-import { DutchAuctions } from "./pages/DutchAuctions";
 import RepayPage from "./pages/RepayPage";
 import RepayCalendar from "./pages/RepayCalendar";
 import { SettingsAccount } from "./pages/SettingsAccount";
@@ -49,6 +48,28 @@ const isEditableTarget = (target: EventTarget | null) => {
     tagName === "select"
   );
 };
+
+/*
+ * Dutch auction routes are code split: the list and the detail page ship in
+ * their own chunks so the dashboard bundle stays small. Each lazy route is
+ * wrapped in a <Suspense> boundary with a short status message as fallback.
+ */
+const DutchAuctions = lazy(() =>
+  import("./pages/DutchAuctions").then((module) => ({
+    default: module.DutchAuctions,
+  })),
+);
+const DutchAuctionDetail = lazy(() => import("./pages/DutchAuctionDetail"));
+
+const RouteFallback = ({ label }: { label: string }) => (
+  <p
+    role="status"
+    aria-live="polite"
+    style={{ padding: "1rem", color: "var(--muted, #8b949e)" }}
+  >
+    {label}
+  </p>
+);
 
 /**
  * Application root.
@@ -245,7 +266,24 @@ function App() {
                           element={<DrawCreditPage />}
                         />
                         <Route path="/open-credit" element={<RequestEvaluation />} />
-                        <Route path="/dutch-auctions" element={<DutchAuctions />} />
+                        <Route
+                          path="/dutch-auctions"
+                          element={
+                            <Suspense fallback={<RouteFallback label="Loading auctions…" />}>
+                              <DutchAuctions />
+                            </Suspense>
+                          }
+                        />
+                        {/* Issue #1213: deep-linkable detail page for a single
+                            Dutch auction. */}
+                        <Route
+                          path="/dutch-auctions/:auctionId"
+                          element={
+                            <Suspense fallback={<RouteFallback label="Loading auction…" />}>
+                              <DutchAuctionDetail />
+                            </Suspense>
+                          }
+                        />
                         <Route path="/settings/account" element={<SettingsAccount />} />
                         <Route path="/settings/theme" element={<Theme />} />
                         <Route path="/linked-accounts" element={<LinkedAccounts />} />
