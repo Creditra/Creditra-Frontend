@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router';
 
 // Local mock — this file is the empty-state suite, so we override the
 // module with `vi.mock` (hoisted) right at the top. The populated suite in
 // `RepayPage.test.tsx` is unaffected because they live in separate files.
-vi.mock('@/data/mockData', () => ({
-  MOCK_CREDIT_LINES: [],
-}));
+vi.mock('@/data/mockData', async () => {
+  const { REPAY_EMPTY_CREDIT_LINES } = await import('@/test/fixtures/repayCreditLines');
+  return { MOCK_CREDIT_LINES: REPAY_EMPTY_CREDIT_LINES };
+});
 
 vi.mock('@/context/WalletContext', () => ({
   useWallet: () => ({

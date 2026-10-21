@@ -127,6 +127,8 @@ interface WalletConnectionModalProps {
   detectedWallets?: WalletProvider[];
 }
 
+const EMPTY_DETECTED_WALLETS: WalletProvider[] = [];
+
 /**
  * WalletConnectionModal
  *
@@ -150,7 +152,7 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
   onClose,
   onConnect,
   triggerRef,
-  detectedWallets = [],
+  detectedWallets = EMPTY_DETECTED_WALLETS,
 }) => {
   const [connectingId, setConnectingId] = useState<WalletProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -213,6 +215,19 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
       orderedWallets: resolvedOrder,
     };
   }, [isOpen]); // Re-read ordering each time the modal opens.
+
+  // Sort detected wallets before undetected ones, preserving the existing
+  // MRU ordering within each group.
+  const sortedWallets = useMemo(() => {
+    const detectedSet = new Set(detectedWallets);
+    const detected: WalletOption[] = [];
+    const undetected: WalletOption[] = [];
+    for (const wallet of orderedWallets) {
+      if (detectedSet.has(wallet.id)) detected.push(wallet);
+      else undetected.push(wallet);
+    }
+    return [...detected, ...undetected];
+  }, [orderedWallets, detectedWallets]);
 
   // When the modal opens we want to start in the collapsed "Continue with
   // X" view if there is a primary wallet, or expanded if there is not.
@@ -498,7 +513,7 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
           data-testid="wallet-modal-list"
           onKeyDown={handleKeyDownList}
         >
-          {orderedWallets.map((wallet, index) => {
+          {sortedWallets.map((wallet) => {
             const isDetected = detectedWallets.includes(wallet.id);
             const isConnecting = connectingId === wallet.id;
             const isConnectionInProgress = connectingId !== null;

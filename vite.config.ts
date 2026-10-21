@@ -19,6 +19,8 @@ export default defineConfig({
           'vendor-ui': ['lucide-react', 'framer-motion'],
           // Wallet chunk — isolated for cache stability
           'wallet': ['lean-qr'],
+          // Stellar / Soroban chunk — isolated so first paint is unaffected
+          'stellar': ['@stellar/stellar-sdk'],
         },
       },
     },
