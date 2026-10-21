@@ -235,10 +235,16 @@ describe("TransactionHistory", () => {
       within(amountGroup).getByRole("button", { name: "All amounts" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(
-      within(amountGroup).getByRole("button", { name: "Under $5k" }),
+      within(amountGroup).getByRole("button", { name: "Under $100" }),
     ).toHaveAttribute("aria-pressed", "false");
     expect(
-      within(amountGroup).getByRole("button", { name: "$5k-$25k" }),
+      within(amountGroup).getByRole("button", { name: "$100–$1k" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(
+      within(amountGroup).getByRole("button", { name: "$1k–$5k" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(
+      within(amountGroup).getByRole("button", { name: "$5k–$25k" }),
     ).toHaveAttribute("aria-pressed", "false");
     expect(
       within(amountGroup).getByRole("button", { name: "$25k+" }),
@@ -246,6 +252,7 @@ describe("TransactionHistory", () => {
     expect(
       screen.getByRole("button", { name: "Custom range" }),
     ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getAllByRole("group", { name: /amount/i })).toHaveLength(1);
   });
 
   it("updates the polite result count when quick amount chips change", () => {
@@ -253,11 +260,11 @@ describe("TransactionHistory", () => {
 
     expect(screen.getByText("28 transactions shown")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Under $5k" }));
+    fireEvent.click(screen.getByRole("button", { name: "Under $100" }));
 
     expect(
       screen
-        .getByRole("button", { name: "Under $5k" })
+        .getByRole("button", { name: "Under $100" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
     expect(screen.getByText("12 transactions shown")).toBeTruthy();
@@ -298,23 +305,24 @@ describe("TransactionHistory", () => {
     expect(allButtons[0].getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("renders amount range filter chips with correct aria-pressed states", () => {
+  it("renders one unified amount filter with mutually exclusive presets", () => {
     renderTransactionHistory();
 
-    const amountGroup = screen.getByRole("group", { name: /^amount$/i });
+    const amountGroup = screen.getByRole("group", { name: /amount range/i });
 
     expect(
-      within(amountGroup).getByRole("button", { name: "All Amounts" }),
+      within(amountGroup).getByRole("button", { name: "All amounts" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(
-      within(amountGroup).getByRole("button", { name: "<$100" }),
+      within(amountGroup).getByRole("button", { name: "Under $100" }),
     ).toHaveAttribute("aria-pressed", "false");
     expect(
-      within(amountGroup).getByRole("button", { name: "$100–$1,000" }),
+      within(amountGroup).getByRole("button", { name: "$100–$1k" }),
     ).toHaveAttribute("aria-pressed", "false");
     expect(
-      within(amountGroup).getByRole("button", { name: ">$1,000" }),
+      within(amountGroup).getByRole("button", { name: "$25k+" }),
     ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getAllByRole("group", { name: /amount/i })).toHaveLength(1);
   });
 
   it("amount filter stacks with existing type and date filters (AND)", () => {
@@ -323,11 +331,16 @@ describe("TransactionHistory", () => {
     // Start: 28 transactions
     expect(screen.getByText("28 transactions shown")).toBeTruthy();
 
-    // Apply >$1,000 amount filter → 22 transactions (all >1000)
-    fireEvent.click(screen.getByRole("button", { name: ">$1,000" }));
-    expect(screen.getByText("22 transactions shown")).toBeTruthy();
+    // Selecting a new bucket replaces the previous amount bucket.
+    const under100 = screen.getByRole("button", { name: "Under $100" });
+    fireEvent.click(under100);
+    expect(under100).toHaveAttribute("aria-pressed", "true");
+    const over25k = screen.getByRole("button", { name: "$25k+" });
+    fireEvent.click(over25k);
+    expect(under100).toHaveAttribute("aria-pressed", "false");
+    expect(over25k).toHaveAttribute("aria-pressed", "true");
 
-    // Stack with Fee type filter → 0 transactions (no Fees >1000)
+    // Other filter groups still combine with the single amount selection.
     fireEvent.click(screen.getByRole("button", { name: "Fee" }));
     expect(screen.getByText("0 transactions shown")).toBeTruthy();
 
@@ -913,10 +926,10 @@ describe("TransactionHistory", () => {
     it("announces when amount preset filter changes", () => {
       renderTransactionHistory();
 
-      const amountGroup = screen.getByRole("group", { name: /^amount$/i });
-      fireEvent.click(within(amountGroup).getByRole("button", { name: "<$100" }));
+      const amountGroup = screen.getByRole("group", { name: /amount range/i });
+      fireEvent.click(within(amountGroup).getByRole("button", { name: "Under $100" }));
 
-      expect(getLiveAnnouncementText()).toMatch(/Filtered by amount <\$100/i);
+      expect(getLiveAnnouncementText()).toMatch(/Filtered by amount range Under \$100/i);
       expect(getLiveAnnouncementText()).toMatch(/4 transactions shown/i);
     });
 
@@ -924,10 +937,9 @@ describe("TransactionHistory", () => {
       renderTransactionHistory();
 
       const amountRangeGroup = screen.getByRole("group", { name: /amount range/i });
-      fireEvent.click(within(amountRangeGroup).getByRole("button", { name: "Under $5k" }));
+      fireEvent.click(within(amountRangeGroup).getByRole("button", { name: "$1k–$5k" }));
 
-      expect(getLiveAnnouncementText()).toMatch(/Filtered by amount range Under \$5k/i);
-      expect(getLiveAnnouncementText()).toMatch(/12 transactions shown/i);
+      expect(getLiveAnnouncementText()).toMatch(/Filtered by amount range \$1k to \$5k/i);
     });
 
     it("announces when date range preset changes", () => {
