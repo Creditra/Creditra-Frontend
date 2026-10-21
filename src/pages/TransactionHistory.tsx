@@ -12,7 +12,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { CopyToClipboard } from "../components/CopyToClipboard";
-import { DateRangeChips, type DatePreset } from "../components/DateRangeChips";
+import { type DatePreset } from "../components/DateRangeChips";
 import {
   AmountRangeChips,
   type AmountRangePreset,
@@ -32,13 +32,12 @@ import type {
   TransactionType,
 } from "../types/creditLine";
 import {
-  startOfDay,
   startOfMonth,
   startOfWeek,
   getCalendarGroup,
   relativeTime as formatCalendarRelative,
 } from "../utils/dates";
-import { COLOR, fmt, fmtDate, fmtDateTime } from "../utils/tokens";
+import { COLOR, fmt, fmtDateTime } from "../utils/tokens";
 import "./TransactionHistory.css";
 import { NoActivity, NoDataGraph, NoLines } from "../components/illustrations";
 import { TransactionHistorySkeleton } from "../components/TransactionHistorySkeleton";
