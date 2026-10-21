@@ -18,7 +18,6 @@ import type {
 import type { CollateralAsset } from "../types/collateral";
 import {
   HealthFactorChart,
-  buildHealthHistory,
   deriveHealthFactor,
 } from "../components/HealthFactorChart";
 import {
@@ -219,7 +218,7 @@ function CreditLineCard({
             <HealthFactorChart
               lineName={line.name}
               current={hf}
-              data={buildHealthHistory(hf)}
+              data={line.healthHistory ?? []}
             />
           );
         })()}
