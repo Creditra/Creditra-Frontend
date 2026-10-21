@@ -1,15 +1,28 @@
-import React, { lazy, Suspense, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { lazy, Suspense, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import Tabs, { TabItem } from '../components/Tabs';
+import { Skeleton } from '../components/Skeleton';
 import { MOCK_CREDIT_LINES } from '../data/mockData';
 import { fmt } from '../utils/tokens';
 import './Profile.css';
 
-const ActivityTimeline = lazy(() => import('../components/ActivityTimeline'));
+const ProfileActivity = lazy(() => import('./ProfileActivity'));
+
+/** Valid tab ids, mirrored by the `?tab=` search parameter. */
+const TAB_IDS = ['overview', 'activity'] as const;
+type TabId = (typeof TAB_IDS)[number];
+
+/** Narrows an arbitrary `?tab=` value to a known tab id. */
+function isTabId(value: string | null): value is TabId {
+  return value !== null && (TAB_IDS as readonly string[]).includes(value);
+}
 
 /**
  * Profile page component displaying user information with tab navigation.
- * Tabs: Overview (account summary from demo data) | Activity (activity timeline).
+ * Tabs: Overview (account summary from demo data) | Activity (refreshable feed).
+ *
+ * The selected tab is driven by the `?tab=` search parameter, making the URL
+ * the source of truth: reloads, links, and browser history all agree with it.
  */
 function ProfileOverview() {
   const active = MOCK_CREDIT_LINES.filter((l) => l.status === 'Active');
@@ -47,7 +60,18 @@ function ProfileOverview() {
 }
 
 const Profile: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'activity'>('overview');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const activeTab: TabId = isTabId(tabParam) ? tabParam : 'overview';
+
+  useEffect(() => {
+    // An unrecognised `?tab=` value falls back to Overview; rewrite it in place
+    // (replace) so the URL never disagrees with the visible tab.
+    if (tabParam !== null && !isTabId(tabParam)) {
+      setSearchParams({ tab: 'overview' }, { replace: true });
+    }
+  }, [tabParam, setSearchParams]);
+
   const tabs: TabItem[] = [
     {
       id: 'overview',
@@ -58,8 +82,14 @@ const Profile: React.FC = () => {
       id: 'activity',
       label: 'Activity',
       panel: (
-        <Suspense fallback={<div>Loading activity...</div>}>
-          <ActivityTimeline />
+        <Suspense
+          fallback={
+            <div role="status" aria-label="Loading activity">
+              <Skeleton width="100%" height={200} />
+            </div>
+          }
+        >
+          <ProfileActivity />
         </Suspense>
       ),
     },
@@ -71,7 +101,11 @@ const Profile: React.FC = () => {
       <Tabs
         tabs={tabs}
         activeTab={activeTab}
-        onTabChange={(tabId) => setActiveTab(tabId as 'overview' | 'activity')}
+        onTabChange={(tabId) => {
+          if (!isTabId(tabId)) return;
+          // Push a new history entry so Back restores the previous tab.
+          setSearchParams({ tab: tabId });
+        }}
         ariaLabel="Profile sections"
         tabListClassName="profile-tabs"
         panelClassName="profile-content"

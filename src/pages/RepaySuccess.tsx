@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router';
 import { ArrowLeft, CheckCircle, Home } from 'lucide-react';
 import { RepaySuccessShareCard } from '@/components/RepaySuccessShareCard';
 import { PayoffProjection } from '@/components/PayoffProjection';

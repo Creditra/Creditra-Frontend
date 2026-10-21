@@ -16,6 +16,7 @@ export const CATEGORY_ICON: Record<NotificationCategory, string> = {
   credit_line: '💳',
   risk_score: '🛡',
   rate_change: '📈',
+  auction: '🔨',
   system: '⚙',
 };
 

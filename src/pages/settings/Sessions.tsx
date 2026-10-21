@@ -63,18 +63,9 @@ function relativeTime(iso: string): string {
   return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
-/** Simulates a 600 ms server-side revoke call. */
+/** Simulates a successful 600 ms server-side revoke call. */
 function simulateRevoke(_sessionId: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      // Simulate a rare (1-in-10) network failure for error-path coverage.
-      if (Math.random() < 0.05) {
-        reject(new Error('Network error'));
-      } else {
-        resolve();
-      }
-    }, 600);
-  });
+  return new Promise((resolve) => setTimeout(resolve, 600));
 }
 
 // ─── SessionRow ──────────────────────────────────────────────────────────────
@@ -182,7 +173,14 @@ function SessionRow({ session, revokeState, anyRevoking, onRevoke }: SessionRowP
  *
  * Fetches sessions on mount and provides per-session and bulk-revoke actions.
  */
-export default function SessionsSettings() {
+export interface SessionsSettingsProps {
+  /** Revoke a session; defaults to a successful simulated request. */
+  revokeSession?: (sessionId: string) => Promise<void>;
+}
+
+export default function SessionsSettings({
+  revokeSession = simulateRevoke,
+}: SessionsSettingsProps = {}) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [revokeStates, setRevokeStates] = useState<RevokeStateMap>({});
@@ -232,14 +230,14 @@ export default function SessionsSettings() {
   const handleRevoke = useCallback(async (sessionId: string) => {
     setSessionRevokeState(sessionId, 'loading');
     try {
-      await simulateRevoke(sessionId);
+      await revokeSession(sessionId);
       setSessionRevokeState(sessionId, 'success');
       flashGlobalStatus('success', 'Session revoked successfully.');
     } catch {
       setSessionRevokeState(sessionId, 'error');
       flashGlobalStatus('error', 'Failed to revoke session. Please try again.');
     }
-  }, [setSessionRevokeState, flashGlobalStatus]);
+  }, [revokeSession, setSessionRevokeState, flashGlobalStatus]);
 
   // ── Revoke all other sessions ────────────────────────────────────────────────
   const handleRevokeAll = useCallback(async () => {
@@ -254,7 +252,7 @@ export default function SessionsSettings() {
     const results = await Promise.allSettled(
       otherIds.map(async (id) => {
         setSessionRevokeState(id, 'loading');
-        await simulateRevoke(id);
+        await revokeSession(id);
         return id;
       }),
     );
@@ -275,7 +273,7 @@ export default function SessionsSettings() {
     }
 
     setIsRevokingAll(false);
-  }, [sessions, revokeStates, setSessionRevokeState, flashGlobalStatus]);
+  }, [revokeSession, sessions, revokeStates, setSessionRevokeState, flashGlobalStatus]);
 
   // ── Derived counts ───────────────────────────────────────────────────────────
   const revokeableCount = sessions.filter(
