@@ -22,8 +22,9 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import RepayPage from './RepayPage';
+import RepaySuccess from './RepaySuccess';
 
 // ── Module mocks ─────────────────────────────────────────────────────────
 
@@ -60,27 +61,10 @@ vi.mock('../utils/storage', () => ({
   removeKey: vi.fn(),
 }));
 
-vi.mock('../data/mockData', () => ({
-  MOCK_CREDIT_LINES: [
-    {
-      id: 'CL-2024-001',
-      name: 'Primary Business Line',
-      status: 'Active',
-      limit: 500000,
-      utilized: 187500,
-      apr: 8.5,
-      riskScore: 720,
-      collateral: 'Commercial Real Estate',
-      openedAt: '2024-03-15',
-      updatedAt: '2025-02-20T14:32:00Z',
-      nextPaymentDate: '2025-03-01',
-      nextPaymentAmount: 3200,
-      transactions: [],
-      statusHistory: [],
-      aprHistory: [],
-    },
-  ],
-}));
+vi.mock('../data/mockData', async () => {
+  const { REPAY_TEST_CREDIT_LINES } = await import('@/test/fixtures/repayCreditLines');
+  return { MOCK_CREDIT_LINES: REPAY_TEST_CREDIT_LINES };
+});
 
 // Navigation spy: RepayPage must navigate to /repay/success on a successful
 // submission, and must NOT render an in-page success step.
@@ -104,7 +88,10 @@ vi.mock('react-router-dom', async () => {
 function renderWithLine(initialEntries = ['/?line=CL-2024-001']) {
   const result = render(
     <MemoryRouter initialEntries={initialEntries}>
-      <RepayPage />
+      <Routes>
+        <Route path="/repay/success" element={<RepaySuccess />} />
+        <Route path="*" element={<RepayPage />} />
+      </Routes>
     </MemoryRouter>,
   );
   act(() => {
@@ -348,6 +335,26 @@ describe('RepayPage — tabular-nums on numeric displays (FWC26)', () => {
 
       // No fabricated ids should appear anywhere in the rendered output.
       expect(container.textContent ?? '').not.toMatch(/TXN-\d+/);
+    });
+  });
+
+  describe('success route', () => {
+    it('shows the confirmed amount on the routed success page', () => {
+      renderWithLine();
+      fireEvent.change(screen.getByLabelText(/amount to repay/i), { target: { value: '100' } });
+      fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm repayment/i }));
+
+      expect(screen.getByRole('heading', { name: 'You repaid $100.00!' })).toBeInTheDocument();
+    });
+
+    it('shows the remaining balance on the routed success page', () => {
+      renderWithLine();
+      fireEvent.change(screen.getByLabelText(/amount to repay/i), { target: { value: '50' } });
+      fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm repayment/i }));
+
+      expect(screen.getByText('$187,450.00')).toBeInTheDocument();
     });
   });
 

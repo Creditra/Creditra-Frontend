@@ -12,11 +12,12 @@ import {
   clearRepayDraft,
   hasFreshRepayDraft,
   MAX_AGE_MS,
+  type RepayDraftState,
 } from './repayDraft';
 
 const STORAGE_KEY = 'creditra_repay_draft';
 
-function makeDraft(overrides: Partial<Record<string, unknown>> = {}) {
+function makeDraft(overrides: Partial<Omit<RepayDraftState, 'savedAt'>> = {}) {
   return {
     step: 'input' as const,
     creditLineId: 'CL-2024-001',

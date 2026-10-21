@@ -1,4 +1,4 @@
-/**
+/*
  * TransactionStatus
  *
  * Step 4 (final) of the draw-credit flow. Shows the outcome of the draw
@@ -27,18 +27,28 @@
  * Accessibility:
  *   - The outer div has role="status" + aria-live="polite" so the result is
  *     announced when it replaces the loading spinner.
+ *   - On error, the region uses role="alert" and focus moves to the error
+ *     heading so keyboard and screen-reader users are notified immediately.
  *   - Icons are aria-hidden="true"; all meaningful state info is in text.
  *   - forced-colors overrides in patterns.css preserve pattern geometry in
  *     Windows High Contrast mode.
  */
 
+import { useEffect, useRef } from "react";
 import { Transaction } from "@/types/draw-credit.types";
 import { CheckCircle2, AlertCircle, Clock, RotateCcw } from "lucide-react";
-import "@/styles/patterns.css";
+import "${@}/styles/patterns.css";
+
+export type DrawErrorKind = "retryable" | "terminal";
 
 interface TransactionStatusProps {
   transaction: Transaction;
   onNewDraw: () => void;
+  /** Optional retry handler. When provided and the error is retryable,
+   * a primary "Try again" button is rendered. */
+  onRetry?: () => void;
+  /** Classification of the error. Defaults to "retryable" when omitted. */
+  errorKind?: DrawErrorKind;
 }
 
 /**
@@ -77,27 +87,51 @@ const STATUS_CONFIG = {
   },
 } as const;
 
+/** Copy explaining what happened and how to recover, by error kind. */
+const ERROR_HELPER = {
+  retryable:
+    "This was a temporary problem. Your line and amount have been kept, so you can try again.",
+  terminal:
+    "This request cannot be completed as-is. Start over to adjust your draw details.",
+} as const;
+
 export function TransactionStatus({
   transaction,
   onNewDraw,
+  onRetry,
+  errorKind = "retryable",
 }: TransactionStatusProps) {
   const config = STATUS_CONFIG[transaction.status];
   const { Icon, title, colorMod, patternMod } = config;
+  const isError = transaction.status === "error";
+  const headingRef = useRef<HTMMHeadingElement>(null);
+
+  // Move focus to the error heading when an error is shown so the failure
+  // and its recovery actions are reachable immediately.
+  useEffect(() => {
+    if (isError && headingRef.current) {
+      headingRef.current.focus();
+    }
+  }, [isError, transaction.id]);
 
   const message =
     transaction.status === "error"
       ? (transaction.message ?? "An error occurred during processing.")
       : config.message;
 
+  const showRetry = isError && errorKind === "retryable" && Boolean(onRetry);
+  const startOverLabel = isError ? "Start over" : "Make Another Draw";
+
   return (
     /*
      * role="status" + aria-live="polite" ensures the result is announced when
      * this replaces the loading spinner (which was removed from the DOM).
+     * Errors use role="alert" for immediate attention.
      */
     <div
       className="dc-spinner-wrap"
-      role="status"
-      aria-live="polite"
+      role={isError ? "alert" : "status"}
+      aria-live={isError ? "assertive" : "polite"}
     >
       {/* Status icon circle — colour tint + pattern fill for color-blind accessibility */}
       <div className="dc-status-icon-wrap" style={{ display: "flex", justifyContent: "center" }}>
@@ -114,8 +148,17 @@ export function TransactionStatus({
 
       {/* Title + message */}
       <div>
-        <h2 className="dc-step__title">{title}</h2>
+        <h2
+          ref={headingRef}
+          className="dc-step__title"
+          tabIndex={isError ? -1 : undefined}
+        >
+          {title}
+        </h2>
         <p className="dc-step__subtitle">{message}</p>
+        {isError && (
+          <p className="dc-step__subtitle">{ERROR_HELPER[errorKind]}</p>
+        )}
       </div>
 
       {/* Transaction detail card */}
@@ -156,13 +199,24 @@ export function TransactionStatus({
         </div>
       )}
 
-      {/* Reset CTA */}
+      {/* Retryable error — primary "Try again" button */}
+      {showRetry && (
+        <button
+          onClick={onRetry}
+          className="dc-btn dc-btn--primary dc-btn--full dc-btn--icon-gap"
+        >
+          <RotateCcw width={20} height={20} aria-hidden="true" />
+          Try again
+        </button>
+      )}
+
+      {/* Reset CTA -- secondary when a retry action is shown, primary otherwise */}
       <button
         onClick={onNewDraw}
-        className="dc-btn dc-btn--primary dc-btn--full dc-btn--icon-gap"
+        className={`dc-btn dc-btn--full dc-btn--icon-gap${showRetry ? "" : " dc-btn--primary"}`}
       >
         <RotateCcw width={20} height={20} aria-hidden="true" />
-        Make Another Draw
+        {startOverLabel}
       </button>
     </div>
   );
