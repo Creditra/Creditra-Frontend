@@ -48,7 +48,8 @@ export function useOnline() {
   }, [processQueue]);
 
   const queueAction = useCallback((action: Action, key?: string) => {
-    if (isOnline) {
+    const currentlyOnline = typeof navigator !== 'undefined' ? navigator.onLine : isOnline;
+    if (currentlyOnline) {
       action();
     } else {
       if (key) {

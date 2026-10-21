@@ -53,6 +53,11 @@ import { DrawCreditPageSkeleton } from "./DrawCreditPage";
 import { DEFAULT_RISK_ACK_KEY } from "@/constants/storageKeys";
 import { readJson, writeJson } from "@/utils/storage";
 import { __getMockSearch, __setMockLocation } from "react-router-dom";
+import {
+  getPendingDrawIntent,
+  clearPendingDrawIntent,
+  savePendingDrawIntent,
+} from "@/state/pendingDraw";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -876,3 +881,203 @@ describe("DrawCreditPage — responsive breakpoint audit", () => {
     expect(css).toMatch(pattern);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests — offline draw re-confirmation & consent flow
+// ---------------------------------------------------------------------------
+
+describe("DrawCreditPage — offline draw re-confirmation flow", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem("creditra.default_risk_ack", "true");
+    __setMockLocation("/draw-credit");
+    clearPendingDrawIntent();
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+  });
+
+  afterEach(() => {
+    clearPendingDrawIntent();
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+  });
+
+  it("1. Confirm while offline then dispatch online: no auto-submit, alertdialog shown", async () => {
+    const { user } = setup();
+    await goToConfirmStep(user, "1000");
+
+    // Agree to terms
+    await user.click(screen.getByRole("checkbox"));
+
+    // Set offline
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+
+    // Click confirm draw
+    await user.click(screen.getByRole("button", { name: /confirm draw/i }));
+
+    // Verify offline message copy
+    expect(
+      screen.getByText(/We'll ask you to confirm when you're back online/i),
+    ).toBeInTheDocument();
+
+    // Verify intent was saved
+    const saved = getPendingDrawIntent();
+    expect(saved).not.toBeNull();
+    expect(saved?.amountCents).toBe(100000);
+    expect(saved?.lineId).toBe("cl-001");
+
+    // Set online and dispatch event
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+
+    // Alertdialog is shown and no auto-submit happened
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toBeInTheDocument();
+    expect(
+      screen.getByText(/You were offline when you confirmed a \$1,000\.00 draw from Business Line of Credit\. Review and submit\?/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /draw successful/i })).not.toBeInTheDocument();
+  });
+
+  it("2. Choose Review: returns to confirm step with line and amount, terms unchecked", async () => {
+    savePendingDrawIntent({
+      lineId: "cl-001",
+      amountCents: 150000,
+      queuedAt: Date.now(),
+    });
+
+    render(<DrawCreditPage />);
+
+    // Dispatch online
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toBeInTheDocument();
+
+    // Click Review
+    const reviewBtn = screen.getByRole("button", { name: /^review$/i });
+    fireEvent.click(reviewBtn);
+
+    // Dialog closed and lands on confirm step
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /review (&|and) confirm/i })).toBeInTheDocument();
+
+    // Terms checkbox is unchecked
+    const checkbox = screen.getByRole("checkbox");
+    expect(checkbox).not.toBeChecked();
+
+    // Confirm button is disabled because terms are not accepted
+    const confirmBtn = screen.getByRole("button", { name: /confirm draw/i });
+    expect(confirmBtn).toBeDisabled();
+
+    // Amount displayed in review
+    expect(screen.getByText("$1,500.00")).toBeInTheDocument();
+  });
+
+  it("3. Choose Discard: intent is cleared with no submission", async () => {
+    savePendingDrawIntent({
+      lineId: "cl-001",
+      amountCents: 100000,
+      queuedAt: Date.now(),
+    });
+
+    render(<DrawCreditPage />);
+
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+
+    // Click Discard
+    const discardBtn = screen.getByRole("button", { name: /^discard$/i });
+    fireEvent.click(discardBtn);
+
+    // Dialog closed
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+
+    // Intent is cleared
+    expect(getPendingDrawIntent()).toBeNull();
+
+    // No submission happened
+    expect(screen.queryByRole("heading", { name: /draw successful/i })).not.toBeInTheDocument();
+  });
+
+  it("4. online dispatched twice: produces exactly one prompt", async () => {
+    savePendingDrawIntent({
+      lineId: "cl-001",
+      amountCents: 100000,
+      queuedAt: Date.now(),
+    });
+
+    render(<DrawCreditPage />);
+
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+      window.dispatchEvent(new Event("online"));
+    });
+
+    const dialogs = screen.getAllByRole("alertdialog");
+    expect(dialogs).toHaveLength(1);
+  });
+
+  it("5. Intent older than 15 minutes: discarded with role='status' message", async () => {
+    // 16 minutes old
+    savePendingDrawIntent({
+      lineId: "cl-001",
+      amountCents: 100000,
+      queuedAt: Date.now() - 16 * 60 * 1000,
+    });
+
+    render(<DrawCreditPage />);
+
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+
+    // Alertdialog should NOT appear
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+
+    // Intent cleared
+    expect(getPendingDrawIntent()).toBeNull();
+
+    // Status message announced
+    const statusMsg = screen.getByText(/expired after 15 minutes/i).closest('[role="status"]');
+    expect(statusMsg).toBeInTheDocument();
+  });
+
+  it("6. Unmount page while offline, then dispatch online: no state update or navigation", async () => {
+    savePendingDrawIntent({
+      lineId: "cl-001",
+      amountCents: 100000,
+      queuedAt: Date.now(),
+    });
+
+    const consoleErrorSpy = vi.spyOn(console, "error");
+    const { unmount } = render(<DrawCreditPage />);
+
+    unmount();
+
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+});
+
