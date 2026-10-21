@@ -323,3 +323,70 @@ src/
 ├── data/                Static fixtures (mirrors backend shape)
 └── test/                Vitest setup
 ```
+
+---
+
+## 9. Credit data sources
+
+### Port
+
+`src/services/credit/CreditDataSource.ts` defines the **`CreditDataSource` interface** — the single typed seam between every credit-lifecycle screen and any concrete data back-end.
+
+```
+CreditDataSource
+  listCreditLines(owner, opts?)   → Promise<CreditLine[]>
+  getCreditLine(owner, id, opts?) → Promise<CreditLine>
+  listTransactions(owner, query, opts?) → Promise<TransactionPage>
+```
+
+All methods:
+- Return **deep copies** — callers may mutate results without touching shared state.
+- Reject with **`CreditDataError`** (never with a plain `Error`) so callers can branch on `err.code`.
+- Honour **`AbortSignal`** via `opts.signal` and reject with `code: 'aborted'` promptly.
+
+### Error taxonomy
+
+| Code | When |
+| --- | --- |
+| `not_found` | The requested resource does not exist for this owner |
+| `network` | A transport-level failure (timeout, DNS, connection reset) |
+| `invalid_response` | The adapter received data that violates the expected schema |
+| `unauthorized` | The owner lacks permission or is not authenticated |
+| `unavailable` | The upstream service is temporarily down or rate-limited |
+| `aborted` | The caller cancelled via `AbortSignal` |
+
+### Adapter selection
+
+`src/services/credit/index.ts` exports `createCreditDataSource()`. It reads
+`import.meta.env.VITE_CREDIT_DATA_SOURCE` and instantiates the matching adapter.
+An unrecognised value throws a `CreditDataError { code: 'invalid_response' }` at
+**startup**, not silently at first use.
+
+| `VITE_CREDIT_DATA_SOURCE` | Adapter | Notes |
+| --- | --- | --- |
+| unset / `""` / `"mock"` | `MockCreditDataSource` | Default; wraps `MOCK_CREDIT_LINES` |
+| `"soroban-rpc"` | *(future)* | Reads from Soroban contract state |
+| `"horizon"` | *(future)* | Reads from Horizon REST API |
+
+### Mock adapter
+
+`src/services/credit/mockCreditDataSource.ts` wraps `MOCK_CREDIT_LINES` from
+`src/data/mockData.ts`.  Key properties:
+
+- **Deterministic**: `latencyMs` defaults to `0` in `MODE === 'test'`, so tests need no
+  fake timers.
+- **Copy-on-read**: every returned value is JSON round-tripped; mutations never bleed
+  back into the fixture.
+- **Injectable failure**: pass `failWith: new CreditDataError(...)` to exercise error
+  paths without module-level mocks.
+- **Pagination**: delegates to `paginateByCursor` from `src/utils/cursorPagination.ts`
+  for stable, insertion-safe cursor pagination.
+
+### Adding a new adapter
+
+1. Implement `CreditDataSource` in `src/services/credit/<name>CreditDataSource.ts`.
+2. Add a `case '<name>':` branch in `createCreditDataSource()` in
+   `src/services/credit/index.ts`.
+3. Set `VITE_CREDIT_DATA_SOURCE=<name>` in your `.env` file.
+4. Pages and hooks consume the adapter exclusively through `createCreditDataSource()` —
+   no direct imports of adapter files.

@@ -107,6 +107,7 @@ VITE_API_URL=http://localhost:3000          # backend base URL, read via import.
 VITE_REPAY_CONFIRM_THRESHOLD=5000           # USD amount above which repayments require typed confirmation (default: 5000)
 VITE_SETTLEMENT_ASSET_CODE=USDC              # repayable wallet asset code (default: USDC)
 VITE_SETTLEMENT_ASSET_ISSUER=GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5 # default: testnet USDC issuer
+VITE_CREDIT_DATA_SOURCE=mock                # credit data adapter: mock (default) | soroban-rpc | horizon
 ```
 
 `VITE_REPAY_CONFIRM_THRESHOLD` controls the typed-amount guard in the repayment flow.
@@ -117,6 +118,13 @@ enables. Set to `0` to disable the guard entirely (not recommended for productio
 The repay form and Quick Repay use only the wallet balance matching both the configured
 settlement-asset code and issuer. Configure the issuer for the settlement asset on the
 target network; the default issuer is Circle USDC on Stellar testnet.
+
+`VITE_CREDIT_DATA_SOURCE` selects the credit data adapter. The only supported value in
+this release is `mock` (the default), which wraps the built-in sample data in
+`src/data/mockData.ts`. Future values `soroban-rpc` and `horizon` will be added as
+separate adapters. An unrecognised value throws at app startup. See
+[`docs/ARCHITECTURE.md § 9`](docs/ARCHITECTURE.md) for the full adapter API and
+instructions for adding a new adapter.
 
 ---
 
