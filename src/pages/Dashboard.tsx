@@ -21,6 +21,7 @@ import { ContinuePrompt } from "../components/ContinuePrompt";
 import { MOCK_ATTESTATIONS } from "../data/mockData";
 import { getPaymentDueState } from "../lib/payment-due";
 import { useCreditLines, useCreditTransactions } from "@/hooks/useCreditLines";
+import { summarizeCreditLines } from "@/lib/credit-summary";
 import type { Transaction } from "../types/creditLine";
 import {
   COLOR,
@@ -238,12 +239,14 @@ export function Dashboard() {
     [creditLines],
   );
 
-  const totalLimit = activeLinesOnly.reduce((s, cl) => s + cl.limit, 0);
-  const totalUtilized = activeLinesOnly.reduce((s, cl) => s + cl.utilized, 0);
-  const totalAvailable = totalLimit - totalUtilized;
-  const overallPct = utilizationPct(totalUtilized, totalLimit || 1);
+  const creditSummary = useMemo(() => summarizeCreditLines(creditLines), [creditLines]);
+  const totalLimit = creditSummary.drawableLimit;
+  const totalUtilized = creditSummary.totalOutstanding;
+  const totalActiveUtilized = activeLinesOnly.reduce((sum, line) => sum + line.utilized, 0);
+  const totalAvailable = creditSummary.availableToDraw;
+  const overallPct = utilizationPct(totalActiveUtilized, totalLimit || 1);
   const overallLevel =
-    totalLimit > 0 ? getUtilizationLevel(totalUtilized, totalLimit) : "low";
+    totalLimit > 0 ? getUtilizationLevel(totalActiveUtilized, totalLimit) : "low";
 
   const avgRiskScore =
     activeLinesOnly.length > 0
@@ -644,12 +647,12 @@ export function Dashboard() {
                 style={{ background: UTIL_COLOR[overallLevel] }}
               />
               <p className="label">
-                Total Utilized
+                Total Outstanding
                 <WhatChanged
-                  metricId="total-utilized"
+                  metricId="total-outstanding"
                   currentValue={totalUtilized}
                   format="currency"
-                  label="Total Utilized"
+                  label="Total Outstanding"
                 />
               </p>
               <p
@@ -658,23 +661,29 @@ export function Dashboard() {
               >
                 {fmt(totalUtilized)}
               </p>
-              <p className="sub">{overallPct}% of total limit</p>
+              <p className="sub">{overallPct}% of active drawable limit</p>
+              {creditSummary.delinquentOutstanding > 0 && (
+                <p className="sub">
+                  incl. {fmt(creditSummary.delinquentOutstanding)} on suspended/defaulted lines ·{" "}
+                  <Link to="/repay">Repay</Link>
+                </p>
+              )}
             </div>
             <div className="summary-card summary-card--available">
               <div className="glow" style={{ background: COLOR.success }} />
               <p className="label">
-                Available Credit
+                Available to draw
                 <WhatChanged
                   metricId="available-credit"
                   currentValue={totalAvailable}
                   format="currency"
-                  label="Available Credit"
+                  label="Available to draw"
                 />
               </p>
               <p className="value num-tabular" style={{ color: COLOR.success }}>
                 {fmt(totalAvailable)}
               </p>
-              <p className="sub">Ready to draw</p>
+              <p className="sub">From active lines only</p>
             </div>
           </>
         )}

@@ -17,10 +17,13 @@ import {
   getRepayAmountValidation,
   requiresRepayConfirmation,
 } from '@/utils/amountValidation';
-import { offlineMutation } from '@/utils/offline';
 import { useOnline } from '@/hooks/useOnline';
 import { suggestRepayAmount } from '@/utils/suggestRepay';
-import { computeMonthlyAccruedInterest } from '@/utils/currency';
+import {
+  computeMonthlyAccruedInterest,
+  roundToCents,
+} from '@/utils/currency';
+import { allocateRepayment } from '@/lib/repay-allocation';
 import {
   isTypedAmountMatch,
   TypedAmountConfirmField,
@@ -37,6 +40,12 @@ import {
   moneyToNumber,
   SETTLEMENT_ASSET,
 } from '@/lib/repayable-balance';
+import {
+  getRepayableLines,
+  isRepayable,
+  isDelinquentLine,
+} from '@/lib/repay-eligibility';
+import { StatusBadge } from '@/components/StatusBadge';
 import {
   saveRepayDraft,
   loadRepayDraft,
@@ -103,7 +112,7 @@ const SEVERITY_CONFIG = {
 export default function RepayPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { queueAction } = useOnline();
+  const { isOnline, queueAction } = useOnline();
   const {
     wallet,
     status: walletStatus,
@@ -116,11 +125,7 @@ export default function RepayPage() {
   const [recoveredDraft, setRecoveredDraft] = useState<RepayDraftState | null>(null);
   const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false);
   const draftLoadedRef = useRef(false);
-  // Guard: set to true inside handleConfirm/handleNewRepay to prevent the
-  // persist useEffect from re-saving a draft after clearRepayDraft() runs.
-  // React Router's navigate() can trigger a synchronous re-render via the
-  // router context (outside React 18 batching), causing the persist effect
-  // to fire with the old step before setStep('success') is applied.
+  // Prevent the persist effect from re-saving a draft after confirmation.
   const draftClearedRef = useRef(false);
   const isSubmittingRef = useRef(false);
 
@@ -141,15 +146,27 @@ export default function RepayPage() {
   const previewTriggerRef = useRef<HTMLButtonElement>(null);
   const { isReducedMotionActive } = useReducedMotion();
 
-  const creditLines = useMemo(
-    () => MOCK_CREDIT_LINES.filter((cl) => cl.status === 'Active' && cl.utilized > 0),
-    [],
-  );
+  // ── Repayable lines — single predicate used by picker and deep-link ──
+  // Issue #1185: getRepayableLines (utilized > 0 && status !== Closed) replaces
+  // the old Active-only filter so Suspended and Defaulted lines are visible.
+  const creditLines = useMemo(() => getRepayableLines(MOCK_CREDIT_LINES), []);
 
-  const selectedLine = useMemo(
-    () => MOCK_CREDIT_LINES.find((cl) => cl.id === selectedId) ?? null,
-    [selectedId],
-  );
+  // When a ?line= deep-link names an unrepayable line we keep selectedLine null
+  // so the picker renders with an explanatory status message instead of opening
+  // the form for a line that has no outstanding balance (e.g. Closed).
+  const selectedLine = useMemo(() => {
+    if (!selectedId) return null;
+    const line = MOCK_CREDIT_LINES.find((cl) => cl.id === selectedId) ?? null;
+    if (!line || !isRepayable(line)) return null;
+    return line;
+  }, [selectedId]);
+
+  // True when the user arrived via ?line= but the named line is not repayable.
+  const unrepayableDeepLink = useMemo(() => {
+    if (!preselectedId) return false;
+    const line = MOCK_CREDIT_LINES.find((cl) => cl.id === preselectedId) ?? null;
+    return line !== null && !isRepayable(line);
+  }, [preselectedId]);
 
   const repayableBalance = getRepayableBalance(balances ?? null, SETTLEMENT_ASSET);
   const hasRepayableBalance =
@@ -162,26 +179,39 @@ export default function RepayPage() {
   const [reviewBalance, setReviewBalance] = useState<number | null>(null);
   const [reviewBalanceError, setReviewBalanceError] = useState('');
 
+  const accruedInterest = useMemo(
+    () =>
+      selectedLine
+        ? computeMonthlyAccruedInterest(selectedLine.utilized, selectedLine.apr)
+        : 0,
+    [selectedLine],
+  );
+
+  const totalOwed = useMemo(
+    () => (selectedLine ? roundToCents(selectedLine.utilized + accruedInterest) : 0),
+    [selectedLine, accruedInterest],
+  );
+
   const validation = useMemo(
     () =>
       selectedLine
-        ? getRepayAmountValidation(amountStr, selectedLine.utilized, walletBalance)
+        ? getRepayAmountValidation(amountStr, totalOwed, walletBalance)
         : null,
-    [amountStr, selectedLine, walletBalance],
+    [amountStr, selectedLine, totalOwed, walletBalance],
   );
 
   const suggestedAmount = useMemo(
     () =>
       selectedLine
         ? suggestRepayAmount(
-            selectedLine.utilized,
+            totalOwed,
             selectedLine.limit,
             walletBalance,
             selectedLine.apr,
             selectedLine.nextPaymentAmount,
           )
         : 0,
-    [selectedLine, walletBalance],
+    [selectedLine, totalOwed, walletBalance],
   );
 
   const amount = validation?.amount ?? 0;
@@ -228,6 +258,15 @@ export default function RepayPage() {
     if (isSubmittingRef.current) return;
     if (step === 'review' && isReviewConfirmDisabled) return;
     if (step === 'input' && (!hasRepayableBalance || amount > walletBalance)) return;
+
+    if (!isOnline) {
+      isSubmittingRef.current = false;
+      queueAction(() => {
+        void handleConfirm();
+      }, 'repay-confirm');
+      setIsOfflineBlocked(true);
+      return;
+    }
 
     isSubmittingRef.current = true;
 
@@ -286,27 +325,7 @@ export default function RepayPage() {
         nextPaymentAmount: selectedLine.nextPaymentAmount,
         timestamp: new Date().toISOString(),
       },
-      onOffline: () => {
-        queueAction(() => {
-          handleConfirm();
-        }, 'repay-confirm');
-        setIsOfflineBlocked(true);
-      },
-      offlineMessage:
-        'You are offline, so this repayment cannot be processed yet. It has been queued and will be submitted when your connection is restored.',
     });
-    setStep('success');
-    setSrAnnouncement(`Payment successful! You repaid ${formatMoney(amount)}.`);
-  };
-
-  const handleNewRepay = () => {
-    isSubmittingRef.current = false;
-    draftClearedRef.current = true;
-    clearRepayDraft();
-    setAmountStr('');
-    setIsAutoSchedule(false);
-    setStep('input');
-    setSrAnnouncement('Starting a new repayment. Select an amount.');
   };
 
   const handleBack = useCallback(() => {
@@ -359,17 +378,7 @@ export default function RepayPage() {
 
   // ── Persist draft on state changes ────────────────────────────────────
   useEffect(() => {
-    // When the user confirms or starts a new repayment, ensure the draft
-    // is cleared.  This acts as a safety net: even if clearRepayDraft()
-    // ran in the event handler, React Router's navigate() can trigger an
-    // intermediate render that re-persists the draft before the step
-    // state update is applied.
-    if (step === 'success') {
-      clearRepayDraft();
-      return;
-    }
-    // Don't persist if the draft was just intentionally cleared
-    // (handleConfirm / handleNewRepay).
+    // Don't persist if the draft was just intentionally cleared on confirmation.
     if (draftClearedRef.current) return;
 
     // Don't save during loading or after cancel.
@@ -629,48 +638,75 @@ export default function RepayPage() {
             }}
           />
         ) : (
-          <div className="mt-4 space-y-3">
-            {creditLines.map((cl) => {
-              const utilization = Math.round((cl.utilized / cl.limit) * 100);
-              // Task cb-v7: map utilization level to pattern class so the bar
-              // conveys severity via texture, not colour alone (WCAG 1.4.1).
-              const barClass =
-                utilization > 80
-                  ? 'rp-progress--high'
-                  : utilization > 50
-                    ? 'rp-progress--medium'
-                    : 'rp-progress--low';
-              return (
-                <button
-                  key={cl.id}
-                  type="button"
-                  onClick={() => setSelectedId(cl.id)}
-                  className={`rp-cl-card w-full rounded-lg border border-border bg-surface p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${motionClasses(isReducedMotionActive, 'transition-all hover:border-accent hover:bg-accent/5')}`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-foreground">{cl.name}</p>
-                      <p className="mt-0.5 text-sm text-muted">{cl.id}</p>
+          <>
+            {/* Issue #1185: unrepayable ?line= deep-link — status message + picker */}
+            {unrepayableDeepLink && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="mb-2 flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning"
+                data-testid="repay-unrepayable-notice"
+              >
+                <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>This line has no outstanding balance.</span>
+              </div>
+            )}
+            <div className="mt-4 space-y-3">
+              {creditLines.map((cl) => {
+                const utilization = Math.round((cl.utilized / cl.limit) * 100);
+                // Task cb-v7: map utilization level to pattern class so the bar
+                // conveys severity via texture, not colour alone (WCAG 1.4.1).
+                const barClass =
+                  utilization > 80
+                    ? 'rp-progress--high'
+                    : utilization > 50
+                      ? 'rp-progress--medium'
+                      : 'rp-progress--low';
+                const delinquent = isDelinquentLine(cl);
+                return (
+                  <button
+                    key={cl.id}
+                    type="button"
+                    onClick={() => setSelectedId(cl.id)}
+                    className={`rp-cl-card w-full rounded-lg border bg-surface p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${delinquent ? 'border-warning/60' : 'border-border'} ${motionClasses(isReducedMotionActive, 'transition-all hover:border-accent hover:bg-accent/5')}`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        {/* Issue #1185: status badge — text conveys state, not colour alone (WCAG 1.4.1) */}
+                        <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                          <StatusBadge status={cl.status} />
+                          {delinquent && (
+                            <span
+                              className="rp-overdue-label inline-flex items-center rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning"
+                              aria-label="Overdue — repayment needed"
+                            >
+                              Overdue
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-semibold text-foreground">{cl.name}</p>
+                        <p className="mt-0.5 text-sm text-muted">{cl.id}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-foreground num-tabular">
+                          {formatMoney(cl.utilized)}
+                        </p>
+                        <p className="text-sm text-muted"><span className="num-tabular">{utilization}%</span> utilized</p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-foreground num-tabular">
-                        {formatMoney(cl.utilized)}
-                      </p>
-                      <p className="text-sm text-muted"><span className="num-tabular">{utilization}%</span> utilized</p>
+                    {/* Task cb-v7: pattern fill on progress bar */}
+                    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-border">
+                      <div
+                        className={`h-full rounded-full transition-all ${barClass}`}
+                        style={{ width: `${utilization}%` }}
+                        aria-hidden="true"
+                      />
                     </div>
-                  </div>
-                  {/* Task cb-v7: pattern fill on progress bar */}
-                  <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-border">
-                    <div
-                      className={`h-full rounded-full transition-all ${barClass}`}
-                      style={{ width: `${utilization}%` }}
-                      aria-hidden="true"
-                    />
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                  </button>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     );
@@ -686,14 +722,9 @@ export default function RepayPage() {
   }
 
   const oldPct = Math.round((selectedLine.utilized / selectedLine.limit) * 100);
-  const remainingDebt = validation?.remainingDebt ?? selectedLine.utilized;
+  const allocation = allocateRepayment(selectedLine, amount, accruedInterest);
+  const remainingDebt = allocation.remainingTotal;
   const newPct = Math.round((remainingDebt / selectedLine.limit) * 100);
-  const accruedInterest = computeMonthlyAccruedInterest(
-    selectedLine.utilized,
-    selectedLine.apr,
-  );
-  const interestPortion = Math.min(amount, accruedInterest);
-  const principalPortion = Math.max(0, amount - interestPortion);
 
   return (
     <div className="repay-page mx-auto max-w-4xl px-4 py-6 sm:py-8">
@@ -1164,20 +1195,17 @@ export default function RepayPage() {
                 <span className="text-xs text-muted">{selectedLine.apr}% APR</span>
               </div>
               <div className="mt-3 space-y-2 text-sm">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted">Principal reduction</span>
-                  <span className="font-semibold text-foreground num-tabular">
-                    {formatMoney(principalPortion)}
+                <p className="font-semibold text-foreground" data-testid="repay-allocation-summary">
+                  Interest{' '}
+                  <span className="num-tabular">
+                    {formatMoney(allocation.interestPaid)}
                   </span>
-                </div>
-                {accruedInterest > 0 && (
-                  <div className="flex items-center justify-between gap-4 border-t border-border pt-2">
-                    <span className="text-muted">Accrued interest paid</span>
-                    <span className="font-semibold text-foreground num-tabular">
-                      {formatMoney(interestPortion)}
-                    </span>
-                  </div>
-                )}
+                  {' · '}
+                  Principal{' '}
+                  <span className="num-tabular">
+                    {formatMoney(allocation.principalPaid)}
+                  </span>
+                </p>
               </div>
             </div>
 
@@ -1223,74 +1251,6 @@ export default function RepayPage() {
           </div>
         )}
 
-        {step === 'success' && (
-          <div className="space-y-6 text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-success/20">
-              <CheckCircle className="h-8 w-8 text-success" aria-hidden="true" />
-            </div>
-
-            <div>
-              <h2 className="text-2xl font-bold text-foreground">
-                You repaid <span className="num-tabular">{formatMoney(amount)}</span>!
-              </h2>
-              <p className="mt-1 text-muted">
-                Your transaction was successful.
-              </p>
-            </div>
-
-            <div className="rounded-lg border border-border bg-surface p-4 text-left">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted">Remaining debt</span>
-                <span className="flex items-center gap-1">
-                  <span className="font-semibold text-foreground num-tabular">
-                    {formatMoney(remainingDebt)}
-                  </span>
-                  <CopyToClipboard
-                    value={formatMoney(remainingDebt)}
-                    ariaLabel="Copy remaining debt amount"
-                  />
-                </span>
-              </div>
-              <div className="mt-2 flex items-center justify-between text-sm">
-                <span className="text-muted">Credit line utilization</span>
-                <span className="font-semibold text-foreground">
-                  Reduced to <span className="num-tabular">{newPct}%</span>
-                </span>
-              </div>
-              {isAutoSchedule && (
-                <div className="mt-2 flex items-center justify-between text-sm">
-                  <span className="text-muted">Auto-schedule</span>
-                  <span className="font-semibold text-accent">Active</span>
-                </div>
-              )}
-            </div>
-
-            <PayoffProjection
-              currentDebt={selectedLine.utilized}
-              apr={selectedLine.apr}
-              repayAmount={amount}
-              limit={selectedLine.limit}
-              nextPaymentAmount={selectedLine.nextPaymentAmount}
-            />
-
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => navigate('/')}
-                className={`rp-dashboard-btn flex-1 rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${motionClasses(isReducedMotionActive, 'transition-all hover:brightness-110')}`}
-              >
-                Back to Dashboard
-              </button>
-              <button
-                type="button"
-                onClick={handleNewRepay}
-                className={`rp-new-repay-btn flex-1 rounded-lg border border-border bg-surface px-4 py-3 text-sm font-semibold text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${motionClasses(isReducedMotionActive, 'transition-all hover:bg-border')}`}
-              >
-                Make another repayment
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       <InlineHelpOverlay

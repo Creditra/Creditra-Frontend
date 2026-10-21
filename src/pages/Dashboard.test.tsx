@@ -171,8 +171,8 @@ describe('Dashboard component skeletons', () => {
     expect(root.getAttribute('aria-busy')).toBe('false');
 
     expect(screen.getByText('Total Credit Limit')).toBeInTheDocument();
-    expect(screen.getByText('Total Utilized')).toBeInTheDocument();
-    expect(screen.getByText('Available Credit')).toBeInTheDocument();
+    expect(screen.getByText('Total Outstanding')).toBeInTheDocument();
+    expect(screen.getByText('Available to draw')).toBeInTheDocument();
 
     vi.useRealTimers();
   });

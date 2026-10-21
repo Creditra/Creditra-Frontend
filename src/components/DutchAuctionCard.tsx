@@ -8,6 +8,7 @@ import { canPurchase } from '../lib/dutch-auction-purchase';
 import { purchaseAuction } from '../services/dutchAuctions';
 import { EXPECTED_NETWORK } from '../utils/wallet';
 import { LiveRegion } from './LiveRegion';
+import { clearAlert, listAlerts, setAlert } from '../state/auctionAlerts';
 
 interface DutchAuctionCardProps {
   auction: DutchAuction;
@@ -53,6 +54,9 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [politeness, setPoliteness] = useState<'polite' | 'assertive'>('polite');
+  const [targetInput, setTargetInput] = useState('');
+  const [alertError, setAlertError] = useState('');
+  const [savedTarget, setSavedTarget] = useState<number | null>(() => listAlerts().find(item => item.auctionId === auction.id)?.targetStroops ?? null);
 
   // Update price and timer
   useEffect(() => {
@@ -66,6 +70,23 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
 
   const purchaseCheck = canPurchase(auction, wallet, status);
   const helperId = `purchase-helper-${auction.id}`;
+  const alertId = `auction-alert-${auction.id}`;
+
+  const handleSaveAlert = () => {
+    const pricePattern = /^(?:0|[1-9]\d*)(?:\.\d{1,7})?$/;
+    const parsed = pricePattern.test(targetInput) ? Number(targetInput) : NaN;
+    const targetStroops = Math.round(parsed * 1e7);
+    const floorStroops = Math.round(auction.floorPrice * 1e7);
+    const currentStroops = Math.round(currentPrice * 1e7);
+    if (!Number.isFinite(parsed) || targetStroops < floorStroops || targetStroops >= currentStroops) {
+      setAlertError(`Target must be between ${fmt(auction.floorPrice)} floor and ${fmt(currentPrice)} current price`);
+      return;
+    }
+    setAlert(auction.id, targetStroops);
+    setSavedTarget(targetStroops);
+    setTargetInput('');
+    setAlertError('');
+  };
 
   const handlePurchase = async () => {
     if (pending) return; // guard concurrent calls
@@ -178,6 +199,19 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
           </div>
           {auction.status === 'Active' && (
             <div style={{ marginTop: '1rem' }}>
+              {savedTarget !== null ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                  <span>Alert at {fmt(savedTarget / 1e7)}</span>
+                  <button type="button" onClick={() => { clearAlert(auction.id); setSavedTarget(null); }}>Remove</button>
+                </div>
+              ) : (
+                <form aria-describedby={alertError ? `${alertId}-error` : undefined} onSubmit={event => { event.preventDefault(); handleSaveAlert(); }} style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                  <label htmlFor={alertId}>Notify me at…</label>
+                  <input id={alertId} type="text" inputMode="decimal" value={targetInput} onChange={event => { setTargetInput(event.target.value); setAlertError(''); }} />
+                  <button type="submit">Save</button>
+                  {alertError && <p id={`${alertId}-error`} role="alert" style={{ flexBasis: '100%', margin: 0, color: COLOR.danger }}>{alertError}</p>}
+                </form>
+              )}
               <PendingButton
                 onClick={handlePurchase}
                 pending={pending}
