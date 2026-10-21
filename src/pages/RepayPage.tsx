@@ -33,7 +33,7 @@ import { RepayPreviewModal } from '@/components/RepayPreviewModal';
 import { CopyToClipboard } from '@/components/CopyToClipboard';
 import { MOCK_CREDIT_LINES } from '@/data/mockData';
 import { motionClasses, useReducedMotion } from '@/context/ReducedMotionContext';
-import { useWallet } from '@/context/WalletContext';
+import { useWallet, walletIdentityKey } from '@/context/WalletContext';
 import {
   getRepayableBalance,
   moneyCoversAmount,
@@ -52,6 +52,20 @@ import {
   clearRepayDraft,
   type RepayDraftState,
 } from '@/state/repayDraft';
+
+/**
+ * Reason a saved draft was discarded instead of being offered for recovery.
+ * Surfaced as a `role="status"` note so the discard is never silent
+ * (issue #1188).
+ */
+type DraftDiscardReason = 'owner-mismatch' | 'line-unrepayable';
+
+const DRAFT_DISCARD_MESSAGE: Record<DraftDiscardReason, string> = {
+  'owner-mismatch':
+    'Saved repayment draft discarded — it belongs to a different wallet.',
+  'line-unrepayable':
+    'Saved repayment draft discarded — that credit line can no longer be repaid.',
+};
 import './RepayPage.css';
 
 type RepayStep = 'input' | 'review';
@@ -119,14 +133,19 @@ export default function RepayPage() {
     balances,
     refreshBalance,
   } = useWallet();
+  const identityKey = walletIdentityKey(wallet ?? null);
   const preselectedId = searchParams.get('line');
 
   // ── Draft recovery state ──────────────────────────────────────────────
   const [recoveredDraft, setRecoveredDraft] = useState<RepayDraftState | null>(null);
   const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false);
+  const [draftDiscardReason, setDraftDiscardReason] = useState<DraftDiscardReason | null>(null);
   const draftLoadedRef = useRef(false);
   // Prevent the persist effect from re-saving a draft after confirmation.
   const draftClearedRef = useRef(false);
+  // Tracks the previous wallet identity so a mid-session account/network
+  // switch can clear another wallet's draft (issue #1188).
+  const prevIdentityKeyRef = useRef<string | null>(null);
   const isSubmittingRef = useRef(false);
 
   const [step, setStep] = useState<RepayStep>('input');
@@ -149,17 +168,23 @@ export default function RepayPage() {
   // ── Repayable lines — single predicate used by picker and deep-link ──
   // Issue #1185: getRepayableLines (utilized > 0 && status !== Closed) replaces
   // the old Active-only filter so Suspended and Defaulted lines are visible.
-  const creditLines = useMemo(() => getRepayableLines(MOCK_CREDIT_LINES), []);
+  // The per-render `mockLines` capture lets the memo react when the line data
+  // source is replaced (e.g. a provider refetch), so amounts re-validate
+  // against current debt instead of stale closure data (issue #1188).
+  const mockLines = MOCK_CREDIT_LINES;
+  const creditLines = useMemo(() => getRepayableLines(mockLines), [mockLines]);
 
   // When a ?line= deep-link names an unrepayable line we keep selectedLine null
   // so the picker renders with an explanatory status message instead of opening
   // the form for a line that has no outstanding balance (e.g. Closed).
+  // Deps include creditLines so a provider refetch re-resolves the selected
+  // line (issue #1188) — the review step then re-validates against current debt.
   const selectedLine = useMemo(() => {
     if (!selectedId) return null;
-    const line = MOCK_CREDIT_LINES.find((cl) => cl.id === selectedId) ?? null;
+    const line = mockLines.find((cl) => cl.id === selectedId) ?? null;
     if (!line || !isRepayable(line)) return null;
     return line;
-  }, [selectedId]);
+  }, [selectedId, mockLines]);
 
   // True when the user arrived via ?line= but the named line is not repayable.
   const unrepayableDeepLink = useMemo(() => {
@@ -221,6 +246,8 @@ export default function RepayPage() {
     needsConfirm && !isTypedAmountMatch(confirmAmountStr, amount);
   const isReviewConfirmDisabled =
     !hasRepayableBalance ||
+    isInvalid ||
+    amount <= 0 ||
     isConfirmDisabled ||
     isReviewBalanceLoading ||
     reviewBalance === null ||
@@ -256,8 +283,11 @@ export default function RepayPage() {
 
   const handleConfirm = async () => {
     if (isSubmittingRef.current) return;
-    if (step === 'review' && isReviewConfirmDisabled) return;
-    if (step === 'input' && (!hasRepayableBalance || amount > walletBalance)) return;
+    // Defense in depth (issue #1188): the review path re-checks amount
+    // validity here as well as through the disabled state, so neither a
+    // stale click nor the Enter shortcut can confirm an invalid amount.
+    if (step === 'review' && (isReviewConfirmDisabled || isInvalid)) return;
+    if (step === 'input' && (!hasRepayableBalance || isInvalid || amount > walletBalance)) return;
 
     if (!isOnline) {
       isSubmittingRef.current = false;
@@ -343,17 +373,48 @@ export default function RepayPage() {
   // ── Draft recovery handlers ──────────────────────────────────────────
   const handleRestoreDraft = useCallback(() => {
     if (!recoveredDraft) return;
+
+    // Issue #1188: re-validate the draft against *current* data before
+    // trusting its saved step. The stored amount may exceed the debt (or the
+    // wallet) now, the line may have been closed, or the draft may belong to
+    // a different wallet. Only a still-valid review draft returns to review;
+    // anything else falls back to the input step so the user sees the live
+    // validation instead of a Confirm button for an amount that no longer
+    // checks out.
+    const draftLine =
+      MOCK_CREDIT_LINES.find((cl) => cl.id === recoveredDraft.creditLineId) ?? null;
+    const ownerOk = identityKey !== null && recoveredDraft.owner === identityKey;
+    const isAmountStillValid =
+      draftLine !== null &&
+      isRepayable(draftLine) &&
+      getRepayAmountValidation(
+        recoveredDraft.amountStr,
+        roundToCents(
+          draftLine.utilized + computeMonthlyAccruedInterest(draftLine.utilized, draftLine.apr),
+        ),
+        walletBalance,
+      ).isValid;
+    const restoreToReview =
+      recoveredDraft.step === 'review' && ownerOk && isAmountStillValid;
+
     setSelectedId(recoveredDraft.creditLineId);
     setAmountStr(recoveredDraft.amountStr);
-    setConfirmAmountStr(recoveredDraft.confirmAmountStr);
+    // Always clear the typed confirmation on restore: the amount must be
+    // re-confirmed even when the review step itself is restored (issue #1188).
+    setConfirmAmountStr('');
     setIsAutoSchedule(recoveredDraft.isAutoSchedule);
-    setStep(recoveredDraft.step);
+    setReviewBalance(null);
+    setReviewBalanceError('');
+    setStep(restoreToReview ? 'review' : 'input');
     setShowRecoveryPrompt(false);
     setRecoveredDraft(null);
+    setDraftDiscardReason(null);
     setSrAnnouncement(
-      `Restored repayment draft: ${formatMoney(parseFloat(recoveredDraft.amountStr) || 0)} on ${recoveredDraft.creditLineId}.`,
+      restoreToReview
+        ? `Restored repayment draft: ${formatMoney(parseFloat(recoveredDraft.amountStr) || 0)} on ${recoveredDraft.creditLineId}.`
+        : `Restored repayment draft on ${recoveredDraft.creditLineId}. Review the amount before continuing.`,
     );
-  }, [recoveredDraft]);
+  }, [recoveredDraft, identityKey, walletBalance]);
 
   const handleDismissDraft = useCallback(() => {
     clearRepayDraft();
@@ -368,13 +429,53 @@ export default function RepayPage() {
     draftLoadedRef.current = true;
 
     const draft = loadRepayDraft();
-    if (draft && !preselectedId) {
-      // Only show recovery prompt when the user hasn't navigated with a
-      // specific credit line preselected (which implies a fresh intent).
-      setRecoveredDraft(draft);
-      setShowRecoveryPrompt(true);
+    if (!draft || preselectedId) {
+      // Only offer recovery when the user hasn't navigated with a specific
+      // credit line preselected (which implies a fresh intent).
+      return;
     }
-  }, [preselectedId]);
+
+    // Issue #1188: discard drafts that can no longer be safely resumed
+    // instead of offering to restore them.
+    const draftLine =
+      MOCK_CREDIT_LINES.find((cl) => cl.id === draft.creditLineId) ?? null;
+    if (!draftLine || !isRepayable(draftLine)) {
+      clearRepayDraft();
+      setDraftDiscardReason('line-unrepayable');
+      setSrAnnouncement(DRAFT_DISCARD_MESSAGE['line-unrepayable']);
+      return;
+    }
+    // When the wallet identity is already known, a draft from another wallet
+    // is discarded here. When it isn't (wallet still connecting), the owner
+    // check in handleRestoreDraft still refuses to trust the stored step.
+    if (identityKey !== null && draft.owner !== identityKey) {
+      clearRepayDraft();
+      setDraftDiscardReason('owner-mismatch');
+      setSrAnnouncement(DRAFT_DISCARD_MESSAGE['owner-mismatch']);
+      return;
+    }
+
+    setRecoveredDraft(draft);
+    setShowRecoveryPrompt(true);
+  }, [preselectedId, identityKey]);
+
+  // ── Clear the draft when the wallet identity changes ──────────────────
+  // Issue #1188: a draft saved under one wallet must not survive an account
+  // or network switch into another wallet's session.
+  useEffect(() => {
+    const prevIdentity = prevIdentityKeyRef.current;
+    prevIdentityKeyRef.current = identityKey;
+    if (identityKey === null || identityKey === prevIdentity) return;
+
+    const draft = loadRepayDraft();
+    if (draft && draft.owner !== identityKey) {
+      clearRepayDraft();
+      setShowRecoveryPrompt(false);
+      setRecoveredDraft(null);
+      setDraftDiscardReason('owner-mismatch');
+      setSrAnnouncement(DRAFT_DISCARD_MESSAGE['owner-mismatch']);
+    }
+  }, [identityKey]);
 
   // ── Persist draft on state changes ────────────────────────────────────
   useEffect(() => {
@@ -383,6 +484,8 @@ export default function RepayPage() {
 
     // Don't save during loading or after cancel.
     if (isLoading || !selectedId) return;
+    // Don't save without a known wallet identity (the draft is owner-scoped).
+    if (!identityKey) return;
     // Don't save empty amounts on the input step.
     if (step === 'input' && !amountStr) return;
 
@@ -392,8 +495,9 @@ export default function RepayPage() {
       amountStr,
       confirmAmountStr,
       isAutoSchedule,
+      owner: identityKey,
     });
-  }, [step, selectedId, amountStr, confirmAmountStr, isAutoSchedule, isLoading]);
+  }, [step, selectedId, amountStr, confirmAmountStr, isAutoSchedule, isLoading, identityKey]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -541,6 +645,19 @@ export default function RepayPage() {
           Back
           <KbdHint keys={['Esc']} className="ml-1" />
         </button>
+
+      {/* ── Draft discarded note (credit line picker view) ─────────── */}
+      {draftDiscardReason && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mb-2 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning"
+          data-testid="repay-draft-discarded-note"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{DRAFT_DISCARD_MESSAGE[draftDiscardReason]}</span>
+        </div>
+      )}
 
       {/* ── Recovery prompt banner (credit line picker view) ──────── */}
       {showRecoveryPrompt && recoveredDraft && (
@@ -740,6 +857,19 @@ export default function RepayPage() {
           <KbdHint keys={['Esc']} />
         </span>
       </button>
+
+      {/* ── Draft discarded note (form view) ───────────────────────── */}
+      {draftDiscardReason && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mb-2 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning"
+          data-testid="repay-draft-discarded-note"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{DRAFT_DISCARD_MESSAGE[draftDiscardReason]}</span>
+        </div>
+      )}
 
       {/* ── Recovery prompt banner ────────────────────────────────────── */}
       {showRecoveryPrompt && recoveredDraft && (
@@ -1145,6 +1275,33 @@ export default function RepayPage() {
                 role="alert"
               >
                 {reviewBalanceError}
+              </div>
+            )}
+            {/* Issue #1188: the amount no longer validates against current
+                debt or wallet data while sitting on review (e.g. the debt was
+                refetched lower). Confirm is disabled by isReviewConfirmDisabled;
+                this alert explains why and offers the way back. */}
+            {isInvalid && (
+              <div
+                className="rounded-lg border border-error bg-error/10 p-4 text-sm text-error"
+                role="alert"
+                data-testid="repay-review-invalid-alert"
+              >
+                <p className="font-semibold">
+                  {validation?.feedback.title ?? 'Repayment amount is no longer valid'}
+                </p>
+                <p className="mt-0.5">
+                  {validation?.feedback.message ??
+                    'The amount does not match the current debt or wallet balance.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleBack}
+                  className="rp-review-edit-amount-btn mt-3 rounded-md border border-error/40 bg-error/5 px-3 py-1.5 text-xs font-semibold text-error focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  data-testid="repay-review-edit-amount"
+                >
+                  Edit amount
+                </button>
               </div>
             )}
             <div className="rounded-lg border border-border bg-surface p-6 text-center">
