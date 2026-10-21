@@ -15,8 +15,9 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import RepayPage from './RepayPage';
+import RepaySuccess from './RepaySuccess';
 import { saveRepayDraft, clearRepayDraft, MAX_AGE_MS } from '@/state/repayDraft';
 
 // ── Module mocks ─────────────────────────────────────────────────────────
@@ -35,54 +36,33 @@ vi.mock('../context/WalletContext', () => ({
       network: 'TESTNET',
     },
     status: 'connected',
+    balances: [{
+      asset: 'USDC',
+      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      balance: '50000.0000000',
+    }],
+    refreshBalance: async () => [{
+      asset: 'USDC',
+      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      balance: '50000.0000000',
+    }],
   }),
 }));
 
-vi.mock('../data/mockData', () => ({
-  MOCK_CREDIT_LINES: [
-    {
-      id: 'CL-2024-001',
-      name: 'Primary Business Line',
-      status: 'Active',
-      limit: 500000,
-      utilized: 187500,
-      apr: 8.5,
-      riskScore: 720,
-      collateral: 'Commercial Real Estate',
-      openedAt: '2024-03-15',
-      updatedAt: '2025-02-20T14:32:00Z',
-      nextPaymentDate: '2025-03-01',
-      nextPaymentAmount: 3200,
-      transactions: [],
-      statusHistory: [],
-      aprHistory: [],
-    },
-    {
-      id: 'CL-2024-002',
-      name: 'Secondary Line',
-      status: 'Active',
-      limit: 100000,
-      utilized: 45000,
-      apr: 12.0,
-      riskScore: 680,
-      collateral: 'None',
-      openedAt: '2024-06-01',
-      updatedAt: '2025-02-20T14:32:00Z',
-      nextPaymentDate: '2025-03-15',
-      nextPaymentAmount: 1200,
-      transactions: [],
-      statusHistory: [],
-      aprHistory: [],
-    },
-  ],
-}));
+vi.mock('../data/mockData', async () => {
+  const { REPAY_TEST_CREDIT_LINES } = await import('@/test/fixtures/repayCreditLines');
+  return { MOCK_CREDIT_LINES: REPAY_TEST_CREDIT_LINES };
+});
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 function renderWithLine(initialEntries = ['/?line=CL-2024-001']) {
   const result = render(
     <MemoryRouter initialEntries={initialEntries}>
-      <RepayPage />
+      <Routes>
+        <Route path="/repay/success" element={<RepaySuccess />} />
+        <Route path="*" element={<RepayPage />} />
+      </Routes>
     </MemoryRouter>,
   );
   act(() => {
@@ -94,7 +74,7 @@ function renderWithLine(initialEntries = ['/?line=CL-2024-001']) {
 function renderWithoutLine() {
   const result = render(
     <MemoryRouter initialEntries={['/repay']}>
-      <RepayPage />
+      <Routes><Route path="*" element={<RepayPage />} /></Routes>
     </MemoryRouter>,
   );
   act(() => {
@@ -297,13 +277,13 @@ describe('RepayPage — draft recovery (issue #935)', () => {
       const reviewBtn = screen.getByText(/Review Repayment/i);
       fireEvent.click(reviewBtn);
 
-      // Click confirm — navigates to /repay/success and sets step='success'
+      // Confirmation renders the success route.
       const confirmBtn = screen.getByText(/Confirm Repayment/i);
       fireEvent.click(confirmBtn);
+      expect(screen.getByRole('heading', { name: /you repaid/i })).toBeInTheDocument();
 
       // Draft should be cleared.  The confirm handler calls clearRepayDraft()
-      // synchronously, and the persist effect's step==='success' branch also
-      // calls clearRepayDraft() as a safety net.
+      // synchronously before navigation.
       expect(localStorage.getItem('creditra_repay_draft')).toBeNull();
     });
   });

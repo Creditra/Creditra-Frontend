@@ -27,7 +27,31 @@ export type ConnectionStatus =
   | 'connected'
   | 'error';
 
+export type WalletErrorType = 'not_found' | 'connection_failed' | 'wrong_network' | 'user_rejected';
+
+/**
+ * Error thrown during wallet connection.
+ * 
+ * Extends Error so `instanceof` checks work and stack traces are preserved.
+ * The `type` discriminator classifies the failure category for UI messaging.
+ */
+export class WalletConnectError extends Error {
+  constructor(
+    public readonly type: WalletErrorType,
+    message: string
+  ) {
+    super(message);
+    this.name = 'WalletConnectError';
+    // Restore prototype chain for instanceof checks in transpiled ES5
+    Object.setPrototypeOf(this, WalletConnectError.prototype);
+  }
+}
+
+/**
+ * @deprecated Use WalletConnectError class instead.
+ * Kept for backward compatibility during migration.
+ */
 export interface WalletError {
-  type: 'not_found' | 'connection_failed' | 'wrong_network' | 'user_rejected';
+  type: WalletErrorType;
   message: string;
 }

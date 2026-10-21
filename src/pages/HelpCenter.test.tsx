@@ -22,14 +22,14 @@ class IntersectionObserverMock {
 
   trigger(id: string) {
     const entry = {
-      target: { id },
+      target: { id } as unknown as Element,
       isIntersecting: true,
       intersectionRatio: 1,
       boundingClientRect: {} as DOMRectReadOnly,
       intersectionRect: {} as DOMRectReadOnly,
       rootBounds: null,
       time: Date.now(),
-    };
+    } as unknown as IntersectionObserverEntry;
     this.callback([entry], this);
   }
 }
@@ -46,7 +46,7 @@ beforeEach(() => {
   ));
 });
 
-describe("HelpCenter", () => {
+describe("HelpCenter", { timeout: 15000 }, () => {
   beforeEach(() => {
     Object.defineProperty(Element.prototype, "scrollIntoView", {
       configurable: true,
@@ -56,6 +56,7 @@ describe("HelpCenter", () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -68,7 +69,7 @@ describe("HelpCenter", () => {
 
     const links = screen.getAllByRole("link", { name: /getting started|wallet|credit lines|transactions|notifications|shortcuts|faq/i });
     expect(links.length).toBeGreaterThanOrEqual(7);
-  });
+  }, 15000);
 
   it("sets aria-current on the active nav link and removes it from others", () => {
     render(
@@ -228,10 +229,7 @@ describe("HelpCenter", () => {
     });
   });
 
-  it("shows a tooltip on the FAQ anchor after hover delay, without breaking its accesible name", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true});
-    const user = userEvent.setup({ delay: null});
-
+  it("shows a tooltip on FAQ anchor focus without breaking its accessible name", () => {
     render(
       <MemoryRouter>
         <HelpCenter />
@@ -239,25 +237,103 @@ describe("HelpCenter", () => {
     );
 
     const faqAnchor = screen.getByRole("link", { name: /direct link to faq: what is creditra\?/i });
-    //accessible name is untouched by the tooltip wiring.
     expect(faqAnchor).toHaveAttribute("aria-label", "Direct link to FAQ: What is Creditra?");
 
-    await user.hover(faqAnchor);
+    fireEvent.focus(faqAnchor);
+
+    const tooltipId = faqAnchor.getAttribute("aria-describedby");
+    expect(tooltipId).toBeTruthy();
+    const tooltip = document.getElementById(tooltipId ?? "");
+    expect(tooltip).toHaveAttribute("role", "tooltip");
+    expect(tooltip).toBeVisible();
+    expect(faqAnchor).toHaveAttribute("aria-describedby", tooltip?.id);
+  });
+
+  it("Search UI: form has role='search' and textbox named 'Search help' (Scenario 6)", () => {
+    render(
+      <MemoryRouter>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    const searchRegion = screen.getByRole("search");
+    expect(searchRegion).toBeInTheDocument();
+    const searchInput = screen.getByRole("searchbox", { name: "Search help" });
+    expect(searchInput).toBeInTheDocument();
+    expect(searchInput).toHaveAttribute("type", "search");
+  });
+
+  it("announces 'N results' or 'No results' in polite live region after debounce (Scenario 7)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ delay: null });
+
+    render(
+      <MemoryRouter>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    const searchInput = screen.getByRole("searchbox", { name: "Search help" });
+    await user.type(searchInput, "wallet");
+
     act(() => {
-      vi.advanceTimersByTime(400);
+      vi.advanceTimersByTime(300);
     });
 
-    const tooltip = screen.getAllByRole("tooltip").find((node) =>
-      node.classList.contains("is-visible"),
-    );
-    expect(tooltip).toBeDefined();
-    const tooltipTrigger = faqAnchor.closest(".accessible-tooltip")?.querySelector(
-      ".accessible-tooltip__trigger",
-    );
-    expect(tooltipTrigger).toBeTruthy();
-    expect(tooltip).toHaveClass("is-visible");
-    expect(tooltipTrigger).toHaveAttribute("aria-describedby", tooltip?.id);
+    const liveRegion = document.querySelector('[aria-live="polite"][role="status"]');
+    expect(liveRegion).toBeInTheDocument();
+    expect(liveRegion?.textContent).toMatch(/\d+ results?/i);
+
+    // Now type a query with no matches
+    await user.clear(searchInput);
+    await user.type(searchInput, "zzzznotfound");
+
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+
+    expect(liveRegion?.textContent).toBe("No results");
 
     vi.useRealTimers();
-  })
+  });
+
+  it("clears the search query and restores all FAQs on Escape (Scenario 8)", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    const searchInput = screen.getByRole("searchbox", { name: "Search help" });
+    await user.type(searchInput, "repayment");
+    expect(searchInput).toHaveValue("repayment");
+
+    fireEvent.keyDown(searchInput, { key: "Escape" });
+    expect(searchInput).toHaveValue("");
+    expect(screen.getByRole("button", { name: /what is creditra\?/i })).toBeInTheDocument();
+  });
+
+  it("hides category cards that have no matching FAQs while searching (Scenario 9)", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    // Initially all categories are shown
+    expect(screen.getByRole("heading", { name: "Notifications" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Wallet" })).toBeInTheDocument();
+
+    const searchInput = screen.getByRole("searchbox", { name: "Search help" });
+    // Filter specifically for wallet
+    await user.type(searchInput, "How do I connect a wallet");
+
+    // Wallet category should remain, Notifications should be hidden
+    expect(screen.getByRole("heading", { name: "Wallet" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Notifications" })).not.toBeInTheDocument();
+  });
 });

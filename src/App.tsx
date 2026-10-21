@@ -7,6 +7,7 @@ import { ThemeProvider } from "./context/ThemeContext";
 import { ContrastProvider } from "./context/ContrastContext";
 import { KycProvider } from "./context/KycContext";
 import { NotificationProvider } from "./context/NotificationContext";
+import { AuctionAlertWatcher } from "./components/AuctionAlertWatcher";
 import { ReducedMotionProvider } from "./context/ReducedMotionContext";
 import { KycDrawer } from "./components/KycDrawer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -15,25 +16,13 @@ import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
 import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatchBanner";
 import { Header } from "./layouts/Header";
 import { Skeleton } from "./components/Skeleton";
+import { isEditableTarget } from "./utils/isEditableTarget";
+
+import { ROUTE_MANIFEST } from "./routes/manifest";
 
 // ── Code-split route components (non-critical for first paint) ────────────────
-const Dashboard = lazy(() => import("./pages/Dashboard").then(m => ({ default: m.Dashboard })));
-const DrawCreditPage = lazy(() => import("./pages/DrawCreditPage"));
-const CreditLines = lazy(() => import("./pages/CreditLines"));
-const TransactionHistory = lazy(() => import("./pages/TransactionHistory").then(m => ({ default: m.TransactionHistory })));
-const RequestEvaluation = lazy(() => import("./pages/RequestEvaluation").then(m => ({ default: m.RequestEvaluation })));
 const NotFound = lazy(() => import("./pages/NotFound").then(m => ({ default: m.NotFound })));
-const HelpCenter = lazy(() => import("./pages/HelpCenter"));
-const DutchAuctions = lazy(() => import("./pages/DutchAuctions").then(m => ({ default: m.DutchAuctions })));
-const LinkedAccounts = lazy(() => import("./pages/LinkedAccounts").then(m => ({ default: m.LinkedAccounts })));
-const RepayPage = lazy(() => import("./pages/RepayPage"));
-const RepaySuccess = lazy(() => import("./pages/RepaySuccess"));
-const NotificationSettings = lazy(() => import("./pages/settings/Notifications"));
-const Settings = lazy(() => import("./pages/Settings").then(m => ({ default: m.Settings })));
-const Profile = lazy(() => import("./pages/Profile"));
-const Docs = lazy(() => import("./pages/Docs"));
 const SessionTimeoutBanner = lazy(() => import("./components/SessionTimeoutBanner").then(m => ({ default: m.SessionTimeoutBanner })));
-const NotificationPreferences = lazy(() => import("./pages/NotificationPreferences").then(m => ({ default: m.NotificationPreferences })));
 
 // ── Suspense Fallback for Route Loading ───────────────────────────────────────
 /** Minimal skeleton shown while route chunks load (preserves first paint). */
@@ -46,17 +35,6 @@ function RouteLoadingFallback() {
     </div>
   );
 }
-
-const isEditableTarget = (target: EventTarget | null) => {
-  if (!(target instanceof HTMLElement)) return false;
-  const tagName = target.tagName.toLowerCase();
-  return (
-    target.isContentEditable ||
-    tagName === "input" ||
-    tagName === "textarea" ||
-    tagName === "select"
-  );
-};
 
 /**
  * Application root.
@@ -124,6 +102,7 @@ function App() {
               <NotificationProvider>
                 <ReducedMotionProvider>
                   <BrowserRouter>
+                    <AuctionAlertWatcher />
                     <RouteHeadProvider>
                       <RouteAnnouncer />
                       <div className="app">
@@ -149,25 +128,16 @@ function App() {
                           <NetworkMismatchBanner />
                           <Suspense fallback={<RouteLoadingFallback />}>
                             <Routes>
-                              <Route path="/" element={<Dashboard />} />
-                              <Route path="/transactions" element={<TransactionHistory />} />
-                              <Route path="/credit-lines" element={<CreditLines />} />
-                              <Route path="/help" element={<HelpCenter />} />
-                              <Route path="/draw-credit" element={<DrawCreditPage />} />
-                              <Route
-                                path="/draw-credit/success"
-                                element={<DrawCreditPage />}
-                              />
-                              <Route path="/open-credit" element={<RequestEvaluation />} />
-                              <Route path="/dutch-auctions" element={<DutchAuctions />} />
-                              <Route path="/linked-accounts" element={<LinkedAccounts />} />
-                              <Route path="/notification-preferences" element={<NotificationPreferences />} />
-                              <Route path="/repay" element={<RepayPage />} />
-                              <Route path="/repay/success" element={<RepaySuccess />} />
-                              <Route path="/settings" element={<Settings />} />
-                              <Route path="/settings/notifications" element={<NotificationSettings />} />
-                              <Route path="/profile" element={<Profile />} />
-                              <Route path="/docs" element={<Docs />} />
+                              {ROUTE_MANIFEST.map((route) => {
+                                const RouteComponent = route.Component;
+                                return (
+                                  <Route
+                                    key={route.path}
+                                    path={route.path}
+                                    element={<RouteComponent />}
+                                  />
+                                );
+                              })}
                               <Route path="*" element={<NotFound />} />
                             </Routes>
                           </Suspense>

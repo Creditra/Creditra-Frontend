@@ -14,61 +14,40 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import RepayPage from '../RepayPage';
+import RepaySuccess from '../RepaySuccess';
 
 // ── Shared mock ──────────────────────────────────────────────────────────────
-vi.mock('@/data/mockData', () => ({
-  MOCK_CREDIT_LINES: [
-    {
-      id: 'CL-TEST-001',
-      name: 'Test Business Line',
-      status: 'Active',
-      limit: 100000,
-      utilized: 85000,   // ~85% → high utilization (rp-progress--high)
-      apr: 9.0,
-      riskScore: 680,
-      collateral: 'Equipment',
-      openedAt: '2024-01-01',
-      updatedAt: '2025-01-01T00:00:00Z',
-      nextPaymentDate: '2025-02-01',
-      nextPaymentAmount: 1500,
-      transactions: [],
-      statusHistory: [],
-    },
-    {
-      id: 'CL-TEST-002',
-      name: 'Low Use Line',
-      status: 'Active',
-      limit: 50000,
-      utilized: 10000,   // 20% → low utilization (rp-progress--low)
-      apr: 7.5,
-      riskScore: 750,
-      openedAt: '2024-01-01',
-      updatedAt: '2025-01-01T00:00:00Z',
-      transactions: [],
-      statusHistory: [],
-    },
-    {
-      id: 'CL-TEST-003',
-      name: 'Mid Use Line',
-      status: 'Active',
-      limit: 40000,
-      utilized: 26000,   // 65% → medium utilization (rp-progress--medium)
-      apr: 8.0,
-      riskScore: 710,
-      openedAt: '2024-01-01',
-      updatedAt: '2025-01-01T00:00:00Z',
-      transactions: [],
-      statusHistory: [],
-    },
-  ],
+vi.mock('@/context/WalletContext', () => ({
+  useWallet: () => ({
+    wallet: { publicKey: 'GTEST', network: 'TESTNET' },
+    status: 'connected',
+    balances: [{
+      asset: 'USDC',
+      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      balance: '50000.0000000',
+    }],
+    refreshBalance: async () => [{
+      asset: 'USDC',
+      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      balance: '50000.0000000',
+    }],
+  }),
 }));
+
+vi.mock('@/data/mockData', async () => {
+  const { REPAY_TEST_CREDIT_LINES } = await import('@/test/fixtures/repayCreditLines');
+  return { MOCK_CREDIT_LINES: REPAY_TEST_CREDIT_LINES };
+});
 
 function render$(initialEntries = ['/repay']) {
   return render(
     <MemoryRouter initialEntries={initialEntries}>
-      <RepayPage />
+      <Routes>
+        <Route path="/repay/success" element={<RepaySuccess />} />
+        <Route path="*" element={<RepayPage />} />
+      </Routes>
     </MemoryRouter>,
   );
 }
@@ -247,8 +226,7 @@ describe('ariallive-v7 – SR live region', () => {
     fireEvent.change(input, { target: { value: '1000' } });
     fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
     fireEvent.click(screen.getByRole('button', { name: /confirm repayment/i }));
-    const region = screen.getByTestId('live-region');
-    expect(region.textContent).toMatch(/payment successful/i);
+    expect(screen.getByRole('heading', { name: /you repaid/i })).toBeInTheDocument();
   });
 
   it('announces "back to input" when stepping back from review', () => {
@@ -275,8 +253,7 @@ describe('ariallive-v7 – SR live region', () => {
     fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
     fireEvent.click(screen.getByRole('button', { name: /confirm repayment/i }));
     fireEvent.click(screen.getByRole('button', { name: /make another repayment/i }));
-    const region = screen.getByTestId('live-region');
-    expect(region.textContent).toMatch(/new repayment/i);
+    expect(screen.getByRole('spinbutton', { name: /amount to repay/i })).toBeInTheDocument();
   });
 
   it('announces a validation error to the live region when an invalid amount is entered', () => {
