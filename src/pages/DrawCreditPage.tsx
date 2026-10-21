@@ -125,19 +125,23 @@ export default function DrawCreditPage() {
     });
   }, [closeRiskModal]);
 
+  const handleRiskModalAcknowledge = useCallback(() => {
+    if (!isLearnMode) {
+      // First-time borrower gate: record acknowledgment in localStorage.
+      // Learn mode (?learn=1) strips the param instead and never writes.
+      writeJson(DEFAULT_RISK_ACK_KEY, true);
+      writeJson(GRANTFOX_RISK_EDUCATION_ACK_KEY, true);
+      setHasAcknowledgedRisk(true);
+    }
+    closeRiskModal();
+  }, [closeRiskModal, isLearnMode]);
+
   const handleRiskModalAcknowledgeAndFocus = useCallback(() => {
     handleRiskModalAcknowledge();
     requestAnimationFrame(() => {
       stepHeadingRef.current?.focus();
     });
   }, [handleRiskModalAcknowledge]);
-
-  const handleRiskModalAcknowledge = useCallback(() => {
-    writeJson(DEFAULT_RISK_ACK_KEY, true);
-    writeJson(GRANTFOX_RISK_EDUCATION_ACK_KEY, true);
-    setHasAcknowledgedRisk(true);
-    closeRiskModal();
-  }, [closeRiskModal]);
 
   const handleDismissRiskBanner = useCallback(() => {
     writeJson(DEFAULT_RISK_BANNER_DISMISSED_KEY, true);
@@ -337,7 +341,30 @@ export default function DrawCreditPage() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (isRiskModalOpen || isFocusedOnInput()) return;
+      if (e.defaultPrevented) return;
+      if (isFocusedOnInput()) return;
+
+      // Any open dialog — the inline help overlay, WhyApr, or the risk modal —
+      // owns the keyboard, so wizard shortcuts stay inert (#1173). Scoped to
+      // aria-modal="true" so always-mounted panels (e.g. the closed
+      // notification center) don't permanently block the shortcuts.
+      const hasOpenDialog =
+        isRiskModalOpen ||
+        document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
+
+      if (e.key === "?") {
+        // Capture phase + swallow: on this route the page-level `?` runs before
+        // App's document-level bubble listener, which skips prevented events.
+        // The key is always consumed so the global ShortcutHelpOverlay can
+        // never open alongside a wizard dialog; only a clean page opens the
+        // contextual help.
+        e.preventDefault();
+        e.stopPropagation();
+        if (!hasOpenDialog) setIsHelpOpen(true);
+        return;
+      }
+
+      if (hasOpenDialog) return;
 
       switch (e.key) {
         case "Escape":
@@ -377,18 +404,14 @@ export default function DrawCreditPage() {
           }
           break;
 
-        case "?":
-          e.preventDefault();
-          setIsHelpOpen(true);
-          break;
-
         default:
           break;
       }
     };
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    // Capture phase so this runs before App's bubble-phase `?` handler (#1173).
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
   }, [step, amount, selectedCreditLine, confirmationAcknowledged, handleBack, handleCancel, isRiskModalOpen]);
 
   return (

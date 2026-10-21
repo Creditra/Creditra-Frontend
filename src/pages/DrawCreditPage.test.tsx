@@ -54,6 +54,13 @@ import { DEFAULT_RISK_ACK_KEY } from "@/constants/storageKeys";
 import { readJson, writeJson } from "@/utils/storage";
 import { __getMockSearch, __setMockLocation } from "react-router-dom";
 
+// ConfirmationStep derives a wallet identity for transaction bookkeeping, but
+// these tests render the wizard without WalletProvider. Provide a stable
+// identity so the confirm step can mount (#1173).
+vi.mock("@/hooks/useWalletIdentityKey", () => ({
+  useWalletIdentityKey: () => "test-wallet-identity",
+}));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -760,8 +767,9 @@ describe("DrawCreditPage — duplicate submission guard", () => {
     vi.useRealTimers();
 
     // The in-flight flag was released in `finally`, so the wizard can reset.
+    // Since #1179 a failed draw labels its reset CTA "Start over".
     await user.click(
-      screen.getByRole("button", { name: /make another draw/i }),
+      screen.getByRole("button", { name: /start over/i }),
     );
 
     expect(
@@ -783,8 +791,13 @@ describe("DrawCreditPage — default-risk education gate (REQ-6.2)", () => {
     __setMockLocation("/draw-credit");
   });
 
-  it("modal is shown when creditra.default_risk_ack is absent from localStorage", () => {
+  it("primer banner opens the modal when creditra.default_risk_ack is absent from localStorage", () => {
     render(<DrawCreditPage />);
+
+    // The gate is a dismissible primer banner; the modal opens from its trigger.
+    fireEvent.click(
+      screen.getByRole("button", { name: /learn about default risk/i }),
+    );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText("What is a Default?")).toBeInTheDocument();
   });
@@ -806,6 +819,9 @@ describe("DrawCreditPage — default-risk education gate (REQ-6.2)", () => {
 
   it("acknowledging the modal sets creditra.default_risk_ack in localStorage", () => {
     render(<DrawCreditPage />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /learn about default risk/i }),
+    );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
 
     // Step 1 -> Step 2

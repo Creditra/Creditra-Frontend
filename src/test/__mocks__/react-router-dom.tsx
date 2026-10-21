@@ -5,16 +5,31 @@
  * is unavailable or aliased away in vitest.config.ts.
  */
 
-import { createElement, Fragment } from 'react';
+import { Children, createElement, Fragment, isValidElement } from 'react';
 
 /*
- * Module-level "current location", set by MemoryRouter when it renders and
- * read back by useLocation/useSearchParams. Tests render synchronously and
- * read immediately after, so a shared variable is sufficient for this stub.
+ * Module-level "current location", set by MemoryRouter/BrowserRouter when they
+ * render and read back by useLocation/useSearchParams. Tests render
+ * synchronously and read immediately after, so a shared variable is
+ * sufficient for this stub.
  */
 let currentPathname = '/';
 let currentSearch = '';
 let currentHash = '';
+
+/** Mirrors the module location into jsdom's URL so BrowserRouter re-renders (which re-apply window.location) stay in sync. */
+function syncWindowHistory() {
+  if (typeof window === 'undefined' || !window.history?.replaceState) return;
+  try {
+    window.history.replaceState(
+      window.history.state,
+      '',
+      currentPathname + currentSearch + currentHash,
+    );
+  } catch {
+    // jsdom may reject exotic URLs; the module variables remain authoritative.
+  }
+}
 
 function applyEntry(entry: string) {
   const hashIndex = entry.indexOf('#');
@@ -27,9 +42,13 @@ function applyEntry(entry: string) {
   const qIndex = entry.indexOf('?');
   currentPathname = qIndex >= 0 ? entry.slice(0, qIndex) : entry;
   currentSearch = qIndex >= 0 ? entry.slice(qIndex) : '';
+  syncWindowHistory();
 }
 
+/** Renders children after applying the current jsdom URL as the initial route. */
 export function BrowserRouter({ children }: { children: React.ReactNode }) {
+  const { pathname, search, hash } = window.location;
+  applyEntry(pathname + search + hash);
   return createElement(Fragment, null, children);
 }
 
@@ -76,12 +95,45 @@ export function NavLink({
   return createElement('a', { href: to, className: cls, ...props }, content);
 }
 
+/**
+ * Matches child `<Route>` elements against the current mock location.
+ *
+ * Supports exact paths and the `*` fallback. Real react-router route matching
+ * is unavailable in this stub environment, so Route props are read directly
+ * from the child elements and `element` is rendered for the first match
+ * (falling back to `*`).
+ */
 export function Routes({ children }: { children: React.ReactNode }) {
-  return createElement(Fragment, null, children);
+  const current = currentPathname.replace(/\/+$/, '') || '/';
+  let fallback: React.ReactNode = null;
+  let matched: React.ReactNode = null;
+
+  for (const child of Children.toArray(children)) {
+    if (!isValidElement(child)) continue;
+    const props = child.props as { path?: string; element?: React.ReactNode };
+    const path = props.path;
+    if (path === undefined) continue;
+    if (path === '*') {
+      if (fallback === null) fallback = props.element;
+      continue;
+    }
+    const normalized = path.replace(/\/+$/, '') || '/';
+    if (normalized === current) {
+      matched = props.element;
+      break;
+    }
+  }
+
+  const element = matched ?? fallback;
+  return element !== null && element !== undefined
+    ? createElement(Fragment, null, element)
+    : null;
 }
 
-export function Route(_props: Record<string, unknown>) {
-  return null;
+/** Rendered only when `Routes` selects a Route that inlines children. */
+export function Route({ element, children }: Record<string, unknown>) {
+  if (element !== undefined && element !== null) return null;
+  return createElement(Fragment, null, children as React.ReactNode);
 }
 
 export function Navigate(_props: Record<string, unknown>) {
@@ -104,6 +156,7 @@ export function useSearchParams() {
       const s = sp.toString();
       currentSearch = s ? `?${s}` : '';
     }
+    syncWindowHistory();
   };
   return [params, setSearchParams] as const;
 }
@@ -141,6 +194,7 @@ export function useLocation() {
 export function __setMockLocation(pathname: string, search = '') {
   currentPathname = pathname;
   currentSearch = search;
+  syncWindowHistory();
 }
 
 export function useParams() {

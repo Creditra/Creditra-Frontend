@@ -11,6 +11,7 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@stellar/stellar-sdk": "^15.1.0",
     "@tailwindcss/vite": "^4.2.1",
     "framer-motion": "^12.34.3",
     "lean-qr": "^2.7.2",
