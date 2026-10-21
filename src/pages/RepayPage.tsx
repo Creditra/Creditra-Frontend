@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router';
 import { AlertCircle, AlertTriangle, CheckCircle, Info, ArrowLeft, RefreshCw, X } from 'lucide-react';
 import { Skeleton } from '@/components/Skeleton';
 import { PayoffProjection } from '@/components/PayoffProjection';
@@ -17,7 +17,6 @@ import {
   getRepayAmountValidation,
   requiresRepayConfirmation,
 } from '@/utils/amountValidation';
-import { offlineMutation } from '@/utils/offline';
 import { useOnline } from '@/hooks/useOnline';
 import { suggestRepayAmount } from '@/utils/suggestRepay';
 import { computeMonthlyAccruedInterest } from '@/utils/currency';
@@ -103,7 +102,7 @@ const SEVERITY_CONFIG = {
 export default function RepayPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { queueAction } = useOnline();
+  const { isOnline, queueAction } = useOnline();
   const {
     wallet,
     status: walletStatus,
@@ -116,11 +115,7 @@ export default function RepayPage() {
   const [recoveredDraft, setRecoveredDraft] = useState<RepayDraftState | null>(null);
   const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false);
   const draftLoadedRef = useRef(false);
-  // Guard: set to true inside handleConfirm/handleNewRepay to prevent the
-  // persist useEffect from re-saving a draft after clearRepayDraft() runs.
-  // React Router's navigate() can trigger a synchronous re-render via the
-  // router context (outside React 18 batching), causing the persist effect
-  // to fire with the old step before setStep('success') is applied.
+  // Prevent the persist effect from re-saving a draft after confirmation.
   const draftClearedRef = useRef(false);
   const isSubmittingRef = useRef(false);
 
@@ -229,6 +224,15 @@ export default function RepayPage() {
     if (step === 'review' && isReviewConfirmDisabled) return;
     if (step === 'input' && (!hasRepayableBalance || amount > walletBalance)) return;
 
+    if (!isOnline) {
+      isSubmittingRef.current = false;
+      queueAction(() => {
+        void handleConfirm();
+      }, 'repay-confirm');
+      setIsOfflineBlocked(true);
+      return;
+    }
+
     isSubmittingRef.current = true;
 
     if (step === 'input') {
@@ -286,27 +290,7 @@ export default function RepayPage() {
         nextPaymentAmount: selectedLine.nextPaymentAmount,
         timestamp: new Date().toISOString(),
       },
-      onOffline: () => {
-        queueAction(() => {
-          handleConfirm();
-        }, 'repay-confirm');
-        setIsOfflineBlocked(true);
-      },
-      offlineMessage:
-        'You are offline, so this repayment cannot be processed yet. It has been queued and will be submitted when your connection is restored.',
     });
-    setStep('success');
-    setSrAnnouncement(`Payment successful! You repaid ${formatMoney(amount)}.`);
-  };
-
-  const handleNewRepay = () => {
-    isSubmittingRef.current = false;
-    draftClearedRef.current = true;
-    clearRepayDraft();
-    setAmountStr('');
-    setIsAutoSchedule(false);
-    setStep('input');
-    setSrAnnouncement('Starting a new repayment. Select an amount.');
   };
 
   const handleBack = useCallback(() => {
@@ -359,17 +343,7 @@ export default function RepayPage() {
 
   // ── Persist draft on state changes ────────────────────────────────────
   useEffect(() => {
-    // When the user confirms or starts a new repayment, ensure the draft
-    // is cleared.  This acts as a safety net: even if clearRepayDraft()
-    // ran in the event handler, React Router's navigate() can trigger an
-    // intermediate render that re-persists the draft before the step
-    // state update is applied.
-    if (step === 'success') {
-      clearRepayDraft();
-      return;
-    }
-    // Don't persist if the draft was just intentionally cleared
-    // (handleConfirm / handleNewRepay).
+    // Don't persist if the draft was just intentionally cleared on confirmation.
     if (draftClearedRef.current) return;
 
     // Don't save during loading or after cancel.
@@ -1223,74 +1197,6 @@ export default function RepayPage() {
           </div>
         )}
 
-        {step === 'success' && (
-          <div className="space-y-6 text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-success/20">
-              <CheckCircle className="h-8 w-8 text-success" aria-hidden="true" />
-            </div>
-
-            <div>
-              <h2 className="text-2xl font-bold text-foreground">
-                You repaid <span className="num-tabular">{formatMoney(amount)}</span>!
-              </h2>
-              <p className="mt-1 text-muted">
-                Your transaction was successful.
-              </p>
-            </div>
-
-            <div className="rounded-lg border border-border bg-surface p-4 text-left">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted">Remaining debt</span>
-                <span className="flex items-center gap-1">
-                  <span className="font-semibold text-foreground num-tabular">
-                    {formatMoney(remainingDebt)}
-                  </span>
-                  <CopyToClipboard
-                    value={formatMoney(remainingDebt)}
-                    ariaLabel="Copy remaining debt amount"
-                  />
-                </span>
-              </div>
-              <div className="mt-2 flex items-center justify-between text-sm">
-                <span className="text-muted">Credit line utilization</span>
-                <span className="font-semibold text-foreground">
-                  Reduced to <span className="num-tabular">{newPct}%</span>
-                </span>
-              </div>
-              {isAutoSchedule && (
-                <div className="mt-2 flex items-center justify-between text-sm">
-                  <span className="text-muted">Auto-schedule</span>
-                  <span className="font-semibold text-accent">Active</span>
-                </div>
-              )}
-            </div>
-
-            <PayoffProjection
-              currentDebt={selectedLine.utilized}
-              apr={selectedLine.apr}
-              repayAmount={amount}
-              limit={selectedLine.limit}
-              nextPaymentAmount={selectedLine.nextPaymentAmount}
-            />
-
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => navigate('/')}
-                className={`rp-dashboard-btn flex-1 rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${motionClasses(isReducedMotionActive, 'transition-all hover:brightness-110')}`}
-              >
-                Back to Dashboard
-              </button>
-              <button
-                type="button"
-                onClick={handleNewRepay}
-                className={`rp-new-repay-btn flex-1 rounded-lg border border-border bg-surface px-4 py-3 text-sm font-semibold text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${motionClasses(isReducedMotionActive, 'transition-all hover:bg-border')}`}
-              >
-                Make another repayment
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       <InlineHelpOverlay
