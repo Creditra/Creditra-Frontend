@@ -2,8 +2,8 @@
  * PreviewSection
  *
  * Live draw summary rendered alongside the AmountInput step. Shows the
- * draw amount, projected new utilization, and two progress bars for
- * current vs. post-draw utilization.
+ * draw amount, projected new utilization, the APR the current amount would
+ * be priced at, and two progress bars for current vs. post-draw utilization.
  *
  * Design-token classes used (all from `src/index.css` `.dc-*` block):
  *   dc-section-label, dc-stat-grid, dc-stat-card, dc-stat-card--accent,
@@ -16,10 +16,16 @@
  * Accessibility:
  *   - Each progress bar is a <div role="progressbar"> with aria-valuenow.
  *   - Stat card values have visually-clear colour associations backed by tokens.
+ *   - APR changes are announced through a polite live region.
  */
 
 import { CreditLine } from "@/types/draw-credit.types";
-import { DollarSign, TrendingUp } from "lucide-react";
+import {
+  getDrawPricingQuote,
+  getNextAprTier,
+} from "@/lib/draw-credit-pricing";
+import { formatMoney } from "@/utils/amountValidation";
+import { DollarSign, Percent, TrendingUp } from "lucide-react";
 
 interface PreviewSectionProps {
   creditLine: CreditLine;
@@ -32,6 +38,13 @@ export function PreviewSection({ creditLine, amount }: PreviewSectionProps) {
       100,
   );
   const isHighAfterDraw = newUtilization > 80;
+
+  const safeAmount = Math.max(Number.isFinite(amount) ? amount : 0, 0);
+  const { apr } = getDrawPricingQuote(creditLine, safeAmount);
+  const nextTier = getNextAprTier(creditLine, safeAmount);
+  const aprNote = nextTier
+    ? `APR increases to ${nextTier.apr}% above ${formatMoney(nextTier.aboveAmount)}`
+    : "";
 
   return (
     <div className="dc-step">
@@ -70,7 +83,29 @@ export function PreviewSection({ creditLine, amount }: PreviewSectionProps) {
             />
           </div>
         </div>
+
+        {/* APR card — priced at the current amount */}
+        <div className="dc-stat-card">
+          <div className="dc-stat-card__header">
+            <div>
+              <p className="dc-stat-card__label">APR</p>
+              <p className="dc-stat-card__value tabular-nums" data-testid="preview-apr">
+                {apr}%
+              </p>
+            </div>
+            <Percent className="dc-stat-card__icon" aria-hidden="true" />
+          </div>
+        </div>
       </div>
+
+      <p
+        className="dc-hint tabular-nums"
+        role="status"
+        aria-live="polite"
+        data-testid="preview-apr-live"
+      >
+        {aprNote}
+      </p>
 
       {/* Current utilization progress bar */}
       <div className="dc-util-section">

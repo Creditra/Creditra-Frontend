@@ -114,6 +114,7 @@ import {
   setWalletRemembered,
   classifyWalletError,
 } from '../utils/wallet';
+import { getCreditNetworkConfig } from '../config/creditNetwork';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -583,11 +584,8 @@ export const WalletProvider = ({
     // comment's point (2).
     const fetchIdentity = walletIdentityKey(wallet);
     try {
-      const networkUrl =
-        wallet.network === 'public'
-          ? 'https://horizon.stellar.org'
-          : 'https://horizon-testnet.stellar.org';
-      const response = await fetch(`${networkUrl}/accounts/${wallet.publicKey}`);
+      const { horizonUrl } = getCreditNetworkConfig();
+      const response = await fetch(`${horizonUrl}/accounts/${wallet.publicKey}`);
       const data = await response.json();
 
       if (balancesIdentityRef.current !== fetchIdentity) {

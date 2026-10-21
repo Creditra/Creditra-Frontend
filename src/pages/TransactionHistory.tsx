@@ -21,6 +21,11 @@ import { useDebounceValue } from "../hooks/useDebounceValue";
 import { toCsv, downloadCsv } from "../utils/csv";
 import { useNotifications } from "../context/NotificationContext";
 import { MOCK_CREDIT_LINES } from "../data/mockData";
+import {
+  amountPresetFromUrl,
+  matchesAmountFilter,
+  type AmountFilter,
+} from "../utils/transactionAmountFilter";
 import type {
   CreditLineStatus,
   TransactionStatus,
@@ -172,27 +177,6 @@ const RANGE_PRESET_OPTIONS: Array<{
   { value: "this-month", label: "This Month" },
   { value: "all-time", label: "All Time" },
 ];
-
-const AMOUNT_RANGE_PRESET_BOUNDS: Record<
-  Exclude<AmountRangePreset, "all">,
-  { min?: number; max?: number }
-> = {
-  "under-5k": { max: 5000 },
-  "5k-25k": { min: 5000, max: 25000 },
-  "25k-plus": { min: 25000 },
-};
-
-const AMOUNT_FILTER_OPTIONS: Array<{
-  value: "all" | "lt100" | "100-1000" | "gt1000";
-  label: string;
-}> = [
-  { value: "all", label: "All Amounts" },
-  { value: "lt100", label: "<$100" },
-  { value: "100-1000", label: "$100–$1,000" },
-  { value: "gt1000", label: ">$1,000" },
-];
-
-type AmountFilter = (typeof AMOUNT_FILTER_OPTIONS)[number]["value"];
 
 // ─── Helper Functions ─────────────────────────────────────────────────────────
 
@@ -465,21 +449,33 @@ export function TransactionHistory() {
   const [selectedType, setSelectedType] = useState<TypeFilter>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [searchParams, setSearchParams] = useSearchParams();
-  const [selectedAmount, setSelectedAmount] = useState<AmountFilter>(() => {
-    const url = searchParams.get("amount");
-    if (url === "lt100" || url === "100-1000" || url === "gt1000") return url;
-    return "all";
-  });
   const [dateRange, setDateRange] = useState<DatePreset>("custom");
   const [presetRange, setPresetRange] = useState<RangePreset>("custom");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [selectedAmountRange, setSelectedAmountRange] =
-    useState<AmountRangePreset>("all");
-  const [customAmountMin, setCustomAmountMin] = useState("");
+    useState<AmountRangePreset>(
+      () => amountPresetFromUrl(searchParams.get("amount")) ?? "all",
+    );
+  const [customAmountMin, setCustomAmountMin] = useState(() =>
+    searchParams.get("amount") === "gt1000" ? "1000" : "",
+  );
   const [customAmountMax, setCustomAmountMax] = useState("");
   const [isCustomAmountRangeActive, setIsCustomAmountRangeActive] =
-    useState(false);
+    useState(() => searchParams.get("amount") === "gt1000");
+  const amountFilter = useMemo<AmountFilter>(
+    () =>
+      isCustomAmountRangeActive
+        ? {
+            kind: "custom",
+            min: customAmountMin.trim() ? Number(customAmountMin) : null,
+            max: customAmountMax.trim() ? Number(customAmountMax) : null,
+          }
+        : selectedAmountRange === "all"
+          ? { kind: "all" }
+          : { kind: "preset", id: selectedAmountRange },
+    [isCustomAmountRangeActive, customAmountMin, customAmountMax, selectedAmountRange],
+  );
   const [searchQuery, setSearchQuery] = useState("");
   // ─── Combobox (accessible search with suggestions) ───────────────────────
   // `searchInputValue` drives what the user sees while typing; `searchQuery`
@@ -508,7 +504,6 @@ export function TransactionHistory() {
     selectedLine,
     selectedType,
     selectedStatus,
-    selectedAmount,
     dateRange,
     presetRange,
     customStartDate,
@@ -565,9 +560,14 @@ export function TransactionHistory() {
         });
       });
     });
-    return txs.sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-    );
+    // Pre-sort descending by timestamp, then by id for consistency
+    // The paginator will re-sort with the same logic
+    return txs.sort((a, b) => {
+      const aTime = new Date(a.date).getTime();
+      const bTime = new Date(b.date).getTime();
+      if (bTime !== aTime) return bTime - aTime;
+      return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+    });
   }, []);
 
   // Sync the debounced input value into the filter state and reset page.
@@ -626,13 +626,7 @@ export function TransactionHistory() {
       if (selectedType !== "all" && tx.type !== selectedType) return false;
       if (selectedStatus !== "all" && tx.status !== selectedStatus)
         return false;
-      if (selectedAmount === "lt100" && tx.amount >= 100) return false;
-      if (
-        selectedAmount === "100-1000" &&
-        (tx.amount < 100 || tx.amount > 1000)
-      )
-        return false;
-      if (selectedAmount === "gt1000" && tx.amount <= 1000) return false;
+      if (!matchesAmountFilter(amountFilter, tx.amount)) return false;
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         const matchesNote = tx.note?.toLowerCase().includes(query);
@@ -640,24 +634,6 @@ export function TransactionHistory() {
         const matchesId = tx.lineId.toLowerCase().includes(query);
         const matchesHash = tx.txHash?.toLowerCase().includes(query);
         if (!matchesNote && !matchesLine && !matchesId && !matchesHash)
-          return false;
-      }
-
-      const transactionAmount = Math.abs(tx.amount);
-      if (isCustomAmountRangeActive) {
-        const minAmount =
-          customAmountMin.trim().length > 0 ? Number(customAmountMin) : null;
-        const maxAmount =
-          customAmountMax.trim().length > 0 ? Number(customAmountMax) : null;
-
-        if (minAmount !== null && transactionAmount < minAmount) return false;
-        if (maxAmount !== null && transactionAmount > maxAmount) return false;
-      } else if (selectedAmountRange !== "all") {
-        const bounds = AMOUNT_RANGE_PRESET_BOUNDS[selectedAmountRange];
-
-        if (bounds.min !== undefined && transactionAmount < bounds.min)
-          return false;
-        if (bounds.max !== undefined && transactionAmount > bounds.max)
           return false;
       }
 
@@ -712,12 +688,8 @@ export function TransactionHistory() {
     selectedLine,
     selectedType,
     selectedStatus,
-    selectedAmount,
     searchQuery,
-    selectedAmountRange,
-    isCustomAmountRangeActive,
-    customAmountMin,
-    customAmountMax,
+    amountFilter,
     dateRange,
     presetRange,
     customStartDate,
@@ -729,7 +701,6 @@ export function TransactionHistory() {
     selectedLine,
     selectedType,
     selectedStatus,
-    selectedAmount,
     dateRange,
     presetRange,
     customStartDate,
@@ -773,21 +744,42 @@ export function TransactionHistory() {
   }, [paginatedTransactions]);
 
   const stats = useMemo(() => {
-    const completedTxs = allTransactions.filter(
+    // Outstanding balance: authoritative sum of utilized from non-Closed lines.
+    // This matches the per-line balances shown on /credit-lines and the Dashboard,
+    // and correctly accounts for interest, fees and partial adjustments that a
+    // simple draws-minus-repays flow calculation cannot capture.
+    const outstandingBalance = MOCK_CREDIT_LINES.filter(
+      (cl) => cl.status !== "Closed",
+    ).reduce((s, cl) => s + cl.utilized, 0);
+
+    // Flow cards are scoped to filteredTransactions so their values change when
+    // filters (date range, line, type) are applied — making the scope explicit.
+    const completedFiltered = filteredTransactions.filter(
       (tx) => tx.status === "Completed",
     );
-    const totalDrawn = completedTxs
+    const totalDrawn = completedFiltered
       .filter((tx) => tx.type === "Draw")
       .reduce((s, tx) => s + tx.amount, 0);
-    const totalRepaid = completedTxs
+    const totalRepaid = completedFiltered
       .filter((tx) => tx.type === "Repay")
       .reduce((s, tx) => s + tx.amount, 0);
-    const totalInterest = completedTxs
-      .filter((tx) => tx.type === "Interest")
+    // Interest & fees: both Interest and Fee rows count against the borrower.
+    const totalInterestAndFees = completedFiltered
+      .filter((tx) => tx.type === "Interest" || tx.type === "Fee")
       .reduce((s, tx) => s + tx.amount, 0);
-    const currentDebt = totalDrawn - totalRepaid;
-    return { totalDrawn, totalRepaid, totalInterest, currentDebt };
-  }, [allTransactions]);
+
+    // Reconciliation: ledger net (draws − repays − fees/interest) vs outstanding balance.
+    // Only meaningful when a single credit line is selected.
+    const ledgerNet = totalDrawn - totalRepaid - totalInterestAndFees;
+
+    return {
+      outstandingBalance,
+      totalDrawn,
+      totalRepaid,
+      totalInterestAndFees,
+      ledgerNet,
+    };
+  }, [filteredTransactions]);
 
   const exportDisabled = filteredTransactions.length === 0;
 
@@ -912,7 +904,8 @@ export function TransactionHistory() {
     selectedLine !== "all" ||
     selectedType !== "all" ||
     selectedStatus !== "all" ||
-    selectedAmount !== "all" ||
+    selectedAmountRange !== "all" ||
+    isCustomAmountRangeActive ||
     dateRange !== "custom" ||
     customStartDate.length > 0 ||
     customEndDate.length > 0 ||
@@ -927,7 +920,6 @@ export function TransactionHistory() {
         selectedLine,
         selectedType,
         selectedStatus,
-        selectedAmount,
         dateRange,
         presetRange,
         customStartDate,
@@ -964,19 +956,14 @@ export function TransactionHistory() {
       message = `Filtered by credit line ${lineLabel}. ${resultCountText}.`;
     } else if (selectedStatus !== prevStates.current.selectedStatus) {
       message = `Filtered by status ${selectedStatus === "all" ? "All" : selectedStatus}. ${resultCountText}.`;
-    } else if (selectedAmount !== prevStates.current.selectedAmount) {
-      const amountLabel =
-        selectedAmount === "all"
-          ? "All"
-          : AMOUNT_FILTER_OPTIONS.find((o) => o.value === selectedAmount)
-              ?.label || selectedAmount;
-      message = `Filtered by amount ${amountLabel}. ${resultCountText}.`;
     } else if (selectedAmountRange !== prevStates.current.selectedAmountRange) {
       const rangeLabels: Record<string, string> = {
         all: "All",
-        "under-5k": "Under $5k",
+        "under-100": "Under $100",
+        "100-1k": "$100 to $1k",
+        "1k-5k": "$1k to $5k",
         "5k-25k": "$5k to $25k",
-        "25k-plus": "Over $25k",
+        "25k-plus": "$25k and over",
       };
       const rangeLabel =
         rangeLabels[selectedAmountRange] || selectedAmountRange;
@@ -1034,7 +1021,6 @@ export function TransactionHistory() {
       selectedLine,
       selectedType,
       selectedStatus,
-      selectedAmount,
       dateRange,
       presetRange,
       customStartDate,
@@ -1054,7 +1040,6 @@ export function TransactionHistory() {
     selectedLine,
     selectedType,
     selectedStatus,
-    selectedAmount,
     dateRange,
     presetRange,
     customStartDate,
@@ -1170,7 +1155,6 @@ export function TransactionHistory() {
     setSelectedLine("all");
     setSelectedType("all");
     setSelectedStatus("all");
-    setSelectedAmount("all");
     setDateRange("custom");
     setPresetRange("custom");
     setCustomStartDate("");
@@ -1290,6 +1274,31 @@ export function TransactionHistory() {
       </p>
 
       <div className="th-stats">
+        {/* Outstanding balance — derived from authoritative line balances, not flow math */}
+        <div className="th-stat-card">
+          <span
+            className="th-stat-icon"
+            style={{ background: "rgba(248,81,73,0.12)", color: COLOR.danger }}
+          >
+            💳
+          </span>
+          <div className="th-stat-content">
+            <span className="th-stat-label">Outstanding Balance</span>
+            <span
+              className="th-stat-value num-tabular"
+              style={{
+                color:
+                  stats.outstandingBalance > 0 ? COLOR.danger : COLOR.success,
+              }}
+            >
+              {stats.outstandingBalance > 0
+                ? fmt(stats.outstandingBalance)
+                : fmt(0)}
+            </span>
+          </div>
+        </div>
+
+        {/* Flow cards — scoped to the current filter selection */}
         <div className="th-stat-card">
           <span
             className="th-stat-icon"
@@ -1298,7 +1307,10 @@ export function TransactionHistory() {
             ↗
           </span>
           <div className="th-stat-content">
-            <span className="th-stat-label">Total Drawn</span>
+            <span className="th-stat-label">
+              Total Drawn
+              <span className="th-stat-scope"> in selected range</span>
+            </span>
             <span
               className="th-stat-value num-tabular"
               style={{ color: COLOR.accent }}
@@ -1315,7 +1327,10 @@ export function TransactionHistory() {
             ↙
           </span>
           <div className="th-stat-content">
-            <span className="th-stat-label">Total Repaid</span>
+            <span className="th-stat-label">
+              Total Repaid
+              <span className="th-stat-scope"> in selected range</span>
+            </span>
             <span
               className="th-stat-value num-tabular"
               style={{ color: COLOR.success }}
@@ -1335,34 +1350,60 @@ export function TransactionHistory() {
             📈
           </span>
           <div className="th-stat-content">
-            <span className="th-stat-label">Total Interest</span>
+            <span className="th-stat-label">
+              Interest &amp; Fees
+              <span className="th-stat-scope"> in selected range</span>
+            </span>
             <span
               className="th-stat-value num-tabular"
               style={{ color: COLOR.warning }}
             >
-              {fmt(stats.totalInterest)}
+              {fmt(stats.totalInterestAndFees)}
             </span>
           </div>
         </div>
-        <div className="th-stat-card">
-          <span
-            className="th-stat-icon"
-            style={{ background: "rgba(248,81,73,0.12)", color: COLOR.danger }}
-          >
-            💳
-          </span>
-          <div className="th-stat-content">
-            <span className="th-stat-label">Current Debt</span>
-            <span
-              className="th-stat-value num-tabular"
-              style={{
-                color: stats.currentDebt > 0 ? COLOR.danger : COLOR.success,
-              }}
+
+        {/* Reconciliation hint — visible only when a single credit line is filtered */}
+        {selectedLine !== "all" && (() => {
+          const line = MOCK_CREDIT_LINES.find((cl) => cl.id === selectedLine);
+          if (!line) return null;
+          const diff = stats.ledgerNet - line.utilized;
+          if (diff === 0) return null;
+          const absDiff = Math.abs(diff);
+          return (
+            <div
+              className="th-stat-card th-stat-card--reconciliation"
+              title="The ledger net (draws − repays − fees/interest in the selected range) differs from the authoritative line balance. The gap is caused by transactions outside the selected date range, accrued interest, adjustments, or rounding."
             >
-              {fmt(Math.abs(stats.currentDebt))}
-            </span>
-          </div>
-        </div>
+              <span
+                className="th-stat-icon"
+                style={{
+                  background: "rgba(139,148,158,0.12)",
+                  color: COLOR.muted,
+                }}
+              >
+                ⚖
+              </span>
+              <div className="th-stat-content">
+                <span className="th-stat-label">
+                  Ledger net vs balance
+                  <span className="th-stat-scope"> ⓘ</span>
+                </span>
+                <span
+                  className="th-stat-value num-tabular"
+                  style={{ color: COLOR.muted }}
+                >
+                  {diff > 0 ? "+" : "−"}
+                  {fmt(absDiff)}{" "}
+                  <span style={{ fontSize: "0.75em" }}>difference</span>
+                </span>
+                <span className="th-stat-hint">
+                  interest / fees / adjustments outside range
+                </span>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="th-filters">
@@ -1402,52 +1443,6 @@ export function TransactionHistory() {
                 onClick={() => {
                   setSelectedType(option.value);
                   setCurrentPage(1);
-                }}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {/*
-         * Amount Range Filter Chips
-         * Implements accessible toggle button group for amount-range filtering
-         *
-         * Filters by absolute transaction amount:
-         * - <$100: amounts under 100
-         * - $100–$1,000: amounts between 100 and 1,000 inclusive
-         * - >$1,000: amounts over 1,000
-         *
-         * URL state is synced via ?amount=lt100 | ?amount=100-1000 | ?amount=gt1000.
-         * Uses same aria-pressed toggle pattern as Type and Date chips.
-         */}
-        <div className="th-filter-group th-filter-group-wide">
-          <span className="th-filter-label" id="amount-filter-label">
-            Amount
-          </span>
-          <div
-            className="th-chip-group"
-            role="group"
-            aria-labelledby="amount-filter-label"
-          >
-            {AMOUNT_FILTER_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className="th-filter-chip"
-                aria-pressed={selectedAmount === option.value}
-                onClick={() => {
-                  setSelectedAmount(option.value);
-                  setCurrentPage(1);
-                  setSearchParams((prev) => {
-                    const next = new URLSearchParams(prev);
-                    if (option.value === "all") {
-                      next.delete("amount");
-                    } else {
-                      next.set("amount", option.value);
-                    }
-                    return next;
-                  });
                 }}
               >
                 {option.label}
@@ -1596,6 +1591,12 @@ export function TransactionHistory() {
               setCustomAmountMax("");
               setIsCustomAmountRangeActive(false);
               setCurrentPage(1);
+              setSearchParams((prev) => {
+                const next = new URLSearchParams(prev);
+                if (preset === "all") next.delete("amount");
+                else next.set("amount", preset);
+                return next;
+              });
             }}
             onCustomRangeApply={({ min, max }) => {
               setSelectedAmountRange("all");
@@ -1603,6 +1604,11 @@ export function TransactionHistory() {
               setCustomAmountMax(max === null ? "" : String(max));
               setIsCustomAmountRangeActive(true);
               setCurrentPage(1);
+              setSearchParams((prev) => {
+                const next = new URLSearchParams(prev);
+                next.delete("amount");
+                return next;
+              });
             }}
             onCustomRangeClear={() => {
               setSelectedAmountRange("all");
@@ -1610,6 +1616,11 @@ export function TransactionHistory() {
               setCustomAmountMax("");
               setIsCustomAmountRangeActive(false);
               setCurrentPage(1);
+              setSearchParams((prev) => {
+                const next = new URLSearchParams(prev);
+                next.delete("amount");
+                return next;
+              });
             }}
           />
         </div>

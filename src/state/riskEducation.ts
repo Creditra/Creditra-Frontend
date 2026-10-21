@@ -19,7 +19,11 @@ import {
 } from '../constants/storageKeys';
 
 
-/** Current default-risk education content version */
+/**
+ * Version of the risk-education content borrowers acknowledge. Bump this
+ * whenever the education content (`STEPS` in `DefaultRiskModal`) changes
+ * materially so that every wallet is asked to re-acknowledge.
+ */
 export const RISK_EDUCATION_VERSION = 1;
 
 /** How long a banner dismissal snoozes the banner. */

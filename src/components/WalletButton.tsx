@@ -5,6 +5,7 @@ import { OnboardingFlow } from './OnboardingFlow';
 import { WalletQrCode } from './WalletQrCode';
 import { CopyToClipboard } from './CopyToClipboard';
 import { formatRelative } from '../utils/dates';
+import { useDetectedWallets } from '../hooks/useDetectedWallets';
 import './WalletButton.css';
 
 export const WalletButton = () => {
@@ -22,6 +23,8 @@ export const WalletButton = () => {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showQr, setShowQr] = useState(false);
+  const { detectedWallets } = useDetectedWallets();
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
 
   const handleConnect = () => {
     setShowModal(true);
@@ -91,41 +94,41 @@ export const WalletButton = () => {
     };
   }, []);
 
-  const formatAddress = (address: string) => {
+  const formatPublicAddress = (address: string) => {
     return `${address.slice(0, 4)}...${address.slice(-4)}`;
   };
 
-  if (wallet && status === 'connected') {
-    // Notify context about dropdown visibility for polling
-    const { balances, lastUpdated, refreshBalance, setDropdownOpen } = useWallet();
-    // Ensure polling starts/stops when dropdown visibility changes
-    useEffect(() => {
-      setDropdownOpen(showDropdown);
-    }, [showDropdown, setDropdownOpen]);
+  // Notify context about dropdown visibility for polling. Hooks must be
+  // called unconditionally and before any early return.
+  const { balances, lastUpdated, refreshBalance, setDropdownOpen } = useWallet();
+  useEffect(() => {
+    setDropdownOpen(showDropdown);
+  }, [showDropdown, setDropdownOpen]);
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [announceMsg, setAnnounceMsg] = useState('');
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshBalance();
+      setAnnounceMsg('Balance refreshed');
+    } catch {
+      setAnnounceMsg('Failed to refresh balance');
+    } finally {
+      setIsRefreshing(false);
+      // Clear announcement after a short time for screen readers
+      setTimeout(() => setAnnounceMsg(''), 3000);
+    }
+  };
+
+  if (wallet && status === 'connected') {
     const balanceDisplay = balances ? balances.map((b, i) => (
       <div key={i} className="balance-item">
         <span className="label">Balance ({b.asset}):</span>
         <span className="value">{b.balance}</span>
       </div>
     )) : <span className="value">Unknown</span>;
-
-    const [isRefreshing, setIsRefreshing] = useState(false);
-    const [announceMsg, setAnnounceMsg] = useState('');
-
-    const handleRefresh = async () => {
-      setIsRefreshing(true);
-      try {
-        await refreshBalance();
-        setAnnounceMsg('Balance refreshed');
-      } catch {
-        setAnnounceMsg('Failed to refresh balance');
-      } finally {
-        setIsRefreshing(false);
-        // Clear announcement after a short time for screen readers
-        setTimeout(() => setAnnounceMsg(''), 3000);
-      }
-    };
 
     return (
       <div className="wallet-connected">
@@ -134,11 +137,11 @@ export const WalletButton = () => {
           onClick={handleToggleDropdown}
           aria-haspopup="true"
           aria-expanded={showDropdown}
-          aria-label={`Wallet connected: ${formatAddress(wallet.publicKey)}`}
+          aria-label={`Wallet connected: ${formatPublicAddress(wallet.publicKey)}`}
         >
           <span className="status-dot" aria-hidden="true"></span>
           <span className="sr-only">Status: Connected</span>
-          {formatAddress(wallet.publicKey)}
+          {formatPublicAddress(wallet.publicKey)}
         </button>
         {showDropdown && (
           <div className={`wallet-dropdown ${showQr ? 'wallet-dropdown--expanded' : ''}`} role="menu">
@@ -224,13 +227,15 @@ export const WalletButton = () => {
 
   return (
     <>
-      <button className="connect-wallet-btn" onClick={handleConnect}>
+      <button ref={triggerRef} className="connect-wallet-btn" onClick={handleConnect}>
         Connect Wallet
       </button>
       <WalletConnectionModal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
         onConnect={handleWalletConnect}
+        detectedWallets={detectedWallets}
+        triggerRef={triggerRef}
       />
       <OnboardingFlow
         isOpen={showOnboarding}
