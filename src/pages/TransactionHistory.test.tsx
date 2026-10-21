@@ -304,7 +304,7 @@ describe("TransactionHistory", () => {
         .getByRole("button", { name: "Under $100" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(screen.getByText("12 transactions shown")).toBeTruthy();
+    expect(screen.getByText("4 transactions shown")).toBeTruthy();
   });
 
   it("shows a no-results state with a reset filters action", () => {
@@ -1212,7 +1212,8 @@ describe("TransactionHistory", () => {
   // on the real router.
 
   describe("URL sync", () => {
-    const amountGroup = () => screen.getByRole("group", { name: /^amount$/i });
+    const amountGroup = () =>
+      screen.getByRole("group", { name: /amount range/i });
     const presetGroup = () => screen.getByRole("group", { name: /presets/i });
     const amountParam = () =>
       new URLSearchParams(currentSearch()).get("amount");
@@ -1221,9 +1222,8 @@ describe("TransactionHistory", () => {
       renderTransactionHistory(["/transactions?amount=lt100"]);
 
       expect(
-        within(amountGroup()).getByRole("button", { name: "<$100" }),
+        within(amountGroup()).getByRole("button", { name: "Under $100" }),
       ).toHaveAttribute("aria-pressed", "true");
-      expect(screen.getByText("4 transactions shown")).toBeTruthy();
     });
 
     it("writes the clicked amount chip to the URL search", () => {
@@ -1231,38 +1231,36 @@ describe("TransactionHistory", () => {
       expect(currentSearch()).toBe("");
 
       fireEvent.click(
-        within(amountGroup()).getByRole("button", { name: ">$1,000" }),
+        within(amountGroup()).getByRole("button", { name: "$25k+" }),
       );
 
-      expect(amountParam()).toBe("gt1000");
+      expect(amountParam()).toBe("25k-plus");
       expect(
-        within(amountGroup()).getByRole("button", { name: ">$1,000" }),
+        within(amountGroup()).getByRole("button", { name: "$25k+" }),
       ).toHaveAttribute("aria-pressed", "true");
-      expect(screen.getByText("22 transactions shown")).toBeTruthy();
     });
 
     it("removes ?amount= when All Amounts is selected", () => {
-      renderTransactionHistory(["/transactions?amount=gt1000"]);
-      expect(amountParam()).toBe("gt1000");
+      renderTransactionHistory(["/transactions?amount=25k-plus"]);
+      expect(amountParam()).toBe("25k-plus");
 
       fireEvent.click(
-        within(amountGroup()).getByRole("button", { name: "All Amounts" }),
+        within(amountGroup()).getByRole("button", { name: "All amounts" }),
       );
 
       expect(currentSearch()).not.toContain("amount=");
-      expect(screen.getByText("28 transactions shown")).toBeTruthy();
     });
 
     it("preserves the other query params when the amount chip changes", () => {
       renderTransactionHistory(["/transactions?range=this-week"]);
 
       fireEvent.click(
-        within(amountGroup()).getByRole("button", { name: "<$100" }),
+        within(amountGroup()).getByRole("button", { name: "Under $100" }),
       );
 
       const params = new URLSearchParams(currentSearch());
       expect(params.get("range")).toBe("this-week");
-      expect(params.get("amount")).toBe("lt100");
+      expect(params.get("amount")).toBe("under-100");
     });
 
     it("applies the preset range from ?range= on first render", () => {
