@@ -287,21 +287,30 @@ export const WalletProvider = ({
   children,
   timeoutMs = RECONNECT_TIMEOUT_MS,
   sessionTimeoutMs = SESSION_TIMEOUT_MS,
+  initialWallet,
 }: {
   children: ReactNode;
   /** Override the reconnect timeout duration (ms). Defaults to RECONNECT_TIMEOUT_MS. */
   timeoutMs?: number;
   /** Override the session lifetime (ms). Defaults to SESSION_TIMEOUT_MS. */
   sessionTimeoutMs?: number;
+  /** Initial wallet state for deterministic provider tests. */
+  initialWallet?: WalletInfo | null;
 }) => {
-  const [wallet, setWallet] = useState<WalletInfo | null>(null);
-  const [status, setStatus] = useState<ConnectionStatus>('disconnected');
+  const [wallet, setWallet] = useState<WalletInfo | null>(() => initialWallet ?? null);
+  const [status, setStatus] = useState<ConnectionStatus>(() => initialWallet ? 'connected' : 'disconnected');
   const [error, setError] = useState<WalletError | null>(null);
   const [reconnectTimedOut, setReconnectTimedOut] = useState(false);
   const [sessionTimeoutWarning, setSessionTimeoutWarning] = useState(false);
   // Initialised from `localStorage` via the safe wrapper so the very first
   // render reflects whether the user opted in on a previous session.
   const [isRemembered, setIsRemembered] = useState<boolean>(() => isWalletRemembered());
+
+  useEffect(() => {
+    if (initialWallet === undefined) return;
+    setWallet(initialWallet);
+    setStatus(initialWallet ? 'connected' : 'disconnected');
+  }, [initialWallet]);
 
   // Ref so the timeout cleanup in `runReconnect` closes over a stable reference.
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);

@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { CommandPalette } from "./components/CommandPalette";
 import { RouteAnnouncer, RouteHeadProvider } from "./components/RouteAnnouncer";
 import { WalletProvider } from "./context/WalletContext";
+import { CreditDataProvider } from "./context/CreditDataContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { ContrastProvider } from "./context/ContrastContext";
 import { KycProvider } from "./context/KycContext";
@@ -45,12 +46,14 @@ function RouteLoadingFallback() {
  *     <ThemeProvider>    — colour-scheme (light/dark) preference
  *       <ContrastProvider> — high-contrast override, [data-contrast="high"]
  *         <WalletProvider> — wallet lifecycle visible to every route
- *           <BrowserRouter>
+ *           <CreditDataProvider> — wallet-scoped credit line and transaction data
+ *             <BrowserRouter>
  *             <header />   — persistent nav chrome
  *             <main>
  *               <Routes /> — current route
  *             </main>
- *           </BrowserRouter>
+ *             </BrowserRouter>
+ *           </CreditDataProvider>
  *         </WalletProvider>
  *       </ContrastProvider>
  *     </ThemeProvider>
@@ -98,10 +101,11 @@ function App() {
       <ThemeProvider>
         <ContrastProvider>
           <WalletProvider>
-            <KycProvider>
-              <NotificationProvider>
-                <ReducedMotionProvider>
-                  <BrowserRouter>
+            <CreditDataProvider>
+              <KycProvider>
+                <NotificationProvider>
+                  <ReducedMotionProvider>
+                    <BrowserRouter>
                     <AuctionAlertWatcher />
                     <RouteHeadProvider>
                       <RouteAnnouncer />
@@ -165,10 +169,11 @@ function App() {
                         />
                       </div>
                     </RouteHeadProvider>
-                  </BrowserRouter>
-                </ReducedMotionProvider>
-              </NotificationProvider>
-            </KycProvider>
+                    </BrowserRouter>
+                  </ReducedMotionProvider>
+                </NotificationProvider>
+              </KycProvider>
+            </CreditDataProvider>
           </WalletProvider>
         </ContrastProvider>
       </ThemeProvider>

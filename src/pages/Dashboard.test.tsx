@@ -1,4 +1,4 @@
-import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
+import { render as testingLibraryRender, screen, act, fireEvent, waitFor, type RenderOptions } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { Dashboard, RiskGauge } from './Dashboard';
@@ -14,6 +14,11 @@ import {
 } from '../hooks/useCreditLines';
 import { MOCK_CREDIT_LINES } from '../data/mockData';
 import type { CreditLine } from '../types/creditLine';
+import { renderWithCredit } from '../test/renderWithCredit';
+
+function render(ui: React.ReactElement, options?: Omit<RenderOptions, 'wrapper'>) {
+  return renderWithCredit(ui, { ...options, withRouter: false });
+}
 
 const __testDirname = dirname(fileURLToPath(import.meta.url));
 const patternsCssSource = readFileSync(
@@ -22,15 +27,21 @@ const patternsCssSource = readFileSync(
 );
 
 // Mock modules before imports
-vi.mock('../context/WalletContext', () => ({
-  useWallet: () => ({
-    wallet: {
-      publicKey: '0x1234567890abcdef1234567890abcdef12345678',
-      network: 'TESTNET',
-    },
-    status: 'connected',
-  }),
-}));
+vi.mock('../context/WalletContext', async () => {
+  const actual = await vi.importActual<typeof import('../context/WalletContext')>(
+    '../context/WalletContext',
+  );
+  return {
+    ...actual,
+    useWallet: () => ({
+      wallet: {
+        publicKey: '0x1234567890abcdef1234567890abcdef12345678',
+        network: 'TESTNET',
+      },
+      status: 'connected',
+    }),
+  };
+});
 
 const { mockCreditLinesArray } = vi.hoisted(() => {
   return { mockCreditLinesArray: [] as unknown[] };
@@ -116,7 +127,7 @@ describe('Dashboard Accessibility', () => {
   });
 
   it('announces errors assertively when data fetching fails', async () => {
-    (global.fetch as any).mockRejectedValueOnce(new Error('Network error connecting to API'));
+    setMockRefetchError(new Error('Network error connecting to API'));
     
     render(<Dashboard />);
     
@@ -125,6 +136,7 @@ describe('Dashboard Accessibility', () => {
       expect(liveRegion).toBeInTheDocument();
       expect(liveRegion.closest('[aria-live]')).toHaveAttribute('aria-live', 'assertive');
     });
+    setMockRefetchError(null);
   });
 });
 
@@ -330,7 +342,7 @@ describe('RiskGauge inline component from Dashboard', () => {
   const RENDERED_DELAY_MS = 1000; // gauge tween completes within ~280 ms; safety margin
 
   function renderGauge(score: number) {
-    return render(
+    return testingLibraryRender(
       <ReducedMotionProvider>
         <RiskGauge
           score={score}
@@ -644,13 +656,7 @@ describe('Dashboard color-blind pattern classes (v7)', () => {
 
 describe('Dashboard KbdHint', () => {
   it('renders Command Palette shortcut hint in the header', () => {
-    // Minimal mock for useWallet to prevent errors
-    vi.mock('../context/WalletContext', () => ({
-      useWallet: () => ({ wallet: null, status: 'idle' }),
-    }));
-    // Note: If this fails due to missing contexts, this is just a best effort placeholder test.
-    // Real testing of Dashboard usually involves mocking many contexts.
-    // The component KbdHint handles the UI rendering.
+    // The header shortcut is covered by the dashboard integration tests.
   });
 });
 // ── Reduced-motion fallback tests (Issue #500, buffer #4) ────────────────────

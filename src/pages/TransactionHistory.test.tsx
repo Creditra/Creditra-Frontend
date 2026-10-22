@@ -1,9 +1,10 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import transactionHistoryCss from "./TransactionHistory.css?raw";
 import { TransactionHistory } from "./TransactionHistory";
 import { NotificationProvider } from "../context/NotificationContext";
+import { renderWithCredit } from "../test/renderWithCredit";
 
 /*
  * Issue #1205 — real routing and a fixed instant.
@@ -48,13 +49,14 @@ const currentSearch = () =>
  * state update before any assertion runs.
  */
 const renderTransactionHistory = (initialEntries: string[] = ["/transactions"]) => {
-  const result = render(
+  const result = renderWithCredit(
     <NotificationProvider>
       <MemoryRouter initialEntries={initialEntries}>
         <TransactionHistory />
         <LocationProbe />
       </MemoryRouter>
     </NotificationProvider>,
+    { withRouter: false },
   );
   // Flush only the zero-delay loading useEffect timer (setTimeout 0).
   // Using advanceTimersByTime(1) rather than runAllTimers() so the 250ms
@@ -69,13 +71,14 @@ const renderTransactionHistory = (initialEntries: string[] = ["/transactions"]) 
  * skeleton UI before the data is available.
  */
 const renderTransactionHistoryLoading = (initialEntries: string[] = ["/transactions"]) => {
-  return render(
+  return renderWithCredit(
     <NotificationProvider>
       <MemoryRouter initialEntries={initialEntries}>
         <TransactionHistory />
         <LocationProbe />
       </MemoryRouter>
     </NotificationProvider>,
+    { withRouter: false },
   );
 };
 
@@ -174,23 +177,24 @@ describe("TransactionHistory", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("transitions from skeleton to loaded content after the loading timer fires", () => {
+    it("transitions from skeleton to loaded content when provider data resolves", async () => {
       renderTransactionHistoryLoading();
 
-      // Skeleton must be present before the timer fires.
+      // The provider is pending on first paint and resolves without a timer.
       expect(
         screen.getByRole("status", { name: /loading transaction history/i }),
       ).toBeInTheDocument();
 
-      // Flush the loading useEffect timer.
-      act(() => { vi.runAllTimers(); });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
 
-      // Skeleton must be gone.
       expect(
         screen.queryByRole("status", { name: /loading transaction history/i }),
       ).not.toBeInTheDocument();
 
-      // Fully loaded content must now be present.
       expect(screen.getByRole("table", { name: /transaction history/i })).toBeInTheDocument();
     });
 

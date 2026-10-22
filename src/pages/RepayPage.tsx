@@ -31,9 +31,9 @@ import {
 import { KbdHint } from '@/components/KbdHint';
 import { RepayPreviewModal } from '@/components/RepayPreviewModal';
 import { CopyToClipboard } from '@/components/CopyToClipboard';
-import { MOCK_CREDIT_LINES } from '@/data/mockData';
 import { motionClasses, useReducedMotion } from '@/context/ReducedMotionContext';
 import { useWallet, walletIdentityKey } from '@/context/WalletContext';
+import { useCreditLine, useCreditLines } from '@/hooks/useCreditLines';
 import {
   getRepayableBalance,
   moneyCoversAmount,
@@ -135,6 +135,12 @@ export default function RepayPage() {
   } = useWallet();
   const identityKey = walletIdentityKey(wallet ?? null);
   const preselectedId = searchParams.get('line');
+  const {
+    lines: mockLines,
+    status: creditStatus,
+    error: creditError,
+    refetch: refetchCreditLines,
+  } = useCreditLines();
 
   // ── Draft recovery state ──────────────────────────────────────────────
   const [recoveredDraft, setRecoveredDraft] = useState<RepayDraftState | null>(null);
@@ -154,7 +160,6 @@ export default function RepayPage() {
   const [confirmAmountStr, setConfirmAmountStr] = useState('');
   const [isAutoSchedule, setIsAutoSchedule] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [isOfflineBlocked, setIsOfflineBlocked] = useState(false);
   // Task ariallive-v7: centralised SR announcement for step transitions and
@@ -171,8 +176,8 @@ export default function RepayPage() {
   // The per-render `mockLines` capture lets the memo react when the line data
   // source is replaced (e.g. a provider refetch), so amounts re-validate
   // against current debt instead of stale closure data (issue #1188).
-  const mockLines = MOCK_CREDIT_LINES;
   const creditLines = useMemo(() => getRepayableLines(mockLines), [mockLines]);
+  const { line: selectedCreditLine } = useCreditLine(selectedId);
 
   // When a ?line= deep-link names an unrepayable line we keep selectedLine null
   // so the picker renders with an explanatory status message instead of opening
@@ -181,17 +186,17 @@ export default function RepayPage() {
   // line (issue #1188) — the review step then re-validates against current debt.
   const selectedLine = useMemo(() => {
     if (!selectedId) return null;
-    const line = mockLines.find((cl) => cl.id === selectedId) ?? null;
+    const line = selectedCreditLine;
     if (!line || !isRepayable(line)) return null;
     return line;
-  }, [selectedId, mockLines]);
+  }, [selectedId, selectedCreditLine]);
 
   // True when the user arrived via ?line= but the named line is not repayable.
   const unrepayableDeepLink = useMemo(() => {
     if (!preselectedId) return false;
-    const line = MOCK_CREDIT_LINES.find((cl) => cl.id === preselectedId) ?? null;
+    const line = mockLines.find((cl) => cl.id === preselectedId) ?? null;
     return line !== null && !isRepayable(line);
-  }, [preselectedId]);
+  }, [mockLines, preselectedId]);
 
   const repayableBalance = getRepayableBalance(balances ?? null, SETTLEMENT_ASSET);
   const hasRepayableBalance =
@@ -382,7 +387,7 @@ export default function RepayPage() {
     // validation instead of a Confirm button for an amount that no longer
     // checks out.
     const draftLine =
-      MOCK_CREDIT_LINES.find((cl) => cl.id === recoveredDraft.creditLineId) ?? null;
+      mockLines.find((cl) => cl.id === recoveredDraft.creditLineId) ?? null;
     const ownerOk = identityKey !== null && recoveredDraft.owner === identityKey;
     const isAmountStillValid =
       draftLine !== null &&
@@ -425,6 +430,7 @@ export default function RepayPage() {
 
   // ── Initial draft recovery check ──────────────────────────────────────
   useEffect(() => {
+    if (creditStatus !== 'success') return;
     if (draftLoadedRef.current) return;
     draftLoadedRef.current = true;
 
@@ -438,7 +444,7 @@ export default function RepayPage() {
     // Issue #1188: discard drafts that can no longer be safely resumed
     // instead of offering to restore them.
     const draftLine =
-      MOCK_CREDIT_LINES.find((cl) => cl.id === draft.creditLineId) ?? null;
+      mockLines.find((cl) => cl.id === draft.creditLineId) ?? null;
     if (!draftLine || !isRepayable(draftLine)) {
       clearRepayDraft();
       setDraftDiscardReason('line-unrepayable');
@@ -457,7 +463,7 @@ export default function RepayPage() {
 
     setRecoveredDraft(draft);
     setShowRecoveryPrompt(true);
-  }, [preselectedId, identityKey]);
+  }, [preselectedId, identityKey, creditStatus, mockLines]);
 
   // ── Clear the draft when the wallet identity changes ──────────────────
   // Issue #1188: a draft saved under one wallet must not survive an account
@@ -483,7 +489,7 @@ export default function RepayPage() {
     if (draftClearedRef.current) return;
 
     // Don't save during loading or after cancel.
-    if (isLoading || !selectedId) return;
+    if (creditStatus !== 'success' || !selectedId) return;
     // Don't save without a known wallet identity (the draft is owner-scoped).
     if (!identityKey) return;
     // Don't save empty amounts on the input step.
@@ -497,14 +503,7 @@ export default function RepayPage() {
       isAutoSchedule,
       owner: identityKey,
     });
-  }, [step, selectedId, amountStr, confirmAmountStr, isAutoSchedule, isLoading, identityKey]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 800);
-    return () => clearTimeout(timer);
-  }, []);
+  }, [step, selectedId, amountStr, confirmAmountStr, isAutoSchedule, creditStatus, identityKey]);
 
   useEffect(() => {
     if (walletStatus !== 'connected' || !wallet) {
@@ -712,7 +711,14 @@ export default function RepayPage() {
           </h1>
         </header>
 
-        {isLoading ? (
+        {creditStatus === 'error' ? (
+          <div role="alert" className="rounded-lg border border-error/40 bg-error/10 p-4 text-sm text-error">
+            <p>{creditError?.message ?? 'Unable to load credit lines.'}</p>
+            <button type="button" className="mt-3 underline" onClick={() => void refetchCreditLines().catch(() => undefined)}>
+              Retry
+            </button>
+          </div>
+        ) : creditStatus === 'loading' ? (
           <div className="space-y-3" aria-busy="true" aria-live="polite" data-testid="repay-loading-skeleton">
             {[1, 2, 3].map((i) => (
               <div

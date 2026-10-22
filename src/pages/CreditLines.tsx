@@ -9,10 +9,8 @@ import { NoLines } from "../components/illustrations";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useInertBackdrop } from "../hooks/useInertBackdrop";
 import { useBodyScrollLock } from "../hooks/useBodyScrollLock";
-import { useCreditLines, setGlobalCreditLines, getGlobalCreditLines } from "../hooks/useCreditLines";
+import { useCreditLines } from "../hooks/useCreditLines";
 import { setLineFrozen } from "../services/creditLine";
-import { MOCK_CREDIT_LINES } from "../data/mockData";
-import { createCreditDataSource } from "../services/credit";
 import type {
   CreditLine,
   CreditLineStatus,
@@ -58,7 +56,7 @@ import {
 } from "../utils/comparisonSelection";
 
 const CREDIT_LINES_PAGE_SIZE = 6;
-const getCreditLineId = (line: (typeof MOCK_CREDIT_LINES)[number]) => line.id;
+const getCreditLineId = (line: CreditLine) => line.id;
 
 // ─── Credit Line Card ────────────────────────────────────────────────────────
 
@@ -73,11 +71,11 @@ function CreditLineCard({
   onFreeze,
   onUnfreeze,
 }: {
-  line: (typeof MOCK_CREDIT_LINES)[0];
+  line: CreditLine;
   isSelected: boolean;
   onToggle: () => void;
   onSwapCollateral?: (
-    line: (typeof MOCK_CREDIT_LINES)[0],
+    line: CreditLine,
     triggerRef: React.RefObject<HTMLButtonElement | null>,
   ) => void;
   onRepay?: () => void;
@@ -252,7 +250,7 @@ function CreditLineCard({
  */
 function CreditLineCardSkeleton() {
   return (
-    <div className="cl-card" aria-hidden="true">
+    <div className="cl-card cl-card--skeleton" aria-hidden="true">
       <div className="cl-card-header">
         <div className="cl-card-title-row">
           <div>
@@ -392,37 +390,8 @@ export default function CreditLines({
   //    freeze/unfreeze changes are visible to Dashboard, Quick Repay, etc.
   //    The hook reads from the in-memory store in useCreditLines.ts; the
   //    setLineFrozen service writes to that same store.
-  const { lines: creditLines, refetch } = useCreditLines();
-  const [isLoading, setIsLoading] = useState(true);
-  const hasCreditLines = creditLines.length > 0;
-
-  useEffect(() => {
-    if (
-      typeof import.meta !== "undefined" &&
-      import.meta.env?.VITE_CREDIT_DATA_SOURCE === "soroban"
-    ) {
-      const dataSource = createCreditDataSource("soroban");
-      const borrower =
-        "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H";
-
-      setIsLoading(true);
-
-      dataSource
-        .listCreditLines(borrower)
-        .then((lines) => {
-          setGlobalCreditLines(lines);
-        })
-        .catch((err) => {
-          console.error(
-            "[CreditLines] Failed to load credit lines from Soroban RPC:",
-            err,
-          );
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
-    }
-  }, []);
+  const { lines: creditLines, status, error, refetch, setLines } = useCreditLines();
+  void defaultLoading;
 
   // ── Freeze/unfreeze optimistic state ─────────────────────────────────
   /** Deep snapshot of each line before an optimistic update, keyed by lineId.
@@ -440,7 +409,7 @@ export default function CreditLines({
    *  failure cannot roll back a later success. */
   const handleFreezeToggle = useCallback(
     async (lineId: string, frozen: boolean) => {
-      const lines = refetch ? await refetch().catch(() => creditLines) : creditLines;
+      const lines = creditLines;
       const currentLine = lines.find((cl) => cl.id === lineId);
       if (!currentLine) return;
 
@@ -452,31 +421,31 @@ export default function CreditLines({
       inFlightRef.current.set(lineId, { frozen, previousLine });
 
       // Optimistic update: apply the target status immediately
-      setGlobalCreditLines(
-        lines.map((cl) =>
+      const optimisticStatus: CreditLineStatus = frozen ? "Frozen" : "Active";
+      const optimisticLines: CreditLine[] = lines.map((cl) =>
           cl.id === lineId
             ? {
                 ...cl,
-                status: frozen ? "Frozen" : "Active",
+                status: optimisticStatus,
                 updatedAt: new Date().toISOString(),
                 statusHistory: [
                   ...cl.statusHistory,
                   {
-                    status: frozen ? "Frozen" : "Active",
+                    status: optimisticStatus,
                     date: new Date().toISOString(),
                     note: frozen ? "Freezing…" : "Unfreezing…",
                   },
                 ],
               }
             : cl,
-        ),
-      );
+        );
+      setLines(optimisticLines);
       setAnnouncement(`Credit line ${currentLine.name} ${frozen ? "freezing…" : "unfreezing…"}`);
       setFreezeError(null);
       setRetryLineId(null);
 
       try {
-        const serverLine = await setLineFrozen(lineId, frozen);
+        const serverLine = await setLineFrozen(lineId, frozen, optimisticLines);
 
         // Check if we're still the latest intent for this line.
         // If a newer toggle has started, don't overwrite — the newer one wins.
@@ -487,10 +456,7 @@ export default function CreditLines({
         }
 
         // Apply the server-authoritative record
-        const currentLines = getGlobalCreditLines();
-        setGlobalCreditLines(
-          currentLines.map((cl) => (cl.id === lineId ? serverLine : cl)),
-        );
+        setLines(creditLines.map((cl) => (cl.id === lineId ? serverLine : cl)));
         setAnnouncement(
           `Credit line ${currentLine.name} ${frozen ? "frozen." : "unfrozen."}`,
         );
@@ -504,10 +470,7 @@ export default function CreditLines({
         }
 
         // Exact rollback: restore the exact previous line object
-        const currentLines = getGlobalCreditLines();
-        setGlobalCreditLines(
-          currentLines.map((cl) => (cl.id === lineId ? previousLine : cl)),
-        );
+        setLines(creditLines.map((cl) => (cl.id === lineId ? previousLine : cl)));
         setAnnouncement(
           `Failed to ${frozen ? "freeze" : "unfreeze"} ${currentLine.name}. ${frozen ? "Free" : "Unfree"}ze could not be completed — try again.`,
         );
@@ -518,7 +481,7 @@ export default function CreditLines({
         inFlightRef.current.delete(lineId);
       }
     },
-    [creditLines, refetch],
+    [creditLines, setLines],
   );
 
   const handleFreeze = (lineId: string) => {
@@ -538,15 +501,6 @@ export default function CreditLines({
     }
   };
 
-  const [loading, setLoading] = useState(defaultLoading);
-  useEffect(() => {
-    if (!defaultLoading) return;
-    const timer = setTimeout(() => {
-      setLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [defaultLoading]);
-
   const [showCompare, setShowCompare] = useState(false);
   const [selectedLines, setSelectedLines] = useState<string[]>(() =>
     loadComparisonSelection(),
@@ -557,7 +511,7 @@ export default function CreditLines({
     saveComparisonSelection(selectedLines);
   }, [selectedLines]);
   const [modalTarget, setModalTarget] = useState<{
-    line: (typeof MOCK_CREDIT_LINES)[0];
+    line: CreditLine;
     currentAsset: string;
     triggerRef: React.RefObject<HTMLButtonElement | null>;
   } | null>(null);
@@ -567,7 +521,7 @@ export default function CreditLines({
     setModalTarget(null);
   };
   const handleSwapCollateral = (
-    line: (typeof MOCK_CREDIT_LINES)[0],
+    line: CreditLine,
     triggerRef: React.RefObject<HTMLButtonElement | null>,
   ) => {
     setModalTarget({
@@ -664,14 +618,17 @@ export default function CreditLines({
     );
   }, [filteredAndSorted]);
 
+  const effectiveStableOrder = stableOrder.length === 0 && filteredAndSorted.length > 0
+    ? createStableOrder(filteredAndSorted, getCreditLineId)
+    : stableOrder;
   const stablePage = useMemo(
     () =>
-      getStablePage(filteredAndSorted, stableOrder, {
+      getStablePage(filteredAndSorted, effectiveStableOrder, {
         pageIndex,
         pageSize: CREDIT_LINES_PAGE_SIZE,
         getId: getCreditLineId,
       }),
-    [filteredAndSorted, stableOrder, pageIndex],
+    [filteredAndSorted, effectiveStableOrder, pageIndex],
   );
 
   useEffect(() => {
@@ -727,14 +684,6 @@ export default function CreditLines({
   );
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setIsLoading(false);
-    }, 600);
-
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (
@@ -776,7 +725,7 @@ export default function CreditLines({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedLines, showCompare, navigate, creditLines]);
 
-  if (isLoading) {
+  if (status === "loading") {
     return (
       <div
         className="credit-lines-page"
@@ -826,46 +775,25 @@ export default function CreditLines({
 
         <div className="cl-grid cl-grid--skeleton" aria-hidden="true">
           {Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className="cl-card cl-card--skeleton">
-              <div className="cl-card-header">
-                <div style={{ width: "100%" }}>
-                  <Skeleton
-                    width="72%"
-                    height="1.1rem"
-                    className="cl-skeleton-card-title"
-                  />
-                  <Skeleton
-                    width="45%"
-                    height="0.8rem"
-                    className="cl-skeleton-card-subtitle"
-                  />
-                </div>
-                <Skeleton width="96px" height="1.95rem" />
-              </div>
-              <div className="cl-card-body">
-                <div className="cl-metrics">
-                  <Skeleton width="100%" height="3.25rem" />
-                  <Skeleton width="100%" height="3.25rem" />
-                  <Skeleton width="100%" height="3.25rem" />
-                </div>
-                <Skeleton
-                  width="100%"
-                  height="0.7rem"
-                  className="cl-skeleton-block"
-                />
-                <Skeleton
-                  width="70%"
-                  height="0.7rem"
-                  className="cl-skeleton-block"
-                />
-                <div className="cl-details">
-                  <Skeleton width="100%" height="2.25rem" />
-                  <Skeleton width="100%" height="2.25rem" />
-                  <Skeleton width="100%" height="2.25rem" />
-                </div>
-              </div>
-            </div>
+            <CreditLineCardSkeleton key={index} />
           ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <div className="credit-lines-page">
+        <div role="alert" className="cl-error-card">
+          <p>{error?.message ?? "Unable to load credit lines."}</p>
+          <button
+            type="button"
+            className="cl-primary-btn focus-ring"
+            onClick={() => void refetch().catch(() => undefined)}
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -1062,33 +990,39 @@ export default function CreditLines({
         </div>
       )}
 
-      <div role="status" aria-live="polite" aria-busy={loading}>
-        <span className="sr-only">
-          {loading ? "Loading credit lines" : "Credit lines loaded"}
-        </span>
-        {loading ? (
-          <div className="cl-grid">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <CreditLineCardSkeleton key={i} />
-            ))}
-          </div>
-        ) : filteredAndSorted.length === 0 ? (
-          <div className="cl-empty" role="region" aria-label="No credit lines">
-            <NoLines className="empty-state-illustration--muted" />
-            <h2 className="cl-empty-title">Get started with Credit Lines</h2>
-            <p className="cl-empty-desc">
-              Credit lines give you access to flexible capital when you need it.
-              Open your first line and unlock funding tailored to your business.
-            </p>
-            <ul className="cl-empty-features">
-              <li>Flexible funding up to $500K</li>
-              <li>Competitive rates from 7.5% APR</li>
-              <li>Quick approval with digital collateral</li>
-            </ul>
-            <Link to="/open-credit" className="cl-primary-btn focus-ring">
-              Open Credit Line
-            </Link>
-          </div>
+      <div role="status" aria-live="polite" aria-busy={false}>
+        {filteredAndSorted.length === 0 ? (
+          creditLines.length > 0 ? (
+            <div className="cl-empty" role="region" aria-label="No matching credit lines">
+              <NoLines className="empty-state-illustration--muted" />
+              <h2 className="cl-empty-title">No matching credit lines</h2>
+              <p className="cl-empty-desc">Try changing the status filter to see your credit lines.</p>
+              <button
+                type="button"
+                className="cl-primary-btn focus-ring"
+                onClick={() => setStatusFilter("all")}
+              >
+                Clear Filters
+              </button>
+            </div>
+          ) : (
+            <div className="cl-empty" role="region" aria-label="No credit lines">
+              <NoLines className="empty-state-illustration--muted" />
+              <h2 className="cl-empty-title">Get started with Credit Lines</h2>
+              <p className="cl-empty-desc">
+                Credit lines give you access to flexible capital when you need it.
+                Open your first line and unlock funding tailored to your business.
+              </p>
+              <ul className="cl-empty-features">
+                <li>Flexible funding up to $500K</li>
+                <li>Competitive rates from 7.5% APR</li>
+                <li>Quick approval with digital collateral</li>
+              </ul>
+              <Link to="/open-credit" className="cl-primary-btn focus-ring">
+                Open Credit Line
+              </Link>
+            </div>
+          )
         ) : (
           <>
             {stablePage.items.length > 0 ? (
