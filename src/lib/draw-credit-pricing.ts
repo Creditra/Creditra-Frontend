@@ -124,6 +124,8 @@ export function getDrawPricingQuote(
   creditLine: CreditLine,
   amount: number,
 ): DrawPricingQuote {
+  const safeAmount = Math.max(amount, 0);
+  const fee = getDrawFee(safeAmount);
   const projection = projectDraw(creditLine, amount);
   const baseApr = BASE_APR_BY_RISK_BAND[creditLine.riskBand];
   const utilizationAdjustment = getUtilizationAdjustment(

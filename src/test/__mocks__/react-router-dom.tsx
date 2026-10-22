@@ -119,7 +119,21 @@ export function Link({
   children: React.ReactNode;
   [key: string]: unknown;
 }) {
-  return createElement('a', { href: to, ...props }, children);
+  return createElement(
+    'a',
+    {
+      href: to,
+      ...props,
+      onClick: (e: React.MouseEvent) => {
+        if (typeof (props as any).onClick === 'function') (props as any).onClick(e);
+        if (!e.defaultPrevented) {
+          e.preventDefault();
+          applyEntry(to);
+        }
+      },
+    },
+    children
+  );
 }
 
 export function NavLink({
@@ -135,21 +149,29 @@ export function NavLink({
   end?: boolean;
   [key: string]: unknown;
 }) {
-  const isActive = false;
+  const isActive = currentPathname === to;
   const cls = typeof className === 'function' ? className({ isActive }) : className;
   const content = typeof children === 'function' ? children({ isActive }) : children;
-  return createElement('a', { href: to, className: cls, ...props }, content);
+  return createElement(
+    'a',
+    {
+      href: to,
+      className: cls,
+      ...(isActive ? { 'aria-current': 'page' } : {}),
+      ...props,
+      onClick: (e: React.MouseEvent) => {
+        if (typeof (props as any).onClick === 'function') (props as any).onClick(e);
+        if (!e.defaultPrevented) {
+          e.preventDefault();
+          applyEntry(to);
+        }
+      },
+    },
+    content
+  );
 }
 
-/**
- * Matches child `<Route>` elements against the current mock location.
- *
- * Supports exact paths and the `*` fallback — enough for suite tests, which
- * render `<Routes><Route path="/repay/success" element={…} />` etc. Real
- * react-router route matching is unavailable in this stub environment, so
- * Route props are read directly from the child elements and `element` is
- * rendered for the first match (falling back to `*`).
- */
+/** Matches exact child paths and a `*` fallback in this lightweight stub. */
 export function Routes({ children }: { children: React.ReactNode }) {
   useSyncExternalStore(
     subscribeToLocation,
@@ -182,10 +204,14 @@ export function Routes({ children }: { children: React.ReactNode }) {
     : null;
 }
 
-/** Rendered only when `Routes` selects a Route that inlines children. */
-export function Route({ element, children }: Record<string, unknown>) {
-  if (element !== undefined && element !== null) return null;
-  return createElement(Fragment, null, children as React.ReactNode);
+export function Route({
+  element,
+  children,
+}: {
+  element?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  return createElement(Fragment, null, element ?? children);
 }
 
 export function Navigate(_props: Record<string, unknown>) {
@@ -265,4 +291,3 @@ export function useParams() {
 }
 
 export { matchPath } from './matchPath';
-
