@@ -53,6 +53,15 @@ import { DrawCreditPageSkeleton } from "./DrawCreditPage";
 import { DEFAULT_RISK_ACK_KEY } from "@/constants/storageKeys";
 import { readJson, writeJson } from "@/utils/storage";
 import { __getMockSearch, __setMockLocation } from "react-router-dom";
+import { freezeTime, unfreezeTime } from "@/test/freezeTime";
+
+beforeEach(() => {
+  freezeTime();
+});
+
+afterEach(() => {
+  unfreezeTime();
+});
 
 // ---------------------------------------------------------------------------
 // Helpers

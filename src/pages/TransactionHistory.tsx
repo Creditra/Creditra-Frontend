@@ -37,6 +37,7 @@ import {
   getCalendarGroup,
   relativeTime as formatCalendarRelative,
 } from "../utils/dates";
+import { now as clockNow, nowMs as clockNowMs } from "../lib/clock";
 import { COLOR, fmt, fmtDateTime } from "../utils/tokens";
 import "./TransactionHistory.css";
 import { NoActivity, NoDataGraph, NoLines } from "../components/illustrations";
@@ -182,13 +183,13 @@ const RANGE_PRESET_OPTIONS: Array<{
 const relativeTime = (iso: string): string => {
   // Issue #1189: delegate to the shared calendar-aware helper.
   // Handles future timestamps ("in 3m") and "just now" correctly.
-  return formatCalendarRelative(iso);
+  return formatCalendarRelative(iso, clockNow());
 };
 
 const getDateGroup = (iso: string): string => {
   // Issue #1189: local calendar boundaries, with 'Upcoming' + 'Unknown date'
   // for future-dated and unparseable rows.
-  return getCalendarGroup(iso, new Date());
+  return getCalendarGroup(iso, clockNow());
 };
 
 function getExportFilename(transactions: TransactionWithLine[]): string {
@@ -636,7 +637,7 @@ export function TransactionHistory() {
           return false;
       }
 
-      const now = new Date();
+      const now = clockNow();
       const startOfToday = new Date(
         now.getFullYear(),
         now.getMonth(),
@@ -644,18 +645,18 @@ export function TransactionHistory() {
       ).getTime();
 
       if (dateRange === "today" && txTime < startOfToday) return false;
-      if (dateRange === "7d" && txTime < Date.now() - 7 * 24 * 60 * 60 * 1000) {
+      if (dateRange === "7d" && txTime < clockNowMs() - 7 * 24 * 60 * 60 * 1000) {
         return false;
       }
       if (
         dateRange === "30d" &&
-        txTime < Date.now() - 30 * 24 * 60 * 60 * 1000
+        txTime < clockNowMs() - 30 * 24 * 60 * 60 * 1000
       ) {
         return false;
       }
       if (
         dateRange === "90d" &&
-        txTime < Date.now() - 90 * 24 * 60 * 60 * 1000
+        txTime < clockNowMs() - 90 * 24 * 60 * 60 * 1000
       ) {
         return false;
       }

@@ -14,6 +14,7 @@ import {
 } from '../hooks/useCreditLines';
 import { MOCK_CREDIT_LINES } from '../data/mockData';
 import type { CreditLine } from '../types/creditLine';
+import { freezeTime, unfreezeTime } from '../test/freezeTime';
 
 const __testDirname = dirname(fileURLToPath(import.meta.url));
 const patternsCssSource = readFileSync(
@@ -1008,4 +1009,21 @@ describe('Dashboard credit summary real refresh (#1201)', () => {
       expect(screen.getAllByText('$347,500').length).toBeGreaterThan(0);
     });
   }, 15000);
+});
+
+describe('Dashboard frozen clock payment notices', () => {
+  beforeEach(() => {
+    freezeTime('2025-02-25T12:00:00.000Z');
+  });
+
+  afterEach(() => {
+    unfreezeTime();
+  });
+
+  it('renders deterministic "payment due in 4 days" notice when frozen at 2025-02-25', async () => {
+    render(<Dashboard />);
+    await waitFor(() => {
+      expect(screen.getByText(/due in 4 days/i)).toBeInTheDocument();
+    });
+  });
 });

@@ -193,3 +193,16 @@ If any of these fail, the PR is not mergeable. Pre-existing failures inherited f
 do not block docs-only or comment-only PRs (see [`CONTRIBUTING.md`](CONTRIBUTING.md)),
 but they must not be worsened. The diff has to be neutral or positive on the test count
 and on the type-check.
+
+---
+
+## 7. Credit Domain Clock & Time Pinning Policy
+
+Credit lifecycle suites (Dashboard, Credit Lines, Repay, Transaction History, Draw Credit) depend on relative dates, repayment schedules, and aging tags. Because fixture payment dates are fixed (e.g. March 2025), running tests against the real current date introduces flakiness and drifting branches.
+
+### Policy
+- **Injectable clock**: All credit pages and components read current time via `now()` or `nowMs()` from `src/lib/clock.ts`, which delegates to `new Date()` in production.
+- **Frozen instant in tests**: Credit-related test suites must pin time using `freezeTime()` from `src/test/freezeTime.ts`. This pins both Vitest system timers (`vi.setSystemTime`) and the injectable clock to the canonical anchor (`DEFAULT_FROZEN_TIME = '2025-02-25T12:00:00.000Z'`).
+- **Clean teardown**: Always restore real timers in `afterEach` via `unfreezeTime()`.
+- **Stable fixtures**: Fixture generators such as `generateAprHistory` take a fixed anchor date (`FIXTURE_ANCHOR_DATE`) so that imported mock structures do not drift across test runs.
+

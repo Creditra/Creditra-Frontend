@@ -43,6 +43,7 @@ import { LiveRegion } from "../components/LiveRegion";
 import { useReducedMotion } from "../context/ReducedMotionContext";
 import { HealthTipsPanel } from "../components/HealthTipsPanel";
 import { SyncIndicator } from "@/components/SyncIndicator";
+import { now as clockNow, nowMs as clockNowMs } from "../lib/clock";
 import {
   loadComparisonSelection,
   saveComparisonSelection,
@@ -53,7 +54,7 @@ export { RiskGauge };
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const relativeTime = (iso: string): string => {
-  const diff = Date.now() - new Date(iso).getTime();
+  const diff = clockNowMs() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
@@ -318,7 +319,7 @@ export function Dashboard() {
         }
         if (cl.nextPaymentDate) {
           const daysUntil = Math.ceil(
-            (new Date(cl.nextPaymentDate).getTime() - Date.now()) / 86400000,
+            (new Date(cl.nextPaymentDate).getTime() - clockNowMs()) / 86400000,
           );
           if (daysUntil > 0 && daysUntil <= 7) {
             notes.push({
@@ -817,7 +818,7 @@ export function Dashboard() {
                 score={avgRiskScore}
                 trend="improving"
                 lastUpdated={
-                  activeLinesOnly[0]?.updatedAt ?? new Date().toISOString()
+                  activeLinesOnly[0]?.updatedAt ?? clockNow().toISOString()
                 }
               />
             )}

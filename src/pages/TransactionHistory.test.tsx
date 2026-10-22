@@ -4,6 +4,7 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import transactionHistoryCss from "./TransactionHistory.css?raw";
 import { TransactionHistory } from "./TransactionHistory";
 import { NotificationProvider } from "../context/NotificationContext";
+import { freezeTime, unfreezeTime } from "../test/freezeTime";
 
 /*
  * Issue #1205 — real routing and a fixed instant.
@@ -100,11 +101,10 @@ describe("TransactionHistory", () => {
   })();
 
   beforeEach(() => {
-    vi.useFakeTimers();
     // Midday UTC: keeps the pinned instant on the same local calendar day for
     // offsets from UTC-11 to UTC+11. See the suite header for why that makes
     // the assertions timezone-independent.
-    vi.setSystemTime(new Date("2025-02-20T12:00:00Z"));
+    freezeTime("2025-02-20T12:00:00Z");
     URL.createObjectURL = vi.fn(() => "blob:mock-url");
     URL.revokeObjectURL = vi.fn();
     mockLocalStorage.clear();
@@ -122,7 +122,7 @@ describe("TransactionHistory", () => {
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    unfreezeTime();
     URL.createObjectURL = originalCreateObjectURL;
     URL.revokeObjectURL = originalRevokeObjectURL;
   });

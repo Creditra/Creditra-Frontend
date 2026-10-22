@@ -42,6 +42,7 @@ import { LiveRegion } from "../components/LiveRegion";
 import { LastActivityStamp } from "../components/LastActivityStamp";
 import { RepaymentPlanChart } from "../components/RepaymentPlanChart";
 import { CreditLineAging } from "../components/CreditLineAging";
+import { now as clockNow } from "../lib/clock";
 import {
   RepaymentSchedule,
   buildRepaymentScheduleFromLines,
@@ -393,7 +394,10 @@ export default function CreditLines({
   //    The hook reads from the in-memory store in useCreditLines.ts; the
   //    setLineFrozen service writes to that same store.
   const { lines: creditLines, refetch } = useCreditLines();
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(
+    typeof import.meta !== "undefined" &&
+      import.meta.env?.VITE_CREDIT_DATA_SOURCE === "soroban",
+  );
   const hasCreditLines = creditLines.length > 0;
 
   useEffect(() => {
@@ -458,12 +462,12 @@ export default function CreditLines({
             ? {
                 ...cl,
                 status: frozen ? "Frozen" : "Active",
-                updatedAt: new Date().toISOString(),
+                updatedAt: clockNow().toISOString(),
                 statusHistory: [
                   ...cl.statusHistory,
                   {
                     status: frozen ? "Frozen" : "Active",
-                    date: new Date().toISOString(),
+                    date: clockNow().toISOString(),
                     note: frozen ? "Freezing…" : "Unfreezing…",
                   },
                 ],
@@ -776,10 +780,11 @@ export default function CreditLines({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedLines, showCompare, navigate, creditLines]);
 
-  if (isLoading) {
+  if (isLoading || loading) {
     return (
       <div
         className="credit-lines-page"
+        data-testid="creditlines-skeleton-grid"
         role="status"
         aria-live="polite"
         aria-busy="true"

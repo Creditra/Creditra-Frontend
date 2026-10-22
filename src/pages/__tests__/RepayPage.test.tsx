@@ -3,6 +3,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import RepayPage from '../RepayPage';
 import RepaySuccess from '../RepaySuccess';
+import { freezeTime, unfreezeTime } from '@/test/freezeTime';
 
 vi.mock('@/context/WalletContext', () => ({
   useWallet: () => ({
@@ -47,12 +48,12 @@ function renderPage(initialEntries = ['/repay'], advanceTimers = true) {
 
 describe('RepayPage', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
+    freezeTime();
   });
 
   afterEach(() => {
     vi.runOnlyPendingTimers();
-    vi.useRealTimers();
+    unfreezeTime();
   });
 
   it('shows loading skeleton initially', () => {

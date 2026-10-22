@@ -30,6 +30,7 @@ import { useMemo, useId } from 'react';
 import './RepaymentSchedule.css';
 import { fmt, fmtDate } from '../utils/tokens';
 import type { CreditLine } from '../types/creditLine';
+import { now as clockNow } from '../lib/clock';
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -283,7 +284,7 @@ export function buildRepaymentScheduleFromLine(
  */
 export function buildRepaymentScheduleFromLines(
   lines: CreditLine[],
-  now: Date = new Date(),
+  now: Date = clockNow(),
 ): ScheduledRepayment[] {
   const merged: ScheduledRepayment[] = [];
   for (const line of lines) {
@@ -310,7 +311,7 @@ export function RepaymentSchedule({
 }: RepaymentScheduleProps) {
   // Default lazily so a stable reference isn't required; the prop is the
   // supported override for tests.
-  const nowRef = useMemo(() => now ?? new Date(), [now]);
+  const nowRef = useMemo(() => now ?? clockNow(), [now]);
 
   const reactId = useId();
   const id = headingId ?? `repayment-schedule-${reactId}`;
