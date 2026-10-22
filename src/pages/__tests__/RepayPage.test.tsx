@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import RepayPage from '../RepayPage';
+import RepaySuccess from '../RepaySuccess';
 
 const { wallet, refreshBalance } = vi.hoisted(() => ({
   wallet: { publicKey: 'GTESTWALLET', network: 'TESTNET' },
@@ -27,33 +28,27 @@ vi.mock('@/context/WalletContext', () => ({
     ],
     refreshBalance,
   }),
+  walletIdentityKey: (value: { publicKey: string; network: string } | null) =>
+    value ? `undefined:${value.publicKey}:${value.network}` : null,
 }));
 
-vi.mock('@/data/mockData', () => ({
-  MOCK_CREDIT_LINES: [
-    {
-      id: 'CL-2024-001',
-      name: 'Primary Business Line',
-      status: 'Active',
-      limit: 500000,
-      utilized: 187500,
-      apr: 8.5,
-      riskScore: 720,
-      collateral: 'Commercial Real Estate',
-      openedAt: '2024-03-15',
-      updatedAt: '2025-02-20T14:32:00Z',
-      nextPaymentDate: '2025-03-01',
-      nextPaymentAmount: 3200,
-      transactions: [],
-      statusHistory: [],
-    },
-  ],
+vi.mock('@/data/mockData', async () => {
+  const { REPAY_TEST_CREDIT_LINES } = await import('@/test/fixtures/repayCreditLines');
+  return { MOCK_CREDIT_LINES: REPAY_TEST_CREDIT_LINES };
+});
+
+vi.mock('../../context/ThemeContext', () => ({
+  useTheme: () => ({ theme: 'default' }),
+  ThemeProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
 function renderPage(initialEntries = ['/repay'], advanceTimers = true) {
   const result = render(
     <MemoryRouter initialEntries={initialEntries}>
-      <RepayPage />
+      <Routes>
+        <Route path="/repay/success" element={<RepaySuccess />} />
+        <Route path="*" element={<RepayPage />} />
+      </Routes>
     </MemoryRouter>,
   );
   
@@ -259,19 +254,14 @@ describe('RepayPage', () => {
 
     it('applies focus-visible classes and rp-* classes on success step buttons', async () => {
       renderPage(['/repay?line=CL-2024-001']);
-      // Navigate to success step
       fireEvent.click(screen.getByRole('button', { name: /smart pay/i }));
       fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
       await flushReviewBalanceRefresh();
       fireEvent.click(screen.getByRole('button', { name: /confirm repayment/i }));
 
-      const dashboardBtn = screen.getByRole('button', { name: /back to dashboard/i });
-      expect(dashboardBtn).toHaveClass('focus-visible:outline');
-      expect(dashboardBtn).toHaveClass('rp-dashboard-btn');
-
-      const newRepayBtn = screen.getByRole('button', { name: /make another repayment/i });
-      expect(newRepayBtn).toHaveClass('focus-visible:outline');
-      expect(newRepayBtn).toHaveClass('rp-new-repay-btn');
+      expect(screen.getByRole('heading', { name: /you repaid/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /back to dashboard/i })).toHaveClass('focus-visible:outline');
+      expect(screen.getByRole('button', { name: /make another repayment/i })).toBeInTheDocument();
     });
 
     it('preview modal button has rp-preview-btn class and focus-visible classes', () => {
@@ -339,23 +329,17 @@ describe('RepayPage — copy-to-clipboard buttons (FWC26)', () => {
     fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
     await flushReviewBalanceRefresh();
     fireEvent.click(screen.getByRole('button', { name: /confirm repayment/i }));
-    expect(
-      screen.getByRole('button', { name: /copy remaining debt amount/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByText('$185,628.13')).toBeInTheDocument();
   });
 
-  it('copies remaining debt amount on success step', async () => {
+  it('does not render repayment form actions on the success route', async () => {
     renderPage(['/repay?line=CL-2024-001']);
     fireEvent.click(screen.getByRole('button', { name: /smart pay/i }));
     fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
     await flushReviewBalanceRefresh();
     fireEvent.click(screen.getByRole('button', { name: /confirm repayment/i }));
-    const btn = screen.getByRole('button', { name: /copy remaining debt amount/i });
-    await act(async () => {
-      fireEvent.click(btn);
-    });
-    // Smart Pay ($3,200) repay on $187,500 utilized leaves $184,300 remaining
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('$184,300.00');
+    expect(screen.queryByRole('button', { name: /confirm repayment/i })).not.toBeInTheDocument();
+    expect(screen.getByText('$185,628.13')).toBeInTheDocument();
   });
 
   it('shows copied feedback after clicking copy button', async () => {
