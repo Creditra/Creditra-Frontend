@@ -67,6 +67,18 @@ const parseAmountToCents = (input: string): number => {
 };
 
 /**
+ * Resolves the confirmation threshold from the given environment (defaults to `import.meta.env`).
+ * Falls back to 5 000 when absent, negative, or unparseable.
+ */
+export function getRepayConfirmThreshold(
+  env: Record<string, any> = import.meta.env,
+): number {
+  const raw = env?.VITE_REPAY_CONFIRM_THRESHOLD;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 5000;
+}
+
+/**
  * Threshold above which repayments require the user to type the exact amount
  * in a confirmation field before the "Confirm Repayment" button enables.
  *
@@ -74,11 +86,7 @@ const parseAmountToCents = (input: string): number => {
  * non-negative number). Falls back to 5 000 when the variable is absent or
  * cannot be parsed. Set the variable to "0" to disable the guard entirely.
  */
-export const REPAY_CONFIRM_THRESHOLD = (() => {
-  const raw = import.meta.env.VITE_REPAY_CONFIRM_THRESHOLD;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 5000;
-})();
+export const REPAY_CONFIRM_THRESHOLD = getRepayConfirmThreshold();
 
 /**
  * Returns `true` when `amount` meets or exceeds `REPAY_CONFIRM_THRESHOLD`,

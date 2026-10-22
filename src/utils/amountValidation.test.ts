@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   getDrawAmountValidation,
   getRepayAmountValidation,
+  getRepayConfirmThreshold,
   REPAY_CONFIRM_THRESHOLD,
   requiresRepayConfirmation,
 } from './amountValidation';
@@ -111,6 +112,33 @@ describe('REPAY_CONFIRM_THRESHOLD', () => {
     expect(requires(10000)).toBe(false);
     vi.unstubAllEnvs();
     vi.resetModules();
+  });
+});
+
+describe('getRepayConfirmThreshold', () => {
+  it('defaults to 5000 when env variable is unset', () => {
+    expect(getRepayConfirmThreshold({})).toBe(5000);
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: undefined })).toBe(5000);
+  });
+
+  it('accepts 0 to disable the guard', () => {
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: '0' })).toBe(0);
+  });
+
+  it('falls back to 5000 for negative values', () => {
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: '-1' })).toBe(5000);
+  });
+
+  it('falls back to 5000 for non-numeric strings', () => {
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: 'abc' })).toBe(5000);
+  });
+
+  it('parses valid positive thresholds', () => {
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: '2500' })).toBe(2500);
+  });
+
+  it('uses default import.meta.env when called without arguments', () => {
+    expect(getRepayConfirmThreshold()).toBe(5000);
   });
 });
 
