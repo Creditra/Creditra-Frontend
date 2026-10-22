@@ -17,8 +17,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import RepayPage from './RepayPage';
+import {
+  saveRepayDraft,
+  clearRepayDraft,
+  MAX_AGE_MS,
+  type RepayDraftState,
+} from '@/state/repayDraft';
+import { creditDataSource } from '@/services/creditDataSource';
 import RepaySuccess from './RepaySuccess';
-import { saveRepayDraft, MAX_AGE_MS, type RepayDraftState } from '@/state/repayDraft';
 
 /** Must match the walletIdentityKey of the mocked wallet below. */
 const OWNER = 'undefined:GAABC1234567890ABCDEF:TESTNET';
@@ -307,7 +313,7 @@ describe('RepayPage — draft recovery (issue #935)', () => {
       expect(draft.state.amountStr).toBe('5000');
     });
 
-    it('should clear draft after successful confirmation', async () => {
+    it('should save the completed transaction and clear the draft after confirmation', async () => {
       saveRepayDraft(draftState({ amountStr: '1000' }));
 
       renderWithLine(['/?line=CL-2024-001']);
@@ -324,6 +330,7 @@ describe('RepayPage — draft recovery (issue #935)', () => {
 
       // Confirmation renders the success route.
       const confirmBtn = screen.getByText(/Confirm Repayment/i);
+      const transactionId = `TXN-${Date.now()}`;
       fireEvent.click(confirmBtn);
       await flushAsync();
       expect(screen.getByRole('heading', { name: /you repaid/i })).toBeInTheDocument();
@@ -331,6 +338,14 @@ describe('RepayPage — draft recovery (issue #935)', () => {
       // Draft should be cleared.  The confirm handler calls clearRepayDraft()
       // synchronously before navigation.
       expect(localStorage.getItem('creditra_repay_draft')).toBeNull();
+      await expect(
+        creditDataSource.getTransaction('GAABC1234567890ABCDEF', transactionId),
+      ).resolves.toMatchObject({
+        id: transactionId,
+        status: 'Completed',
+        amount: 1000,
+        remainingDebt: 187828.13,
+      });
     });
   });
 

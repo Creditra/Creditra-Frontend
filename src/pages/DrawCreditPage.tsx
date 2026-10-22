@@ -53,6 +53,8 @@ import { mockCreditLines } from "@/lib/draw-credit-mock-data";
 import { normalizeCreditLineAvailability } from "@/lib/credit-line-availability";
 import { classifyDrawError, type DrawErrorKind } from "@/lib/draw-errors";
 import { getDrawAmountValidation } from "@/utils/amountValidation";
+import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
+import { projectDraw } from "@/lib/draw-projection";
 import { offlineMutation } from "@/utils/offline";
 import { useOnline } from "@/hooks/useOnline";
 import { WhyApr } from "@/components/WhyApr";
@@ -232,7 +234,16 @@ export default function DrawCreditPage() {
     // from a wizard draft can never be silently submitted.
     const validation = getDrawAmountValidation(String(amount), line);
     if (!validation.isValid) {
-      setSubmitError(validation.message);
+      setSubmitError(validation.feedback.message);
+      return;
+    }
+    const projection = projectDraw(
+      line,
+      amount,
+      getDrawPricingQuote(line, amount),
+    );
+    if (projection.exceedsLimit) {
+      setSubmitError("This draw exceeds the credit line limit after the 1% fee.");
       return;
     }
 

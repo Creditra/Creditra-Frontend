@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertCircle, AlertTriangle, CheckCircle, Info, ArrowLeft, RefreshCw, X } from 'lucide-react';
 import { Skeleton } from '@/components/Skeleton';
 import { PayoffProjection } from '@/components/PayoffProjection';
@@ -32,6 +32,7 @@ import { KbdHint } from '@/components/KbdHint';
 import { RepayPreviewModal } from '@/components/RepayPreviewModal';
 import { CopyToClipboard } from '@/components/CopyToClipboard';
 import { MOCK_CREDIT_LINES } from '@/data/mockData';
+import { saveMockRepaymentTransaction } from '@/services/creditDataSource';
 import { motionClasses, useReducedMotion } from '@/context/ReducedMotionContext';
 import { useWallet, walletIdentityKey } from '@/context/WalletContext';
 import {
@@ -282,7 +283,7 @@ export default function RepayPage() {
   };
 
   const handleConfirm = async () => {
-    if (isSubmittingRef.current) return;
+    if (!selectedLine || isSubmittingRef.current) return;
     // Defense in depth (issue #1188): the review path re-checks amount
     // validity here as well as through the disabled state, so neither a
     // stale click nor the Enter shortcut can confirm an invalid amount.
@@ -343,17 +344,34 @@ export default function RepayPage() {
 
     draftClearedRef.current = true;
     clearRepayDraft();
-    navigate('/repay/success', {
-      state: {
-        amount,
-        creditLineName: selectedLine.name,
+    const transactionId = `TXN-${Date.now()}`;
+    const timestamp = new Date().toISOString();
+    if (wallet?.publicKey) {
+      saveMockRepaymentTransaction({
+        id: transactionId,
+        owner: wallet.publicKey,
+        status: 'Completed',
         creditLineId: selectedLine.id,
-        transactionId: `TXN-${Date.now()}`,
+        creditLineName: selectedLine.name,
+        amount,
         remainingDebt,
         limit: selectedLine.limit,
         apr: selectedLine.apr,
         nextPaymentAmount: selectedLine.nextPaymentAmount,
-        timestamp: new Date().toISOString(),
+        timestamp,
+      });
+    }
+    navigate(`/repay/success?tx=${encodeURIComponent(transactionId)}`, {
+      state: {
+        amount,
+        creditLineName: selectedLine.name,
+        creditLineId: selectedLine.id,
+        transactionId,
+        remainingDebt,
+        limit: selectedLine.limit,
+        apr: selectedLine.apr,
+        nextPaymentAmount: selectedLine.nextPaymentAmount,
+        timestamp,
       },
     });
   };

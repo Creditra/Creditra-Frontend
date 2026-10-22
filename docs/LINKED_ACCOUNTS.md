@@ -105,6 +105,47 @@ The Linked Accounts feature allows users to connect external accounts (Google, G
 3. **Verification**: State token validated on callback
 4. **No Credential Storage**: Credentials never stored locally
 
+### Open Redirect Protection
+
+The post-link return path (`redirectUrl`) is attacker-controlled, so it is
+never embedded in the OAuth URL or written to storage verbatim.
+
+- `safeReturnPath` (`src/utils/safe-redirect.ts`) sanitises the value on the
+  way in and `initiateLinkAccount` stores only the sanitised result alongside
+  the OAuth state. The OAuth URL carries the state token only.
+- On the callback, the stored return path is re-validated and the caller
+  navigates only to a value the app itself stored.
+
+A return path is accepted only when all of the following hold:
+
+- It is a string of at most 512 characters.
+- It starts with a single `/` (not `//` or `/\`).
+- It contains no control characters or backslashes.
+- It parses with `new URL(input, window.location.origin)` to the same origin.
+- Its pathname is the root `/` or starts with an allowlisted route prefix.
+
+Allowed route prefixes: `/linked-accounts`, `/profile`, `/settings`, `/open-credit`, and the root `/`.
+
+Anything else silently falls back to `/linked-accounts`. In development
+(`import.meta.env.DEV`) a warning is logged with the rejected value.
+
+#### Extending the allowlist
+
+Add a new route prefix to `ALLOWED_PREFIXES` in `src/utils/safe-redirect.ts`:
+
+```typescript
+const ALLOWED_PREFIXES = [
+  '/linked-accounts',
+  '/profile',
+  '/settings',
+  '/open-credit',
+  '/invoices', // <- new in-app route
+];
+```
+
+No other changes are required; `safeReturnPath` applies the same origin and
+length checks to every prefix.
+
 ### Data Privacy
 
 - External IDs (emails) displayed but not editable

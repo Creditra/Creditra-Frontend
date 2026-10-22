@@ -13,6 +13,7 @@
  */
 
 import { readJson, writeJson } from '../utils/storage';
+import { safeReturnPath } from '../utils/safe-redirect';
 import { offlineMutation } from '../utils/offline';
 import type {
   LinkedAccount,
@@ -116,31 +117,26 @@ export async function initiateLinkAccount(request: LinkAccountRequest): Promise<
         throw error;
       }
 
+      // Sanitise the post-link return path on the way in. The raw redirectUrl
+      // is never embedded in the OAuth URL or written to storage verbatim.
+      const returnPath = safeReturnPath(request.redirectUrl);
+
       // Generate state token for CSRF protection
       const now = Date.now();
       const state = `${request.provider}-${now}-${Math.random().toString(36).substring(7)}`;
 
-      // Store pending OAuth state
-      writeJson(OAUTH_STATE_KEY, { state, provider: request.provider, timestamp: now });
-
-      // Store pending entry in accounts
-      const accountsWithoutProvider = existing.filter(
-        acc => !(acc.provider === request.provider && (acc.status === 'pending' || acc.status === 'disconnected'))
-      );
-      const pendingAccount: LinkedAccount = {
-        id: `${request.provider}-pending-${now}`,
+      // Store pending state alongside the sanitised return path
+      writeJson('creditra:oauth-state', {
+        state,
         provider: request.provider,
-        status: 'pending',
-        displayName: `${PROVIDER_INFO[request.provider].name} (Pending)`,
-        externalId: '',
-        connectedAt: new Date(now).toISOString(),
-      };
-      accountsWithoutProvider.push(pendingAccount);
-      writeJson(STORAGE_KEY, accountsWithoutProvider);
+        returnPath,
+        timestamp: Date.now(),
+      });
 
       // Return mock OAuth URL (in production, this would be the real provider URL)
+      // The authUrl carries only the state token, never the raw redirect.
       return {
-        authUrl: `/oauth/${request.provider}?state=${state}&redirect=${encodeURIComponent(request.redirectUrl || '/linked-accounts')}`,
+        authUrl: `/oauth/${request.provider}?state=${state}`,
         state,
       };
     },
