@@ -7,8 +7,10 @@ import { useWallet } from '../context/WalletContext';
 import { canPurchase } from '../lib/dutch-auction-purchase';
 import { purchaseAuction } from '../services/dutchAuctions';
 import { EXPECTED_NETWORK } from '../utils/wallet';
+import { resolveNftImage } from '../utils/nft-image';
 import { LiveRegion } from './LiveRegion';
 import { clearAlert, listAlerts, setAlert } from '../state/auctionAlerts';
+import { Image as ImageIcon } from 'lucide-react';
 
 interface DutchAuctionCardProps {
   auction: DutchAuction;
@@ -50,6 +52,7 @@ const formatTimeLeft = (endTime: string): string => {
 export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) => {
   const [currentPrice, setCurrentPrice] = useState(calculateCurrentPrice(auction));
   const [timeLeft, setTimeLeft] = useState(formatTimeLeft(auction.endTime));
+  const [imageFailed, setImageFailed] = useState(false);
   const { wallet, status } = useWallet();
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -57,6 +60,19 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
   const [targetInput, setTargetInput] = useState('');
   const [alertError, setAlertError] = useState('');
   const [savedTarget, setSavedTarget] = useState<number | null>(() => listAlerts().find(item => item.auctionId === auction.id)?.targetStroops ?? null);
+  const image = resolveNftImage(auction.nft.image);
+  const imageSrc = 'src' in image ? image.src : undefined;
+  const imageLabel = `${auction.nft.name} from ${auction.nft.collection}`;
+  const collectionInitials = auction.nft.collection
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(word => word[0]?.toUpperCase() ?? '')
+    .join('') || 'NFT';
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageSrc]);
 
   // Update price and timer
   useEffect(() => {
@@ -131,22 +147,53 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
   return (
     <div className="card" style={{ padding: '1rem', marginBottom: '1rem' }}>
       <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-        <img
-          width={120}
-          height={120}
-          loading="lazy"
-          src={auction.nft.image}
-          alt={auction.nft.name}
-          style={{
-            width: '120px',
-            height: '120px',
-            borderRadius: '8px',
-            objectFit: 'cover',
-            flexShrink: 0,
-            background: COLOR.surface,
-            border: `1px solid ${COLOR.border}`,
-          }}
-        />
+        {imageSrc && !imageFailed ? (
+          <img
+            width={120}
+            height={120}
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            src={imageSrc}
+            alt={imageLabel}
+            onError={() => setImageFailed(true)}
+            style={{
+              width: '120px',
+              height: '120px',
+              boxSizing: 'border-box',
+              borderRadius: '8px',
+              objectFit: 'cover',
+              flexShrink: 0,
+              background: COLOR.surface,
+              border: `1px solid ${COLOR.border}`,
+            }}
+          />
+        ) : (
+          <div
+            role="img"
+            aria-label={imageLabel}
+            style={{
+              width: '120px',
+              height: '120px',
+              boxSizing: 'border-box',
+              borderRadius: '8px',
+              flexShrink: 0,
+              background: COLOR.surface,
+              border: `1px solid ${COLOR.border}`,
+              color: COLOR.accent,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+            }}
+          >
+            <ImageIcon size={32} aria-hidden="true" />
+            <span aria-hidden="true" style={{ color: COLOR.muted, fontSize: '0.8rem', fontWeight: 600 }}>
+              {collectionInitials}
+            </span>
+          </div>
+        )}
         <div style={{ flex: '1 1 220px', minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
             <div style={{ marginBottom: '0.5rem' }}>
@@ -246,4 +293,3 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
     </div>
   );
 };
-
