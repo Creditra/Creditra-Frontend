@@ -392,9 +392,8 @@ export default function CreditLines({
   //    freeze/unfreeze changes are visible to Dashboard, Quick Repay, etc.
   //    The hook reads from the in-memory store in useCreditLines.ts; the
   //    setLineFrozen service writes to that same store.
-  const { lines: creditLines, refetch } = useCreditLines();
-  const [isLoading, setIsLoading] = useState(true);
-  const hasCreditLines = creditLines.length > 0;
+    const { lines: creditLines, refetch } = useCreditLines();
+    const [loading, setLoading] = useState(defaultLoading);
 
   useEffect(() => {
     if (
@@ -405,7 +404,7 @@ export default function CreditLines({
       const borrower =
         "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H";
 
-      setIsLoading(true);
+        setLoading(true);
 
       dataSource
         .listCreditLines(borrower)
@@ -418,9 +417,7 @@ export default function CreditLines({
             err,
           );
         })
-        .finally(() => {
-          setIsLoading(false);
-        });
+          .finally(() => setLoading(false));
     }
   }, []);
 
@@ -538,7 +535,6 @@ export default function CreditLines({
     }
   };
 
-  const [loading, setLoading] = useState(defaultLoading);
   useEffect(() => {
     if (!defaultLoading) return;
     const timer = setTimeout(() => {
@@ -725,14 +721,6 @@ export default function CreditLines({
     () => creditLines.filter((line) => selectedLines.includes(line.id)),
     [creditLines, selectedLines],
   );
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setIsLoading(false);
-    }, 600);
-
-    return () => window.clearTimeout(timer);
-  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
