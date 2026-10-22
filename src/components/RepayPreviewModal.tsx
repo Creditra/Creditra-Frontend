@@ -18,8 +18,8 @@ import {
 } from '../utils/amountValidation';
 import {
   computeFullPayoffAmount,
-  computeMonthlyAccruedInterest,
 } from '../utils/currency';
+import { getAccruedInterest, getAccruedInterestDays } from '../lib/interest';
 import {
   computeDefaultMonthlyPayment,
   computePayoffProjection,
@@ -39,6 +39,8 @@ export interface RepaymentCreditLine {
   limit: number;
   utilized: number;
   apr: number;
+  nextInterestAccrualDate?: string;
+  transactions?: Array<{ type: string; date: string }>;
   nextPaymentAmount?: number;
 }
 
@@ -111,11 +113,10 @@ export function RepayPreviewModal({
   if (!isOpen) return null;
 
   const principalBalance = creditLine.utilized;
-  const accruedInterest = computeMonthlyAccruedInterest(
-    principalBalance,
-    creditLine.apr,
-  );
-  const fullPayoff = computeFullPayoffAmount(principalBalance, creditLine.apr);
+  const now = new Date();
+  const accruedInterest = getAccruedInterest(creditLine, now);
+  const accruedDays = getAccruedInterestDays(creditLine, now);
+  const fullPayoff = computeFullPayoffAmount(creditLine, now);
   const totalDue = fullPayoff;
 
   const isFullPayoff = repayAmount >= totalDue || (totalDue > 0 && Math.abs(repayAmount - totalDue) < 0.01);
@@ -278,14 +279,12 @@ export function RepayPreviewModal({
                 <span className="tabular-nums">{fmt(principalPortion)}</span>
               </span>
             </div>
-            {accruedInterest > 0 && (
-              <div className="repay-preview-row">
-                <span className="repay-preview-row-label">Accrued Interest Paid</span>
-                <span className="repay-preview-row-value">
-                  <span className="tabular-nums">{fmt(interestPortion)}</span>
-                </span>
-              </div>
-            )}
+            <div className="repay-preview-row">
+              <span className="repay-preview-row-label">Accrued interest ({accruedDays ?? 30} days)</span>
+              <span className="repay-preview-row-value">
+                <span className="tabular-nums">{fmt(interestPortion)}</span>
+              </span>
+            </div>
           </div>
 
           {/* Credit Utilization Bar */}

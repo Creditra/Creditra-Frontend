@@ -4,9 +4,9 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { formatMoney, getRepayAmountValidation, requiresRepayConfirmation } from '../utils/amountValidation';
 import {
   computeFullPayoffAmount,
-  computeMonthlyAccruedInterest,
   formatAmountInputValue,
 } from '../utils/currency';
+import { getAccruedInterest, getAccruedInterestDays } from '../lib/interest';
 import { InlineHelpOverlay } from './InlineHelpOverlay';
 import { PendingButton } from './PendingButton';
 import {
@@ -21,6 +21,8 @@ interface RepaymentCreditLine {
   limit: number;
   utilized: number;
   apr: number;
+  nextInterestAccrualDate?: string;
+  transactions?: Array<{ type: string; date: string }>;
 }
 
 type ModalStep = 'input' | 'review' | 'pending' | 'success';
@@ -130,13 +132,11 @@ export function RepayModal({
   }, [step, modalRef]);
 
   const principalBalance = creditLine.utilized;
-  const accruedInterest = computeMonthlyAccruedInterest(
-    principalBalance,
-    creditLine.apr,
-  );
-  const fullPayoff = computeFullPayoffAmount(principalBalance, creditLine.apr);
+  const now = new Date();
+  const accruedInterest = getAccruedInterest(creditLine, now);
+  const accruedDays = getAccruedInterestDays(creditLine, now);
+  const fullPayoff = computeFullPayoffAmount(creditLine, now);
   const totalDue = fullPayoff;
-  const accruedInterestEstimate = accruedInterest;
   const validation = getRepayAmountValidation(amountStr, fullPayoff, walletBalance);
   const amount = validation.amount;
   const isInvalid = !validation.isValid;
@@ -292,7 +292,7 @@ export function RepayModal({
                 </p>
                 <div style={{ textAlign: 'right' }}>
                   <p style={{ margin: 0, fontSize: '0.75rem', color: COLOR.muted }}>
-                    Includes <span className="tabular-nums">{fmt(accruedInterestEstimate)}</span>
+                    Includes <span className="tabular-nums">{fmt(accruedInterest)}</span> accrued interest ({accruedDays ?? 30} days)
                   </p>
                   <p style={{ margin: 0, fontSize: '0.75rem', color: COLOR.muted }}>
                     accrued interest est.

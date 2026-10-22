@@ -20,7 +20,7 @@ import {
 import { offlineMutation } from '@/utils/offline';
 import { useOnline } from '@/hooks/useOnline';
 import { suggestRepayAmount } from '@/utils/suggestRepay';
-import { computeMonthlyAccruedInterest } from '@/utils/currency';
+import { getAccruedInterest, getAccruedInterestDays } from '@/lib/interest';
 import {
   isTypedAmountMatch,
   TypedAmountConfirmField,
@@ -688,10 +688,9 @@ export default function RepayPage() {
   const oldPct = Math.round((selectedLine.utilized / selectedLine.limit) * 100);
   const remainingDebt = validation?.remainingDebt ?? selectedLine.utilized;
   const newPct = Math.round((remainingDebt / selectedLine.limit) * 100);
-  const accruedInterest = computeMonthlyAccruedInterest(
-    selectedLine.utilized,
-    selectedLine.apr,
-  );
+  const now = new Date();
+  const accruedInterest = getAccruedInterest(selectedLine, now);
+  const accruedDays = getAccruedInterestDays(selectedLine, now);
   const interestPortion = Math.min(amount, accruedInterest);
   const principalPortion = Math.max(0, amount - interestPortion);
 
@@ -1058,7 +1057,7 @@ export default function RepayPage() {
                 selectedLine.nextPaymentAmount ??
                 Math.max(
                   selectedLine.utilized * 0.025,
-                  selectedLine.utilized * (selectedLine.apr / 100 / 12),
+                  accruedInterest,
                 )
               }
             />
@@ -1170,14 +1169,11 @@ export default function RepayPage() {
                     {formatMoney(principalPortion)}
                   </span>
                 </div>
-                {accruedInterest > 0 && (
-                  <div className="flex items-center justify-between gap-4 border-t border-border pt-2">
-                    <span className="text-muted">Accrued interest paid</span>
-                    <span className="font-semibold text-foreground num-tabular">
-                      {formatMoney(interestPortion)}
-                    </span>
-                  </div>
-                )}
+                <div className="flex items-center justify-between gap-4 border-t border-border pt-2">
+                  <span className="text-muted">Accrued interest ({accruedDays ?? 30} days)</span>
+                  <span className="font-semibold text-foreground num-tabular">
+                    {formatMoney(interestPortion)}
+                  </span>
               </div>
             </div>
 
