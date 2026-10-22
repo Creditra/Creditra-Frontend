@@ -12,6 +12,7 @@ import { useBodyScrollLock } from "../hooks/useBodyScrollLock";
 import { useCreditLines, setGlobalCreditLines, getGlobalCreditLines } from "../hooks/useCreditLines";
 import { setLineFrozen } from "../services/creditLine";
 import { MOCK_CREDIT_LINES } from "../data/mockData";
+import { createCreditDataSource } from "../services/credit";
 import type {
   CreditLine,
   CreditLineStatus,
@@ -394,6 +395,34 @@ export default function CreditLines({
   const { lines: creditLines, refetch } = useCreditLines();
   const [isLoading, setIsLoading] = useState(true);
   const hasCreditLines = creditLines.length > 0;
+
+  useEffect(() => {
+    if (
+      typeof import.meta !== "undefined" &&
+      import.meta.env?.VITE_CREDIT_DATA_SOURCE === "soroban"
+    ) {
+      const dataSource = createCreditDataSource("soroban");
+      const borrower =
+        "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H";
+
+      setIsLoading(true);
+
+      dataSource
+        .listCreditLines(borrower)
+        .then((lines) => {
+          setGlobalCreditLines(lines);
+        })
+        .catch((err) => {
+          console.error(
+            "[CreditLines] Failed to load credit lines from Soroban RPC:",
+            err,
+          );
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+    }
+  }, []);
 
   // ── Freeze/unfreeze optimistic state ─────────────────────────────────
   /** Deep snapshot of each line before an optimistic update, keyed by lineId.

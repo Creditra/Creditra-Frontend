@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { MOCK_CREDIT_LINES } from '../data/mockData';
 import type { CreditLine, Transaction } from '../types/creditLine';
+import { createCreditDataSource } from '../services/credit';
 
 export interface UseCreditLinesResult {
   lines: CreditLine[];
@@ -68,6 +69,21 @@ export function useCreditLines(): UseCreditLinesResult {
     setStatus('loading');
     setError(null);
     try {
+      if (
+        typeof import.meta !== 'undefined' &&
+        import.meta.env?.VITE_CREDIT_DATA_SOURCE === 'soroban'
+      ) {
+        const dataSource = createCreditDataSource('soroban');
+        const borrower = 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H';
+        const fetchedLines = await dataSource.listCreditLines(borrower);
+        setGlobalCreditLines(fetchedLines);
+        setLines(fetchedLines);
+        const now = new Date();
+        globalLinesUpdatedAt = now;
+        setLastUpdatedAt(now);
+        setStatus('success');
+        return fetchedLines;
+      }
       await new Promise((r) => setTimeout(r, 20));
       if (mockRefetchError) {
         throw mockRefetchError;
