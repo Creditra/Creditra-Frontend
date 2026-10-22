@@ -119,7 +119,21 @@ export function Link({
   children: React.ReactNode;
   [key: string]: unknown;
 }) {
-  return createElement('a', { href: to, ...props }, children);
+  return createElement(
+    'a',
+    {
+      href: to,
+      ...props,
+      onClick: (e: React.MouseEvent) => {
+        if (typeof (props as any).onClick === 'function') (props as any).onClick(e);
+        if (!e.defaultPrevented) {
+          e.preventDefault();
+          applyEntry(to);
+        }
+      },
+    },
+    children
+  );
 }
 
 export function NavLink({
@@ -135,10 +149,26 @@ export function NavLink({
   end?: boolean;
   [key: string]: unknown;
 }) {
-  const isActive = false;
+  const isActive = currentPathname === to;
   const cls = typeof className === 'function' ? className({ isActive }) : className;
   const content = typeof children === 'function' ? children({ isActive }) : children;
-  return createElement('a', { href: to, className: cls, ...props }, content);
+  return createElement(
+    'a',
+    {
+      href: to,
+      className: cls,
+      ...(isActive ? { 'aria-current': 'page' } : {}),
+      ...props,
+      onClick: (e: React.MouseEvent) => {
+        if (typeof (props as any).onClick === 'function') (props as any).onClick(e);
+        if (!e.defaultPrevented) {
+          e.preventDefault();
+          applyEntry(to);
+        }
+      },
+    },
+    content
+  );
 }
 
 /**
@@ -151,6 +181,20 @@ export function NavLink({
  * rendered for the first match (falling back to `*`).
  */
 export function Routes({ children }: { children: React.ReactNode }) {
+  const childrenArray = Array.isArray(children) ? children : [children];
+  const flattened = childrenArray.flat(Infinity);
+  for (const child of flattened) {
+    if (!child || typeof child !== 'object' || !('props' in child)) continue;
+    const { path, element } = child.props as { path?: string; element?: React.ReactNode };
+    if (!path || path === '*' || matchPath({ path, end: true }, currentPathname)) {
+      return createElement(Fragment, null, element);
+    }
+  }
+  return null;
+}
+
+export function Route(props: { path?: string; element?: React.ReactNode; [key: string]: unknown }) {
+  return createElement(Fragment, null, props.element);
   useSyncExternalStore(
     subscribeToLocation,
     getLocationSnapshot,

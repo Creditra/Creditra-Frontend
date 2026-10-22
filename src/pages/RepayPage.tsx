@@ -31,6 +31,7 @@ import {
 import { KbdHint } from '@/components/KbdHint';
 import { RepayPreviewModal } from '@/components/RepayPreviewModal';
 import { CopyToClipboard } from '@/components/CopyToClipboard';
+import { saveMockRepaymentTransaction } from '@/services/creditDataSource';
 import { motionClasses, useReducedMotion } from '@/context/ReducedMotionContext';
 import { useWallet, walletIdentityKey } from '@/context/WalletContext';
 import { useCreditLine, useCreditLines } from '@/hooks/useCreditLines';
@@ -287,7 +288,7 @@ export default function RepayPage() {
   };
 
   const handleConfirm = async () => {
-    if (isSubmittingRef.current) return;
+    if (!selectedLine || isSubmittingRef.current) return;
     // Defense in depth (issue #1188): the review path re-checks amount
     // validity here as well as through the disabled state, so neither a
     // stale click nor the Enter shortcut can confirm an invalid amount.
@@ -348,17 +349,34 @@ export default function RepayPage() {
 
     draftClearedRef.current = true;
     clearRepayDraft();
-    navigate('/repay/success', {
-      state: {
-        amount,
-        creditLineName: selectedLine.name,
+    const transactionId = `TXN-${Date.now()}`;
+    const timestamp = new Date().toISOString();
+    if (wallet?.publicKey) {
+      saveMockRepaymentTransaction({
+        id: transactionId,
+        owner: wallet.publicKey,
+        status: 'Completed',
         creditLineId: selectedLine.id,
-        transactionId: `TXN-${Date.now()}`,
+        creditLineName: selectedLine.name,
+        amount,
         remainingDebt,
         limit: selectedLine.limit,
         apr: selectedLine.apr,
         nextPaymentAmount: selectedLine.nextPaymentAmount,
-        timestamp: new Date().toISOString(),
+        timestamp,
+      });
+    }
+    navigate(`/repay/success?tx=${encodeURIComponent(transactionId)}`, {
+      state: {
+        amount,
+        creditLineName: selectedLine.name,
+        creditLineId: selectedLine.id,
+        transactionId,
+        remainingDebt,
+        limit: selectedLine.limit,
+        apr: selectedLine.apr,
+        nextPaymentAmount: selectedLine.nextPaymentAmount,
+        timestamp,
       },
     });
   };

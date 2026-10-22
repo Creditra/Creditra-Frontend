@@ -15,6 +15,8 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ShortcutHelpOverlay } from "./components/ShortcutHelpOverlay";
 import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
 import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatchBanner";
+import { ToastContainer } from "./components/notifications/ToastContainer";
+import { BannerAlerts } from "./components/notifications/BannerAlert";
 import { Header } from "./layouts/Header";
 import { Skeleton } from "./components/Skeleton";
 import { isEditableTarget } from "./utils/isEditableTarget";
@@ -129,6 +131,7 @@ function App() {
                           <SessionTimeoutBanner />
                         </Suspense>
                         <main className="main">
+                          <BannerAlerts />
                           <NetworkMismatchBanner />
                           <Suspense fallback={<RouteLoadingFallback />}>
                             <Routes>
@@ -167,6 +170,7 @@ function App() {
                           onClose={() => setIsPaletteOpen(false)}
                           triggerRef={paletteTriggerRef}
                         />
+                        <ToastContainer />
                       </div>
                     </RouteHeadProvider>
                     </BrowserRouter>

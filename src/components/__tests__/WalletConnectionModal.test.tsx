@@ -342,13 +342,12 @@ describe('WalletConnectionModal Accessibility', () => {
       expect(continueBtn).toHaveAttribute('aria-label', 'Continue with xBull (last used)');
     });
 
-    it('falls back to legacy wallet_info when MRU is empty', () => {
+    it('falls back to the stored session preference when MRU is empty', () => {
       isolate({
         recent: [],
         legacy: {
+          v: 2,
           type: 'xbull',
-          publicKey: 'G-XBULL',
-          network: 'PUBLIC',
         },
       });
 

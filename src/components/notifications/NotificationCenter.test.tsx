@@ -584,3 +584,194 @@ describe('NotificationCenter mark all as read', () => {
     expect(screen.queryByRole('dialog', { name: 'Notification center' })).not.toBeInTheDocument();
   });
 });
+
+describe('NotificationCenter keyboard navigation and focus stability', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation(() => ({
+        matches: false,
+        media: '',
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    localStorage.clear();
+  });
+
+  function renderPanelWithThreeItems() {
+    let externalAddToast: ReturnType<typeof useNotifications>['addToast'];
+
+    function Harness() {
+      const { openPanel, addToast } = useNotifications();
+      externalAddToast = addToast;
+
+      React.useEffect(() => {
+        addToast({
+          type: 'success',
+          category: 'transaction',
+          title: 'First notification',
+          message: 'Message 1',
+          saveToHistory: true,
+        });
+        addToast({
+          type: 'info',
+          category: 'credit_line',
+          title: 'Second notification',
+          message: 'Message 2',
+          saveToHistory: true,
+        });
+        addToast({
+          type: 'warning',
+          category: 'risk_score',
+          title: 'Third notification',
+          message: 'Message 3',
+          saveToHistory: true,
+        });
+      }, [addToast]);
+
+      return (
+        <>
+          <button type="button" onClick={openPanel}>
+            Open panel
+          </button>
+          <NotificationCenter />
+        </>
+      );
+    }
+
+    render(
+      <NotificationProvider>
+        <Harness />
+      </NotificationProvider>,
+    );
+
+    return {
+      triggerOutsideToast: () =>
+        externalAddToast({
+          type: 'info',
+          category: 'system',
+          title: 'External toast',
+          message: 'Background event',
+          saveToHistory: false,
+        }),
+    };
+  }
+
+  it('keeps focus on item 3 when addToast is called from outside while panel is open', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const { triggerOutsideToast } = renderPanelWithThreeItems();
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    const articles = screen.getAllByRole('article');
+    const item3 = articles[2];
+    item3.focus();
+    expect(document.activeElement).toBe(item3);
+
+    act(() => {
+      triggerOutsideToast();
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(document.activeElement).toBe(item3);
+  });
+
+  it('marks focused item as read on Enter and keeps focus on that item', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderPanelWithThreeItems();
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    const articles = screen.getAllByRole('article');
+    const item1 = articles[0];
+    expect(item1).toHaveAttribute('aria-label', expect.stringMatching(/unread/i));
+
+    item1.focus();
+    expect(document.activeElement).toBe(item1);
+
+    await user.keyboard('{Enter}');
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(item1).toHaveAttribute('aria-label', expect.stringMatching(/, read$/i));
+    expect(document.activeElement).toBe(item1);
+  });
+
+  it('marks focused item as read on Space and keeps focus on that item', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderPanelWithThreeItems();
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    const articles = screen.getAllByRole('article');
+    const item2 = articles[1];
+    expect(item2).toHaveAttribute('aria-label', expect.stringMatching(/unread/i));
+
+    item2.focus();
+    expect(document.activeElement).toBe(item2);
+
+    await user.keyboard(' ');
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(item2).toHaveAttribute('aria-label', expect.stringMatching(/, read$/i));
+    expect(document.activeElement).toBe(item2);
+  });
+
+  it('moves focus between articles with PageDown and PageUp', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderPanelWithThreeItems();
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    const articles = screen.getAllByRole('article');
+    articles[0].focus();
+    expect(document.activeElement).toBe(articles[0]);
+
+    await user.keyboard('{PageDown}');
+    expect(document.activeElement).toBe(articles[1]);
+
+    await user.keyboard('{PageUp}');
+    expect(document.activeElement).toBe(articles[0]);
+  });
+
+  it('moves focus to the empty state when Clear all is activated', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderPanelWithThreeItems();
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    const clearAllBtn = screen.getByRole('button', { name: /clear all notifications/i });
+    await user.click(clearAllBtn);
+
+    const emptyStatus = screen.getByRole('status');
+    expect(emptyStatus).toHaveTextContent(/no notifications/i);
+    expect(document.activeElement).toBe(emptyStatus);
+  });
+});
