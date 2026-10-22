@@ -479,7 +479,13 @@ export default function RepayPage() {
 
   // ── Persist draft on state changes ────────────────────────────────────
   useEffect(() => {
-    // Don't persist if the draft was just intentionally cleared on confirmation.
+    // When the user confirms or starts a new repayment, ensure the draft
+    // is cleared.  This acts as a safety net: even if clearRepayDraft()
+    // ran in the event handler, React Router's navigate() can trigger an
+    // intermediate render that re-persists the draft before the step
+    // state update is applied.
+    // Don't persist if the draft was just intentionally cleared
+    // (handleConfirm / handleNewRepay).
     if (draftClearedRef.current) return;
 
     // Don't save during loading or after cancel.
@@ -1407,7 +1413,6 @@ export default function RepayPage() {
             </div>
           </div>
         )}
-
       </div>
 
       <InlineHelpOverlay

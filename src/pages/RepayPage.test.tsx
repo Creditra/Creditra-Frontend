@@ -11,6 +11,13 @@
  * Because jsdom does not compute CSS, these tests assert class-level correctness
  * (the class is applied to elements where expected). Rendering-level verification
  * requires a real browser and visual regression testing.
+ *
+ * NOTE (fix/repay-confirm-submits): the in-page success step was removed from
+ * RepayPage. `/repay/success` is now the single success surface, so the
+ * "Success step — numeric displays" suite below was rewritten to assert that
+ * confirming a repayment navigates away (and does not render an in-page
+ * success branch). The tabular-nums assertions that used to live there are
+ * covered by the review-step suite.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -59,6 +66,19 @@ vi.mock('../data/mockData', async () => {
   return { MOCK_CREDIT_LINES: REPAY_TEST_CREDIT_LINES };
 });
 
+// Navigation spy: RepayPage must navigate to /repay/success on a successful
+// submission, and must NOT render an in-page success step.
+const navigateMock = vi.fn();
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>(
+    'react-router-dom',
+  );
+  return {
+    ...actual,
+    useNavigate: () => navigateMock,
+  };
+});
+
 // ── Helpers ────────────────────────────────────────────────────────────
 
 /**
@@ -100,6 +120,7 @@ function renderWithoutLine() {
 describe('RepayPage — tabular-nums on numeric displays (FWC26)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    navigateMock.mockReset();
   });
 
   afterEach(() => {
@@ -261,6 +282,59 @@ describe('RepayPage — tabular-nums on numeric displays (FWC26)', () => {
           expect(el.classList.contains('num-tabular')).toBe(true);
         });
       }
+    });
+  });
+
+  describe('Confirm — no in-page success step (fix/repay-confirm-submits)', () => {
+    it('confirming a repayment navigates to /repay/success instead of rendering an in-page success branch', () => {
+      const { container } = renderWithLine();
+
+      const input = container.querySelector(
+        'input[id="repay-amount"]',
+      ) as HTMLInputElement;
+      fireEvent.change(input, { target: { value: '100' } });
+
+      const reviewBtn = screen.queryByText(/Review Repayment/i);
+      expect(reviewBtn).toBeInTheDocument();
+      fireEvent.click(reviewBtn!);
+
+      const confirmBtn = screen.queryByText(/Confirm Repayment/i);
+      expect(confirmBtn).toBeInTheDocument();
+
+      act(() => {
+        fireEvent.click(confirmBtn!);
+        vi.advanceTimersByTime(1000);
+      });
+
+      // The page must not render an in-page success surface; success lives at
+      // /repay/success. Assert the old success heading is gone.
+      expect(
+        container.querySelector('h2.text-2xl.font-bold.text-foreground'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('does not fabricate a TXN-<timestamp> transaction id', () => {
+      const { container } = renderWithLine();
+
+      const input = container.querySelector(
+        'input[id="repay-amount"]',
+      ) as HTMLInputElement;
+      fireEvent.change(input, { target: { value: '50' } });
+
+      const reviewBtn = screen.queryByText(/Review Repayment/i);
+      expect(reviewBtn).toBeInTheDocument();
+      fireEvent.click(reviewBtn!);
+
+      const confirmBtn = screen.queryByText(/Confirm Repayment/i);
+      expect(confirmBtn).toBeInTheDocument();
+
+      act(() => {
+        fireEvent.click(confirmBtn!);
+        vi.advanceTimersByTime(1000);
+      });
+
+      // No fabricated ids should appear anywhere in the rendered output.
+      expect(container.textContent ?? '').not.toMatch(/TXN-\d+/);
     });
   });
 

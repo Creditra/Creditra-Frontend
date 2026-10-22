@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /**
  * @fileoverview Tests for repayment draft recovery (issue #935).
  *
@@ -18,7 +19,8 @@ import { render, screen, act, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import RepayPage from './RepayPage';
 import RepaySuccess from './RepaySuccess';
-import { saveRepayDraft, MAX_AGE_MS, type RepayDraftState } from '@/state/repayDraft';
+import { saveRepayDraft, clearRepayDraft, MAX_AGE_MS, type RepayDraftState } from '@/state/repayDraft';
+import { creditDataMock } from '@/data/creditData';
 
 /** Must match the walletIdentityKey of the mocked wallet below. */
 const OWNER = 'undefined:GAABC1234567890ABCDEF:TESTNET';
@@ -329,7 +331,8 @@ describe('RepayPage — draft recovery (issue #935)', () => {
       expect(screen.getByRole('heading', { name: /you repaid/i })).toBeInTheDocument();
 
       // Draft should be cleared.  The confirm handler calls clearRepayDraft()
-      // synchronously before navigation.
+      // synchronously after the credit data source resolves.
+      await act(async () => { await Promise.resolve(); });
       expect(localStorage.getItem('creditra_repay_draft')).toBeNull();
     });
   });
@@ -345,11 +348,9 @@ describe('RepayPage — draft recovery (issue #935)', () => {
       const prompt = screen.queryByTestId('repay-recovery-prompt');
       expect(prompt).not.toBeInTheDocument();
 
-      // The page should show the review step heading since the draft had
-      // step:'review' and we navigated with the matching line preselected.
-      // Actually — since preselectedId is set, the recovery effect skips.
-      // So this tests the case where we navigate WITH a line and the draft
-      // step is review: it should NOT restore automatically.
+      // Since preselectedId is set, the recovery effect skips and the
+      // draft is not auto-restored. The page stays on the input step.
+      expect(screen.getByText('Make a repayment')).toBeInTheDocument();
     });
 
     it('should restore to review step when draft was interrupted and user resumes', () => {
