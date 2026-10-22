@@ -5,10 +5,12 @@
  *
  * Auto-reconnect on load
  * ─────────────────────────────────────────────────────────────────────────────
- * When a `wallet_info` entry is found in `localStorage`, the provider
- * immediately kicks off a reconnect attempt instead of blindly restoring the
- * stored object.  This confirms the extension is still present and accessible
- * before marking the wallet as "connected".
+ * When a stored wallet **type** is found in `localStorage` and the user opted
+ * in via the "remember" flag, the provider immediately kicks off a reconnect
+ * attempt instead of blindly restoring the stored object.  This confirms the
+ * extension is still present and accessible before marking the wallet as
+ * "connected".  No address is ever read from storage — `connectWallet()` asks
+ * the extension for the current public key.
  *
  * Timeout banner
  * ─────────────────────────────────────────────────────────────────────────────
@@ -334,7 +336,10 @@ export const WalletProvider = ({
   /**
    * Start (or restart) the session-lifetime timers.
    * - At (sessionTimeoutMs - SESSION_WARN_BEFORE_MS): set sessionTimeoutWarning = true.
-   * - At sessionTimeoutMs: auto-disconnect (wallet silently gone).
+   * - At sessionTimeoutMs: expire the session — clear the persisted wallet type
+   *   and the "remember" flag as well as in-memory state, so a reload cannot
+   *   silently reconnect a session the app just ended.  The MRU list is left
+   *   alone, exactly as on an explicit disconnect.
    */
   const startSessionTimers = useCallback(() => {
     clearSessionTimers();
@@ -352,6 +357,8 @@ export const WalletProvider = ({
 
     sessionExpireTimerRef.current = setTimeout(() => {
       setSessionTimeoutWarning(false);
+      disconnectWallet();
+      setIsRemembered(false);
       setWallet(null);
       setStatus('disconnected');
     }, sessionTimeoutMs);
@@ -470,11 +477,10 @@ export const WalletProvider = ({
 
   const disconnect = () => {
     clearReconnectTimeout();
-    // `disconnectWallet()` is intentionally aggressive: it clears the
-    // session AND the opt-in flag AND the MRU list.  This means a
-    // deliberate disconnect is also a complete privacy reset, so the
-    // next visit will not auto-connect and will not pre-order the
-    // modal for the user.
+    // `disconnectWallet()` drops the persisted session AND the opt-in
+    // "remember" flag, so the next visit will not auto-connect.  It
+    // deliberately keeps the MRU list: recency is activity history, not
+    // session state.
     disconnectWallet();
     clearSessionTimers();
     setWallet(null);
