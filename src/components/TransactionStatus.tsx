@@ -37,7 +37,7 @@
 import { useEffect, useRef } from "react";
 import { Transaction } from "@/types/draw-credit.types";
 import { CheckCircle2, AlertCircle, Clock, RotateCcw } from "lucide-react";
-import "${@}/styles/patterns.css";
+import "../styles/patterns.css";
 
 export type DrawErrorKind = "retryable" | "terminal";
 
