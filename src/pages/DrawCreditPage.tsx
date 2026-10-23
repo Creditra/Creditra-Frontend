@@ -51,7 +51,10 @@ import { LiveRegion } from "@/components/LiveRegion";
 import { CreditLine, DrawStep, Transaction } from "@/types/draw-credit.types";
 import { mockCreditLines } from "@/lib/draw-credit-mock-data";
 import { normalizeCreditLineAvailability } from "@/lib/credit-line-availability";
+import { classifyDrawError, type DrawErrorKind } from "@/lib/draw-errors";
 import { getDrawAmountValidation } from "@/utils/amountValidation";
+import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
+import { projectDraw } from "@/lib/draw-projection";
 import { offlineMutation } from "@/utils/offline";
 import { useOnline } from "@/hooks/useOnline";
 import { WhyApr } from "@/components/WhyApr";
@@ -182,6 +185,7 @@ export default function DrawCreditPage() {
   const [transaction, setTransaction] = useState<Transaction | null>(
     routeTransaction ?? null,
   );
+  const [errorKind, setErrorKind] = useState<DrawErrorKind | undefined>(undefined);
   const [confirmationAcknowledged, setConfirmationAcknowledged] =
     useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -230,7 +234,16 @@ export default function DrawCreditPage() {
     // from a wizard draft can never be silently submitted.
     const validation = getDrawAmountValidation(String(amount), line);
     if (!validation.isValid) {
-      setSubmitError(validation.message);
+      setSubmitError(validation.feedback.message);
+      return;
+    }
+    const projection = projectDraw(
+      line,
+      amount,
+      getDrawPricingQuote(line, amount),
+    );
+    if (projection.exceedsLimit) {
+      setSubmitError("This draw exceeds the credit line limit after the 1% fee.");
       return;
     }
 
@@ -258,6 +271,7 @@ export default function DrawCreditPage() {
           };
 
           setTransaction(newTransaction);
+          setErrorKind(succeeded ? undefined : classifyDrawError(newTransaction));
           setIsLoading(false);
           setStep("status");
 
@@ -295,8 +309,25 @@ export default function DrawCreditPage() {
     setAmount(0);
     setConfirmationAcknowledged(false);
     setTransaction(null);
+    setErrorKind(undefined);
     setSubmitError(null);
   };
+
+  const handleRetry = useCallback(() => {
+    if (!selectedCreditLine) {
+      setStep("select");
+      return;
+    }
+    setConfirmationAcknowledged(false);
+    setTransaction(null);
+    setErrorKind(undefined);
+    const validation = getDrawAmountValidation(String(amount), selectedCreditLine);
+    if (!validation.isValid) {
+      setStep("amount");
+      return;
+    }
+    setStep("confirm");
+  }, [selectedCreditLine, amount]);
 
   const handleBack = useCallback(() => {
     if (step === "amount") {
@@ -616,6 +647,8 @@ export default function DrawCreditPage() {
                 <TransactionStatus
                   transaction={transaction}
                   onNewDraw={handleNewDraw}
+                  onRetry={handleRetry}
+                  errorKind={errorKind}
                 />
               )}
             </>

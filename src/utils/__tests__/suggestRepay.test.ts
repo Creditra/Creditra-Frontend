@@ -2,12 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { suggestRepayAmount } from '../suggestRepay';
 
 describe('suggestRepayAmount', () => {
-  const BASE = {
-    totalDue: 100_000,
-    limit: 200_000,
-    walletBalance: 50_000,
-    apr: 8.5,
-  };
 
   it('returns 0 when totalDue is 0', () => {
     expect(suggestRepayAmount(0, 100_000, 50_000, 8.5)).toBe(0);
@@ -63,7 +57,6 @@ describe('suggestRepayAmount', () => {
   });
 
   it('handles high APR correctly', () => {
-    const monthlyInterest = 100_000 * (25 / 100) / 12;
     const result = suggestRepayAmount(100_000, 200_000, 80_000, 25);
     expect(result).toBeGreaterThan(0);
     expect(result).toBeLessThanOrEqual(80_000);

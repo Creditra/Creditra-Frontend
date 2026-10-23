@@ -9,8 +9,17 @@
 }
 
 .hf-chart--empty {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.65rem;
   color: var(--muted, #8b949e);
   font-size: 0.8rem;
+}
+
+.hf-chart__empty-caption {
+  flex-basis: 100%;
+  font-size: 0.75rem;
 }
 
 .hf-chart__caption {

@@ -5,10 +5,12 @@
  *
  * Auto-reconnect on load
  * ─────────────────────────────────────────────────────────────────────────────
- * When a `wallet_info` entry is found in `localStorage`, the provider
- * immediately kicks off a reconnect attempt instead of blindly restoring the
- * stored object.  This confirms the extension is still present and accessible
- * before marking the wallet as "connected".
+ * When a stored wallet **type** is found in `localStorage` and the user opted
+ * in via the "remember" flag, the provider immediately kicks off a reconnect
+ * attempt instead of blindly restoring the stored object.  This confirms the
+ * extension is still present and accessible before marking the wallet as
+ * "connected".  No address is ever read from storage — `connectWallet()` asks
+ * the extension for the current public key.
  *
  * Timeout banner
  * ─────────────────────────────────────────────────────────────────────────────
@@ -114,6 +116,7 @@ import {
   setWalletRemembered,
   classifyWalletError,
 } from '../utils/wallet';
+import { getCreditNetworkConfig } from '../config/creditNetwork';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -158,6 +161,16 @@ export function walletIdentityKey(wallet: WalletInfo | null): string | null {
   if (!wallet) return null;
   return `${wallet.type}:${wallet.publicKey}:${wallet.network}`;
 }
+
+const requireValidWalletInfo = (wallet: WalletInfo): WalletInfo => {
+  if (!isValidAccountId(wallet.publicKey)) {
+    throw {
+      type: 'connection_failed',
+      message: 'Your wallet returned an invalid account address',
+    } as WalletError;
+  }
+  return wallet;
+};
 
 /** Optional second-arg bag for `connect()`. */
 export interface ConnectOptions {
@@ -344,7 +357,10 @@ export const WalletProvider = ({
   /**
    * Start (or restart) the session-lifetime timers.
    * - At (sessionTimeoutMs - SESSION_WARN_BEFORE_MS): set sessionTimeoutWarning = true.
-   * - At sessionTimeoutMs: auto-disconnect (wallet silently gone).
+   * - At sessionTimeoutMs: expire the session — clear the persisted wallet type
+   *   and the "remember" flag as well as in-memory state, so a reload cannot
+   *   silently reconnect a session the app just ended.  The MRU list is left
+   *   alone, exactly as on an explicit disconnect.
    */
   const startSessionTimers = useCallback(() => {
     clearSessionTimers();
@@ -362,6 +378,8 @@ export const WalletProvider = ({
 
     sessionExpireTimerRef.current = setTimeout(() => {
       setSessionTimeoutWarning(false);
+      disconnectWallet();
+      setIsRemembered(false);
       setWallet(null);
       setStatus('disconnected');
     }, sessionTimeoutMs);
@@ -394,13 +412,7 @@ export const WalletProvider = ({
       }, timeoutMs);
 
       try {
-        if (!inFlightConnectRef.current) {
-          inFlightConnectRef.current = connectWallet(type).finally(() => {
-            inFlightConnectRef.current = null;
-          });
-        }
-        const walletInfo = await inFlightConnectRef.current;
-        if (id !== attemptRef.current) return;
+        const walletInfo = requireValidWalletInfo(await connectWallet(type));
         clearReconnectTimeout();
         setWallet(walletInfo);
         setStatus('connected');
@@ -461,8 +473,7 @@ export const WalletProvider = ({
     const shouldRemember = options?.remember === true;
 
     try {
-      const walletInfo = await connectWallet(type);
-      if (id !== attemptRef.current) return;
+      const walletInfo = requireValidWalletInfo(await connectWallet(type));
       setWallet(walletInfo);
       setStatus('connected');
       saveWalletPreference(walletInfo);
@@ -497,11 +508,10 @@ export const WalletProvider = ({
     // attempts cannot silently resurrect state or write preferences back to disk.
     ++attemptRef.current;
     clearReconnectTimeout();
-    // `disconnectWallet()` is intentionally aggressive: it clears the
-    // session AND the opt-in flag AND the MRU list.  This means a
-    // deliberate disconnect is also a complete privacy reset, so the
-    // next visit will not auto-connect and will not pre-order the
-    // modal for the user.
+    // `disconnectWallet()` drops the persisted session AND the opt-in
+    // "remember" flag, so the next visit will not auto-connect.  It
+    // deliberately keeps the MRU list: recency is activity history, not
+    // session state.
     disconnectWallet();
     clearSessionTimers();
     setWallet(null);
@@ -554,8 +564,7 @@ export const WalletProvider = ({
     if (!stored || !wallet) return;
     const id = ++attemptRef.current;
     try {
-      const walletInfo = await connectWallet(stored.type);
-      if (id !== attemptRef.current) return;
+      const walletInfo = requireValidWalletInfo(await connectWallet(stored.type));
       setWallet(walletInfo);
       setStatus('connected');
       saveWalletPreference(walletInfo);
@@ -615,11 +624,8 @@ export const WalletProvider = ({
     // comment's point (2).
     const fetchIdentity = walletIdentityKey(wallet);
     try {
-      const networkUrl =
-        wallet.network === 'public'
-          ? 'https://horizon.stellar.org'
-          : 'https://horizon-testnet.stellar.org';
-      const response = await fetch(`${networkUrl}/accounts/${wallet.publicKey}`);
+      const { horizonUrl } = getCreditNetworkConfig();
+      const response = await fetch(`${horizonUrl}/accounts/${wallet.publicKey}`);
       const data = await response.json();
 
       if (balancesIdentityRef.current !== fetchIdentity) {
@@ -664,9 +670,10 @@ export const WalletProvider = ({
    * an otherwise-healthy session.
    */
   const refreshWalletIdentity = useCallback(async () => {
-    if (!wallet) return;
+    if (!wallet || !isValidAccountId(wallet.publicKey)) return;
     try {
       const fresh = await connectWallet(wallet.type);
+      if (!isValidAccountId(fresh.publicKey)) return;
       if (walletIdentityKey(fresh) !== walletIdentityKey(wallet)) {
         setWallet(fresh);
       }

@@ -34,6 +34,7 @@ import { CreditLineSummaryBlock } from "@/components/CreditLineSummaryBlock";
 import { PendingButton } from "@/components/PendingButton";
 import { formatMoney } from "@/utils/amountValidation";
 import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
+import { projectDraw } from "@/lib/draw-projection";
 import { getRiskEducationState, RISK_EDUCATION_VERSION } from "@/state/riskEducation";
 import { useWalletIdentityKey } from "@/hooks/useWalletIdentityKey";
 import { useEffect } from "react";
@@ -181,18 +182,20 @@ export function ConfirmationStep({
   /** Controls the "How is my APR calculated?" collapsible section. */
   const [aprDisclosureOpen, setAprDisclosureOpen] = useState(false);
 
-  const utilizedBalance = creditLine.limit - creditLine.available;
   const safeAmount = Math.max(Number.isFinite(amount) ? amount : 0, 0);
 
+  const quote = getDrawPricingQuote(creditLine, safeAmount);
   const {
     fee,
     apr,
+    baseApr,
+    adjustments,
     estimatedMonthlyInterest,
     riskBand,
     termMonths,
     utilizationAdjustmentLabel,
     termAdjustmentLabel,
-  } = getDrawPricingQuote(creditLine, safeAmount);
+  } = quote;
 
   // Reconstruct the base APR before adjustments for the disclosure panel.
   const utilizationAdjPts =
@@ -203,6 +206,16 @@ export function ConfirmationStep({
         : 0.5;
   const termAdjPts = termMonths > 24 ? 2.5 : termMonths > 12 ? 1.5 : 0.5;
   const baseApr = Math.round((apr - utilizationAdjPts - termAdjPts) * 100) / 100;
+
+  const projection = projectDraw(
+    creditLine,
+    safeAmount,
+    quote,
+  );
+  const newBalance = projection.newBalance;
+  const remainingAvailable = projection.remainingAvailable;
+  const newUtilization = projection.newUtilizationPct;
+  } = getDrawPricingQuote(creditLine, safeAmount);
 
   const newBalance = utilizedBalance + safeAmount + fee;
   const remainingAvailable = Math.max(creditLine.limit - newBalance, 0);
@@ -310,6 +323,7 @@ export function ConfirmationStep({
             <dd className="mt-1 font-semibold text-foreground tabular-nums" data-testid="new-balance-display">
               {formatMoney(newBalance)}
             </dd>
+            <p className="mt-1 text-xs text-muted">Includes 1% fee ({formatMoney(fee)})</p>
           </div>
 
           <div className="rounded-lg border border-border bg-background/60 p-3">
@@ -349,8 +363,8 @@ export function ConfirmationStep({
             >
               <p className="text-muted text-xs">
                 Your APR is composed of a base rate for your risk band, plus
-                adjustments for your current utilization level and the draw
-                term length.
+                adjustments for the utilization this draw leaves you at and the
+                draw term length.
               </p>
               <dl className="space-y-2">
                 <div className="flex justify-between gap-4">
@@ -361,18 +375,17 @@ export function ConfirmationStep({
                     {baseApr}%
                   </dd>
                 </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted">{utilizationAdjustmentLabel}</dt>
-                  <dd className="font-semibold text-foreground tabular-nums" data-testid="apr-utilization-adj">
-                    +{utilizationAdjPts}%
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted">{termAdjustmentLabel}</dt>
-                  <dd className="font-semibold text-foreground tabular-nums" data-testid="apr-term-adj">
-                    +{termAdjPts}%
-                  </dd>
-                </div>
+                {adjustments.map((adjustment) => (
+                  <div key={adjustment.kind} className="flex justify-between gap-4">
+                    <dt className="text-muted">{adjustment.label}</dt>
+                    <dd
+                      className="font-semibold text-foreground tabular-nums"
+                      data-testid={`apr-${adjustment.kind}-adj`}
+                    >
+                      +{adjustment.points}%
+                    </dd>
+                  </div>
+                ))}
                 <div className="flex justify-between gap-4 border-t border-border pt-2">
                   <dt className="font-semibold text-foreground">Total APR</dt>
                   <dd className="font-bold text-foreground tabular-nums" data-testid="apr-total">

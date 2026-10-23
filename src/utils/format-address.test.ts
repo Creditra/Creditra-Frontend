@@ -24,9 +24,14 @@ describe('shortenAddress', () => {
 });
 
 describe('looksLikeStellarAddress', () => {
-  it('accepts a well-shaped Stellar G-address', () => {
-    const address = 'G' + 'A'.repeat(55);
+  it('accepts a checksum-valid Stellar G-address', () => {
+    const address = 'GBBM6BKZPEHWYO3E3YKREDPQXMS4VK35YLNU7NFBRI26RAN7GI5POFBB';
     expect(looksLikeStellarAddress(address)).toBe(true);
+  });
+
+  it('rejects a G-address with an invalid checksum', () => {
+    const address = 'GBBM6BKZPEHWYO3E3YKREDPQXMS4VK35YLNU7NFBRI26RAN7GI5POFBA';
+    expect(looksLikeStellarAddress(address)).toBe(false);
   });
 
   it('rejects addresses with the wrong length', () => {

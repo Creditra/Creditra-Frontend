@@ -143,6 +143,29 @@ class WalletConnectError extends Error {
 }
 ```
 
+### Wallet storage (`src/utils/wallet.ts`)
+
+`WalletContext` persists as little as possible: **only the wallet type** — never a
+public key, address, key, or signature. Auto-reconnect re-derives the address from the
+wallet extension via `connectWallet()`.
+
+| Key | Value | Written when | Cleared when |
+| --- | --- | --- | --- |
+| `creditra-wallet-info` | `{ v: 2, type }` — the active session's wallet type | `saveWalletPreference()` after a successful connect, auto-reconnect, or `stayConnected()` | `disconnectWallet()`: explicit disconnect **and** session expiry, plus any read that finds an unusable record |
+| `creditra-wallet-recent` | `WalletType[]`, most-recent last | `recordRecentWallet()` on every successful connect | `clearMRU()` only — deliberately kept across disconnect and session expiry |
+| `creditra-wallet-remember` | `true` (an absent key means "no") | `setWalletRemembered(true)` when the user opts in to auto-reconnect | `setWalletRemembered(false)`, `disconnectWallet()`, session expiry |
+
+The legacy keys `wallet_info` (v1, which did contain the public key) and
+`wallet_preference` are read once by `getStoredWallet()` purely to migrate the wallet
+type into `creditra-wallet-info` as `{ v: 2, type }`, after which both are deleted. The
+migration is idempotent and needs no user action; a record whose type is missing or
+unsupported is dropped so no reconnect is attempted from it.
+
+Session expiry (`SESSION_TIMEOUT_MS`) is a full logout: it clears in-memory state *and*
+the stored type plus the opt-in flag, so a page reload cannot silently reconnect a
+session the app just ended. The MRU list survives, exactly as on an explicit disconnect,
+because recency is activity history rather than session state.
+
 ### Error classification and user-facing copy
 
 Raw errors from wallet extensions are classified by `classifyWalletError()` in
