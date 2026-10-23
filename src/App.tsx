@@ -7,14 +7,18 @@ import { ThemeProvider } from "./context/ThemeContext";
 import { ContrastProvider } from "./context/ContrastContext";
 import { KycProvider } from "./context/KycContext";
 import { NotificationProvider } from "./context/NotificationContext";
+import { AuctionAlertWatcher } from "./components/AuctionAlertWatcher";
 import { ReducedMotionProvider } from "./context/ReducedMotionContext";
 import { KycDrawer } from "./components/KycDrawer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ShortcutHelpOverlay } from "./components/ShortcutHelpOverlay";
 import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
 import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatchBanner";
+import { ToastContainer } from "./components/notifications/ToastContainer";
+import { BannerAlerts } from "./components/notifications/BannerAlert";
 import { Header } from "./layouts/Header";
 import { Skeleton } from "./components/Skeleton";
+import { isEditableTarget } from "./utils/isEditableTarget";
 
 import { ROUTE_MANIFEST } from "./routes/manifest";
 
@@ -33,17 +37,6 @@ function RouteLoadingFallback() {
     </div>
   );
 }
-
-const isEditableTarget = (target: EventTarget | null) => {
-  if (!(target instanceof HTMLElement)) return false;
-  const tagName = target.tagName.toLowerCase();
-  return (
-    target.isContentEditable ||
-    tagName === "input" ||
-    tagName === "textarea" ||
-    tagName === "select"
-  );
-};
 
 /**
  * Application root.
@@ -111,6 +104,7 @@ function App() {
               <NotificationProvider>
                 <ReducedMotionProvider>
                   <BrowserRouter>
+                    <AuctionAlertWatcher />
                     <RouteHeadProvider>
                       <RouteAnnouncer />
                       <div className="app">
@@ -133,6 +127,7 @@ function App() {
                           <SessionTimeoutBanner />
                         </Suspense>
                         <main className="main">
+                          <BannerAlerts />
                           <NetworkMismatchBanner />
                           <Suspense fallback={<RouteLoadingFallback />}>
                             <Routes>
@@ -171,6 +166,7 @@ function App() {
                           onClose={() => setIsPaletteOpen(false)}
                           triggerRef={paletteTriggerRef}
                         />
+                        <ToastContainer />
                       </div>
                     </RouteHeadProvider>
                   </BrowserRouter>

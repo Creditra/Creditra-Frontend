@@ -204,3 +204,24 @@ npx vitest run src/components/__tests__/NotificationCenter.test.tsx
 - **Browser Compatibility**: Handled with `e.shiftKey && e.key.toLowerCase() === 'r'` to support standard browser key event reporting where `e.key` is uppercase `'R'`.
 - **Editable Field Suppression**: Ignored if focus or the event target is inside an editable field (`<input>`, `<textarea>`, `<select>`, or `isContentEditable`) to avoid conflicting with user typing.
 
+---
+
+## Toast and Banner Mounting & Announcement Model
+
+### Mounting in App Shell
+Both `<ToastContainer />` and `<BannerAlerts />` are mounted once in the root application shell (`src/App.tsx`), inside `<NotificationProvider>` and outside `<Routes>`:
+- `<BannerAlerts />` is mounted at the top of `<main className="main">`, rendering page-level alerts above route contents.
+- `<ToastContainer />` is mounted directly in `<div className="app">` outside the main route view, ensuring toasts render above all views (including `NotFound`) and survive client-side route navigation.
+
+### ARIA Roles and Live-Region Semantics
+To prevent duplicate screen-reader announcements:
+- **Toast Container** (`.toast-container`): Serves as a plain landmark-free wrapper with `aria-label="Notifications"`. It does **not** have a live-region role (`role="status"`, `role="log"`) or `aria-live` / `aria-atomic`, preventing screen readers from re-reading the entire stack whenever a toast is added or dismissed.
+- **Individual Toast Items** (`.toast-item`): Each toast item contains exactly one live region:
+  - Error and danger toasts carry `role="alert"` and `aria-live="assertive"`.
+  - Success, info, and warning toasts carry `role="status"` and `aria-live="polite"`.
+  - No `aria-atomic` is placed on the toast stack.
+- **Banner Items** (`.banner-alert`): Render with `role="alert"`.
+
+### Timer Hygiene
+- Toasts evicted by the 5-toast queue cap have their auto-dismiss timers cleared immediately from `timersRef`.
+- When `NotificationProvider` unmounts, all pending timers in `timersRef` are cleared.

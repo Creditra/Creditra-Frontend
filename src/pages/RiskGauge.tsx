@@ -44,6 +44,7 @@ import React, {
   useEffect,
   useRef,
   useMemo,
+  useId,
   type KeyboardEvent,
 } from "react";
 import { Sparkline } from "../components/Sparkline";
@@ -432,13 +433,9 @@ export function RiskGauge({
   );
 
   // ── Stable IDs for aria-labelledby ────────────────────────────────────────
-  const titleId = useRef(
-    `risk-gauge-title-${Math.random().toString(36).slice(2)}`,
-  ).current;
-
-  const sectorTitleIdBase = useRef(
-    `risk-gauge-sector-title-${Math.random().toString(36).slice(2)}`,
-  ).current;
+  const reactId = useId();
+  const titleId = `risk-gauge-title-${reactId}`;
+  const sectorTitleIdBase = `risk-gauge-sector-title-${reactId}`;
 
   // ── Active sector / live region ───────────────────────────────────────────
   const activeSector = activeSectorForScore(normalizedScore);

@@ -1,3 +1,4 @@
+
 /**
  * Per-wallet, versioned default-risk education state.
  *
@@ -18,8 +19,12 @@ import {
   DEFAULT_RISK_BANNER_DISMISSED_KEY,
 } from '../constants/storageKeys';
 
-
-export { RISK_EDUCATION_VERSION } from '../components/DefaultRiskModal';
+/**
+ * Version of the risk-education content borrowers acknowledge. Bump this
+ * whenever the education content (`STEPS` in `DefaultRiskModal`) changes
+ * materially so that every wallet is asked to re-acknowledge.
+ */
+export const RISK_EDUCATION_VERSION = 1;
 
 /** How long a banner dismissal snoozes the banner. */
 export const RISK_EDUCATION_DISMISS_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -61,17 +66,23 @@ function safeWrite(key: string, value: string): void {
 
 function parseState(raw: string | null): RiskEducationState | null {
   if (!raw) return null;
+
   try {
     const parsed = JSON.parse(raw) as unknown;
+
     if (!parsed || typeof parsed !== 'object') return null;
+
     const obj = parsed as Record<string, unknown>;
     const state: RiskEducationState = {};
+
     if (typeof obj.acknowledgedVersion === 'number') {
       state.acknowledgedVersion = obj.acknowledgedVersion;
     }
+
     if (typeof obj.dismissedAt === 'string') {
       state.dismissedAt = obj.dismissedAt;
     }
+
     return state;
   } catch {
     return null;
@@ -94,6 +105,7 @@ function migrateLegacyKeys(owner: string): RiskEducationState | null {
   ];
 
   let legacyPresent = false;
+
   for (const key of legacyKeys) {
     if (safeRead(key) !== null) {
       legacyPresent = true;
@@ -108,6 +120,7 @@ function migrateLegacyKeys(owner: string): RiskEducationState | null {
 
   // Persist the migrated state for this wallet, then remove the global keys.
   safeWrite(storageKey(owner), JSON.stringify(migrated));
+
   for (const key of legacyKeys) {
     safeRemove(key);
   }
@@ -126,30 +139,49 @@ export function getRiskEducationState(owner: string): RiskEducationState {
 
   const key = storageKey(owner);
   const existing = parseState(safeRead(key));
+
   if (existing) return existing;
 
   const migrated = migrateLegacyKeys(owner);
+
   return migrated ?? {};
 }
 
 /** Persist the full state for a wallet. */
-export function setRiskEducationState(owner: string, state: RiskEducationState): void {
+export function setRiskEducationState(
+  owner: string,
+  state: RiskEducationState,
+): void {
   if (!owner) return;
+
   safeWrite(storageKey(owner), JSON.stringify(state));
 }
 
 /** Record that the borrower acknowledged a specific content version. */
-export function acknowledgeRiskEducation(owner: string, version: number): void {
+export function acknowledgeRiskEducation(
+  owner: string,
+  version: number,
+): void {
   if (!owner) return;
+
   const current = getRiskEducationState(owner);
-  setRiskEducationState(owner, { ...current, acknowledgedVersion: version });
+
+  setRiskEducationState(owner, {
+    ...current,
+    acknowledgedVersion: version,
+  });
 }
 
 /** Record a banner dismissal. Never touches acknowledgement. */
 export function dismissRiskBanner(owner: string): void {
   if (!owner) return;
+
   const current = getRiskEducationState(owner);
-  setRiskEducationState(owner, { ...current, dismissedAt: new Date().toISOString() });
+
+  setRiskEducationState(owner, {
+    ...current,
+    dismissedAt: new Date().toISOString(),
+  });
 }
 
 /**
@@ -164,20 +196,33 @@ export function shouldShowRiskBanner(
   now: number = Date.now(),
 ): boolean {
   if (!owner) return true;
+
   const state = getRiskEducationState(owner);
+
   if (state.acknowledgedVersion === currentVersion) return false;
+
   if (state.dismissedAt) {
     const dismissedAt = Date.parse(state.dismissedAt);
-    if (!Number.isNaN(dismissedAt) && now - dismissedAt < RISK_EDUCATION_DISMISS_SNOOZE_MS) {
+
+    if (
+      !Number.isNaN(dismissedAt) &&
+      now - dismissedAt < RISK_EDUCATION_DISMISS_SNOOZE_MS
+    ) {
       return false;
     }
   }
+
   return true;
 }
 
 /** Whether the confirm-step nudge should be shown for this wallet. */
-export function needsRiskEducationNudge(owner: string, currentVersion: number): boolean {
+export function needsRiskEducationNudge(
+  owner: string,
+  currentVersion: number,
+): boolean {
   if (!owner) return false;
+
   const state = getRiskEducationState(owner);
+
   return state.acknowledgedVersion !== currentVersion;
 }

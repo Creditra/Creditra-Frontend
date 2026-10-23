@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { saveDraft, loadDraft, clearDraft, WizardDraftState } from "../wizardDraft";
+import { saveDraft, loadDraft, clearDraft, WizardDraftState } from "./wizardDraft";
 
 describe("wizardDraft", () => {
   beforeEach(() => {
