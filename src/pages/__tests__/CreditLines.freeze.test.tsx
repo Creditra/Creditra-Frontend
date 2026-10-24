@@ -18,22 +18,22 @@
  */
 
 import {
-  render,
   screen,
   act,
   waitFor,
   fireEvent,
 } from '@testing-library/react';
-import { BrowserRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import CreditLines from '../CreditLines';
 import {
   resetGlobalCreditLines,
-  getGlobalCreditLines,
+  getGlobalCreditLines as getLegacyGlobalCreditLines,
   setGlobalCreditLines,
+  useCreditLines,
 } from '../../hooks/useCreditLines';
 import type { CreditLine } from '../../types/creditLine';
+import { renderWithCredit } from '../../test/renderWithCredit';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -43,6 +43,7 @@ import type { CreditLine } from '../../types/creditLine';
  */
 function seedSingleLine(partial: Partial<CreditLine> & { id: string }): CreditLine {
   const base: CreditLine = {
+    ...partial,
     id: partial.id,
     name: partial.name ?? `Test Line ${partial.id}`,
     status: partial.status ?? 'Active',
@@ -56,41 +57,49 @@ function seedSingleLine(partial: Partial<CreditLine> & { id: string }): CreditLi
     statusHistory: partial.statusHistory ?? [
       { status: partial.status ?? 'Active', date: '2024-01-01', note: 'Opened' },
     ],
-    ...partial,
   };
+  seededLines = [base];
   setGlobalCreditLines([base]);
   return base;
 }
 
-/**
- * Renders the page with fake timers to advance past loading skeleton,
- * then restores real timers for proper async handling.
- */
-function renderPage() {
-  vi.useFakeTimers();
-  const result = render(
-    <BrowserRouter>
-      <CreditLines defaultLoading={false} />
-    </BrowserRouter>,
-  );
-  act(() => {
-    vi.advanceTimersByTime(700);
-  });
-  vi.useRealTimers();
-  return result;
+function ProviderLinesProbe() {
+  const { lines } = useCreditLines();
+  return <output data-testid="provider-lines">{JSON.stringify(lines)}</output>;
 }
 
+function getGlobalCreditLines(): CreditLine[] {
+  return JSON.parse(screen.getByTestId('provider-lines').textContent ?? '[]') as CreditLine[];
+}
+
+function renderPage() {
+  return renderWithCredit(
+    <>
+      <CreditLines />
+      <ProviderLinesProbe />
+    </>,
+    { lines: getGlobalCreditLinesSeed() },
+  );
+}
+
+function getGlobalCreditLinesSeed(): CreditLine[] {
+  return seededLines;
+}
+
+let seededLines: CreditLine[] = [];
+
 /** Opens the row menu for the given line name. */
-function openMenuForLine(lineName: string) {
-  const trigger = screen.getByRole('button', { name: `Menu for ${lineName}` });
+async function openMenuForLine(lineName: string) {
+  const trigger = await screen.findByRole('button', { name: `Menu for ${lineName}` });
   fireEvent.click(trigger);
-  return screen.getByRole('menu');
+  return screen.findByRole('menu');
 }
 
 // ─── setup / teardown ─────────────────────────────────────────────────────────
 
 beforeEach(() => {
   resetGlobalCreditLines();
+  seededLines = [];
   vi.clearAllMocks();
 });
 
@@ -106,7 +115,7 @@ describe('Scenario 1 – freeze succeeds', () => {
 
     renderPage();
 
-    openMenuForLine(line.name);
+    await openMenuForLine(line.name);
     await act(async () => {
       fireEvent.click(screen.getByRole('menuitem', { name: /^freeze$/i }));
     });
@@ -123,7 +132,7 @@ describe('Scenario 1 – freeze succeeds', () => {
 
     renderPage();
 
-    openMenuForLine(line.name);
+    await openMenuForLine(line.name);
     await act(async () => {
       fireEvent.click(screen.getByRole('menuitem', { name: /^freeze$/i }));
     });
@@ -151,7 +160,7 @@ describe('Scenario 1 – freeze succeeds', () => {
 
     renderPage();
 
-    openMenuForLine(line.name);
+    await openMenuForLine(line.name);
     await act(async () => {
       fireEvent.click(screen.getByRole('menuitem', { name: /^freeze$/i }));
     });
@@ -181,7 +190,6 @@ describe('Scenario 2 – freeze fails: exact rollback and Retry', () => {
     const snapshot = JSON.parse(JSON.stringify(originalLine)) as CreditLine;
 
     // Mock only for this test to simulate a network failure
-    const { setLineFrozen } = await import('../../services/creditLine');
     const spy = vi.spyOn(
       await import('../../services/creditLine'),
       'setLineFrozen',
@@ -189,7 +197,7 @@ describe('Scenario 2 – freeze fails: exact rollback and Retry', () => {
 
     renderPage();
 
-    openMenuForLine(originalLine.name);
+    await openMenuForLine(originalLine.name);
     await act(async () => {
       fireEvent.click(screen.getByRole('menuitem', { name: /^freeze$/i }));
     });
@@ -217,7 +225,7 @@ describe('Scenario 2 – freeze fails: exact rollback and Retry', () => {
 
     renderPage();
 
-    openMenuForLine('Alert Line');
+    await openMenuForLine('Alert Line');
     await act(async () => {
       fireEvent.click(screen.getByRole('menuitem', { name: /^freeze$/i }));
     });
@@ -240,7 +248,7 @@ describe('Scenario 2 – freeze fails: exact rollback and Retry', () => {
 
     renderPage();
 
-    openMenuForLine('Retry Line');
+    await openMenuForLine('Retry Line');
     await act(async () => {
       fireEvent.click(screen.getByRole('menuitem', { name: /^freeze$/i }));
     });
@@ -289,14 +297,14 @@ describe('Scenario 3 – serialisation: earlier failure does not roll back later
     await act(async () => { await setLineFrozen(line.id, true); });
 
     // Store reflects Frozen
-    const stored = getGlobalCreditLines().find((cl) => cl.id === line.id);
+    const stored = getLegacyGlobalCreditLines().find((cl) => cl.id === line.id);
     expect(stored?.status).toBe('Frozen');
 
     // Now simulate an "old request" trying to roll back by directly calling setLineFrozen
     // (unfreeze) — this represents the server-side correction. The store should update.
     await act(async () => { await setLineFrozen(line.id, false); });
 
-    const afterUnfreeze = getGlobalCreditLines().find((cl) => cl.id === line.id);
+    const afterUnfreeze = getLegacyGlobalCreditLines().find((cl) => cl.id === line.id);
     expect(afterUnfreeze?.status).toBe('Active');
   });
 });
@@ -304,12 +312,12 @@ describe('Scenario 3 – serialisation: earlier failure does not roll back later
 // ─── Scenario 5: Freeze a Suspended line is allowed ──────────────────────────
 
 describe('Scenario 5 – freeze a Suspended line is allowed', () => {
-  it('shows a Freeze menu item for a Suspended line', () => {
+  it('shows a Freeze menu item for a Suspended line', async () => {
     seedSingleLine({ id: 'cl-t5', name: 'Suspended Line', status: 'Suspended' });
 
     renderPage();
 
-    openMenuForLine('Suspended Line');
+    await openMenuForLine('Suspended Line');
     expect(screen.getByRole('menuitem', { name: /^freeze$/i })).toBeInTheDocument();
   });
 
@@ -326,7 +334,7 @@ describe('Scenario 5 – freeze a Suspended line is allowed', () => {
 
     renderPage();
 
-    openMenuForLine(line.name);
+    await openMenuForLine(line.name);
     await act(async () => {
       fireEvent.click(screen.getByRole('menuitem', { name: /^freeze$/i }));
     });
@@ -346,7 +354,7 @@ describe('Scenario 6 – after freeze, other consumers see Frozen', () => {
 
     renderPage();
 
-    openMenuForLine(line.name);
+    await openMenuForLine(line.name);
     await act(async () => {
       fireEvent.click(screen.getByRole('menuitem', { name: /^freeze$/i }));
     });
@@ -364,7 +372,7 @@ describe('Scenario 6 – after freeze, other consumers see Frozen', () => {
 
     renderPage();
 
-    openMenuForLine(line.name);
+    await openMenuForLine(line.name);
     await act(async () => {
       fireEvent.click(screen.getByRole('menuitem', { name: /^freeze$/i }));
     });

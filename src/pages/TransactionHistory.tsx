@@ -18,9 +18,14 @@ import {
   type AmountRangePreset,
 } from "../components/AmountRangeChips";
 import { useDebounceValue } from "../hooks/useDebounceValue";
-import { toCsv, downloadCsv } from "../utils/csv";
+import { downloadCsv } from "../utils/csv";
+import {
+  buildTransactionCsv,
+  buildTransactionCsvFilename,
+  DEFAULT_TRANSACTION_CSV_ASSET,
+} from "../lib/transaction-csv";
 import { useNotifications } from "../context/NotificationContext";
-import { MOCK_CREDIT_LINES } from "../data/mockData";
+import { useCreditLines, useCreditTransactions } from "../hooks/useCreditLines";
 import {
   amountPresetFromUrl,
   matchesAmountFilter,
@@ -190,50 +195,6 @@ const getDateGroup = (iso: string): string => {
   // for future-dated and unparseable rows.
   return getCalendarGroup(iso, new Date());
 };
-
-function getExportFilename(transactions: TransactionWithLine[]): string {
-  const validDates = transactions
-    .map((tx) => new Date(tx.date))
-    .filter((date) => !Number.isNaN(date.getTime()))
-    .sort((a, b) => a.getTime() - b.getTime());
-
-  const formatDateForFilename = (date: Date) => date.toISOString().slice(0, 10);
-  const start = validDates[0] ? formatDateForFilename(validDates[0]) : "all";
-  const end = validDates[validDates.length - 1]
-    ? formatDateForFilename(validDates[validDates.length - 1])
-    : "all";
-
-  return `creditra-transactions-${start}-${end}.csv`;
-}
-
-function buildTransactionCsv(transactions: TransactionWithLine[]): string {
-  const headers = [
-    "Date",
-    "Type",
-    "Amount",
-    "Credit Line",
-    "Credit Line ID",
-    "Status",
-    "Note",
-    "Transaction Hash",
-  ] as const;
-
-  const rows = transactions.map(
-    (tx) =>
-      [
-        fmtDateTime(tx.date),
-        TX_TYPE_LABELS[tx.type],
-        tx.amount,
-        tx.lineName,
-        tx.lineId,
-        tx.status,
-        tx.note ?? "",
-        tx.txHash ?? "",
-      ] as const,
-  );
-
-  return toCsv(headers, rows);
-}
 
 function TransactionRow({
   tx,
@@ -421,27 +382,8 @@ export function TransactionHistory() {
   const location = useLocation();
   const navigate = useNavigate();
   const { addToast } = useNotifications();
-
-  /**
-   * First-paint loading guard.
-   *
-   * `isLoading` starts as `true` and is cleared to `false` in a
-   * zero-delay `useEffect` (runs after the first committed render).
-   * This gives the browser one frame to paint the skeleton before the
-   * full component tree is committed, preventing a flash of unstyled
-   * content on initial navigation.
-   *
-   * In a real application this flag would be wired to an async data
-   * fetch; here it simulates that pattern against the static mock data.
-   */
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    // Simulate async data resolution on first mount.
-    // Replace with the real data-fetch completion signal when the API is wired up.
-    const id = setTimeout(() => setIsLoading(false), 0);
-    return () => clearTimeout(id);
-  }, []);
+  const { lines: creditLines, status, error, refetch } = useCreditLines();
+  const { transactions } = useCreditTransactions();
 
   // ─── Filter and UI State ───
   const [selectedLine, setSelectedLine] = useState<string>("all");
@@ -546,28 +488,14 @@ export function TransactionHistory() {
     }
   }, [location.search]);
 
-  // Get all transactions from all credit lines
   const allTransactions = useMemo(() => {
-    const txs: TransactionWithLine[] = [];
-    MOCK_CREDIT_LINES.forEach((cl) => {
-      cl.transactions.forEach((tx) => {
-        txs.push({
-          ...tx,
-          lineId: cl.id,
-          lineName: cl.name,
-          lineStatus: cl.status,
-        });
-      });
-    });
-    // Pre-sort descending by timestamp, then by id for consistency
-    // The paginator will re-sort with the same logic
-    return txs.sort((a, b) => {
+    return transactions.map((tx) => ({ ...tx })).sort((a, b) => {
       const aTime = new Date(a.date).getTime();
       const bTime = new Date(b.date).getTime();
       if (bTime !== aTime) return bTime - aTime;
       return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
     });
-  }, []);
+  }, [transactions]);
 
   // Sync the debounced input value into the filter state and reset page.
   // This is the only place `searchQuery` (which drives filteredTransactions)
@@ -747,7 +675,7 @@ export function TransactionHistory() {
     // This matches the per-line balances shown on /credit-lines and the Dashboard,
     // and correctly accounts for interest, fees and partial adjustments that a
     // simple draws-minus-repays flow calculation cannot capture.
-    const outstandingBalance = MOCK_CREDIT_LINES.filter(
+    const outstandingBalance = creditLines.filter(
       (cl) => cl.status !== "Closed",
     ).reduce((s, cl) => s + cl.utilized, 0);
 
@@ -778,15 +706,17 @@ export function TransactionHistory() {
       totalInterestAndFees,
       ledgerNet,
     };
-  }, [filteredTransactions]);
+  }, [creditLines, filteredTransactions]);
 
   const exportDisabled = filteredTransactions.length === 0;
 
   const handleExportCsv = () => {
     if (exportDisabled) return;
 
-    const csv = buildTransactionCsv(filteredTransactions);
-    const filename = getExportFilename(filteredTransactions);
+    const csv = buildTransactionCsv(filteredTransactions, {
+      asset: DEFAULT_TRANSACTION_CSV_ASSET,
+    });
+    const filename = buildTransactionCsvFilename(filteredTransactions);
 
     downloadCsv(filename, csv);
 
@@ -896,7 +826,7 @@ export function TransactionHistory() {
     ],
   );
 
-  const hasLines = MOCK_CREDIT_LINES.length > 0;
+  const hasLines = creditLines.length > 0;
   const hasTransactions = allTransactions.length > 0;
 
   const hasActiveFilters =
@@ -950,7 +880,7 @@ export function TransactionHistory() {
       const lineLabel =
         selectedLine === "all"
           ? "All"
-          : MOCK_CREDIT_LINES.find((cl) => cl.id === selectedLine)?.name ||
+          : creditLines.find((cl) => cl.id === selectedLine)?.name ||
             selectedLine;
       message = `Filtered by credit line ${lineLabel}. ${resultCountText}.`;
     } else if (selectedStatus !== prevStates.current.selectedStatus) {
@@ -1175,7 +1105,7 @@ export function TransactionHistory() {
     });
   };
 
-  if (isLoading) {
+  if (status === "loading") {
     /*
      * The skeleton mirrors this page's own DOM and class names, so its
      * geometry is driven by TransactionHistory.css rather than a parallel
@@ -1185,7 +1115,20 @@ export function TransactionHistory() {
     return <TransactionHistorySkeleton rows={ITEMS_PER_PAGE} />;
   }
 
-  if (!hasLines) {
+  if (status === "error") {
+    return (
+      <div className="transaction-history-page">
+        <div role="alert" className="th-error-card">
+          <p>{error?.message ?? "Unable to load transactions."}</p>
+          <button type="button" onClick={() => void refetch().catch(() => undefined)}>
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasLines || status === "idle") {
     return (
       <div className="transaction-history-page">
         <div className="th-header">
@@ -1364,7 +1307,7 @@ export function TransactionHistory() {
 
         {/* Reconciliation hint — visible only when a single credit line is filtered */}
         {selectedLine !== "all" && (() => {
-          const line = MOCK_CREDIT_LINES.find((cl) => cl.id === selectedLine);
+          const line = creditLines.find((cl) => cl.id === selectedLine);
           if (!line) return null;
           const diff = stats.ledgerNet - line.utilized;
           if (diff === 0) return null;
@@ -1416,7 +1359,7 @@ export function TransactionHistory() {
             }}
           >
             <option value="all">All Credit Lines</option>
-            {MOCK_CREDIT_LINES.map((cl) => (
+            {creditLines.map((cl) => (
               <option key={cl.id} value={cl.id}>
                 {cl.name}
               </option>

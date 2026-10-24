@@ -31,10 +31,11 @@ import {
 import { KbdHint } from '@/components/KbdHint';
 import { RepayPreviewModal } from '@/components/RepayPreviewModal';
 import { CopyToClipboard } from '@/components/CopyToClipboard';
-import { MOCK_CREDIT_LINES } from '@/data/mockData';
+import { Tooltip } from '@/components/Tooltip';
 import { saveMockRepaymentTransaction } from '@/services/creditDataSource';
 import { motionClasses, useReducedMotion } from '@/context/ReducedMotionContext';
 import { useWallet, walletIdentityKey } from '@/context/WalletContext';
+import { useCreditLine, useCreditLines } from '@/hooks/useCreditLines';
 import {
   getRepayableBalance,
   moneyCoversAmount,
@@ -136,6 +137,12 @@ export default function RepayPage() {
   } = useWallet();
   const identityKey = walletIdentityKey(wallet ?? null);
   const preselectedId = searchParams.get('line');
+  const {
+    lines: mockLines,
+    status: creditStatus,
+    error: creditError,
+    refetch: refetchCreditLines,
+  } = useCreditLines();
 
   // ── Draft recovery state ──────────────────────────────────────────────
   const [recoveredDraft, setRecoveredDraft] = useState<RepayDraftState | null>(null);
@@ -155,7 +162,6 @@ export default function RepayPage() {
   const [confirmAmountStr, setConfirmAmountStr] = useState('');
   const [isAutoSchedule, setIsAutoSchedule] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [isOfflineBlocked, setIsOfflineBlocked] = useState(false);
   // Task ariallive-v7: centralised SR announcement for step transitions and
@@ -172,8 +178,8 @@ export default function RepayPage() {
   // The per-render `mockLines` capture lets the memo react when the line data
   // source is replaced (e.g. a provider refetch), so amounts re-validate
   // against current debt instead of stale closure data (issue #1188).
-  const mockLines = MOCK_CREDIT_LINES;
   const creditLines = useMemo(() => getRepayableLines(mockLines), [mockLines]);
+  const { line: selectedCreditLine } = useCreditLine(selectedId);
 
   // When a ?line= deep-link names an unrepayable line we keep selectedLine null
   // so the picker renders with an explanatory status message instead of opening
@@ -182,17 +188,17 @@ export default function RepayPage() {
   // line (issue #1188) — the review step then re-validates against current debt.
   const selectedLine = useMemo(() => {
     if (!selectedId) return null;
-    const line = mockLines.find((cl) => cl.id === selectedId) ?? null;
+    const line = selectedCreditLine;
     if (!line || !isRepayable(line)) return null;
     return line;
-  }, [selectedId, mockLines]);
+  }, [selectedId, selectedCreditLine]);
 
   // True when the user arrived via ?line= but the named line is not repayable.
   const unrepayableDeepLink = useMemo(() => {
     if (!preselectedId) return false;
-    const line = MOCK_CREDIT_LINES.find((cl) => cl.id === preselectedId) ?? null;
+    const line = mockLines.find((cl) => cl.id === preselectedId) ?? null;
     return line !== null && !isRepayable(line);
-  }, [preselectedId]);
+  }, [mockLines, preselectedId]);
 
   const repayableBalance = getRepayableBalance(balances ?? null, SETTLEMENT_ASSET);
   const hasRepayableBalance =
@@ -226,19 +232,41 @@ export default function RepayPage() {
     [amountStr, selectedLine, totalOwed, walletBalance],
   );
 
-  const suggestedAmount = useMemo(
+  const suggestion = useMemo(
     () =>
       selectedLine
-        ? suggestRepayAmount(
-            totalOwed,
-            selectedLine.limit,
+        ? suggestRepayAmount({
+            totalDue: totalOwed,
+            limit: selectedLine.limit,
             walletBalance,
-            selectedLine.apr,
-            selectedLine.nextPaymentAmount,
-          )
-        : 0,
+            apr: selectedLine.apr,
+            nextPaymentAmount: selectedLine.nextPaymentAmount,
+          })
+        : { amount: 0, reason: 'nothing_due' as const },
     [selectedLine, totalOwed, walletBalance],
   );
+  const usesReserve = suggestion.amount > 0 &&
+    walletBalance - suggestion.amount < (validation?.recommendedWalletReserve ?? 0);
+  const minimumDue = Math.min(
+    totalOwed,
+    selectedLine?.nextPaymentAmount ??
+      Math.max(totalOwed * (selectedLine?.apr ?? 0) / 100 / 12, 1),
+  );
+  const minimumShortfall = Math.max(0, minimumDue - walletBalance);
+  const suggestionMessage = {
+    target_utilization: 'Aims to bring your credit utilization to 50%.',
+    minimum_due: 'Covers the minimum due.',
+    interest_only: 'Covers estimated monthly interest, with a $1 minimum.',
+    capped_by_wallet: 'Limited by your wallet balance after keeping a reserve.',
+    insufficient_for_minimum: `Your wallet is ${formatMoney(minimumShortfall)} short of the minimum due. A partial payment will not cover it.`,
+    nothing_due: 'No repayment is due for Smart Pay.',
+    empty_wallet: 'Your wallet is empty. Add funds to use Smart Pay.',
+  }[suggestion.reason] + (usesReserve ? ' Uses part of your reserve to cover the minimum due.' : '');
+  const smartPayDisabled = !hasRepayableBalance || suggestion.amount === 0;
+  const suggestionTone = usesReserve || suggestion.reason === 'insufficient_for_minimum' ||
+    suggestion.reason === 'capped_by_wallet' || suggestion.reason === 'empty_wallet'
+    ? SEVERITY_CONFIG.warning
+    : SEVERITY_CONFIG.info;
 
   const amount = validation?.amount ?? 0;
   const isInvalid = !validation?.isValid;
@@ -266,9 +294,9 @@ export default function RepayPage() {
   };
 
   const handleSmartPay = () => {
-    if (!selectedLine || !hasRepayableBalance) return;
-    setAmountStr(suggestedAmount.toFixed(2));
-    setSrAnnouncement(`Smart Pay amount set: ${formatMoney(suggestedAmount)}`);
+    if (!selectedLine || !hasRepayableBalance || suggestion.amount === 0) return;
+    setAmountStr(suggestion.amount.toFixed(2));
+    setSrAnnouncement(`Smart Pay amount set: ${formatMoney(suggestion.amount)}. ${suggestionMessage}`);
   };
 
   const handleReview = () => {
@@ -400,7 +428,7 @@ export default function RepayPage() {
     // validation instead of a Confirm button for an amount that no longer
     // checks out.
     const draftLine =
-      MOCK_CREDIT_LINES.find((cl) => cl.id === recoveredDraft.creditLineId) ?? null;
+      mockLines.find((cl) => cl.id === recoveredDraft.creditLineId) ?? null;
     const ownerOk = identityKey !== null && recoveredDraft.owner === identityKey;
     const isAmountStillValid =
       draftLine !== null &&
@@ -443,6 +471,7 @@ export default function RepayPage() {
 
   // ── Initial draft recovery check ──────────────────────────────────────
   useEffect(() => {
+    if (creditStatus !== 'success') return;
     if (draftLoadedRef.current) return;
     draftLoadedRef.current = true;
 
@@ -456,7 +485,7 @@ export default function RepayPage() {
     // Issue #1188: discard drafts that can no longer be safely resumed
     // instead of offering to restore them.
     const draftLine =
-      MOCK_CREDIT_LINES.find((cl) => cl.id === draft.creditLineId) ?? null;
+      mockLines.find((cl) => cl.id === draft.creditLineId) ?? null;
     if (!draftLine || !isRepayable(draftLine)) {
       clearRepayDraft();
       setDraftDiscardReason('line-unrepayable');
@@ -475,7 +504,7 @@ export default function RepayPage() {
 
     setRecoveredDraft(draft);
     setShowRecoveryPrompt(true);
-  }, [preselectedId, identityKey]);
+  }, [preselectedId, identityKey, creditStatus, mockLines]);
 
   // ── Clear the draft when the wallet identity changes ──────────────────
   // Issue #1188: a draft saved under one wallet must not survive an account
@@ -501,7 +530,7 @@ export default function RepayPage() {
     if (draftClearedRef.current) return;
 
     // Don't save during loading or after cancel.
-    if (isLoading || !selectedId) return;
+    if (creditStatus !== 'success' || !selectedId) return;
     // Don't save without a known wallet identity (the draft is owner-scoped).
     if (!identityKey) return;
     // Don't save empty amounts on the input step.
@@ -515,14 +544,7 @@ export default function RepayPage() {
       isAutoSchedule,
       owner: identityKey,
     });
-  }, [step, selectedId, amountStr, confirmAmountStr, isAutoSchedule, isLoading, identityKey]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 800);
-    return () => clearTimeout(timer);
-  }, []);
+  }, [step, selectedId, amountStr, confirmAmountStr, isAutoSchedule, creditStatus, identityKey]);
 
   useEffect(() => {
     if (walletStatus !== 'connected' || !wallet) {
@@ -641,7 +663,7 @@ export default function RepayPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [step, selectedLine, isInvalid, amount, isReviewConfirmDisabled, handleBack, suggestedAmount, walletBalance]);
+  }, [step, selectedLine, isInvalid, amount, isReviewConfirmDisabled, handleBack, suggestion, suggestionMessage, walletBalance]);
 
   // Task ariallive-v7: announce validation errors to screen readers
   useEffect(() => {
@@ -653,6 +675,7 @@ export default function RepayPage() {
   if (!selectedLine) {
     return (
     <div className="repay-page mx-auto max-w-2xl space-y-6 px-4 py-8">
+        <LiveRegion id="repay-announcement" message={srAnnouncement} />
         <button
           type="button"
           aria-label="Back"
@@ -730,7 +753,14 @@ export default function RepayPage() {
           </h1>
         </header>
 
-        {isLoading ? (
+        {creditStatus === 'error' ? (
+          <div role="alert" className="rounded-lg border border-error/40 bg-error/10 p-4 text-sm text-error">
+            <p>{creditError?.message ?? 'Unable to load credit lines.'}</p>
+            <button type="button" className="mt-3 underline" onClick={() => void refetchCreditLines().catch(() => undefined)}>
+              Retry
+            </button>
+          </div>
+        ) : creditStatus === 'loading' ? (
           <div className="space-y-3" aria-busy="true" aria-live="polite" data-testid="repay-loading-skeleton">
             {[1, 2, 3].map((i) => (
               <div
@@ -802,7 +832,10 @@ export default function RepayPage() {
                   <button
                     key={cl.id}
                     type="button"
-                    onClick={() => setSelectedId(cl.id)}
+                    onClick={() => {
+                      setSelectedId(cl.id);
+                      setSrAnnouncement(`Selected ${cl.name}. Choose a repayment amount.`);
+                    }}
                     className={`rp-cl-card w-full rounded-lg border bg-surface p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${delinquent ? 'border-warning/60' : 'border-border'} ${motionClasses(isReducedMotionActive, 'transition-all hover:border-accent hover:bg-accent/5')}`}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1046,17 +1079,29 @@ export default function RepayPage() {
                         )}
                       </button>
                     ))}
-                    <button
-                      type="button"
-                      onClick={handleSmartPay}
-                      disabled={!hasRepayableBalance}
-                      className={`rp-smart-pay-btn flex-1 rounded-md border border-success/30 px-2 py-1.5 text-xs font-medium text-success focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-success ${motionClasses(isReducedMotionActive, 'transition-colors hover:bg-success/10')}`}
-                      aria-label={`Smart Pay suggested repayment of ${formatMoney(suggestedAmount)}`}
-                    >
-                      <span className="flex items-center justify-center gap-1">
-                        Smart Pay <KbdHint keys={['S']} />
-                      </span>
-                    </button>
+                    <span className="flex-1 [&>.accessible-tooltip]:w-full">
+                      <Tooltip label={suggestionMessage} disabled={!smartPayDisabled}>
+                        <span
+                          className="w-full rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-success"
+                          tabIndex={smartPayDisabled ? 0 : undefined}
+                          aria-label={smartPayDisabled ? 'Smart Pay unavailable' : undefined}
+                          aria-describedby="smart-pay-reason"
+                        >
+                          <button
+                            type="button"
+                            onClick={handleSmartPay}
+                            disabled={smartPayDisabled}
+                            className={`rp-smart-pay-btn w-full rounded-md border border-success/30 px-2 py-1.5 text-xs font-medium text-success disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-success ${motionClasses(isReducedMotionActive, 'transition-colors enabled:hover:bg-success/10')}`}
+                            aria-label={`Smart Pay suggested repayment of ${formatMoney(suggestion.amount)}`}
+                            aria-describedby="smart-pay-reason"
+                          >
+                            <span className="flex items-center justify-center gap-1">
+                              Smart Pay <KbdHint keys={['S']} />
+                            </span>
+                          </button>
+                        </span>
+                      </Tooltip>
+                    </span>
                   </div>
 
                   <div className="relative mt-3">
@@ -1089,6 +1134,21 @@ export default function RepayPage() {
                                 : 'var(--border)',
                       }}
                     />
+                  </div>
+
+                  <div
+                    id="smart-pay-reason"
+                    role="status"
+                    aria-label="Smart Pay suggestion"
+                    className={`mt-3 flex items-start gap-2 rounded-lg p-3 text-xs ${suggestionTone.patternClass}`}
+                    style={{
+                      border: `1px solid ${suggestionTone.border}`,
+                      background: suggestionTone.bg,
+                      color: suggestionTone.color,
+                    }}
+                  >
+                    <span className="shrink-0">{suggestionTone.icon}</span>
+                    <p>Smart Pay: {suggestionMessage}</p>
                   </div>
 
                   {/* Task cb-v7: patternClass adds a subtle background texture
@@ -1448,7 +1508,7 @@ export default function RepayPage() {
         />
       )}
 
-      <LiveRegion message={srAnnouncement} />
+      <LiveRegion id="repay-announcement" message={srAnnouncement} />
     </div>
   );
 }

@@ -21,6 +21,9 @@ let currentPathname = '/';
 let currentSearch = '';
 let currentHash = '';
 let currentState: unknown = null;
+// Issue #1180: record navigation calls so tests can assert `navigate` was
+// (or was not) called.
+const navigateCalls: Array<string | number> = [];
 let locationVersion = 0;
 
 function bumpLocation() {
@@ -248,6 +251,7 @@ export function __getMockSearch() {
  */
 export function useNavigate() {
   return (to: string | number, opts?: { state?: unknown }) => {
+    navigateCalls.push(to);
     if (typeof to !== 'string') return;
     applyEntry(to);
     currentState = opts?.state ?? null;
@@ -282,6 +286,17 @@ export function __setMockLocation(pathname: string, search = '') {
   currentSearch = search;
   currentState = null;
   bumpLocation();
+}
+
+/** Returns every target that `navigate` was called with since the last clear. */
+export function __getNavigateCalls(): Array<string | number> {
+  return navigateCalls;
+}
+
+/** Clears the recorded navigate calls. Call in beforeEach. */
+export function __clearNavigateCalls(): void {
+  // Mutate in place so closures that captured the array see cleared state.
+  navigateCalls.length = 0;
 }
 
 export function useParams() {

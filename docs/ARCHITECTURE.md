@@ -16,7 +16,8 @@ flowchart TB
     Boot["main.tsx<br/>(StrictMode + ReactDOM root)"] --> App["App.tsx"]
     App --> EB["ErrorBoundary<br/>(class component, catches render errors)"]
     EB --> WP["WalletProvider<br/>(connection lifecycle)"]
-    WP --> Router["BrowserRouter"]
+    WP --> CDP["CreditDataProvider<br/>(wallet-scoped credit state)"]
+    CDP --> Router["BrowserRouter"]
 
     Router --> Header["Header<br/>(NavLink + WalletButton)"]
     Router --> Main["main element"]
@@ -42,6 +43,11 @@ flowchart TB
 The header is rendered outside `<Routes>` so it persists across navigation. The
 `ErrorBoundary` is wrapped *outside* `WalletProvider` so that even a failure inside the
 wallet reducer renders the error page instead of a blank screen.
+
+`CreditDataProvider` is mounted inside `WalletProvider` and outside
+`BrowserRouter`. It keys credit-line and transaction state by the connected
+wallet identity, so routes and persistent header components share one request
+and cannot render data from a previous account or network.
 
 ---
 
