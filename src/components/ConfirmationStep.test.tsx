@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { ConfirmationStep } from "./ConfirmationStep";
 import { useWallet } from "@/context/WalletContext";
 import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
@@ -45,6 +45,10 @@ const creditLine = {
   termMonths: 24,
 };
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 const watchCreditLine = {
   id: "cl-003",
   name: "Working Capital",
@@ -61,6 +65,19 @@ function getActionButtons() {
     (btn) =>
       !btn.getAttribute("aria-label") &&
       (btn.textContent?.trim() ?? "").length > 0,
+  );
+}
+
+function renderStep(overrides = {}) {
+  render(
+    <ConfirmationStep
+      creditLine={creditLine}
+      amount={10000}
+      onConfirm={vi.fn()}
+      onBack={vi.fn()}
+      onCancel={vi.fn()}
+      {...overrides}
+    />,
   );
 }
 
@@ -346,19 +363,6 @@ describe("ConfirmationStep — APR disclosure collapsible", () => {
     mockUseWallet.mockReturnValue({ status: "connected" });
   });
 
-  function renderStep(overrides = {}) {
-    render(
-      <ConfirmationStep
-        creditLine={creditLine}
-        amount={10000}
-        onConfirm={vi.fn()}
-        onBack={vi.fn()}
-        onCancel={vi.fn()}
-        {...overrides}
-      />,
-    );
-  }
-
   it("renders the 'How is my APR calculated?' toggle button", () => {
     renderStep();
 
@@ -609,19 +613,6 @@ describe("ConfirmationStep — button order (docs/BUTTON_ORDER.md)", () => {
     mockUseWallet.mockReturnValue({ status: "connected" });
   });
 
-  function renderStep(overrides = {}) {
-    render(
-      <ConfirmationStep
-        creditLine={creditLine}
-        amount={10000}
-        onConfirm={vi.fn()}
-        onBack={vi.fn()}
-        onCancel={vi.fn()}
-        {...overrides}
-      />,
-    );
-  }
-
   it("renders Cancel before Back in the DOM", () => {
     renderStep();
 
@@ -709,6 +700,11 @@ describe("ConfirmationStep — button order (docs/BUTTON_ORDER.md)", () => {
     await user.click(screen.getByRole("button", { name: /draw/i }));
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a loading status while isLoading", () => {
+    renderStep({ isLoading: true });
+    expect(screen.getByRole("status")).toBeInTheDocument();
   });
 });
 

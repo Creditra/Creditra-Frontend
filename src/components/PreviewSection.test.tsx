@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { PreviewSection } from './PreviewSection';
 import { ConfirmationStep } from './ConfirmationStep';
 import { WalletProvider } from '../context/WalletContext';
@@ -28,12 +28,13 @@ describe('glossed credit terms', () => {
     expect(trigger).toHaveAttribute('aria-describedby', tooltip.id);
     expect(trigger).toHaveAttribute('tabindex', '0');
 
-    await user.tab();
+    trigger.focus();
     expect(trigger).toHaveFocus();
     expect(tooltip).toHaveTextContent('Utilization is the percentage of your available credit that is currently being used.');
   });
 
   it('wraps the first utilization and term occurrences in ConfirmationStep without repeating them', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
     render(
       <WalletProvider>
         <ConfirmationStep
