@@ -16,7 +16,8 @@ flowchart TB
     Boot["main.tsx<br/>(StrictMode + ReactDOM root)"] --> App["App.tsx"]
     App --> EB["ErrorBoundary<br/>(class component, catches render errors)"]
     EB --> WP["WalletProvider<br/>(connection lifecycle)"]
-    WP --> Router["BrowserRouter"]
+    WP --> CDP["CreditDataProvider<br/>(wallet-scoped credit state)"]
+    CDP --> Router["BrowserRouter"]
 
     Router --> Header["Header<br/>(NavLink + WalletButton)"]
     Router --> Main["main element"]
@@ -42,6 +43,11 @@ flowchart TB
 The header is rendered outside `<Routes>` so it persists across navigation. The
 `ErrorBoundary` is wrapped *outside* `WalletProvider` so that even a failure inside the
 wallet reducer renders the error page instead of a blank screen.
+
+`CreditDataProvider` is mounted inside `WalletProvider` and outside
+`BrowserRouter`. It keys credit-line and transaction state by the connected
+wallet identity, so routes and persistent header components share one request
+and cannot render data from a previous account or network.
 
 ---
 
@@ -142,6 +148,29 @@ class WalletConnectError extends Error {
   message: string;
 }
 ```
+
+### Wallet storage (`src/utils/wallet.ts`)
+
+`WalletContext` persists as little as possible: **only the wallet type** — never a
+public key, address, key, or signature. Auto-reconnect re-derives the address from the
+wallet extension via `connectWallet()`.
+
+| Key | Value | Written when | Cleared when |
+| --- | --- | --- | --- |
+| `creditra-wallet-info` | `{ v: 2, type }` — the active session's wallet type | `saveWalletPreference()` after a successful connect, auto-reconnect, or `stayConnected()` | `disconnectWallet()`: explicit disconnect **and** session expiry, plus any read that finds an unusable record |
+| `creditra-wallet-recent` | `WalletType[]`, most-recent last | `recordRecentWallet()` on every successful connect | `clearMRU()` only — deliberately kept across disconnect and session expiry |
+| `creditra-wallet-remember` | `true` (an absent key means "no") | `setWalletRemembered(true)` when the user opts in to auto-reconnect | `setWalletRemembered(false)`, `disconnectWallet()`, session expiry |
+
+The legacy keys `wallet_info` (v1, which did contain the public key) and
+`wallet_preference` are read once by `getStoredWallet()` purely to migrate the wallet
+type into `creditra-wallet-info` as `{ v: 2, type }`, after which both are deleted. The
+migration is idempotent and needs no user action; a record whose type is missing or
+unsupported is dropped so no reconnect is attempted from it.
+
+Session expiry (`SESSION_TIMEOUT_MS`) is a full logout: it clears in-memory state *and*
+the stored type plus the opt-in flag, so a page reload cannot silently reconnect a
+session the app just ended. The MRU list survives, exactly as on an explicit disconnect,
+because recency is activity history rather than session state.
 
 ### Error classification and user-facing copy
 

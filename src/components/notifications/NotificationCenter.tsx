@@ -70,6 +70,7 @@ const CATEGORIES: { value: NotificationCategory | 'all'; label: string }[] = [
   { value: 'credit_line', label: 'Credit Lines' },
   { value: 'risk_score',  label: 'Risk Score' },
   { value: 'rate_change', label: 'Rates' },
+  { value: 'auction',     label: 'Auctions' },
   { value: 'system',      label: 'System' },
 ];
 
@@ -139,6 +140,8 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
   const filtered = filterByCategory(activeFilter);
   const dragStartY = useRef<number | null>(null);
   const panelElRef = useRef<HTMLDivElement | null>(null);
+  const emptyStateRef = useRef<HTMLDivElement | null>(null);
+  const itemRefs = useRef<(HTMLElement | null)[]>([]);
 
   const handleDragStart = (e: React.PointerEvent) => {
     dragStartY.current = e.clientY;
@@ -216,7 +219,7 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     if (!isPanelOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.shiftKey && e.key === 'r' && unreadCount > 0) {
+      if (e.shiftKey && e.key.toLowerCase() === 'r' && unreadCount > 0) {
         e.preventDefault();
         handleMarkAllAsRead();
       }
@@ -225,6 +228,8 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isPanelOpen, unreadCount, handleMarkAllAsRead]);
+
+  const pendingEmptyFocusRef = useRef(false);
 
   const handleClearAll = useCallback(() => {
     const prior = [...notifications];
@@ -242,8 +247,16 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
       duration: 6000,
       saveToHistory: false,
     });
+    pendingEmptyFocusRef.current = true;
     clearAll();
   }, [notifications, addToast, dismissToast, restoreNotifications, clearAll]);
+
+  useEffect(() => {
+    if (pendingEmptyFocusRef.current && filtered.length === 0 && emptyStateRef.current) {
+      pendingEmptyFocusRef.current = false;
+      emptyStateRef.current.focus();
+    }
+  }, [filtered.length]);
 
   const handleItemClick = useCallback((notification: Notification) => {
     if (notification.read) {
@@ -267,6 +280,33 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
       saveToHistory: false,
     });
   }, [markAsRead, addToast, dismissToast, undoRead]);
+
+  const handleItemKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLElement>, notification: Notification, index: number) => {
+      if (e.target !== e.currentTarget) return;
+
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        handleItemClick(notification);
+        return;
+      }
+
+      if (e.key === 'PageDown') {
+        e.preventDefault();
+        const next = itemRefs.current[index + 1];
+        if (next) next.focus();
+        return;
+      }
+
+      if (e.key === 'PageUp') {
+        e.preventDefault();
+        const prev = itemRefs.current[index - 1];
+        if (prev) prev.focus();
+        return;
+      }
+    },
+    [handleItemClick],
+  );
 
   return (
     <>
@@ -424,19 +464,29 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
           aria-busy="false"
         >
           {filtered.length === 0 ? (
-            <div className="nc-empty" role="status">
+            <div
+              ref={emptyStateRef}
+              className="nc-empty"
+              role="status"
+              tabIndex={-1}
+            >
               <span className="nc-empty-icon" aria-hidden="true">🔔</span>
               <p>No notifications</p>
             </div>
           ) : (
-            filtered.map(n => {
+            filtered.map((n, index) => {
               const colors = TYPE_COLOR[n.type];
               return (
                 <article
                   key={n.id}
+                  ref={el => {
+                    itemRefs.current[index] = el;
+                  }}
+                  tabIndex={0}
                   className={`nc-item ${!n.read ? 'nc-item-unread' : ''}`}
-                  aria-label={`${n.title}${!n.read ? ', unread' : ''}`}
+                  aria-label={`${n.title}, ${n.read ? 'read' : 'unread'}`}
                   onClick={() => handleItemClick(n)}
+                  onKeyDown={e => handleItemKeyDown(e, n, index)}
                 >
                   <span
                     className="nc-item-icon"
