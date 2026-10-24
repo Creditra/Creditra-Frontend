@@ -16,6 +16,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Link as LinkIcon, Unlink, RefreshCw, AlertCircle, CheckCircle, ChevronDown } from 'lucide-react';
+import { useWallet } from '../context/WalletContext';
 import {
   fetchLinkedAccounts,
   initiateLinkAccount,
@@ -358,6 +359,20 @@ interface DisconnectResult {
  * Main LinkedAccounts page component.
  */
 export function LinkedAccounts() {
+  let walletPublicKey: string | null = null;
+  let isInsideWalletProvider = false;
+  try {
+    const walletContext = useWallet();
+    walletPublicKey = walletContext.wallet?.publicKey ?? null;
+    isInsideWalletProvider = true;
+  } catch {
+    walletPublicKey = null;
+    isInsideWalletProvider = false;
+  }
+
+  const isDisconnected = isInsideWalletProvider && !walletPublicKey;
+  const scope = isInsideWalletProvider ? walletPublicKey : undefined;
+
   const [accounts, setAccounts] = useState<LinkedAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -376,10 +391,29 @@ export function LinkedAccounts() {
   const headerRef = useRef<HTMLDivElement>(null);
   const { confirm, dialog: confirmDialog } = useConfirm();
 
-  // Fetch linked accounts on mount
+  const loadAccounts = useCallback(async () => {
+    if (isDisconnected) {
+      setAccounts([]);
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      setError(null);
+      const data = scope ? await fetchLinkedAccounts(scope) : await fetchLinkedAccounts();
+      setAccounts(data);
+    } catch (err) {
+      setError('Failed to load linked accounts. Please try again.');
+      console.error('Load accounts error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [isDisconnected, scope]);
+
+  // Fetch linked accounts on mount or wallet scope change
   useEffect(() => {
     loadAccounts();
-  }, []);
+  }, [loadAccounts]);
 
   // Clean up message timeout on unmount
   useEffect(() => {
@@ -403,20 +437,6 @@ export function LinkedAccounts() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  const loadAccounts = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await fetchLinkedAccounts();
-      setAccounts(data);
-    } catch (err) {
-      setError('Failed to load linked accounts. Please try again.');
-      console.error('Load accounts error:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const showSuccessMessage = (message: string) => {
     setSuccessMessage(message);
     if (messageTimeoutRef.current) {
@@ -432,7 +452,11 @@ export function LinkedAccounts() {
       setActionLoading(true);
       setError(null);
 
-      const response = await initiateLinkAccount({ provider });
+      if (scope) {
+        await initiateLinkAccount({ provider }, scope);
+      } else {
+        await initiateLinkAccount({ provider });
+      }
 
       // In production, redirect to OAuth URL
       // For now, simulate successful connection
@@ -465,7 +489,11 @@ export function LinkedAccounts() {
       setLoadingAccountId(accountId);
       setError(null);
 
-      await disconnectAccount(accountId);
+      if (scope) {
+        await disconnectAccount(accountId, scope);
+      } else {
+        await disconnectAccount(accountId);
+      }
       showSuccessMessage(`${providerName} account disconnected`);
       await loadAccounts();
     } catch (err) {
@@ -486,7 +514,11 @@ export function LinkedAccounts() {
       setLoadingAccountId(accountId);
       setError(null);
 
-      const response = await reconnectAccount(accountId);
+      if (scope) {
+        await reconnectAccount(accountId, scope);
+      } else {
+        await reconnectAccount(accountId);
+      }
 
       // In production, redirect to OAuth URL
       // For now, simulate successful reconnection
@@ -540,7 +572,7 @@ export function LinkedAccounts() {
       setFailedDisconnects([]);
 
       const settled = await Promise.allSettled(
-        targetAccounts.map(acc => disconnectAccount(acc.id)),
+        targetAccounts.map(acc => (scope ? disconnectAccount(acc.id, scope) : disconnectAccount(acc.id))),
       );
 
       const results: DisconnectResult[] = targetAccounts.map((acc, i) => ({
@@ -566,7 +598,7 @@ export function LinkedAccounts() {
         setError(msg);
       }
     },
-    [], // eslint-disable-line react-hooks/exhaustive-deps
+    [loadAccounts, scope],
   );
 
   const handleDisconnectAll = async () => {
@@ -679,7 +711,11 @@ export function LinkedAccounts() {
           for identity verification and credit assessment.
         </p>
 
-        {loading ? (
+        {isDisconnected ? (
+          <div className="linked-accounts__empty-state" role="status" data-testid="linked-accounts-disconnected">
+            <p>Connect a wallet to manage linked accounts</p>
+          </div>
+        ) : loading ? (
           <div className="linked-accounts__loading" aria-busy="true" aria-label="Loading accounts">
             <div className="provider-card">
               <div className="provider-card__header">
@@ -738,53 +774,55 @@ export function LinkedAccounts() {
       </div>
 
       {/* ── Sticky Bottom Action Bar ─────────────────────────────────── */}
-      <div
-        className={`sticky-action-bar ${scrolled ? 'sticky-action-bar--visible' : ''}`}
-        role="toolbar"
-        aria-label="Linked accounts actions"
-        data-testid="sticky-action-bar"
-      >
-        <div className="sticky-action-bar__inner">
-          <div className="sticky-action-bar__status">
-            {connectedCount > 0 ? (
-              <span className="sticky-action-bar__count">
-                <CheckCircle className="icon-sm" aria-hidden="true" />
-                {connectedCount} connected
-              </span>
-            ) : (
-              <span className="sticky-action-bar__count">
-                No accounts linked
-              </span>
-            )}
-          </div>
-          <div className="sticky-action-bar__actions">
-            {/* Provider picker replaces the hard-coded Google Connect button */}
-            <ProviderPicker
-              connectedProviders={connectedProviders}
-              onSelect={handleConnect}
-              disabled={actionLoading}
-            />
-            {connectedCount > 0 && (
-              <Tooltip
-                label="Disconnect all linked accounts"
-                position="top"
-                hoverDelay={400}
-                longPressDelay={500}
-              >
-                <button
-                  onClick={handleDisconnectAll}
-                  disabled={actionLoading}
-                  className="btn-danger btn-sm"
-                  aria-label="Disconnect all accounts from toolbar"
+      {!isDisconnected && (
+        <div
+          className={`sticky-action-bar ${scrolled ? 'sticky-action-bar--visible' : ''}`}
+          role="toolbar"
+          aria-label="Linked accounts actions"
+          data-testid="sticky-action-bar"
+        >
+          <div className="sticky-action-bar__inner">
+            <div className="sticky-action-bar__status">
+              {connectedCount > 0 ? (
+                <span className="sticky-action-bar__count">
+                  <CheckCircle className="icon-sm" aria-hidden="true" />
+                  {connectedCount} connected
+                </span>
+              ) : (
+                <span className="sticky-action-bar__count">
+                  No accounts linked
+                </span>
+              )}
+            </div>
+            <div className="sticky-action-bar__actions">
+              {/* Provider picker replaces the hard-coded Google Connect button */}
+              <ProviderPicker
+                connectedProviders={connectedProviders}
+                onSelect={handleConnect}
+                disabled={actionLoading}
+              />
+              {connectedCount > 0 && (
+                <Tooltip
+                  label="Disconnect all linked accounts"
+                  position="top"
+                  hoverDelay={400}
+                  longPressDelay={500}
                 >
-                  <Unlink className="icon-sm" aria-hidden="true" />
-                  <span className="sticky-action-bar__label">Disconnect All</span>
-                </button>
-              </Tooltip>
-            )}
+                  <button
+                    onClick={handleDisconnectAll}
+                    disabled={actionLoading}
+                    className="btn-danger btn-sm"
+                    aria-label="Disconnect all accounts from toolbar"
+                  >
+                    <Unlink className="icon-sm" aria-hidden="true" />
+                    <span className="sticky-action-bar__label">Disconnect All</span>
+                  </button>
+                </Tooltip>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {confirmDialog}
     </div>

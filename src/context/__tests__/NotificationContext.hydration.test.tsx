@@ -2,7 +2,10 @@ import React from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 import { NotificationProvider, useNotifications } from '../NotificationContext';
+import { scopedKey } from '../../utils/scoped-storage';
 import type { Notification } from '../../types/notification';
+
+const NOTIFICATIONS_STORAGE_KEY = scopedKey('creditra_notifications');
 
 function renderWithProvider(ui: React.ReactElement) {
   return render(<NotificationProvider>{ui}</NotificationProvider>);
@@ -54,7 +57,7 @@ describe.sequential('NotificationProvider hydration', () => {
   });
 
   it('renders with empty inbox when stored value is "null"', async () => {
-    localStorage.setItem('creditra_notifications', 'null');
+    localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, 'null');
     localStorage.setItem('creditra_notification_prefs', 'null');
 
     function Harness() {
@@ -72,8 +75,8 @@ describe.sequential('NotificationProvider hydration', () => {
     expect(screen.getByTestId('unread').textContent).toBe('0');
 
     // Storage should be rewritten to versioned envelope (useLayoutEffect runs synchronously)
-    checkStorageRewrite('creditra_notifications', 'null');
-    const stored = localStorage.getItem('creditra_notifications');
+    checkStorageRewrite(NOTIFICATIONS_STORAGE_KEY, 'null');
+    const stored = localStorage.getItem(NOTIFICATIONS_STORAGE_KEY);
     expect(stored).not.toBeNull();
     const parsed = JSON.parse(stored!);
     expect(parsed.v).toBe(1);
@@ -81,7 +84,7 @@ describe.sequential('NotificationProvider hydration', () => {
   });
 
   it('renders with empty inbox when stored value is "{}"', async () => {
-    localStorage.setItem('creditra_notifications', '{}');
+    localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, '{}');
 
     function Harness() {
       const { notifications } = useNotifications();
@@ -90,11 +93,11 @@ describe.sequential('NotificationProvider hydration', () => {
 
     renderHarness(<Harness />);
     expect(screen.getByTestId('count').textContent).toBe('0');
-    checkStorageRewrite('creditra_notifications', '{}');
+    checkStorageRewrite(NOTIFICATIONS_STORAGE_KEY, '{}');
   });
 
   it('renders with empty inbox when stored value is "[1, \"x\", {}]"', async () => {
-    localStorage.setItem('creditra_notifications', '[1, "x", {}]');
+    localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, '[1, "x", {}]');
 
     function Harness() {
       const { notifications } = useNotifications();
@@ -103,7 +106,7 @@ describe.sequential('NotificationProvider hydration', () => {
 
     renderHarness(<Harness />);
     expect(screen.getByTestId('count').textContent).toBe('0');
-    checkStorageRewrite('creditra_notifications', '[1, "x", {}]');
+    checkStorageRewrite(NOTIFICATIONS_STORAGE_KEY, '[1, "x", {}]');
   });
 
   it('keeps 3 valid entries and drops 2 invalid', async () => {
@@ -111,7 +114,7 @@ describe.sequential('NotificationProvider hydration', () => {
     const valid2 = createValidNotification({ id: '2', title: 'Second' });
     const valid3 = createValidNotification({ id: '3', title: 'Third' });
     const stored = JSON.stringify([valid1, 123, valid2, 'invalid', {}, valid3]);
-    localStorage.setItem('creditra_notifications', stored);
+    localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, stored);
 
     function Harness() {
       const { notifications } = useNotifications();
@@ -122,10 +125,10 @@ describe.sequential('NotificationProvider hydration', () => {
     expect(screen.getByTestId('count').textContent).toBe('3');
 
     // Storage should be rewritten with only valid entries (useLayoutEffect runs synchronously)
-    checkStorageRewrite('creditra_notifications', stored);
+    checkStorageRewrite(NOTIFICATIONS_STORAGE_KEY, stored);
 
     // Storage should be rewritten with only valid entries
-    const rewritten = JSON.parse(localStorage.getItem('creditra_notifications')!);
+    const rewritten = JSON.parse(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)!);
     expect(rewritten.v).toBe(1);
     expect(rewritten.items).toHaveLength(3);
     expect(rewritten.items.map((n: Notification) => n.id)).toEqual(['1', '2', '3']);
@@ -135,7 +138,7 @@ describe.sequential('NotificationProvider hydration', () => {
     const notifications = Array.from({ length: 150 }, (_, i) =>
       createValidNotification({ id: `${i}`, title: `Notification ${i}` })
     );
-    localStorage.setItem('creditra_notifications', JSON.stringify(notifications));
+    localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(notifications));
 
     function Harness() {
       const { notifications: notifs } = useNotifications();
@@ -150,7 +153,7 @@ describe.sequential('NotificationProvider hydration', () => {
     const n1 = createValidNotification({ id: 'dup', title: 'First' });
     const n2 = createValidNotification({ id: 'dup', title: 'Second' });
     const n3 = createValidNotification({ id: 'unique', title: 'Third' });
-    localStorage.setItem('creditra_notifications', JSON.stringify([n1, n2, n3]));
+    localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify([n1, n2, n3]));
 
     function Harness() {
       const { notifications } = useNotifications();
@@ -166,7 +169,7 @@ describe.sequential('NotificationProvider hydration', () => {
       createValidNotification({ id: `legacy-${i}`, title: `Legacy ${i}` })
     );
     const initialValue = JSON.stringify(notifications);
-    localStorage.setItem('creditra_notifications', initialValue);
+    localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, initialValue);
 
     function Harness() {
       const { notifications: notifs } = useNotifications();
@@ -177,10 +180,10 @@ describe.sequential('NotificationProvider hydration', () => {
     expect(screen.getByTestId('count').textContent).toBe('3');
 
     // Should be re-saved as versioned envelope (useLayoutEffect runs synchronously)
-    checkStorageRewrite('creditra_notifications', initialValue);
+    checkStorageRewrite(NOTIFICATIONS_STORAGE_KEY, initialValue);
 
     // Should be re-saved as versioned envelope
-    const rewritten = JSON.parse(localStorage.getItem('creditra_notifications')!);
+    const rewritten = JSON.parse(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)!);
     expect(rewritten.v).toBe(1);
     expect(rewritten.items).toHaveLength(3);
   });
@@ -254,7 +257,7 @@ describe.sequential('NotificationProvider hydration', () => {
 
     for (const raw of hostileInboxValues) {
       localStorage.clear();
-      localStorage.setItem('creditra_notifications', raw);
+      localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, raw);
 
       function Harness() {
         const { notifications } = useNotifications();
@@ -301,7 +304,7 @@ describe.sequential('NotificationProvider hydration', () => {
       createValidNotification({ id: `valid-${i}`, title: `Valid ${i}` })
     );
     const initialInbox = JSON.stringify(notifications);
-    localStorage.setItem('creditra_notifications', initialInbox);
+    localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, initialInbox);
     localStorage.setItem(
       'creditra_notification_prefs',
       JSON.stringify({ transaction: false, credit_line: true })
@@ -324,10 +327,10 @@ describe.sequential('NotificationProvider hydration', () => {
     expect(screen.getByTestId('credit').textContent).toBe('true');
 
     // Storage should be rewritten as versioned envelope but with same data (useLayoutEffect runs synchronously)
-    checkStorageRewrite('creditra_notifications', initialInbox);
+    checkStorageRewrite(NOTIFICATIONS_STORAGE_KEY, initialInbox);
 
     // Storage should be rewritten as versioned envelope but with same data
-    const rewrittenInbox = JSON.parse(localStorage.getItem('creditra_notifications')!);
+    const rewrittenInbox = JSON.parse(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)!);
     expect(rewrittenInbox.v).toBe(1);
     expect(rewrittenInbox.items).toHaveLength(5);
     expect(rewrittenInbox.items.map((n: Notification) => n.id)).toEqual(

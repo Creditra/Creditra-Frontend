@@ -24,6 +24,8 @@ import {
   serializePreferences,
 } from './notificationStorage';
 import { writeJson } from '../utils/storage';
+import { scopedKey, migrateLegacyStorage } from '../utils/scoped-storage';
+import { useWallet } from './WalletContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -89,13 +91,70 @@ const DEFAULT_PREFS: NotificationPreferences = {
   system: true,
 };
 
-const STORAGE_KEY = 'creditra_notifications';
-const PREFS_KEY = 'creditra_notification_prefs';
+const BASE_STORAGE_KEY = scopedKey('creditra_notifications');
+const BASE_PREFS_KEY = scopedKey('creditra_notification_prefs');
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 
 /** Exported so NotificationBell can optionally consume without throwing. */
 export const NotificationContext = createContext<NotificationContextValue | null>(null);
+
+// Validate deserialized action descriptors.
+const validateAction = (action: any): NotificationActionDescriptor | undefined => {
+  if (!action || typeof action !== 'object' || typeof action.label !== 'string') return undefined;
+  if (action.kind === 'route') {
+    if (typeof action.to !== 'string') return undefined;
+    if (!action.to.startsWith('/') || action.to.includes('://')) return undefined;
+    return { label: action.label, kind: 'route', to: action.to } as NotificationActionDescriptor;
+  }
+  if (action.kind === 'command') {
+    const valid = ['open-wallet', 'open-kyc', 'retry-sync'];
+    if (valid.includes(action.id)) {
+      return { label: action.label, kind: 'command', id: action.id } as NotificationActionDescriptor;
+    }
+  }
+  return undefined;
+};
+
+function readInboxFromStorage(key: string): { parsed: Notification[]; needsRewrite: boolean } {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return { parsed: [], needsRewrite: false };
+    }
+    const stored = localStorage.getItem(key);
+    if (stored) {
+      const raw = JSON.parse(stored);
+      const parsed = parseInbox(raw);
+      const validated = parsed.map(n => ({
+        ...n,
+        action: n.action ? validateAction(n.action) : undefined,
+      }));
+      const serialized = serializeInbox(validated);
+      return { parsed: validated, needsRewrite: stored !== JSON.stringify(serialized) };
+    }
+  } catch {
+    /* swallow parse errors */
+  }
+  return { parsed: [], needsRewrite: false };
+}
+
+function readPreferencesFromStorage(key: string): { parsed: NotificationPreferences; needsRewrite: boolean } {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return { parsed: DEFAULT_PREFS, needsRewrite: false };
+    }
+    const stored = localStorage.getItem(key);
+    if (stored) {
+      const raw = JSON.parse(stored);
+      const parsed = parsePreferences(raw);
+      const serialized = serializePreferences(parsed);
+      return { parsed, needsRewrite: stored !== JSON.stringify(serialized) };
+    }
+  } catch {
+    /* swallow parse errors */
+  }
+  return { parsed: DEFAULT_PREFS, needsRewrite: false };
+}
 
 /**
  * App-wide notification provider.
@@ -104,95 +163,109 @@ export const NotificationContext = createContext<NotificationContextValue | null
  * - `toasts` — transient, auto-dismissed after `duration` ms unless
  *   `persistent` is set
  * - `banners` — page-level alerts that persist until dismissed
- * - `notifications` — durable inbox, persisted to `localStorage` and
- *   capped at 100 entries to bound storage growth
+ * - `notifications` — durable inbox, persisted to `localStorage` under
+ *   wallet scope and capped at 100 entries to bound storage growth
  *
- * Per-category mute preferences are also persisted; a muted category
- * causes `addToast` to return early with an empty id so callers can
- * fire-and-forget without conditionals.
+ * Per-category mute preferences are also persisted under wallet scope.
  *
  * Mount this once, after `WalletProvider`, near the top of the tree.
  */
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
+  let walletPublicKey: string | null = null;
+  let isInsideWalletProvider = false;
+
+  try {
+    const walletContext = useWallet();
+    walletPublicKey = walletContext.wallet?.publicKey ?? null;
+    isInsideWalletProvider = true;
+  } catch {
+    walletPublicKey = null;
+    isInsideWalletProvider = false;
+  }
+
+  const isDisconnected = isInsideWalletProvider && !walletPublicKey;
+  const storageKey = scopedKey(BASE_STORAGE_KEY, walletPublicKey);
+  const prefsKey = scopedKey(BASE_PREFS_KEY, walletPublicKey);
+
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [banners, setBanners] = useState<BannerAlert[]>([]);
 
-  // Validate deserialized action descriptors.
-  const validateAction = (action: any): NotificationActionDescriptor | undefined => {
-    if (!action || typeof action !== 'object' || typeof action.label !== 'string') return undefined;
-    if (action.kind === 'route') {
-      if (typeof action.to !== 'string') return undefined;
-      if (!action.to.startsWith('/') || action.to.includes('://')) return undefined;
-      return { label: action.label, kind: 'route', to: action.to } as NotificationActionDescriptor;
+  // Initial read for first render
+  const initialInbox = useRef<{ parsed: Notification[]; needsRewrite: boolean } | null>(null);
+  if (initialInbox.current === null) {
+    if (walletPublicKey) {
+      migrateLegacyStorage(walletPublicKey);
     }
-    if (action.kind === 'command') {
-      const valid = ['open-wallet', 'open-kyc', 'retry-sync'];
-      if (valid.includes(action.id)) {
-        return { label: action.label, kind: 'command', id: action.id } as NotificationActionDescriptor;
-      }
-    }
-    return undefined;
-  };
-
-  // Parse notifications and detect if rewrite is needed
-  const notificationsInit = useRef<{ parsed: Notification[]; needsRewrite: boolean }>({ parsed: [], needsRewrite: false });
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const raw = JSON.parse(stored);
-      const parsed = parseInbox(raw);
-      // Apply action validation to parsed notifications
-      const validated = parsed.map(n => ({
-        ...n,
-        action: n.action ? validateAction(n.action) : undefined,
-      }));
-      const serialized = serializeInbox(validated);
-      notificationsInit.current = { parsed: validated, needsRewrite: stored !== serialized };
-    }
-  } catch {
-    notificationsInit.current = { parsed: [], needsRewrite: false };
+    initialInbox.current = isDisconnected
+      ? { parsed: [], needsRewrite: false }
+      : readInboxFromStorage(storageKey);
   }
-  const [notifications, setNotifications] = useState<Notification[]>(notificationsInit.current.parsed);
 
-  // Parse preferences and detect if rewrite is needed
-  const preferencesInit = useRef<{ parsed: NotificationPreferences; needsRewrite: boolean }>({ parsed: DEFAULT_PREFS, needsRewrite: false });
-  try {
-    const stored = localStorage.getItem(PREFS_KEY);
-    if (stored) {
-      const raw = JSON.parse(stored);
-      const parsed = parsePreferences(raw);
-      const serialized = serializePreferences(parsed);
-      preferencesInit.current = { parsed, needsRewrite: stored !== serialized };
-    }
-  } catch {
-    preferencesInit.current = { parsed: DEFAULT_PREFS, needsRewrite: false };
+  const initialPreferences = useRef<{ parsed: NotificationPreferences; needsRewrite: boolean } | null>(null);
+  if (initialPreferences.current === null) {
+    initialPreferences.current = isDisconnected
+      ? { parsed: DEFAULT_PREFS, needsRewrite: false }
+      : readPreferencesFromStorage(prefsKey);
   }
-  const [preferences, setPreferences] = useState<NotificationPreferences>(preferencesInit.current.parsed);
 
+  const [notifications, setNotifications] = useState<Notification[]>(initialInbox.current.parsed);
+  const [preferences, setPreferences] = useState<NotificationPreferences>(initialPreferences.current.parsed);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const hasHydratedRef = useRef(false);
 
-  // Rewrite storage on mount if data was cleaned/migrated (synchronous during render)
-  if (!hasHydratedRef.current) {
-    hasHydratedRef.current = true;
-    if (notificationsInit.current.needsRewrite) {
-      writeJson(STORAGE_KEY, serializeInbox(notifications));
-    }
-    if (preferencesInit.current.needsRewrite) {
-      writeJson(PREFS_KEY, serializePreferences(preferences));
-    }
-  }
-
-  // Persist notifications on changes
+  // Re-hydrate inbox and preferences whenever the wallet identity changes
+  const prevWalletRef = useRef<string | null>(walletPublicKey);
   useEffect(() => {
-    writeJson(STORAGE_KEY, serializeInbox(notifications));
-  }, [notifications]);
+    if (prevWalletRef.current === walletPublicKey) return;
+    prevWalletRef.current = walletPublicKey;
 
-  // Persist preferences on changes
+    if (isDisconnected) {
+      setNotifications([]);
+      setPreferences(DEFAULT_PREFS);
+      return;
+    }
+
+    if (walletPublicKey) {
+      migrateLegacyStorage(walletPublicKey);
+    }
+
+    const nextInbox = readInboxFromStorage(storageKey);
+    const nextPrefs = readPreferencesFromStorage(prefsKey);
+    setNotifications(nextInbox.parsed);
+    setPreferences(nextPrefs.parsed);
+
+    if (nextInbox.needsRewrite) {
+      writeJson(storageKey, serializeInbox(nextInbox.parsed));
+    }
+    if (nextPrefs.needsRewrite) {
+      writeJson(prefsKey, serializePreferences(nextPrefs.parsed));
+    }
+  }, [walletPublicKey, isDisconnected, storageKey, prefsKey]);
+
+  // Initial rewrite if unversioned data was loaded on mount
   useEffect(() => {
-    writeJson(PREFS_KEY, serializePreferences(preferences));
-  }, [preferences]);
+    if (isDisconnected) return;
+    if (initialInbox.current?.needsRewrite) {
+      writeJson(storageKey, serializeInbox(initialInbox.current.parsed));
+      initialInbox.current.needsRewrite = false;
+    }
+    if (initialPreferences.current?.needsRewrite) {
+      writeJson(prefsKey, serializePreferences(initialPreferences.current.parsed));
+      initialPreferences.current.needsRewrite = false;
+    }
+  }, [storageKey, prefsKey, isDisconnected]);
+
+  // Persist notifications on changes (suppressed while disconnected)
+  useEffect(() => {
+    if (isDisconnected) return;
+    writeJson(storageKey, serializeInbox(notifications));
+  }, [notifications, storageKey, isDisconnected]);
+
+  // Persist preferences on changes (suppressed while disconnected)
+  useEffect(() => {
+    if (isDisconnected) return;
+    writeJson(prefsKey, serializePreferences(preferences));
+  }, [preferences, prefsKey, isDisconnected]);
 
   // Clear all pending toast timers on provider unmount
   useEffect(() => {
@@ -256,7 +329,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       return next;
     });
 
-    if (opts.saveToHistory !== false) {
+    // While disconnected, notifications inbox stays empty and is not written to storage
+    if (opts.saveToHistory !== false && !isDisconnected) {
       const notification: Notification = {
         id,
         type: opts.type,
@@ -265,14 +339,13 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         message: opts.message,
         timestamp: new Date().toISOString(),
         read: false,
-        // Persist descriptor only
         action: opts.actionDescriptor,
       };
       setNotifications(prev => [notification, ...prev].slice(0, 100));
     }
 
     return id;
-  }, [preferences, dismissToast]);
+  }, [preferences, dismissToast, isDisconnected]);
 
   // ─── Banners ───────────────────────────────────────────────────────────────
 
@@ -356,12 +429,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 }
 
 /**
- * Read the notification context inside a `NotificationProvider`
- * subtree.
- *
- * Throws on misuse rather than returning a possibly-undefined value, so
- * a misplaced consumer surfaces at the call site instead of leaking a
- * confusing "cannot read property of undefined" downstream.
+ * Read the notification context inside a `NotificationProvider` subtree.
  */
 export function useNotifications() {
   const ctx = useContext(NotificationContext);

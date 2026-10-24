@@ -10,6 +10,7 @@ import {
   SHEET_SNAP_RATIOS,
 } from './NotificationCenter';
 import { ToastContainer } from './ToastContainer';
+import { scopedKey } from '../../utils/scoped-storage';
 
 vi.mock('../../hooks/useBodyScrollLock', () => ({
   useBodyScrollLock: vi.fn(),
@@ -588,7 +589,7 @@ describe('NotificationCenter mark all as read', () => {
   it('restores exactly the originally unread notifications on undo (scenario 1)', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     localStorage.setItem(
-      'creditra_notifications',
+      scopedKey('creditra_notifications'),
       JSON.stringify([
         { id: 'u1', type: 'info', category: 'transaction', title: 'Unread One', message: 'm1', timestamp: new Date(1000).toISOString(), read: false },
         { id: 'u2', type: 'info', category: 'transaction', title: 'Unread Two', message: 'm2', timestamp: new Date(2000).toISOString(), read: false },
@@ -660,7 +661,7 @@ describe('NotificationCenter mark all as read', () => {
   it('restores cleared snapshot merged with newly arrived notifications on clear-all undo (scenario 2)', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     localStorage.setItem(
-      'creditra_notifications',
+      scopedKey('creditra_notifications'),
       JSON.stringify([
         { id: 'orig-1', type: 'info', category: 'transaction', title: 'Orig 1', message: 'm1', timestamp: new Date(1000).toISOString(), read: false },
         { id: 'orig-2', type: 'info', category: 'transaction', title: 'Orig 2', message: 'm2', timestamp: new Date(2000).toISOString(), read: false },
@@ -750,7 +751,7 @@ describe('NotificationCenter mark all as read', () => {
   it('is idempotent when undo is triggered twice (scenario 3)', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     localStorage.setItem(
-      'creditra_notifications',
+      scopedKey('creditra_notifications'),
       JSON.stringify([
         { id: 'u1', type: 'info', category: 'transaction', title: 'Unread One', message: 'm1', timestamp: new Date(1000).toISOString(), read: false },
         { id: 'r1', type: 'info', category: 'transaction', title: 'Read One', message: 'm2', timestamp: new Date(2000).toISOString(), read: true },
@@ -817,7 +818,7 @@ describe('NotificationCenter mark all as read', () => {
       JSON.stringify({ system: false }),
     );
     localStorage.setItem(
-      'creditra_notifications',
+      scopedKey('creditra_notifications'),
       JSON.stringify([
         { id: 'u1', type: 'info', category: 'transaction', title: 'Unread One', message: 'm1', timestamp: new Date(1000).toISOString(), read: false },
       ]),
