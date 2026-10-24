@@ -1,13 +1,14 @@
 import { AgingTag } from "./AgingTag";
 import { getDaysPastDue, getDelinquencyStartDate } from "../lib/delinquency";
 import type { CreditLine } from "../types/creditLine";
+import { now as clockNow } from "../lib/clock";
 
 interface CreditLineAgingProps {
   line: CreditLine;
 }
 
 export function CreditLineAging({ line }: CreditLineAgingProps) {
-  const now = new Date();
+  const now = clockNow();
   const startDate = getDelinquencyStartDate(line, now);
   const daysPastDue = getDaysPastDue(line, now);
 

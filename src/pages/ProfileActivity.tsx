@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { KbdHint } from '../components/KbdHint';
 import ActivityTimeline from '../components/ActivityTimeline';
+import { isEditableTarget } from '../utils/isEditableTarget';
 import './ProfileActivity.css';
 
 export function ProfileActivity() {
@@ -16,16 +17,10 @@ export function ProfileActivity() {
   }, []);
 
   useEffect(() => {
-    const isEditable = (target: EventTarget | null): boolean => {
-      if (!(target instanceof HTMLElement)) return false;
-      const tag = target.tagName.toLowerCase();
-      return target.isContentEditable || tag === 'input' || tag === 'textarea' || tag === 'select';
-    };
-
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key !== 'r' && e.key !== 'R') return;
-      if (isEditable(e.target)) return;
+      if (isEditableTarget(e.target)) return;
       e.preventDefault();
       handleRefresh();
     };

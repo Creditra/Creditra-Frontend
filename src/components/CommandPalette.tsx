@@ -75,15 +75,24 @@ export interface CommandItem {
  * Keep this list sorted by expected usage frequency so the most useful
  * commands appear first in the default (empty-query) view.
  */
-const DEFAULT_ITEMS: CommandItem[] = ROUTE_MANIFEST.filter(
-  (r) => Boolean(r.nav?.palette)
-).map((r) => ({
-  id: `nav-${r.path.replace(/^\//, '').replace(/\//g, '-') || 'dashboard'}`,
-  label: r.nav!.palette!.label,
-  icon: r.nav!.palette!.icon,
-  action: r.path,
-  description: r.nav!.palette!.description,
-}));
+const DEFAULT_ITEMS: CommandItem[] = [
+  ...ROUTE_MANIFEST.filter((r) => Boolean(r.nav?.palette)).map((r) => ({
+    id: `nav-${r.path.replace(/^\//, '').replace(/\//g, '-') || 'dashboard'}`,
+    label: r.nav!.palette!.label,
+    icon: r.nav!.palette!.icon,
+    action: r.path,
+    description: r.nav!.palette!.description,
+  })),
+  // The manifest is keyed by route path, so query-parameter deep links such as
+  // the URL-driven Activity tab need an explicit entry.
+  {
+    id: 'nav-profile-activity',
+    label: 'Profile activity',
+    icon: '📈',
+    action: '/profile?tab=activity',
+    description: 'View your activity feed',
+  },
+];
 
 /** Exported for tests and documentation of the default registry. */
 export { DEFAULT_ITEMS as COMMAND_PALETTE_DEFAULT_ITEMS };
@@ -399,8 +408,17 @@ export function CommandPalette({
           )}
 
           {results.map((item, index) => (
-            <li key={item.id} role="option" aria-selected={index === activeIndex}>
+            <li
+              key={item.id}
+              id={`cp-item-${item.id}`}
+              role="option"
+              aria-selected={index === activeIndex}
+            >
               {/*
+               * The `id` above sits on the `role="option"` element so
+               * `aria-activedescendant` references a real option, as required
+               * by the listbox pattern documented at the top of this file.
+               *
                * Each item is a `<button>` (not an `<a>`) because:
                * - Navigation items call `navigate()` imperatively.
                * - Callback items don't have a URL.
@@ -415,7 +433,6 @@ export function CommandPalette({
                * the two never conflict.
                */}
               <button
-                id={`cp-item-${item.id}`}
                 type="button"
                 className={`cp-item${index === activeIndex ? ' cp-item--active' : ''}`}
                 onClick={() => activate(item)}

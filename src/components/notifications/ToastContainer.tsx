@@ -139,15 +139,14 @@ export function ToastContainer() {
 
   return (
     /*
-     * role="log" marks this region as an ordered sequence of status
-     * messages so AT users can revisit the list without losing their
-     * reading position (WCAG 4.1.3).
+     * Plain landmark-free wrapper:
+     * Does NOT declare role="status", role="log", or aria-live so screen readers
+     * do not announce the container or re-read the entire stack on changes.
+     * Exactly one live region per toast is provided by ToastItem children.
      */
     <div
       className="toast-container"
-      role="log"
       aria-label="Notifications"
-      aria-live="polite"
     >
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onDismiss={dismissToast} />

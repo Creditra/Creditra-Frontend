@@ -1,4 +1,12 @@
-import { type TransactionRange } from "@/lib/transaction-range";
+export const TRANSACTION_RANGES = [
+  "custom",
+  "this-week",
+  "this-month",
+  "last-30-days",
+  "last-90-days",
+] as const;
+
+export type TransactionRange = (typeof TRANSACTION_RANGES)[number];
 
 export type TransactionType = "Payment" | "Repay" | "Drawdown" | "Fee";
 
@@ -23,14 +31,6 @@ export type TransactionFilterErrors = Record<string, string>;
 export const TRANSACTION_TYPES = ["Payment", "Repay", "Drawdown", "Fee"] as const;
 
 export const TRANSACTION_STATUSES = ["Success", "Pending", "Failed"] as const;
-
-export const TRANSACTION_RANGES = [
-  "custom",
-  "this-week",
-  "this-month",
-  "last-30-days",
-  "last-90-days",
-] as const;
 
 export const FILTER_KEYS = [
   "line",

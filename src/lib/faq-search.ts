@@ -3,6 +3,7 @@ import type { FaqEntry } from '../content/faq';
 export const SECTION_TITLES: Record<string, string> = {
   'getting-started': 'Getting Started',
   'wallet': 'Wallet',
+  'kyc': 'KYC Verification',
   'credit-lines': 'Credit Lines',
   'transactions': 'Transactions',
   'notifications': 'Notifications',

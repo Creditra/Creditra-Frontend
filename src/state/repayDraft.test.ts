@@ -12,20 +12,32 @@ import {
   clearRepayDraft,
   hasFreshRepayDraft,
   MAX_AGE_MS,
+  type RepayDraftState,
 } from './repayDraft';
 
 const STORAGE_KEY = 'creditra_repay_draft';
 
-function makeDraft(overrides: Partial<Record<string, unknown>> = {}) {
+const OWNER = 'stellar:GAOWNER:TESTNET';
+
+function makeDraft(overrides: Partial<Omit<RepayDraftState, 'savedAt'>> = {}) {
   return {
     step: 'input' as const,
     creditLineId: 'CL-2024-001',
     amountStr: '500.00',
     confirmAmountStr: '',
     isAutoSchedule: false,
+    owner: OWNER,
     transactionId: undefined,
     ...overrides,
   };
+}
+
+/** Overwrite the stored draft's state directly (simulates tampering / legacy data). */
+function seedRawState(state: Record<string, unknown>) {
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({ state, timestamp: Date.now() }),
+  );
 }
 
 describe('repayDraft', () => {
@@ -171,6 +183,75 @@ describe('repayDraft', () => {
       saveRepayDraft(makeDraft());
       vi.setSystemTime(Date.now() + MAX_AGE_MS + 1);
       expect(hasFreshRepayDraft()).toBe(false);
+    });
+  });
+
+  // ── Hardening: owner scoping (issue #1188) ─────────────────────────────
+
+  describe('owner scoping (issue #1188)', () => {
+    it('should persist and round-trip the owner field', () => {
+      saveRepayDraft(makeDraft({ owner: 'stellar:GOTHER:TESTNET' }));
+
+      const loaded = loadRepayDraft();
+      expect(loaded!.owner).toBe('stellar:GOTHER:TESTNET');
+    });
+
+    it('should discard a draft with no owner field (legacy drafts)', () => {
+      const { owner: _omitted, ...withoutOwner } = makeDraft();
+      seedRawState({ ...withoutOwner, savedAt: new Date().toISOString() });
+
+      expect(loadRepayDraft()).toBeNull();
+      expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    });
+
+    it('should discard a draft with an empty owner', () => {
+      saveRepayDraft(makeDraft({ owner: '' }));
+
+      // saveRepayDraft persists it, but load must refuse it.
+      expect(loadRepayDraft()).toBeNull();
+      expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    });
+  });
+
+  // ── Hardening: strict step / amountStr validation (issue #1188) ────────
+
+  describe('strict step and amountStr validation (issue #1188)', () => {
+    const validState = () => ({
+      ...makeDraft(),
+      savedAt: new Date().toISOString(),
+    });
+
+    it.each(['success', 'confirm', 'Input', ''])(
+      'should discard a draft with step %j',
+      (step) => {
+        seedRawState({ ...validState(), step });
+        expect(loadRepayDraft()).toBeNull();
+        expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+      },
+    );
+
+    it.each(['1e3', '0x10', '-5', '5000.123', '', ' 5000', '5000.', '1,000'])(
+      'should discard a draft with amountStr %j',
+      (amountStr) => {
+        seedRawState({ ...validState(), amountStr });
+        expect(loadRepayDraft()).toBeNull();
+        expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+      },
+    );
+
+    it.each(['5000', '5000.5', '5000.50', '0'])(
+      'should accept amountStr %j',
+      (amountStr) => {
+        seedRawState({ ...validState(), amountStr });
+        expect(loadRepayDraft()).not.toBeNull();
+      },
+    );
+
+    it('should still accept both review and input steps', () => {
+      seedRawState({ ...validState(), step: 'review' });
+      expect(loadRepayDraft()!.step).toBe('review');
+      seedRawState({ ...validState(), step: 'input' });
+      expect(loadRepayDraft()!.step).toBe('input');
     });
   });
 });

@@ -1,3 +1,5 @@
+import { isValidAccountId } from './strkey';
+
 /**
  * Helpers for displaying Stellar public keys / addresses in UI surfaces
  * where the full 56-character key would be visually overwhelming.
@@ -27,10 +29,7 @@ export function shortenAddress(
   return `${address.slice(0, lead)}…${address.slice(-tail)}`;
 }
 
-/**
- * Crude shape check for Stellar G-addresses. Does not verify the checksum
- * — callers that need full validation should use the Stellar SDK.
- */
+/** @deprecated Use isValidAccountId, which verifies the StrKey checksum. */
 export function looksLikeStellarAddress(address: string): boolean {
-  return /^G[A-Z2-7]{55}$/.test(address);
+  return isValidAccountId(address);
 }

@@ -57,6 +57,7 @@ describe("normalizeCreditLineAvailability", () => {
     const stale = {
       id: "cl-001",
       name: "Business Line of Credit",
+      status: "Active",
       limit: 50_000,
       available: 20_000,
       utilization: 30,
@@ -79,6 +80,7 @@ describe("normalizeCreditLineAvailability", () => {
     const normalized = normalizeCreditLineAvailability({
       id: "cl-x",
       name: "Overdrawn",
+      status: "Active",
       limit: 10_000,
       available: 9_999,
       utilization: 120,
@@ -93,6 +95,7 @@ describe("normalizeCreditLineAvailability", () => {
     const stale = {
       id: "cl-001",
       name: "Business Line of Credit",
+      status: "Active",
       limit: 50_000,
       available: 20_000,
       utilization: 30,

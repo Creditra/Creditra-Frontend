@@ -68,6 +68,13 @@ export interface AprHistoryEntry {
   apr: number;
 }
 
+export interface HealthFactorHistoryEntry {
+  /** ISO date or timestamp for the observed factor. */
+  date: string;
+  /** Observed health factor at that time. */
+  value: number;
+}
+
 /**
  * Canonical credit-line shape used by the dashboard and credit-lines
  * list view. Mirrors the backend payload. The lighter wizard projection
@@ -100,6 +107,8 @@ export interface CreditLine {
    * 30 / 90 / 365-day window filtering on this array.
    */
   aprHistory?: AprHistoryEntry[];
+  /** Real health-factor observations, sorted oldest to newest when available. */
+  healthHistory?: HealthFactorHistoryEntry[];
   /** ISO 8601 timestamp of the next scheduled payment, if any. */
   nextPaymentDate?: string;
   /** Amount of the next scheduled payment, paired with `nextPaymentDate`. */

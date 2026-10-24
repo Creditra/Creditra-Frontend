@@ -238,6 +238,7 @@ describe('NotificationCenter', () => {
     const prefs = document.getElementById('nc-prefs-panel') as HTMLElement;
     expect(prefs).toHaveAttribute('aria-hidden', 'false');
     expect(prefs.classList.contains('nc-prefs-open')).toBe(true);
+    expect(screen.getByRole('checkbox', { name: /auctions/i })).toBeChecked();
   });
 
   it('⚙ button has aria-expanded reflecting prefs state', async () => {
@@ -252,11 +253,12 @@ describe('NotificationCenter', () => {
 
   // ── Filter tabs ─────────────────────────────────────────────────────────
 
-  it('renders 6 filter tabs', () => {
+  it('renders all category filter tabs', () => {
     renderCenter({ open: true });
-    // tablist contains 6 tabs: All + 5 categories
+    // tablist contains All + 6 notification categories
     const tablist = screen.getByRole('tablist');
-    expect(within(tablist).getAllByRole('tab').length).toBe(6);
+    expect(within(tablist).getAllByRole('tab').length).toBe(7);
+    expect(within(tablist).getByRole('tab', { name: 'Auctions' })).toBeInTheDocument();
   });
 
   it('"All" tab is selected by default', () => {

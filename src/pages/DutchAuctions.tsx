@@ -1,21 +1,26 @@
-
 import React, { useState } from 'react';
 import { DutchAuctionCard } from '../components/DutchAuctionCard';
 import { EmptyState } from '@/components/EmptyState';
 import { NoDataGraph } from '@/components/illustrations';
 import { MOCK_DUTCH_AUCTIONS } from '../data/mockDutchAuctions';
 import { COLOR } from '../utils/tokens';
+import { purchaseAuction } from '../services/dutchAuctions';
+import { getEffectiveStatus } from '../lib/dutch-auction-lifecycle';
 
 export const DutchAuctions: React.FC = () => {
-  const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
+  const [filter, setFilter] = useState<'all' | 'scheduled' | 'active' | 'completed'>('all');
 
   const filteredAuctions = MOCK_DUTCH_AUCTIONS.filter(auction => {
-    if (filter === 'active') return auction.status === 'Active';
-    if (filter === 'completed') return auction.status === 'Completed' || auction.status === 'Cancelled';
+    const effectiveStatus = getEffectiveStatus(auction);
+    if (filter === 'scheduled') return effectiveStatus === 'Scheduled';
+    if (filter === 'active') return effectiveStatus === 'Active';
+    if (filter === 'completed') return effectiveStatus === 'Completed' || effectiveStatus === 'Ended' || effectiveStatus === 'Cancelled';
     return true;
   });
 
-
+  const handlePurchase = async (auctionId: string, priceStroops: bigint) => {
+    await purchaseAuction(auctionId, priceStroops);
+  };
 
   return (
     <div style={{ padding: '1rem' }}>
@@ -29,7 +34,7 @@ export const DutchAuctions: React.FC = () => {
       </div>
 
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-        {['all', 'active', 'completed'].map((f) => (
+        {['all', 'scheduled', 'active', 'completed'].map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f as any)}
@@ -75,6 +80,7 @@ export const DutchAuctions: React.FC = () => {
             <DutchAuctionCard
               key={auction.id}
               auction={auction}
+              onPurchase={handlePurchase}
             />
           ))
         )}
@@ -82,4 +88,3 @@ export const DutchAuctions: React.FC = () => {
     </div>
   );
 };
-

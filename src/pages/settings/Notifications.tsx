@@ -49,6 +49,7 @@ const DEFAULT_PREFS: NotificationPreferences = {
   credit_line: true,
   risk_score: true,
   rate_change: true,
+  auction: true,
   system: true,
 };
 
@@ -57,6 +58,7 @@ const CATEGORIES: NotificationCategory[] = [
   'credit_line',
   'risk_score',
   'rate_change',
+  'auction',
   'system',
 ];
 
@@ -84,6 +86,11 @@ const CATEGORY_META: Record<
     label: 'Rate Changes',
     description: 'Interest rate movements, yield shifts, and market index recalculations.',
     Icon: TrendingUp,
+  },
+  auction: {
+    label: 'Auction Alerts',
+    description: 'Dutch auction target price and end alerts.',
+    Icon: Bell,
   },
   system: {
     label: 'System Notifications',

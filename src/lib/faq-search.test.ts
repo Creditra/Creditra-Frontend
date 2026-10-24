@@ -87,6 +87,7 @@ describe('faq-search module', () => {
     const validSections = new Set([
       'getting-started',
       'wallet',
+      'kyc',
       'credit-lines',
       'transactions',
       'notifications',

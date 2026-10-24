@@ -27,6 +27,7 @@ const mockUsePrefersReducedMotion = vi.mocked(usePrefersReducedMotion);
 const standardLine: CreditLine = {
   id: "cl-standard-001",
   name: "Business Line of Credit",
+  status: "Active",
   limit: 50000,
   available: 35000,
   utilization: 30,

@@ -79,12 +79,14 @@ describe('HealthFactorChart', () => {
     expect(screen.getByText('2026-01-01')).toBeInTheDocument();
   });
 
-  it('shows empty state when there is no data', () => {
+  it('shows the current value without drawing synthetic history when no observations exist', () => {
     render(
       <HealthFactorChart data={[]} current={2} lineName="Empty line" />,
     );
-    expect(
-      screen.getByText(/no health-factor history yet for empty line/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText('2.00 · Safe')).toBeInTheDocument();
+    expect(screen.getByText('History not available yet')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(document.querySelector('.hf-chart__line')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/credit limit divided by the utilized balance/i);
   });
 });

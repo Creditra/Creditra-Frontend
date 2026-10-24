@@ -1,6 +1,6 @@
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import { vi } from 'vitest';
-import { NotificationProvider } from '../../context/NotificationContext';
+import { NotificationProvider, useNotifications } from '../../context/NotificationContext';
 import { ToastContainer } from './ToastContainer';
 import { useToast } from '../../hooks/useToast';
 
@@ -21,8 +21,14 @@ function renderWithProvider(ui: React.ReactElement) {
 }
 
 describe('ToastContainer', () => {
-  beforeEach(() => { vi.useFakeTimers(); });
-  afterEach(() => { vi.runAllTimers(); vi.useRealTimers(); });
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.runAllTimers();
+    vi.useRealTimers();
+  });
 
   // ─── Severity icons ────────────────────────────────────────────────────────
 
@@ -98,7 +104,6 @@ describe('ToastContainer', () => {
     act(() => { toastFns.success('OK', 'Saved.'); });
 
     const badge = document.querySelector('.toast-type-icon') as HTMLElement;
-    // TYPE_COLOR.success.icon = '#3fb950'
     expect(badge.style.color).toMatch(/3fb950|rgb\(63,\s*185,\s*80\)/i);
   });
 
@@ -108,7 +113,6 @@ describe('ToastContainer', () => {
     act(() => { toastFns.error('Oops', 'Broke.'); });
 
     const badge = document.querySelector('.toast-type-icon') as HTMLElement;
-    // TYPE_COLOR.error.icon = '#f85149'
     expect(badge.style.color).toMatch(/f85149|rgb\(248,\s*81,\s*73\)/i);
   });
 
@@ -118,16 +122,36 @@ describe('ToastContainer', () => {
     act(() => { toastFns.error('Err', 'Bad.'); });
 
     const item = document.querySelector('.toast-item') as HTMLElement;
-    // Should have a non-transparent left border (error color = #f85149)
     expect(item.style.borderLeft).toContain('4px solid');
   });
 
-  // ─── Container role ────────────────────────────────────────────────────────
+  // ─── Container role and announcement model ─────────────────────────────────
 
-  it('wraps all toasts in a log region labelled "Notifications"', () => {
+  it('renders a plain landmark-free container labelled "Notifications" without live region attributes', () => {
     renderWithProvider(<TestHarness />);
-    const log = screen.getByRole('log', { name: /notifications/i });
-    expect(log).toBeInTheDocument();
+    const container = document.querySelector('.toast-container');
+    expect(container).toBeInTheDocument();
+    expect(container).toHaveAttribute('aria-label', 'Notifications');
+    expect(container).not.toHaveAttribute('role');
+    expect(container).not.toHaveAttribute('aria-live');
+    expect(container).not.toHaveAttribute('aria-atomic');
+  });
+
+  it('has exactly one live region containing the toast text (single live region announcement)', () => {
+    let toastFns!: ReturnType<typeof useToast>;
+    renderWithProvider(<TestHarness onMount={(t) => { toastFns = t; }} />);
+    act(() => {
+      toastFns.info('Unique Announcement', 'Single live region');
+    });
+
+    // Elements that qualify as live regions
+    const liveRegions = Array.from(
+      document.querySelectorAll('[aria-live], [role="status"], [role="alert"], [role="log"]')
+    ).filter((el) => el.textContent?.includes('Unique Announcement'));
+
+    // Exactly one live region: the ToastItem itself, not the container
+    expect(liveRegions).toHaveLength(1);
+    expect(liveRegions[0]).toHaveClass('toast-item');
   });
 
   // ─── Dismiss ───────────────────────────────────────────────────────────────
@@ -145,19 +169,7 @@ describe('ToastContainer', () => {
     expect(screen.queryByText('Hello')).not.toBeInTheDocument();
   });
 
-  // ─── Edge cases ────────────────────────────────────────────────────────────
-
-  it('caps the toast stack at 5 items', () => {
-    let toastFns!: ReturnType<typeof useToast>;
-    renderWithProvider(<TestHarness onMount={(t) => { toastFns = t; }} />);
-    act(() => {
-      for (let i = 0; i < 7; i++) {
-        toastFns.info(`Toast ${i}`, 'msg');
-      }
-    });
-
-    expect(document.querySelectorAll('.toast-item').length).toBeLessThanOrEqual(5);
-  });
+  // ─── Actions & helpers ─────────────────────────────────────────────────────
 
   it('renders an action button when an action is provided', () => {
     const onAction = vi.fn();
@@ -170,5 +182,133 @@ describe('ToastContainer', () => {
     });
 
     expect(screen.getByRole('button', { name: /view details/i })).toBeInTheDocument();
+  });
+
+  it('fires the action callback when the action button is clicked', () => {
+    const onAction = vi.fn();
+    let toastFns!: ReturnType<typeof useToast>;
+    renderWithProvider(<TestHarness onMount={(t) => { toastFns = t; }} />);
+    act(() => {
+      toastFns.info('Action test', 'Perform action.', {
+        action: { label: 'Do it', onClick: onAction },
+      });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /do it/i }));
+    expect(onAction).toHaveBeenCalledTimes(1);
+  });
+
+  // ─── Persistent and auto-dismiss ───────────────────────────────────────────
+
+  it('keeps persistent toasts visible beyond the default duration', () => {
+    let toastFns!: ReturnType<typeof useToast>;
+    renderWithProvider(<TestHarness onMount={(t) => { toastFns = t; }} />);
+    act(() => {
+      toastFns.info('Persistent', 'Stays forever.', { persistent: true });
+    });
+
+    act(() => { vi.advanceTimersByTime(10000); });
+    expect(screen.getByText('Persistent')).toBeInTheDocument();
+  });
+
+  it('auto-dismisses non-persistent toasts after the default duration', () => {
+    let toastFns!: ReturnType<typeof useToast>;
+    renderWithProvider(<TestHarness onMount={(t) => { toastFns = t; }} />);
+    act(() => { toastFns.info('Auto', 'Will vanish.'); });
+
+    act(() => { vi.advanceTimersByTime(5500); });
+    act(() => { vi.advanceTimersByTime(400); });
+
+    expect(screen.queryByText('Auto')).not.toBeInTheDocument();
+  });
+
+  it('renders an empty container when there are no toasts', () => {
+    renderWithProvider(<TestHarness />);
+    const container = document.querySelector('.toast-container');
+    expect(container).toBeInTheDocument();
+    expect(container!.childElementCount).toBe(0);
+  });
+
+  // ─── Stack cap & Timer hygiene ─────────────────────────────────────────────
+
+  it('caps the toast stack at 5 items and clears evicted toast timer', () => {
+    function Runner() {
+      const { addToast } = useNotifications();
+      return (
+        <div>
+          <button
+            type="button"
+            onClick={() => {
+              for (let i = 0; i < 6; i++) {
+                addToast({
+                  type: 'info',
+                  title: `Toast ${i}`,
+                  message: `Message ${i}`,
+                  duration: 5000,
+                });
+              }
+            }}
+          >
+            Add 6
+          </button>
+          <ToastContainer />
+        </div>
+      );
+    }
+
+    render(
+      <NotificationProvider>
+        <Runner />
+      </NotificationProvider>
+    );
+
+    act(() => {
+      screen.getByRole('button', { name: 'Add 6' }).click();
+    });
+
+    const items = document.querySelectorAll('.toast-item');
+    expect(items.length).toBe(5);
+
+    // Evicted toast's timer was cleared in timersRef:
+    // Only 5 auto-dismiss timers should exist for toasts (plus 5 progress interval timers)
+    expect(screen.queryByText('Toast 0')).not.toBeInTheDocument();
+    expect(screen.getByText('Toast 5')).toBeInTheDocument();
+  });
+
+  it('clears all pending timers when NotificationProvider unmounts', () => {
+    function Runner() {
+      const { addToast } = useNotifications();
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            addToast({ type: 'info', title: 'T1', message: 'M1', duration: 5000 });
+            addToast({ type: 'info', title: 'T2', message: 'M2', duration: 5000 });
+            addToast({ type: 'info', title: 'T3', message: 'M3', duration: 5000 });
+          }}
+        >
+          Add 3
+        </button>
+      );
+    }
+
+    const { unmount } = render(
+      <NotificationProvider>
+        <Runner />
+        <ToastContainer />
+      </NotificationProvider>
+    );
+
+    act(() => {
+      screen.getByRole('button', { name: 'Add 3' }).click();
+    });
+
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    act(() => {
+      unmount();
+    });
+
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

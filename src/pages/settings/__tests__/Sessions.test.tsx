@@ -16,7 +16,7 @@
  *   - Accessibility: main element has aria-labelledby, lists have aria-label
  */
 
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SessionsSettings from '../Sessions';
 
@@ -217,6 +217,20 @@ describe('SessionsSettings page', () => {
       // Revoked badge should appear
       expect(screen.getByLabelText(/session revoked/i)).toBeInTheDocument();
     });
+
+    it('shows an error and does not mark the session when revoke fails', async () => {
+      const revokeSession = vi.fn().mockRejectedValue(new Error('Network error'));
+      render(<SessionsSettings revokeSession={revokeSession} />);
+      await waitForLoad();
+
+      const sessionRow = screen.getByRole('listitem', { name: /safari on iphone/i });
+      const revokeBtn = screen.getByRole('button', { name: /revoke session on safari on iphone/i });
+      await act(async () => { revokeBtn.click(); });
+
+      expect(within(sessionRow).getByRole('alert')).toHaveTextContent(/failed to revoke/i);
+      expect(screen.queryByLabelText(/session revoked/i)).not.toBeInTheDocument();
+      expect(revokeSession).toHaveBeenCalledWith('sess-002');
+    });
   });
 
   // ── Revoke all ───────────────────────────────────────────────────────────────
@@ -230,20 +244,17 @@ describe('SessionsSettings page', () => {
     });
 
     it('hides "Revoke all" button when no revocable sessions remain', async () => {
-      render(<SessionsSettings />);
+      const revokeSession = vi.fn().mockResolvedValue(undefined);
+      render(<SessionsSettings revokeSession={revokeSession} />);
       await waitForLoad();
 
       const revokeAllBtn = screen.getByRole('button', { name: /revoke all other sessions/i });
-      act(() => { revokeAllBtn.click(); });
-
-      // Flush all pending timers (both revoke Promises resolve simultaneously)
-      await act(async () => {
-        vi.runAllTimers();
-      });
+      await act(async () => { revokeAllBtn.click(); });
 
       expect(
         screen.queryByRole('button', { name: /revoke all other sessions/i }),
       ).not.toBeInTheDocument();
+      expect(revokeSession).toHaveBeenCalledTimes(2);
     });
   });
 

@@ -25,6 +25,12 @@ const STEP_ICON_CLASS = "h-4 w-4 stroke-[2.5]";
 
 export interface AmountInputProps {
   creditLine?: CreditLine;
+  /**
+   * Amount to seed the input with on mount. Used when restoring a wizard
+   * draft (issue #1174) or returning from the confirm step. Changes after
+   * mount are ignored because the input owns its own editing state.
+   */
+  initialAmount?: number;
   onAmountChange?: (amount: number) => void;
   onNext?: (amount: number) => void;
   onBack?: () => void;
@@ -120,12 +126,19 @@ export function AmountInputSkeleton() {
 
 export function AmountInput({
   creditLine,
+  initialAmount,
   onAmountChange,
   onNext,
   onBack,
   isLoading = false,
 }: AmountInputProps) {
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState(() =>
+    typeof initialAmount === "number" &&
+    Number.isFinite(initialAmount) &&
+    initialAmount > 0
+      ? String(initialAmount)
+      : "",
+  );
   const [pasteAnnouncement, setPasteAnnouncement] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = "draw-amount-input";
@@ -146,8 +159,9 @@ export function AmountInput({
       if (!creditLine) return;
       setAmount((prev) => {
         const current = parseFloat(prev) || 0;
+        const maxAmount = creditLine ? getDrawAmountValidation("", creditLine).maxAmount : 0;
         const next = direction === "up"
-          ? Math.min(current + STEP_AMOUNT, creditLine.available)
+          ? Math.min(current + STEP_AMOUNT, maxAmount)
           : Math.max(current - STEP_AMOUNT, 0);
         return next.toString();
       });
@@ -196,7 +210,7 @@ export function AmountInput({
 
   const handlePreset = (percent: number) => {
     if (!creditLine) return;
-    const preset = Math.floor((creditLine.available * percent) / 100);
+    const preset = Math.floor((getDrawAmountValidation("", creditLine).maxAmount * percent) / 100);
     setAmount(preset.toString());
   };
 
@@ -271,7 +285,7 @@ export function AmountInput({
           Enter the amount you wish to draw from your available credit.
           Available limit:{" "}
           <span className="font-semibold text-foreground tabular-nums amount" data-amount>
-            {formatMoney(creditLine.available)}
+            {formatMoney(validation.maxAmount)}
           </span>
         </p>
 
@@ -316,7 +330,7 @@ export function AmountInput({
               ref={inputRef}
               className="text-base sm:text-2xl font-bold bg-transparent outline-none flex-1 text-foreground placeholder:text-muted/50 min-w-0 tabular-nums amount leading-[var(--lh-display)]"
               min={validation.minAmount}
-              max={creditLine.available}
+              max={validation.maxAmount}
               step={STEP_AMOUNT}
               required
               aria-invalid={hasError}
@@ -325,7 +339,7 @@ export function AmountInput({
             />
             <button
               onClick={() => handleStep("up")}
-              disabled={numAmount >= creditLine.available}
+              disabled={numAmount >= validation.maxAmount}
               className={stepClasses}
               aria-label="Increase amount"
               aria-controls={inputId}
@@ -352,7 +366,7 @@ export function AmountInput({
             <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-muted leading-[var(--lh-small)]">
               Minimum draw
             </p>
-            <p className="text-xs sm:text-sm font-semibold text-foreground tabular-nums leading-[var(--lh-body)] truncate">
+              <p className="text-xs sm:text-sm font-semibold text-foreground tabular-nums leading-[var(--lh-body)] truncate">
               {formatMoney(validation.minAmount)}
             </p>
           </div>
@@ -361,7 +375,7 @@ export function AmountInput({
               Available credit
             </p>
             <p className="text-xs sm:text-sm font-semibold text-foreground tabular-nums leading-[var(--lh-body)] truncate">
-              {formatMoney(validation.maxAmount)}
+                {formatMoney(validation.maxAmount)}
             </p>
           </div>
           <div className="rounded-lg border border-border bg-background/60 p-2 sm:p-2.5 space-y-0.5 flex flex-col justify-center min-h-[44px]">
@@ -406,9 +420,9 @@ export function AmountInput({
             <button
               key={percent}
               onClick={() =>
-                setAmount(
-                  Math.floor((creditLine.available * percent) / 100).toString(),
-                )
+                  setAmount(
+                    Math.floor((validation.maxAmount * percent) / 100).toString(),
+                  )
               }
               className="py-2 px-1.5 sm:px-3 border-2 border-border rounded-lg hover:border-accent hover:bg-surface transition-all text-foreground font-medium text-xs sm:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px] flex items-center justify-center"
               aria-label={`Set amount to ${percent} percent of available credit`}

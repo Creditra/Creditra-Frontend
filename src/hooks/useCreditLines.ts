@@ -1,152 +1,145 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useMemo } from 'react';
+import { CreditDataError } from '../services/credit/CreditDataSource';
 import { MOCK_CREDIT_LINES } from '../data/mockData';
 import type { CreditLine, Transaction } from '../types/creditLine';
+import type { WalletInfo } from '../types/wallet';
+import { useCreditData } from '../context/CreditDataContext';
 
 export interface UseCreditLinesResult {
-  lines: CreditLine[];
   status: 'idle' | 'loading' | 'success' | 'error';
+  lines: CreditLine[];
   error: Error | null;
-  lastUpdatedAt: Date;
   refetch: () => Promise<CreditLine[]>;
+  lastUpdatedAt: Date | null;
+  owner: string | null;
+  wallet: WalletInfo | null;
+  setLines: (lines: CreditLine[]) => void;
+}
+
+export interface UseCreditLineResult {
+  status: 'idle' | 'loading' | 'success' | 'error';
+  line: CreditLine | null;
+  error: Error | null;
+  owner: string | null;
+  wallet: WalletInfo | null;
+}
+
+export interface CreditTransaction extends Transaction {
+  lineName: string;
+  lineId: string;
+  lineStatus: CreditLine['status'];
+}
+
+export interface UseCreditTransactionsOptions {
+  lineId?: string;
+  cursor?: string;
+  limit?: number;
 }
 
 export interface UseCreditTransactionsResult {
-  transactions: (Transaction & { lineName: string; lineId: string })[];
   status: 'idle' | 'loading' | 'success' | 'error';
+  transactions: CreditTransaction[];
+  nextCursor: string | null;
   error: Error | null;
-  lastUpdatedAt: Date;
-  refetch: () => Promise<(Transaction & { lineName: string; lineId: string })[]>;
+  refetch: () => Promise<CreditTransaction[]>;
+  lastUpdatedAt: Date | null;
+  owner: string | null;
+  wallet: WalletInfo | null;
 }
 
-let globalCreditLines: CreditLine[] = [...MOCK_CREDIT_LINES];
-let globalLinesUpdatedAt: Date = new Date();
-let mockRefetchError: Error | null = null;
-const listeners = new Set<() => void>();
+let legacyLines: CreditLine[] = [...MOCK_CREDIT_LINES];
+let legacyRefetchError: Error | null = null;
+export const setMockRefetchError = (error: Error | null) => { legacyRefetchError = error; };
+export const getMockRefetchError = () => legacyRefetchError;
+export const setGlobalCreditLines = (lines: CreditLine[]) => { legacyLines = [...lines]; };
+export const getGlobalCreditLines = () => legacyLines;
+export const resetGlobalCreditLines = () => {
+  legacyLines = [...MOCK_CREDIT_LINES];
+  legacyRefetchError = null;
+};
 
-export function setMockRefetchError(err: Error | null) {
-  mockRefetchError = err;
+function paginateTransactions(
+  transactions: CreditTransaction[],
+  query: UseCreditTransactionsOptions,
+): Pick<UseCreditTransactionsResult, 'transactions' | 'nextCursor'> {
+  const cursorIndex = query.cursor
+    ? Math.max(0, transactions.findIndex((transaction) => transaction.id === query.cursor) + 1)
+    : 0;
+  const limit = query.limit === undefined ? transactions.length : Math.max(0, query.limit);
+  const page = transactions.slice(cursorIndex, cursorIndex + limit);
+  const hasNext = cursorIndex + limit < transactions.length;
+  return {
+    transactions: page,
+    nextCursor: hasNext && page.length > 0 ? page[page.length - 1].id : null,
+  };
 }
 
-export function setGlobalCreditLines(newLines: CreditLine[]) {
-  globalCreditLines = [...newLines];
-  listeners.forEach((fn) => fn());
-}
-
-export function getGlobalCreditLines(): CreditLine[] {
-  return globalCreditLines;
-}
-
-export function resetGlobalCreditLines() {
-  globalCreditLines = [...MOCK_CREDIT_LINES];
-  globalLinesUpdatedAt = new Date();
-  mockRefetchError = null;
-  listeners.forEach((fn) => fn());
+function sortTransactions(transactions: CreditTransaction[]): CreditTransaction[] {
+  return transactions.sort((a, b) => {
+    const timeDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+    return timeDiff || b.id.localeCompare(a.id);
+  });
 }
 
 export function useCreditLines(): UseCreditLinesResult {
-  const [lines, setLines] = useState<CreditLine[]>(() => [...globalCreditLines]);
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('success');
-  const [error, setError] = useState<Error | null>(null);
-  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date>(() => globalLinesUpdatedAt);
-  const inFlightRef = useRef(false);
-
-  useEffect(() => {
-    const onChange = () => {
-      setLines([...globalCreditLines]);
-    };
-    listeners.add(onChange);
-    return () => {
-      listeners.delete(onChange);
-    };
-  }, []);
-
-  const refetch = useCallback(async (): Promise<CreditLine[]> => {
-    if (inFlightRef.current) {
-      return globalCreditLines;
-    }
-    inFlightRef.current = true;
-    setStatus('loading');
-    setError(null);
-    try {
-      await new Promise((r) => setTimeout(r, 20));
-      if (mockRefetchError) {
-        throw mockRefetchError;
-      }
-      setLines([...globalCreditLines]);
-      const now = new Date();
-      globalLinesUpdatedAt = now;
-      setLastUpdatedAt(now);
-      setStatus('success');
-      return globalCreditLines;
-    } catch (err) {
-      const e = err instanceof Error ? err : new Error(String(err));
-      setError(e);
-      setStatus('error');
-      throw e;
-    } finally {
-      inFlightRef.current = false;
-    }
-  }, []);
-
-  return { lines, status, error, lastUpdatedAt, refetch };
+  return useCreditData();
 }
 
-export function useCreditTransactions(): UseCreditTransactionsResult {
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('success');
-  const [error, setError] = useState<Error | null>(null);
-  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date>(() => globalLinesUpdatedAt);
-  const inFlightRef = useRef(false);
+export function useCreditLine(id: string): UseCreditLineResult {
+  const { status, lines, error, owner, wallet } = useCreditData();
+  if (status !== 'success') return { status, line: null, error, owner, wallet };
+  const line = lines.find((entry) => entry.id === id) ?? null;
+  return line
+    ? { status: 'success', line, error: null, owner, wallet }
+    : {
+        status: 'error',
+        line: null,
+        error: new CreditDataError('not_found', `Credit line not found: ${id}`),
+        owner,
+        wallet,
+      };
+}
 
-  const deriveTransactions = useCallback(() => {
-    const all: (Transaction & { lineName: string; lineId: string })[] = [];
-    globalCreditLines.forEach((cl) => {
-      cl.transactions?.forEach((tx) => {
-        all.push({ ...tx, lineName: cl.name, lineId: cl.id });
-      });
-    });
-    all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    return all.slice(0, 5);
-  }, []);
-
-  const [transactions, setTransactions] = useState(() => deriveTransactions());
-
-  useEffect(() => {
-    const onChange = () => {
-      setTransactions(deriveTransactions());
-    };
-    listeners.add(onChange);
-    return () => {
-      listeners.delete(onChange);
-    };
-  }, [deriveTransactions]);
-
-  const refetch = useCallback(async () => {
-    if (inFlightRef.current) {
-      return transactions;
-    }
-    inFlightRef.current = true;
-    setStatus('loading');
-    setError(null);
-    try {
-      await new Promise((r) => setTimeout(r, 20));
-      if (mockRefetchError) {
-        throw mockRefetchError;
+export function useCreditTransactions(
+  query: UseCreditTransactionsOptions = {},
+): UseCreditTransactionsResult {
+  const { status, lines, error, lastUpdatedAt, owner, wallet, refetch: refetchLines } = useCreditData();
+  const allTransactions = useMemo(() => {
+    const transactions: CreditTransaction[] = [];
+    for (const line of lines) {
+      if (query.lineId && line.id !== query.lineId) continue;
+      for (const transaction of line.transactions ?? []) {
+        transactions.push({
+          ...transaction,
+          lineId: line.id,
+          lineName: line.name,
+          lineStatus: line.status,
+        });
       }
-      const updated = deriveTransactions();
-      setTransactions(updated);
-      const now = new Date();
-      setLastUpdatedAt(now);
-      setStatus('success');
-      return updated;
-    } catch (err) {
-      const e = err instanceof Error ? err : new Error(String(err));
-      setError(e);
-      setStatus('error');
-      throw e;
-    } finally {
-      inFlightRef.current = false;
     }
-  }, [deriveTransactions, transactions]);
+    return sortTransactions(transactions);
+  }, [lines, query.lineId]);
 
-  return { transactions, status, error, lastUpdatedAt, refetch };
+  const page = paginateTransactions(allTransactions, query);
+
+  return {
+    status,
+    ...page,
+    error,
+    refetch: async () => {
+      const refreshedLines = await refetchLines();
+      const refreshed = refreshedLines.flatMap((line) =>
+        (query.lineId && line.id !== query.lineId ? [] : line.transactions ?? []).map((transaction) => ({
+          ...transaction,
+          lineId: line.id,
+          lineName: line.name,
+          lineStatus: line.status,
+        })),
+      );
+      return paginateTransactions(sortTransactions(refreshed), query).transactions;
+    },
+    lastUpdatedAt,
+    owner,
+    wallet,
+  };
 }

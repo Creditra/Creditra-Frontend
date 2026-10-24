@@ -83,7 +83,7 @@ describe('NotificationBell', () => {
 
   // 3
   it('applies bell-pulse class when a new high-priority notification arrives', () => {
-    const { rerender } = renderBell([high('hp-1')]);
+    renderBell([high('hp-1')]);
     const btn = screen.getByRole('button');
     expect(btn).toHaveClass('bell-pulse');
   });
@@ -124,7 +124,7 @@ describe('NotificationBell', () => {
   it('uses custom label in aria-label', () => {
     renderBell([normal('a')], 'Alerts');
     expect(
-      screen.getByRole('button', { name: /Alerts — 1 unread/i }),
+      screen.getByRole('button', { name: /Alerts, 1 unread/i }),
     ).toBeInTheDocument();
   });
 });

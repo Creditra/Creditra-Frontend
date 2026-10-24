@@ -1,4 +1,4 @@
-import { canPurchase, PurchaseCheckResult } from '../lib/dutch-auction-purchase';
+import { canPurchase } from '../lib/dutch-auction-purchase';
 import type { DutchAuction } from '../types/dutchAuction';
 import type { WalletInfo } from '../types/wallet';
 

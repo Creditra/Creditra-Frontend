@@ -2,6 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle, Info } from 'lucide-react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { formatMoney, getRepayAmountValidation, requiresRepayConfirmation } from '../utils/amountValidation';
+import {
+  computeMonthlyAccruedInterest,
+  roundToCents,
+} from '../utils/currency';
+import { allocateRepayment } from '../lib/repay-allocation';
 import { PendingButton } from './PendingButton';
 import { Skeleton } from './Skeleton';
 import { ConnectWalletPrompt } from './ConnectWalletPrompt';
@@ -119,14 +124,19 @@ export function QuickRepayModal({
     };
   }, [step, modalRef]);
 
-  const totalDue = creditLine.utilized;
+  const accruedInterest = computeMonthlyAccruedInterest(
+    creditLine.utilized,
+    creditLine.apr,
+  );
+  const totalDue = roundToCents(creditLine.utilized + accruedInterest);
   const hasRepayableBalance =
     walletConnected && balanceStatus === 'ok' && walletBalance !== null;
   const validation = getRepayAmountValidation(amountStr, totalDue, walletBalance ?? 0);
   const amount = validation.amount;
   const isInvalid = !validation.isValid;
-  
-  const remainingDebt = validation.remainingDebt;
+
+  const allocation = allocateRepayment(creditLine, amount, accruedInterest);
+  const remainingDebt = allocation.remainingTotal;
   const oldPct = creditLine.limit === 0 ? 0 : Math.round((creditLine.utilized / creditLine.limit) * 100);
   const newPct = creditLine.limit === 0 ? 0 : Math.round((remainingDebt / creditLine.limit) * 100);
 

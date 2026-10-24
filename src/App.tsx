@@ -3,18 +3,23 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { CommandPalette } from "./components/CommandPalette";
 import { RouteAnnouncer, RouteHeadProvider } from "./components/RouteAnnouncer";
 import { WalletProvider } from "./context/WalletContext";
+import { CreditDataProvider } from "./context/CreditDataContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { ContrastProvider } from "./context/ContrastContext";
 import { KycProvider } from "./context/KycContext";
 import { NotificationProvider } from "./context/NotificationContext";
+import { AuctionAlertWatcher } from "./components/AuctionAlertWatcher";
 import { ReducedMotionProvider } from "./context/ReducedMotionContext";
 import { KycDrawer } from "./components/KycDrawer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ShortcutHelpOverlay } from "./components/ShortcutHelpOverlay";
 import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
 import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatchBanner";
+import { ToastContainer } from "./components/notifications/ToastContainer";
+import { BannerAlerts } from "./components/notifications/BannerAlert";
 import { Header } from "./layouts/Header";
 import { Skeleton } from "./components/Skeleton";
+import { isEditableTarget } from "./utils/isEditableTarget";
 
 import { ROUTE_MANIFEST } from "./routes/manifest";
 
@@ -34,17 +39,6 @@ function RouteLoadingFallback() {
   );
 }
 
-const isEditableTarget = (target: EventTarget | null) => {
-  if (!(target instanceof HTMLElement)) return false;
-  const tagName = target.tagName.toLowerCase();
-  return (
-    target.isContentEditable ||
-    tagName === "input" ||
-    tagName === "textarea" ||
-    tagName === "select"
-  );
-};
-
 /**
  * Application root.
  *
@@ -54,12 +48,14 @@ const isEditableTarget = (target: EventTarget | null) => {
  *     <ThemeProvider>    — colour-scheme (light/dark) preference
  *       <ContrastProvider> — high-contrast override, [data-contrast="high"]
  *         <WalletProvider> — wallet lifecycle visible to every route
- *           <BrowserRouter>
+ *           <CreditDataProvider> — wallet-scoped credit line and transaction data
+ *             <BrowserRouter>
  *             <header />   — persistent nav chrome
  *             <main>
  *               <Routes /> — current route
  *             </main>
- *           </BrowserRouter>
+ *             </BrowserRouter>
+ *           </CreditDataProvider>
  *         </WalletProvider>
  *       </ContrastProvider>
  *     </ThemeProvider>
@@ -107,10 +103,12 @@ function App() {
       <ThemeProvider>
         <ContrastProvider>
           <WalletProvider>
-            <KycProvider>
-              <NotificationProvider>
-                <ReducedMotionProvider>
-                  <BrowserRouter>
+            <CreditDataProvider>
+              <KycProvider>
+                <NotificationProvider>
+                  <ReducedMotionProvider>
+                    <BrowserRouter>
+                    <AuctionAlertWatcher />
                     <RouteHeadProvider>
                       <RouteAnnouncer />
                       <div className="app">
@@ -133,6 +131,7 @@ function App() {
                           <SessionTimeoutBanner />
                         </Suspense>
                         <main className="main">
+                          <BannerAlerts />
                           <NetworkMismatchBanner />
                           <Suspense fallback={<RouteLoadingFallback />}>
                             <Routes>
@@ -171,12 +170,14 @@ function App() {
                           onClose={() => setIsPaletteOpen(false)}
                           triggerRef={paletteTriggerRef}
                         />
+                        <ToastContainer />
                       </div>
                     </RouteHeadProvider>
-                  </BrowserRouter>
-                </ReducedMotionProvider>
-              </NotificationProvider>
-            </KycProvider>
+                    </BrowserRouter>
+                  </ReducedMotionProvider>
+                </NotificationProvider>
+              </KycProvider>
+            </CreditDataProvider>
           </WalletProvider>
         </ContrastProvider>
       </ThemeProvider>

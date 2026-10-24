@@ -34,6 +34,9 @@ describe('WalletButton Component', () => {
     retryReconnect: vi.fn(),
     reconnectTimedOut: false,
     error: null,
+    stayConnected: vi.fn(),
+    refreshWalletIdentity: vi.fn(),
+    sessionTimeoutWarning: false,
     ...overrides,
   });
 

@@ -26,10 +26,11 @@
  * Theming: every visible color comes from a design token declared in
  * `src/index.css :root`. Components do not hardcode hex values.
  */
-import { useMemo } from 'react';
+import { useMemo, useId } from 'react';
 import './RepaymentSchedule.css';
 import { fmt, fmtDate } from '../utils/tokens';
 import type { CreditLine } from '../types/creditLine';
+import { now as clockNow } from '../lib/clock';
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -283,7 +284,7 @@ export function buildRepaymentScheduleFromLine(
  */
 export function buildRepaymentScheduleFromLines(
   lines: CreditLine[],
-  now: Date = new Date(),
+  now: Date = clockNow(),
 ): ScheduledRepayment[] {
   const merged: ScheduledRepayment[] = [];
   for (const line of lines) {
@@ -310,12 +311,10 @@ export function RepaymentSchedule({
 }: RepaymentScheduleProps) {
   // Default lazily so a stable reference isn't required; the prop is the
   // supported override for tests.
-  const nowRef = useMemo(() => now ?? new Date(), [now]);
+  const nowRef = useMemo(() => now ?? clockNow(), [now]);
 
-  const id = useMemo(
-    () => headingId ?? `repayment-schedule-${Math.random().toString(36).slice(2, 9)}`,
-    [headingId],
-  );
+  const reactId = useId();
+  const id = headingId ?? `repayment-schedule-${reactId}`;
 
   // Defensive re-sort: the parent may forget, but the timeline must read
   // top-to-bottom in chronological order (this is what scanning users see).

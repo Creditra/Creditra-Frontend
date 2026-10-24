@@ -9,6 +9,13 @@
  * Design invariants:
  *   - Drafts older than `MAX_AGE_MS` (30 minutes) are treated as stale
  *     and silently discarded on load.
+ *   - Drafts are scoped to the wallet identity that created them
+ *     (`owner`); a draft saved under one wallet is discarded when a
+ *     different wallet loads the page (issue #1188).
+ *   - `step` and `amountStr` are validated strictly on load — anything
+ *     outside `'input' | 'review'` or `^\d+(\.\d{1,2})?$` is discarded,
+ *     so a tampered or legacy draft can never restore an arbitrary step
+ *     or an unparseable amount (issue #1188).
  *   - A `transactionId` field is persisted so the same confirmation
  *     cannot be submitted twice (idempotency guard).
  *   - `clearDraft()` must be called on successful completion or explicit
@@ -25,6 +32,13 @@ const STORAGE_KEY = 'creditra_repay_draft';
 
 /** Drafts older than this are considered stale (30 minutes). */
 export const MAX_AGE_MS = 30 * 60 * 1000;
+
+/**
+ * Strict pattern a persisted `amountStr` must match: digits with an optional
+ * two-decimal fractional part. Rejects `''`, `'1e3'`, `'0x10'`, `'-5'`,
+ * `'1000.123'` and anything else the number input could not have produced.
+ */
+export const REPAY_AMOUNT_STR_PATTERN = /^\d+(\.\d{1,2})?$/;
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -43,6 +57,11 @@ export interface RepayDraftState {
   isAutoSchedule: boolean;
   /** ISO timestamp of when the draft was last saved. */
   savedAt: string;
+  /**
+   * Wallet identity (`walletIdentityKey`) that created the draft. A draft is
+   * only restored for the same wallet that saved it (issue #1188).
+   */
+  owner: string;
   /** Optional transaction ID for idempotency (set at confirm time). */
   transactionId?: string;
 }
@@ -95,10 +114,13 @@ export function loadRepayDraft(): RepayDraftState | null {
   if (
     !s ||
     typeof s !== 'object' ||
-    typeof s.step !== 'string' ||
+    (s.step !== 'input' && s.step !== 'review') ||
     typeof s.creditLineId !== 'string' ||
     typeof s.amountStr !== 'string' ||
-    typeof s.savedAt !== 'string'
+    !REPAY_AMOUNT_STR_PATTERN.test(s.amountStr) ||
+    typeof s.savedAt !== 'string' ||
+    typeof s.owner !== 'string' ||
+    s.owner.length === 0
   ) {
     clearRepayDraft();
     return null;

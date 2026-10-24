@@ -13,6 +13,7 @@
  */
 
 import { readJson, writeJson } from '../utils/storage';
+import { safeReturnPath } from '../utils/safe-redirect';
 import { offlineMutation } from '../utils/offline';
 import type {
   LinkedAccount,
@@ -84,15 +85,25 @@ export async function initiateLinkAccount(request: LinkAccountRequest): Promise<
         throw error;
       }
 
+      // Sanitise the post-link return path on the way in. The raw redirectUrl
+      // is never embedded in the OAuth URL or written to storage verbatim.
+      const returnPath = safeReturnPath(request.redirectUrl);
+
       // Generate state token for CSRF protection
       const state = `${request.provider}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
-      // Store pending state
-      writeJson('creditra:oauth-state', { state, provider: request.provider, timestamp: Date.now() });
+      // Store pending state alongside the sanitised return path
+      writeJson('creditra:oauth-state', {
+        state,
+        provider: request.provider,
+        returnPath,
+        timestamp: Date.now(),
+      });
 
       // Return mock OAuth URL (in production, this would be the real provider URL)
+      // The authUrl carries only the state token, never the raw redirect.
       return {
-        authUrl: `/oauth/${request.provider}?state=${state}&redirect=${encodeURIComponent(request.redirectUrl || '/linked-accounts')}`,
+        authUrl: `/oauth/${request.provider}?state=${state}`,
         state,
       };
     },

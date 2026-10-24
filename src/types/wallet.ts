@@ -13,6 +13,18 @@ export interface WalletInfo {
 }
 
 /**
+ * The minimal record persisted to `localStorage` for the active session.
+ *
+ * Deliberately holds only the wallet `type`: the address is re-derived from
+ * the extension on reconnect, so no public key is ever written to storage.
+ * `v` versions the record so older (v1) shapes can be migrated on read.
+ */
+export interface StoredWalletPreference {
+  v: 2;
+  type: WalletType;
+}
+
+/**
  * Lifecycle states of the wallet connection, used by the WalletContext
  * reducer and surfaced to UI for spinners, retry buttons, and badges.
  *

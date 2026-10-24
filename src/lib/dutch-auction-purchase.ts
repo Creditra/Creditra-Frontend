@@ -17,7 +17,7 @@ export type PurchaseCheckResult =
 export const canPurchase = (
   auction: DutchAuction,
   wallet: WalletInfo | null,
-  status: string,
+  _status?: string,
   nowMs: number = Date.now()
 ): PurchaseCheckResult => {
   if (!wallet) {

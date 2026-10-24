@@ -1,5 +1,7 @@
 import { CreditLine } from "@/types/draw-credit.types";
 import { formatMoney } from "@/utils/amountValidation";
+import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
+import { projectDraw } from "@/lib/draw-projection";
 import { lineAccentColor } from "../utils/tokens";
 
 interface CreditLineSummaryBlockProps {
@@ -40,8 +42,13 @@ export function CreditLineSummaryBlock({
 }: CreditLineSummaryBlockProps) {
   const utilized = creditLine.limit - creditLine.available;
   const safeAmount = Math.max(amount, 0);
-  const projectedUtilized = utilized + safeAmount;
-  const projectedAvailable = Math.max(creditLine.available - safeAmount, 0);
+  const projection = projectDraw(
+    creditLine,
+    safeAmount,
+    getDrawPricingQuote(creditLine, safeAmount),
+  );
+  const projectedUtilized = projection.newBalance;
+  const projectedAvailable = projection.remainingAvailable;
 
   // Deterministic accent color derived from the line's stable id.
   const accentColor = lineAccentColor(creditLine.id);

@@ -15,6 +15,7 @@ export type NotificationCategory =
   | 'credit_line'
   | 'risk_score'
   | 'rate_change'
+  | 'auction'
   | 'system';
 
 /**
@@ -88,6 +89,7 @@ export interface NotificationPreferences {
   credit_line: boolean;
   risk_score: boolean;
   rate_change: boolean;
+  auction: boolean;
   system: boolean;
 }
 

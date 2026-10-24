@@ -71,7 +71,7 @@
  * @see https://www.w3.org/TR/WCAG21/#focus-visible
  */
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, useId, type KeyboardEvent } from 'react';
 import { useReducedMotion } from '../context/ReducedMotionContext';
 import { LiveRegion } from './LiveRegion';
 import { RiskGaugeSkeleton } from './Skeleton';
@@ -424,12 +424,11 @@ export function RiskGauge({
   const dashoffset = isInitialSweep ? CIRCUMFERENCE : offset;
 
   // Unique ID for aria-labelledby — stable across renders.
-  const titleId = useRef(`risk-gauge-title-${Math.random().toString(36).slice(2)}`).current;
+  const reactId = useId();
+  const titleId = `risk-gauge-title-${reactId}`;
 
   // Unique IDs for each sector title element.
-  const sectorTitleIdBase = useRef(
-    `risk-gauge-sector-title-${Math.random().toString(36).slice(2)}`,
-  ).current;
+  const sectorTitleIdBase = `risk-gauge-sector-title-${reactId}`;
 
   const trendLabel = trend.charAt(0).toUpperCase() + trend.slice(1);
   const trendArrow = TREND_ARROW[trend];

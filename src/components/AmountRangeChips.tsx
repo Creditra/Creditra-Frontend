@@ -2,16 +2,11 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useBodyScrollLock } from "../hooks/useBodyScrollLock";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useInertBackdrop } from "../hooks/useInertBackdrop";
+import { AMOUNT_PRESETS, type AmountPreset } from "../utils/transactionAmountFilter";
 import "./AmountRangeChips.css";
 
-export const AMOUNT_RANGE_OPTIONS = [
-  { value: "all", label: "All amounts" },
-  { value: "under-5k", label: "Under $5k" },
-  { value: "5k-25k", label: "$5k-$25k" },
-  { value: "25k-plus", label: "$25k+" },
-] as const;
-
-export type AmountRangePreset = (typeof AMOUNT_RANGE_OPTIONS)[number]["value"];
+export const AMOUNT_RANGE_OPTIONS = AMOUNT_PRESETS;
+export type AmountRangePreset = AmountPreset;
 
 interface AmountRangeValue {
   min: number | null;

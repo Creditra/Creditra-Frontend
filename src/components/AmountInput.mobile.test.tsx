@@ -6,6 +6,7 @@ describe("AmountInput Narrow Mobile Viewport (<=375px) Layout", () => {
   const mockCreditLine = {
     id: "cl-001",
     name: "Business Credit Line",
+    status: "Active",
     limit: 50000,
     available: 20000,
     utilization: 60,

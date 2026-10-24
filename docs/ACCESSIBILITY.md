@@ -308,6 +308,25 @@ The `KbdHint` component (`src/components/KbdHint.tsx`) provides standardized vis
   keyboard navigable via Tab, activatable via Enter/Space, and receive the global
   `:focus-visible` ring from `src/index.css`.
 
+### Shortcut precedence — page-level `?` vs global `?`
+
+The global `?` shortcut (App-level, opens `ShortcutHelpOverlay`) is cooperative: a page
+that implements its own `?` shortcut owns the key on its own route.
+
+- **`/draw-credit`**: the draw wizard binds `?` in a capture-phase `document` listener
+  (`src/pages/DrawCreditPage.tsx`). It always consumes the key (`preventDefault` +
+  `stopPropagation`) so App's bubble-phase listener — which checks `event.defaultPrevented`
+  — never fires, and opens the wizard's contextual `InlineHelpOverlay` only when no other
+  modal (`aria-modal="true"`) is open. While an input is focused the key is ignored
+  entirely (character insertion wins).
+- **`/repay`** follows the same pattern: `RepayPage` ignores `?` when its own dialog is
+  open and defers to the global handler otherwise via the `defaultPrevented` contract.
+- **All other routes**: `?` opens the global `ShortcutHelpOverlay`, unless focus is in an
+  editable target (input/textarea/contenteditable), in which case the key is ignored.
+
+This precedence is covered by `src/App.shortcuts.test.tsx` (integration) and
+`src/pages/DrawCreditPage.test.tsx` (page-level).
+
 ---
 
 ## 3. Component audit

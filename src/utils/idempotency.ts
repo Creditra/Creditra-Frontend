@@ -128,8 +128,6 @@
  * - The key does not depend on user credentials or authentication state
  */
 
-import type { CollateralAsset } from '../types/collateral';
-
 /**
  * A stable, deterministic identifier for a single submission attempt.
  *
