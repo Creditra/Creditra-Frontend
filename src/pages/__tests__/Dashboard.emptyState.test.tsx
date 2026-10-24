@@ -1,18 +1,25 @@
-import { render, screen, act } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { Dashboard } from '../Dashboard';
+import { renderWithCredit } from '../../test/renderWithCredit';
 
 // Mock WalletContext to be connected
-vi.mock('../../context/WalletContext', () => ({
-  useWallet: () => ({
-    wallet: {
-      publicKey: '0x1234567890abcdef1234567890abcdef12345678',
-      network: 'TESTNET',
-    },
-    status: 'connected',
-  }),
-}));
+vi.mock('../../context/WalletContext', async () => {
+  const actual = await vi.importActual<typeof import('../../context/WalletContext')>(
+    '../../context/WalletContext',
+  );
+  return {
+    ...actual,
+    useWallet: () => ({
+      wallet: {
+        publicKey: '0x1234567890abcdef1234567890abcdef12345678',
+        network: 'TESTNET',
+      },
+      status: 'connected',
+    }),
+  };
+});
 
 // Mock storage utilities
 vi.mock('../../utils/storage', () => ({
@@ -27,21 +34,15 @@ vi.mock('../../data/mockData', () => ({
 
 describe('Dashboard — empty state (issue #501)', () => {
   it('renders the shared EmptyState component when no credit lines are present', async () => {
-    vi.useFakeTimers();
-
-    render(
+    renderWithCredit(
       <BrowserRouter>
         <Dashboard />
-      </BrowserRouter>
+      </BrowserRouter>,
+      { withRouter: false },
     );
 
-    // Fast-forward dashboard loading delay (500ms)
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-    });
-
     // Check that empty state content is visible
-    expect(screen.getByRole('heading', { name: 'No credit lines yet' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'No credit lines yet' })).toBeInTheDocument();
     expect(
       screen.getByText(/Start your credit journey by requesting a credit evaluation/i)
     ).toBeInTheDocument();

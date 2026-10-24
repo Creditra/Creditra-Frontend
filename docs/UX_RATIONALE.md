@@ -277,7 +277,8 @@ heavy.
   we want a fresh re-decision rather than reusing stale validation state.
 
 **Chosen approach.** Four-step linear flow in `pages/DrawCreditPage.tsx`:
-`select → amount → preview → confirm → status`. Each step is its own component:
+`select → amount → preview → confirm`, followed by the terminal `status` state.
+Each step is its own component:
 `CreditLineSelector` → `AmountInput` → `PreviewSection` → `ConfirmationStep` →
 `TransactionStatus`. Progress is shown via the visible header steps; the back button
 unwinds one step at a time.
@@ -287,7 +288,7 @@ responsibility and is independently testable.
 
 ---
 
-## 10. Dark theme by default
+## 11. Dark theme by default
 
 **Problem.** Finance apps are used at night, during market opens in unusual time zones,
 in low-light environments. A bright theme is fatiguing in those contexts.
@@ -305,7 +306,10 @@ token swap when we add it.
 
 **Trade-off.** A subset of users prefer light. The manual toggle is coming; the
 infrastructure is already in place.
-## Inline Help Escape Hatch
+
+---
+
+## 12. Inline Help Escape Hatch
 
 Draw and repayment flows include a discreet `I need help` footer action that opens
 the Help Center in an in-app overlay. The overlay imports the Help Center content
@@ -320,7 +324,7 @@ motion-reduced animation behavior.
 
 ---
 
-## 11. Per-step micro-progress in the draw wizard
+## 13. Per-step micro-progress in the draw wizard
 
 **Problem.** The draw wizard header shows which step is active but not whether
 each step's requirements are satisfied (line chosen, amount in bounds, preview
@@ -346,7 +350,7 @@ so all four remain visible at compact density.
 
 ---
 
-## 12. Microcopy glossary
+## 14. Microcopy glossary
 
 **Problem.** Risk-priced credit terminology (utilization, reserve, draw, APR
 vs. APY, attestation) appeared inconsistently across AmountInput, PreviewSection,
@@ -365,7 +369,7 @@ terminology appearing over time — is worse for users and contributors alike.
 
 ---
 
-## 13. Non-dismissible default-risk education gate before first draw
+## 15. Non-dismissible default-risk education gate before first draw
 
 **Problem.** First-time borrowers taking on credit lines may not fully comprehend the legal, financial, and credit implications of defaulting on an adaptive on-chain credit protocol. Without explicit education, borrowers face unexpected account suspension, credit score downgrades, or liquidation mechanisms. For the GrantFox credit campaign, borrower protection requires that every user understand the definition, consequences, and avoidance strategies of default before their first draw.
 
@@ -379,4 +383,55 @@ terminology appearing over time — is worse for users and contributors alike.
 To support ongoing education, support agents, documentation, and campaign links can re-trigger the flow for any returning user at any time using the `?learn=1` URL query parameter. In learn mode, completing the flow removes `?learn=1` from the address bar (via `history.replaceState` behavior) without modifying existing storage flags.
 
 **Trade-off.** Enforces a mandatory interaction roadblock for first-time borrowers. We deliberately accept this friction because borrower default protection and informed consent outweigh a one-time 3-step reading delay.
+
+---
+
+## 16. Draw pricing is tiered on *post-draw* utilisation
+
+**Problem.** A draw changes the utilisation it is priced at, so pricing the
+adjustment on the line's utilisation *before* the draw understates the cost
+of the draw itself: a draw taking a line from 40% to 95% was quoted the low
+utilisation adjustment. Separately, `ConfirmationStep` re-implemented the
+tier thresholds to explain the APR, so the explanation could silently drift
+from the quoted price.
+
+**Alternatives considered.**
+
+- **Keep pre-draw pricing.** Rejected — the user pays the rate the draw
+  produces, not the rate they already had.
+- **Hard-code the breakdown in the confirmation copy.** Rejected — two
+  copies of the same thresholds drift apart, which is the bug being fixed.
+- **Quote server-side.** Deferred to a follow-up issue; the local model
+  stays until signed quotes exist.
+
+**Chosen approach.** `getDrawPricingQuote` (`src/lib/draw-credit-pricing.ts`)
+projects the draw with `projectDraw` — `(utilized + amount + fee) / limit` —
+and picks the utilisation tier from that *post-draw* percentage. It returns
+the full breakdown (`baseApr` plus a labelled `adjustments` array), which
+`ConfirmationStep` renders verbatim, so the explanation is the price. The
+APR is summed and rounded to 2 dp in one place, is monotonic in the draw
+amount, and both the preview and the sticky summary re-render it live, with
+a polite announcement when the next tier is within reach.
+
+| Utilisation after draw | Adjustment | Label |
+| --- | --- | --- |
+| `< 50%` | `+0.5` | Low utilization adjustment |
+| `>= 50%` and `< 80%` | `+1.25` | Moderate utilization adjustment |
+| `>= 80%` | `+2` | High utilization adjustment |
+
+| Term | Adjustment | Label |
+| --- | --- | --- |
+| `<= 12` months | `+0.5` | Short-term pricing adjustment |
+| `13–24` months | `+1.5` | Standard-term pricing adjustment |
+| `> 24` months | `+2.5` | Long-term pricing adjustment |
+
+Base rates by risk band: Prime `7.5%`, Standard `9.5%`, Watch `11.5%`.
+
+The one-time fee (1% of the drawn amount) is included in the projected
+balance, so it counts towards the utilisation the draw reaches.
+
+**Trade-off.** The APR now depends on the amount, not just the line, so the
+number steps up as the user types. We accept the extra explanation burden
+because a price that only reveals its true tier after confirmation is worse
+than one that visibly steps.
 

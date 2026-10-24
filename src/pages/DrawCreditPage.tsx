@@ -58,7 +58,10 @@ import { LiveRegion } from "@/components/LiveRegion";
 import { CreditLine, DrawStep, Transaction } from "@/types/draw-credit.types";
 import { mockCreditLines } from "@/lib/draw-credit-mock-data";
 import { normalizeCreditLineAvailability } from "@/lib/credit-line-availability";
+import { classifyDrawError, type DrawErrorKind } from "@/lib/draw-errors";
 import { getDrawAmountValidation } from "@/utils/amountValidation";
+import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
+import { projectDraw } from "@/lib/draw-projection";
 import { offlineMutation } from "@/utils/offline";
 import { useOnline } from "@/hooks/useOnline";
 import { WhyApr } from "@/components/WhyApr";
@@ -114,6 +117,8 @@ export default function DrawCreditPage() {
       readJson<boolean>(DEFAULT_RISK_BANNER_DISMISSED_KEY, false)
   );
   const [isRiskModalOpen, setIsRiskModalOpen] = useState(() => isLearnMode);
+  const riskBannerTriggerRef = useRef<HTMLButtonElement>(null);
+  const stepHeadingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     if (isLearnMode) {
@@ -130,6 +135,23 @@ export default function DrawCreditPage() {
     }
     setIsRiskModalOpen(false);
   }, [isLearnMode, searchParams, setSearchParams]);
+
+  const handleRiskModalDismiss = useCallback(() => {
+    closeRiskModal();
+    // The banner stays mounted (hidden) while the modal is open, so the
+    // trigger is still connected and can receive focus after the exit
+    // animation completes.
+    requestAnimationFrame(() => {
+      riskBannerTriggerRef.current?.focus();
+    });
+  }, [closeRiskModal]);
+
+  const handleRiskModalAcknowledgeAndFocus = useCallback(() => {
+    handleRiskModalAcknowledge();
+    requestAnimationFrame(() => {
+      stepHeadingRef.current?.focus();
+    });
+  }, [handleRiskModalAcknowledge]);
 
   const handleRiskModalAcknowledge = useCallback(() => {
     writeJson(DEFAULT_RISK_ACK_KEY, true);
@@ -276,8 +298,11 @@ export default function DrawCreditPage() {
   const [transaction, setTransaction] = useState<Transaction | null>(
     routeTransaction ?? null,
   );
+  const [errorKind, setErrorKind] = useState<DrawErrorKind | undefined>(undefined);
   const [confirmationAcknowledged, setConfirmationAcknowledged] =
     useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const amountInputRef = useRef<HTMLInputElement>(null);
 
   const { debouncedAnnouncement: microProgressAnnouncement } =
     useDrawWizardMicroProgress({
@@ -321,7 +346,19 @@ export default function DrawCreditPage() {
     // input, but re-validating here ensures an out-of-bounds amount restored
     // from a wizard draft can never be silently submitted.
     const validation = getDrawAmountValidation(String(amount), line);
-    if (!validation.isValid) return;
+    if (!validation.isValid) {
+      setSubmitError(validation.feedback.message);
+      return;
+    }
+    const projection = projectDraw(
+      line,
+      amount,
+      getDrawPricingQuote(line, amount),
+    );
+    if (projection.exceedsLimit) {
+      setSubmitError("This draw exceeds the credit line limit after the 1% fee.");
+      return;
+    }
 
     isSubmittingRef.current = true;
     setIsLoading(true);
@@ -347,6 +384,7 @@ export default function DrawCreditPage() {
           };
 
           setTransaction(newTransaction);
+          setErrorKind(succeeded ? undefined : classifyDrawError(newTransaction));
           setIsLoading(false);
           setStep("status");
 
@@ -384,16 +422,36 @@ export default function DrawCreditPage() {
     setAmount(0);
     setConfirmationAcknowledged(false);
     setTransaction(null);
+    setErrorKind(undefined);
+    setSubmitError(null);
   };
+
+  const handleRetry = useCallback(() => {
+    if (!selectedCreditLine) {
+      setStep("select");
+      return;
+    }
+    setConfirmationAcknowledged(false);
+    setTransaction(null);
+    setErrorKind(undefined);
+    const validation = getDrawAmountValidation(String(amount), selectedCreditLine);
+    if (!validation.isValid) {
+      setStep("amount");
+      return;
+    }
+    setStep("confirm");
+  }, [selectedCreditLine, amount]);
 
   const handleBack = useCallback(() => {
     if (step === "amount") {
       setStep("select");
       setSelectedCreditLine(null);
       setConfirmationAcknowledged(false);
+      setSubmitError(null);
     } else if (step === "confirm") {
       setStep("amount");
       setConfirmationAcknowledged(false);
+      setSubmitError(null);
     }
   }, [step]);
 
@@ -424,9 +482,18 @@ export default function DrawCreditPage() {
           break;
 
         case "ArrowRight":
-          if (step === "amount" && amount > 0) {
+          if (step === "amount" && selectedCreditLine) {
             e.preventDefault();
-            handleAmountNext(amount);
+            const validation = getDrawAmountValidation(
+              String(amount),
+              selectedCreditLine,
+            );
+            if (validation.isValid) {
+              handleAmountNext(amount);
+            } else {
+              amountInputRef.current?.focus();
+              setSubmitError(validation.message);
+            }
           }
           if (step === "confirm" && confirmationAcknowledged) {
             e.preventDefault();
@@ -446,28 +513,36 @@ export default function DrawCreditPage() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [step, amount, confirmationAcknowledged, handleBack, handleCancel, isRiskModalOpen]);
+  }, [step, amount, selectedCreditLine, confirmationAcknowledged, handleBack, handleCancel, isRiskModalOpen]);
 
   return (
     <main className="dc-page" aria-label="Draw credit">
       <DefaultRiskModal
         isOpen={isRiskModalOpen}
-        onAcknowledge={handleRiskModalAcknowledge}
-        onDismiss={closeRiskModal}
+        onAcknowledge={handleRiskModalAcknowledgeAndFocus}
+        onDismiss={handleRiskModalDismiss}
+        triggerRef={riskBannerTriggerRef}
       />
       <LiveRegion
         id="draw-wizard-progress-announcement"
         message={microProgressAnnouncement}
       />
+      {submitError && step === "amount" && (
+        <LiveRegion
+          id="draw-wizard-amount-error-announcement"
+          message={submitError}
+        />
+      )}
       <div className="dc-page__inner">
-        {!hasAcknowledgedRisk && !isRiskModalOpen && (
-          <div className="dc-risk-banner" role="note">
+        {!hasAcknowledgedRisk && (
+          <div className="dc-risk-banner" role="note" hidden={isRiskModalOpen}>
             <p className="dc-risk-banner__text">
               <strong>First draw?</strong> Take a 1-minute primer on what a
               default is and how to avoid one.
             </p>
             <div className="dc-risk-banner__actions">
               <button
+                ref={riskBannerTriggerRef}
                 type="button"
                 className="dc-risk-banner__learn"
                 onClick={() => setIsRiskModalOpen(true)}
@@ -486,6 +561,9 @@ export default function DrawCreditPage() {
           </div>
         )}
         <div className="dc-page__card">
+          <h2 ref={stepHeadingRef} tabIndex={-1} className="sr-only">
+            Draw credit step
+          </h2>
           {draftNotice && (
             <p className="dc-draft-notice" role="status">
               {draftNotice}
@@ -515,6 +593,7 @@ export default function DrawCreditPage() {
           {step === "amount" && selectedCreditLine && (
             <div className="dc-step">
               <AmountInput
+                ref={amountInputRef}
                 creditLine={selectedCreditLine}
                 initialAmount={amount}
                 onAmountChange={setAmount}
@@ -532,7 +611,7 @@ export default function DrawCreditPage() {
                   keys={["←", "→"]}
                   label="Back / Continue"
                   separator="/"
-                  description="Use left and right arrow keys to go back or continue"
+                  description="Use left and right arrow keys to go back or continue; → requires a valid amount"
                 />
                 <KbdHint
                   keys="Esc"
@@ -550,6 +629,24 @@ export default function DrawCreditPage() {
 
           {step === "confirm" && selectedCreditLine && (
             <>
+              {submitError && (
+                <div className="dc-step dc-step--error" role="alert">
+                  <p className="dc-step__subtitle">
+                    This amount is no longer valid: {submitError}
+                  </p>
+                  <button
+                    type="button"
+                    className="focus-ring dc-step__back-btn"
+                    onClick={() => {
+                      setSubmitError(null);
+                      setConfirmationAcknowledged(false);
+                      setStep("amount");
+                    }}
+                  >
+                    Change amount
+                  </button>
+                </div>
+              )}
               <ConfirmationStep
                 creditLine={selectedCreditLine}
                 amount={amount}
@@ -669,6 +766,8 @@ export default function DrawCreditPage() {
                 <TransactionStatus
                   transaction={transaction}
                   onNewDraw={handleNewDraw}
+                  onRetry={handleRetry}
+                  errorKind={errorKind}
                 />
               )}
             </>

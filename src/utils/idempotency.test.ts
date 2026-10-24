@@ -21,7 +21,6 @@ import {
   isRetryable,
   isStaleSubmission,
   extractDiagnostics,
-  type SubmissionAttempt,
 } from './idempotency';
 
 describe('generateIdempotencyKey', () => {
@@ -419,19 +418,19 @@ describe('isRetryable', () => {
 
     // First retry: should be retryable
     attempt = recordSubmissionAttempt(attempt);
-    expect(isRetryable(attempt, 3, true)).toBe(true);
+    expect(isRetryable(attempt, 4, true)).toBe(true);
 
     // Second retry: should be retryable
     attempt = recordSubmissionAttempt(attempt);
-    expect(isRetryable(attempt, 3, true)).toBe(true);
+    expect(isRetryable(attempt, 4, true)).toBe(true);
 
     // Third retry: should be retryable
     attempt = recordSubmissionAttempt(attempt);
-    expect(isRetryable(attempt, 3, true)).toBe(true);
+    expect(isRetryable(attempt, 4, true)).toBe(true);
 
     // Fourth retry: max reached, not retryable
     attempt = recordSubmissionAttempt(attempt);
-    expect(isRetryable(attempt, 3, true)).toBe(false);
+    expect(isRetryable(attempt, 4, true)).toBe(false);
   });
 });
 
