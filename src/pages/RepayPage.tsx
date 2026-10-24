@@ -8,6 +8,7 @@ import { InlineHelpOverlay } from '@/components/InlineHelpOverlay';
 import { ProgressBar } from '@/components/ProgressBar';
 import type { ProgressBarVariant } from '@/components/ProgressBar';
 import { LiveRegion } from '@/components/LiveRegion';
+import { ConnectWalletPrompt } from '@/components/ConnectWalletPrompt';
 
 import { EmptyState } from '@/components/EmptyState';
 import { NoOutstandingDebt } from '@/components/illustrations';
@@ -16,10 +17,13 @@ import {
   getRepayAmountValidation,
   requiresRepayConfirmation,
 } from '@/utils/amountValidation';
-import { offlineMutation } from '@/utils/offline';
 import { useOnline } from '@/hooks/useOnline';
 import { suggestRepayAmount } from '@/utils/suggestRepay';
-import { computeMonthlyAccruedInterest } from '@/utils/currency';
+import {
+  computeMonthlyAccruedInterest,
+  roundToCents,
+} from '@/utils/currency';
+import { allocateRepayment } from '@/lib/repay-allocation';
 import {
   isTypedAmountMatch,
   TypedAmountConfirmField,
@@ -28,14 +32,42 @@ import { KbdHint } from '@/components/KbdHint';
 import { RepayPreviewModal } from '@/components/RepayPreviewModal';
 import { CopyToClipboard } from '@/components/CopyToClipboard';
 import { Tooltip } from '@/components/Tooltip';
-import { MOCK_CREDIT_LINES } from '@/data/mockData';
+import { saveMockRepaymentTransaction } from '@/services/creditDataSource';
 import { motionClasses, useReducedMotion } from '@/context/ReducedMotionContext';
+import { useWallet, walletIdentityKey } from '@/context/WalletContext';
+import { useCreditLine, useCreditLines } from '@/hooks/useCreditLines';
+import {
+  getRepayableBalance,
+  moneyCoversAmount,
+  moneyToNumber,
+  SETTLEMENT_ASSET,
+} from '@/lib/repayable-balance';
+import {
+  getRepayableLines,
+  isRepayable,
+  isDelinquentLine,
+} from '@/lib/repay-eligibility';
+import { StatusBadge } from '@/components/StatusBadge';
 import {
   saveRepayDraft,
   loadRepayDraft,
   clearRepayDraft,
   type RepayDraftState,
 } from '@/state/repayDraft';
+
+/**
+ * Reason a saved draft was discarded instead of being offered for recovery.
+ * Surfaced as a `role="status"` note so the discard is never silent
+ * (issue #1188).
+ */
+type DraftDiscardReason = 'owner-mismatch' | 'line-unrepayable';
+
+const DRAFT_DISCARD_MESSAGE: Record<DraftDiscardReason, string> = {
+  'owner-mismatch':
+    'Saved repayment draft discarded — it belongs to a different wallet.',
+  'line-unrepayable':
+    'Saved repayment draft discarded — that credit line can no longer be repaid.',
+};
 import './RepayPage.css';
 
 type RepayStep = 'input' | 'review';
@@ -96,19 +128,32 @@ const SEVERITY_CONFIG = {
 export default function RepayPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { queueAction } = useOnline();
+  const { isOnline, queueAction } = useOnline();
+  const {
+    wallet,
+    status: walletStatus,
+    balances,
+    refreshBalance,
+  } = useWallet();
+  const identityKey = walletIdentityKey(wallet ?? null);
   const preselectedId = searchParams.get('line');
+  const {
+    lines: mockLines,
+    status: creditStatus,
+    error: creditError,
+    refetch: refetchCreditLines,
+  } = useCreditLines();
 
   // ── Draft recovery state ──────────────────────────────────────────────
   const [recoveredDraft, setRecoveredDraft] = useState<RepayDraftState | null>(null);
   const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false);
+  const [draftDiscardReason, setDraftDiscardReason] = useState<DraftDiscardReason | null>(null);
   const draftLoadedRef = useRef(false);
-  // Guard: set to true inside handleConfirm/handleNewRepay to prevent the
-  // persist useEffect from re-saving a draft after clearRepayDraft() runs.
-  // React Router's navigate() can trigger a synchronous re-render via the
-  // router context (outside React 18 batching), causing the persist effect
-  // to fire with the old step before setStep('success') is applied.
+  // Prevent the persist effect from re-saving a draft after confirmation.
   const draftClearedRef = useRef(false);
+  // Tracks the previous wallet identity so a mid-session account/network
+  // switch can clear another wallet's draft (issue #1188).
+  const prevIdentityKeyRef = useRef<string | null>(null);
   const isSubmittingRef = useRef(false);
 
   const [step, setStep] = useState<RepayStep>('input');
@@ -117,7 +162,6 @@ export default function RepayPage() {
   const [confirmAmountStr, setConfirmAmountStr] = useState('');
   const [isAutoSchedule, setIsAutoSchedule] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [isOfflineBlocked, setIsOfflineBlocked] = useState(false);
   // Task ariallive-v7: centralised SR announcement for step transitions and
@@ -128,45 +172,85 @@ export default function RepayPage() {
   const previewTriggerRef = useRef<HTMLButtonElement>(null);
   const { isReducedMotionActive } = useReducedMotion();
 
-  const creditLines = useMemo(
-    () => MOCK_CREDIT_LINES.filter((cl) => cl.status === 'Active' && cl.utilized > 0),
-    [],
+  // ── Repayable lines — single predicate used by picker and deep-link ──
+  // Issue #1185: getRepayableLines (utilized > 0 && status !== Closed) replaces
+  // the old Active-only filter so Suspended and Defaulted lines are visible.
+  // The per-render `mockLines` capture lets the memo react when the line data
+  // source is replaced (e.g. a provider refetch), so amounts re-validate
+  // against current debt instead of stale closure data (issue #1188).
+  const creditLines = useMemo(() => getRepayableLines(mockLines), [mockLines]);
+  const { line: selectedCreditLine } = useCreditLine(selectedId);
+
+  // When a ?line= deep-link names an unrepayable line we keep selectedLine null
+  // so the picker renders with an explanatory status message instead of opening
+  // the form for a line that has no outstanding balance (e.g. Closed).
+  // Deps include creditLines so a provider refetch re-resolves the selected
+  // line (issue #1188) — the review step then re-validates against current debt.
+  const selectedLine = useMemo(() => {
+    if (!selectedId) return null;
+    const line = selectedCreditLine;
+    if (!line || !isRepayable(line)) return null;
+    return line;
+  }, [selectedId, selectedCreditLine]);
+
+  // True when the user arrived via ?line= but the named line is not repayable.
+  const unrepayableDeepLink = useMemo(() => {
+    if (!preselectedId) return false;
+    const line = mockLines.find((cl) => cl.id === preselectedId) ?? null;
+    return line !== null && !isRepayable(line);
+  }, [mockLines, preselectedId]);
+
+  const repayableBalance = getRepayableBalance(balances ?? null, SETTLEMENT_ASSET);
+  const hasRepayableBalance =
+    walletStatus === 'connected' &&
+    wallet !== null &&
+    repayableBalance.status === 'ok';
+  const walletBalance =
+    repayableBalance.status === 'ok' ? moneyToNumber(repayableBalance.amount) : 0;
+  const [isReviewBalanceLoading, setIsReviewBalanceLoading] = useState(false);
+  const [reviewBalance, setReviewBalance] = useState<number | null>(null);
+  const [reviewBalanceError, setReviewBalanceError] = useState('');
+
+  const accruedInterest = useMemo(
+    () =>
+      selectedLine
+        ? computeMonthlyAccruedInterest(selectedLine.utilized, selectedLine.apr)
+        : 0,
+    [selectedLine],
   );
 
-  const selectedLine = useMemo(
-    () => MOCK_CREDIT_LINES.find((cl) => cl.id === selectedId) ?? null,
-    [selectedId],
+  const totalOwed = useMemo(
+    () => (selectedLine ? roundToCents(selectedLine.utilized + accruedInterest) : 0),
+    [selectedLine, accruedInterest],
   );
-
-  const walletBalance = 50000;
 
   const validation = useMemo(
     () =>
       selectedLine
-        ? getRepayAmountValidation(amountStr, selectedLine.utilized, walletBalance)
+        ? getRepayAmountValidation(amountStr, totalOwed, walletBalance)
         : null,
-    [amountStr, selectedLine, walletBalance],
+    [amountStr, selectedLine, totalOwed, walletBalance],
   );
 
   const suggestion = useMemo(
     () =>
       selectedLine
         ? suggestRepayAmount({
-            totalDue: selectedLine.utilized,
+            totalDue: totalOwed,
             limit: selectedLine.limit,
             walletBalance,
             apr: selectedLine.apr,
             nextPaymentAmount: selectedLine.nextPaymentAmount,
           })
         : { amount: 0, reason: 'nothing_due' as const },
-    [selectedLine, walletBalance],
+    [selectedLine, totalOwed, walletBalance],
   );
   const usesReserve = suggestion.amount > 0 &&
     walletBalance - suggestion.amount < (validation?.recommendedWalletReserve ?? 0);
   const minimumDue = Math.min(
-    selectedLine?.utilized ?? 0,
+    totalOwed,
     selectedLine?.nextPaymentAmount ??
-      Math.max((selectedLine?.utilized ?? 0) * (selectedLine?.apr ?? 0) / 100 / 12, 1),
+      Math.max(totalOwed * (selectedLine?.apr ?? 0) / 100 / 12, 1),
   );
   const minimumShortfall = Math.max(0, minimumDue - walletBalance);
   const suggestionMessage = {
@@ -178,6 +262,7 @@ export default function RepayPage() {
     nothing_due: 'No repayment is due for Smart Pay.',
     empty_wallet: 'Your wallet is empty. Add funds to use Smart Pay.',
   }[suggestion.reason] + (usesReserve ? ' Uses part of your reserve to cover the minimum due.' : '');
+  const smartPayDisabled = !hasRepayableBalance || suggestion.amount === 0;
   const suggestionTone = usesReserve || suggestion.reason === 'insufficient_for_minimum' ||
     suggestion.reason === 'capped_by_wallet' || suggestion.reason === 'empty_wallet'
     ? SEVERITY_CONFIG.warning
@@ -186,73 +271,137 @@ export default function RepayPage() {
   const amount = validation?.amount ?? 0;
   const isInvalid = !validation?.isValid;
   const needsConfirm = requiresRepayConfirmation(amount);
-  const isConfirmDisabled = needsConfirm && !isTypedAmountMatch(confirmAmountStr, amount);
+  const isConfirmDisabled =
+    needsConfirm && !isTypedAmountMatch(confirmAmountStr, amount);
+  const isReviewConfirmDisabled =
+    !hasRepayableBalance ||
+    isInvalid ||
+    amount <= 0 ||
+    isConfirmDisabled ||
+    isReviewBalanceLoading ||
+    reviewBalance === null ||
+    amount > reviewBalance;
 
   const activeTone = validation
     ? SEVERITY_CONFIG[validation.feedback.severity]
     : SEVERITY_CONFIG.info;
 
   const handlePercent = (pct: number) => {
-    if (!validation) return;
+    if (!validation || !hasRepayableBalance) return;
     let target = (validation.maxRepayAmount * pct) / 100;
     if (target > walletBalance) target = walletBalance;
     setAmountStr(target.toFixed(2));
   };
 
   const handleSmartPay = () => {
-    if (!selectedLine || suggestion.amount === 0) return;
+    if (!selectedLine || !hasRepayableBalance || suggestion.amount === 0) return;
     setAmountStr(suggestion.amount.toFixed(2));
     setSrAnnouncement(`Smart Pay amount set: ${formatMoney(suggestion.amount)}. ${suggestionMessage}`);
   };
 
   const handleReview = () => {
-    if (!isInvalid && amount > 0) {
+    if (hasRepayableBalance && !isInvalid && amount > 0) {
       setConfirmAmountStr('');
+      setReviewBalance(null);
+      setReviewBalanceError('');
       setStep('review');
       // Announce the transition so SR users know they've moved to the review step.
       setSrAnnouncement(`Review step: repaying ${formatMoney(amount)}. Confirm or go back.`);
     }
   };
 
-  const handleConfirm = () => {
-    if (isSubmittingRef.current) return;
+  const handleConfirm = async () => {
+    if (!selectedLine || isSubmittingRef.current) return;
+    // Defense in depth (issue #1188): the review path re-checks amount
+    // validity here as well as through the disabled state, so neither a
+    // stale click nor the Enter shortcut can confirm an invalid amount.
+    if (step === 'review' && (isReviewConfirmDisabled || isInvalid)) return;
+    if (step === 'input' && (!hasRepayableBalance || isInvalid || amount > walletBalance)) return;
+
+    if (!isOnline) {
+      isSubmittingRef.current = false;
+      queueAction(() => {
+        void handleConfirm();
+      }, 'repay-confirm');
+      setIsOfflineBlocked(true);
+      return;
+    }
+
     isSubmittingRef.current = true;
+
+    if (step === 'input') {
+      try {
+        const refreshedBalances = await refreshBalance();
+        const refreshed = getRepayableBalance(
+          refreshedBalances,
+          SETTLEMENT_ASSET,
+        );
+        const refreshedAmount =
+          refreshed.status === 'ok' ? moneyToNumber(refreshed.amount) : 0;
+        if (
+          refreshed.status !== 'ok' ||
+          !moneyCoversAmount(refreshed.amount, amount)
+        ) {
+          isSubmittingRef.current = false;
+          setReviewBalance(refreshed.status === 'ok' ? refreshedAmount : null);
+          setReviewBalanceError(
+            refreshed.status === 'ok'
+              ? `Your ${SETTLEMENT_ASSET.code} balance dropped below the repayment amount. Reduce the amount to ${formatMoney(refreshedAmount)} or less.`
+              : `Unable to verify your ${SETTLEMENT_ASSET.code} balance. Check your trustline and try again.`,
+          );
+          setStep('review');
+          setSrAnnouncement(
+            refreshed.status === 'ok'
+              ? `Your ${SETTLEMENT_ASSET.code} balance dropped below the repayment amount.`
+              : `Unable to verify your ${SETTLEMENT_ASSET.code} balance.`,
+          );
+          return;
+        }
+      } catch {
+        isSubmittingRef.current = false;
+        setReviewBalanceError(
+          `Unable to verify your ${SETTLEMENT_ASSET.code} balance. Try again before confirming.`,
+        );
+        setStep('review');
+        setSrAnnouncement(
+          `Unable to verify your ${SETTLEMENT_ASSET.code} balance.`,
+        );
+        return;
+      }
+    }
 
     draftClearedRef.current = true;
     clearRepayDraft();
-    navigate('/repay/success', {
-      state: {
-        amount,
-        creditLineName: selectedLine.name,
+    const transactionId = `TXN-${Date.now()}`;
+    const timestamp = new Date().toISOString();
+    if (wallet?.publicKey) {
+      saveMockRepaymentTransaction({
+        id: transactionId,
+        owner: wallet.publicKey,
+        status: 'Completed',
         creditLineId: selectedLine.id,
-        transactionId: `TXN-${Date.now()}`,
+        creditLineName: selectedLine.name,
+        amount,
         remainingDebt,
         limit: selectedLine.limit,
         apr: selectedLine.apr,
         nextPaymentAmount: selectedLine.nextPaymentAmount,
-        timestamp: new Date().toISOString(),
+        timestamp,
+      });
+    }
+    navigate(`/repay/success?tx=${encodeURIComponent(transactionId)}`, {
+      state: {
+        amount,
+        creditLineName: selectedLine.name,
+        creditLineId: selectedLine.id,
+        transactionId,
+        remainingDebt,
+        limit: selectedLine.limit,
+        apr: selectedLine.apr,
+        nextPaymentAmount: selectedLine.nextPaymentAmount,
+        timestamp,
       },
-      onOffline: () => {
-        queueAction(() => {
-          handleConfirm();
-        }, 'repay-confirm');
-        setIsOfflineBlocked(true);
-      },
-      offlineMessage:
-        'You are offline, so this repayment cannot be processed yet. It has been queued and will be submitted when your connection is restored.',
     });
-    setStep('success');
-    setSrAnnouncement(`Payment successful! You repaid ${formatMoney(amount)}.`);
-  };
-
-  const handleNewRepay = () => {
-    isSubmittingRef.current = false;
-    draftClearedRef.current = true;
-    clearRepayDraft();
-    setAmountStr('');
-    setIsAutoSchedule(false);
-    setStep('input');
-    setSrAnnouncement('Starting a new repayment. Select an amount.');
   };
 
   const handleBack = useCallback(() => {
@@ -270,17 +419,48 @@ export default function RepayPage() {
   // ── Draft recovery handlers ──────────────────────────────────────────
   const handleRestoreDraft = useCallback(() => {
     if (!recoveredDraft) return;
+
+    // Issue #1188: re-validate the draft against *current* data before
+    // trusting its saved step. The stored amount may exceed the debt (or the
+    // wallet) now, the line may have been closed, or the draft may belong to
+    // a different wallet. Only a still-valid review draft returns to review;
+    // anything else falls back to the input step so the user sees the live
+    // validation instead of a Confirm button for an amount that no longer
+    // checks out.
+    const draftLine =
+      mockLines.find((cl) => cl.id === recoveredDraft.creditLineId) ?? null;
+    const ownerOk = identityKey !== null && recoveredDraft.owner === identityKey;
+    const isAmountStillValid =
+      draftLine !== null &&
+      isRepayable(draftLine) &&
+      getRepayAmountValidation(
+        recoveredDraft.amountStr,
+        roundToCents(
+          draftLine.utilized + computeMonthlyAccruedInterest(draftLine.utilized, draftLine.apr),
+        ),
+        walletBalance,
+      ).isValid;
+    const restoreToReview =
+      recoveredDraft.step === 'review' && ownerOk && isAmountStillValid;
+
     setSelectedId(recoveredDraft.creditLineId);
     setAmountStr(recoveredDraft.amountStr);
-    setConfirmAmountStr(recoveredDraft.confirmAmountStr);
+    // Always clear the typed confirmation on restore: the amount must be
+    // re-confirmed even when the review step itself is restored (issue #1188).
+    setConfirmAmountStr('');
     setIsAutoSchedule(recoveredDraft.isAutoSchedule);
-    setStep(recoveredDraft.step);
+    setReviewBalance(null);
+    setReviewBalanceError('');
+    setStep(restoreToReview ? 'review' : 'input');
     setShowRecoveryPrompt(false);
     setRecoveredDraft(null);
+    setDraftDiscardReason(null);
     setSrAnnouncement(
-      `Restored repayment draft: ${formatMoney(parseFloat(recoveredDraft.amountStr) || 0)} on ${recoveredDraft.creditLineId}.`,
+      restoreToReview
+        ? `Restored repayment draft: ${formatMoney(parseFloat(recoveredDraft.amountStr) || 0)} on ${recoveredDraft.creditLineId}.`
+        : `Restored repayment draft on ${recoveredDraft.creditLineId}. Review the amount before continuing.`,
     );
-  }, [recoveredDraft]);
+  }, [recoveredDraft, identityKey, walletBalance]);
 
   const handleDismissDraft = useCallback(() => {
     clearRepayDraft();
@@ -291,35 +471,68 @@ export default function RepayPage() {
 
   // ── Initial draft recovery check ──────────────────────────────────────
   useEffect(() => {
+    if (creditStatus !== 'success') return;
     if (draftLoadedRef.current) return;
     draftLoadedRef.current = true;
 
     const draft = loadRepayDraft();
-    if (draft && !preselectedId) {
-      // Only show recovery prompt when the user hasn't navigated with a
-      // specific credit line preselected (which implies a fresh intent).
-      setRecoveredDraft(draft);
-      setShowRecoveryPrompt(true);
+    if (!draft || preselectedId) {
+      // Only offer recovery when the user hasn't navigated with a specific
+      // credit line preselected (which implies a fresh intent).
+      return;
     }
-  }, [preselectedId]);
+
+    // Issue #1188: discard drafts that can no longer be safely resumed
+    // instead of offering to restore them.
+    const draftLine =
+      mockLines.find((cl) => cl.id === draft.creditLineId) ?? null;
+    if (!draftLine || !isRepayable(draftLine)) {
+      clearRepayDraft();
+      setDraftDiscardReason('line-unrepayable');
+      setSrAnnouncement(DRAFT_DISCARD_MESSAGE['line-unrepayable']);
+      return;
+    }
+    // When the wallet identity is already known, a draft from another wallet
+    // is discarded here. When it isn't (wallet still connecting), the owner
+    // check in handleRestoreDraft still refuses to trust the stored step.
+    if (identityKey !== null && draft.owner !== identityKey) {
+      clearRepayDraft();
+      setDraftDiscardReason('owner-mismatch');
+      setSrAnnouncement(DRAFT_DISCARD_MESSAGE['owner-mismatch']);
+      return;
+    }
+
+    setRecoveredDraft(draft);
+    setShowRecoveryPrompt(true);
+  }, [preselectedId, identityKey, creditStatus, mockLines]);
+
+  // ── Clear the draft when the wallet identity changes ──────────────────
+  // Issue #1188: a draft saved under one wallet must not survive an account
+  // or network switch into another wallet's session.
+  useEffect(() => {
+    const prevIdentity = prevIdentityKeyRef.current;
+    prevIdentityKeyRef.current = identityKey;
+    if (identityKey === null || identityKey === prevIdentity) return;
+
+    const draft = loadRepayDraft();
+    if (draft && draft.owner !== identityKey) {
+      clearRepayDraft();
+      setShowRecoveryPrompt(false);
+      setRecoveredDraft(null);
+      setDraftDiscardReason('owner-mismatch');
+      setSrAnnouncement(DRAFT_DISCARD_MESSAGE['owner-mismatch']);
+    }
+  }, [identityKey]);
 
   // ── Persist draft on state changes ────────────────────────────────────
   useEffect(() => {
-    // When the user confirms or starts a new repayment, ensure the draft
-    // is cleared.  This acts as a safety net: even if clearRepayDraft()
-    // ran in the event handler, React Router's navigate() can trigger an
-    // intermediate render that re-persists the draft before the step
-    // state update is applied.
-    if (step === 'success') {
-      clearRepayDraft();
-      return;
-    }
-    // Don't persist if the draft was just intentionally cleared
-    // (handleConfirm / handleNewRepay).
+    // Don't persist if the draft was just intentionally cleared on confirmation.
     if (draftClearedRef.current) return;
 
     // Don't save during loading or after cancel.
-    if (isLoading || !selectedId) return;
+    if (creditStatus !== 'success' || !selectedId) return;
+    // Don't save without a known wallet identity (the draft is owner-scoped).
+    if (!identityKey) return;
     // Don't save empty amounts on the input step.
     if (step === 'input' && !amountStr) return;
 
@@ -329,15 +542,89 @@ export default function RepayPage() {
       amountStr,
       confirmAmountStr,
       isAutoSchedule,
+      owner: identityKey,
     });
-  }, [step, selectedId, amountStr, confirmAmountStr, isAutoSchedule, isLoading]);
+  }, [step, selectedId, amountStr, confirmAmountStr, isAutoSchedule, creditStatus, identityKey]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 800);
-    return () => clearTimeout(timer);
-  }, []);
+    if (walletStatus !== 'connected' || !wallet) {
+      setSrAnnouncement(
+        `Connect your wallet to check your ${SETTLEMENT_ASSET.code} balance.`,
+      );
+    } else if (repayableBalance.status === 'loading') {
+      setSrAnnouncement(
+        `Loading your ${SETTLEMENT_ASSET.code} wallet balance.`,
+      );
+    } else if (repayableBalance.status === 'no_trustline') {
+      setSrAnnouncement(
+        `Add a ${SETTLEMENT_ASSET.code} trustline to repay.`,
+      );
+    } else {
+      setSrAnnouncement(
+        `${SETTLEMENT_ASSET.code} wallet balance loaded.`,
+      );
+    }
+  }, [walletStatus, wallet, repayableBalance.status]);
+
+  useEffect(() => {
+    if (step !== 'review') return;
+    if (walletStatus !== 'connected' || !wallet) {
+      setIsReviewBalanceLoading(false);
+      setReviewBalance(null);
+      setReviewBalanceError('Connect your wallet to confirm this repayment.');
+      return;
+    }
+
+    let isCurrent = true;
+    setIsReviewBalanceLoading(true);
+    setReviewBalance(null);
+    setReviewBalanceError('');
+    setSrAnnouncement(
+      `Refreshing your ${SETTLEMENT_ASSET.code} wallet balance.`,
+    );
+
+    refreshBalance()
+      .then((freshBalances) => {
+        if (!isCurrent) return;
+        const fresh = getRepayableBalance(freshBalances, SETTLEMENT_ASSET);
+        if (fresh.status !== 'ok') {
+          setReviewBalanceError(
+            `Unable to verify your ${SETTLEMENT_ASSET.code} balance. Check your trustline and try again.`,
+          );
+          setSrAnnouncement(
+            `Unable to verify your ${SETTLEMENT_ASSET.code} balance.`,
+          );
+          return;
+        }
+
+        const freshAmount = moneyToNumber(fresh.amount);
+        setReviewBalance(freshAmount);
+        if (!moneyCoversAmount(fresh.amount, amount)) {
+          setReviewBalanceError(
+            `Your ${SETTLEMENT_ASSET.code} balance dropped below the repayment amount. Reduce the amount to ${formatMoney(freshAmount)} or less.`,
+          );
+          setSrAnnouncement(
+            `Your ${SETTLEMENT_ASSET.code} balance dropped below the repayment amount.`,
+          );
+        }
+      })
+      .catch(() => {
+        if (!isCurrent) return;
+        setReviewBalanceError(
+          `Unable to refresh your ${SETTLEMENT_ASSET.code} balance. Try again before confirming.`,
+        );
+        setSrAnnouncement(
+          `Unable to refresh your ${SETTLEMENT_ASSET.code} balance.`,
+        );
+      })
+      .finally(() => {
+        if (isCurrent) setIsReviewBalanceLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [step, amount, refreshBalance, walletStatus, wallet]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -368,7 +655,7 @@ export default function RepayPage() {
       } else if (e.key === 'Enter') {
         if (step === 'input' && selectedLine && !isInvalid && amount > 0) {
           handleReview();
-        } else if (step === 'review' && !isConfirmDisabled) {
+        } else if (step === 'review' && !isReviewConfirmDisabled) {
           handleConfirm();
         }
       }
@@ -376,7 +663,7 @@ export default function RepayPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [step, selectedLine, isInvalid, amount, isConfirmDisabled, handleBack, suggestion, suggestionMessage, walletBalance]);
+  }, [step, selectedLine, isInvalid, amount, isReviewConfirmDisabled, handleBack, suggestion, suggestionMessage, walletBalance]);
 
   // Task ariallive-v7: announce validation errors to screen readers
   useEffect(() => {
@@ -399,6 +686,19 @@ export default function RepayPage() {
           Back
           <KbdHint keys={['Esc']} className="ml-1" />
         </button>
+
+      {/* ── Draft discarded note (credit line picker view) ─────────── */}
+      {draftDiscardReason && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mb-2 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning"
+          data-testid="repay-draft-discarded-note"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{DRAFT_DISCARD_MESSAGE[draftDiscardReason]}</span>
+        </div>
+      )}
 
       {/* ── Recovery prompt banner (credit line picker view) ──────── */}
       {showRecoveryPrompt && recoveredDraft && (
@@ -453,7 +753,14 @@ export default function RepayPage() {
           </h1>
         </header>
 
-        {isLoading ? (
+        {creditStatus === 'error' ? (
+          <div role="alert" className="rounded-lg border border-error/40 bg-error/10 p-4 text-sm text-error">
+            <p>{creditError?.message ?? 'Unable to load credit lines.'}</p>
+            <button type="button" className="mt-3 underline" onClick={() => void refetchCreditLines().catch(() => undefined)}>
+              Retry
+            </button>
+          </div>
+        ) : creditStatus === 'loading' ? (
           <div className="space-y-3" aria-busy="true" aria-live="polite" data-testid="repay-loading-skeleton">
             {[1, 2, 3].map((i) => (
               <div
@@ -496,65 +803,96 @@ export default function RepayPage() {
             }}
           />
         ) : (
-          <div className="mt-4 space-y-3">
-            {creditLines.map((cl) => {
-              const utilization = Math.round((cl.utilized / cl.limit) * 100);
-              // Task cb-v7: map utilization level to pattern class so the bar
-              // conveys severity via texture, not colour alone (WCAG 1.4.1).
-              const barClass =
-                utilization > 80
-                  ? 'rp-progress--high'
-                  : utilization > 50
-                    ? 'rp-progress--medium'
-                    : 'rp-progress--low';
-              return (
-                <button
-                  key={cl.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedId(cl.id);
-                    setSrAnnouncement(`Selected ${cl.name}. Choose a repayment amount.`);
-                  }}
-                  className={`rp-cl-card w-full rounded-lg border border-border bg-surface p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${motionClasses(isReducedMotionActive, 'transition-all hover:border-accent hover:bg-accent/5')}`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-foreground">{cl.name}</p>
-                      <p className="mt-0.5 text-sm text-muted">{cl.id}</p>
+          <>
+            {/* Issue #1185: unrepayable ?line= deep-link — status message + picker */}
+            {unrepayableDeepLink && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="mb-2 flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning"
+                data-testid="repay-unrepayable-notice"
+              >
+                <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>This line has no outstanding balance.</span>
+              </div>
+            )}
+            <div className="mt-4 space-y-3">
+              {creditLines.map((cl) => {
+                const utilization = Math.round((cl.utilized / cl.limit) * 100);
+                // Task cb-v7: map utilization level to pattern class so the bar
+                // conveys severity via texture, not colour alone (WCAG 1.4.1).
+                const barClass =
+                  utilization > 80
+                    ? 'rp-progress--high'
+                    : utilization > 50
+                      ? 'rp-progress--medium'
+                      : 'rp-progress--low';
+                const delinquent = isDelinquentLine(cl);
+                return (
+                  <button
+                    key={cl.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedId(cl.id);
+                      setSrAnnouncement(`Selected ${cl.name}. Choose a repayment amount.`);
+                    }}
+                    className={`rp-cl-card w-full rounded-lg border bg-surface p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${delinquent ? 'border-warning/60' : 'border-border'} ${motionClasses(isReducedMotionActive, 'transition-all hover:border-accent hover:bg-accent/5')}`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        {/* Issue #1185: status badge — text conveys state, not colour alone (WCAG 1.4.1) */}
+                        <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                          <StatusBadge status={cl.status} />
+                          {delinquent && (
+                            <span
+                              className="rp-overdue-label inline-flex items-center rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning"
+                              aria-label="Overdue — repayment needed"
+                            >
+                              Overdue
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-semibold text-foreground">{cl.name}</p>
+                        <p className="mt-0.5 text-sm text-muted">{cl.id}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-foreground num-tabular">
+                          {formatMoney(cl.utilized)}
+                        </p>
+                        <p className="text-sm text-muted"><span className="num-tabular">{utilization}%</span> utilized</p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-foreground num-tabular">
-                        {formatMoney(cl.utilized)}
-                      </p>
-                      <p className="text-sm text-muted"><span className="num-tabular">{utilization}%</span> utilized</p>
+                    {/* Task cb-v7: pattern fill on progress bar */}
+                    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-border">
+                      <div
+                        className={`h-full rounded-full transition-all ${barClass}`}
+                        style={{ width: `${utilization}%` }}
+                        aria-hidden="true"
+                      />
                     </div>
-                  </div>
-                  {/* Task cb-v7: pattern fill on progress bar */}
-                  <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-border">
-                    <div
-                      className={`h-full rounded-full transition-all ${barClass}`}
-                      style={{ width: `${utilization}%` }}
-                      aria-hidden="true"
-                    />
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                  </button>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     );
   }
 
+  if (walletStatus !== 'connected' || !wallet) {
+    return (
+      <div className="repay-page mx-auto max-w-2xl space-y-6 px-4 py-8">
+        <ConnectWalletPrompt assetCode={SETTLEMENT_ASSET.code} />
+        <LiveRegion message={srAnnouncement} />
+      </div>
+    );
+  }
+
   const oldPct = Math.round((selectedLine.utilized / selectedLine.limit) * 100);
-  const remainingDebt = validation?.remainingDebt ?? selectedLine.utilized;
+  const allocation = allocateRepayment(selectedLine, amount, accruedInterest);
+  const remainingDebt = allocation.remainingTotal;
   const newPct = Math.round((remainingDebt / selectedLine.limit) * 100);
-  const accruedInterest = computeMonthlyAccruedInterest(
-    selectedLine.utilized,
-    selectedLine.apr,
-  );
-  const interestPortion = Math.min(amount, accruedInterest);
-  const principalPortion = Math.max(0, amount - interestPortion);
 
   return (
     <div className="repay-page mx-auto max-w-4xl px-4 py-6 sm:py-8">
@@ -570,6 +908,19 @@ export default function RepayPage() {
           <KbdHint keys={['Esc']} />
         </span>
       </button>
+
+      {/* ── Draft discarded note (form view) ───────────────────────── */}
+      {draftDiscardReason && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mb-2 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning"
+          data-testid="repay-draft-discarded-note"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{DRAFT_DISCARD_MESSAGE[draftDiscardReason]}</span>
+        </div>
+      )}
 
       {/* ── Recovery prompt banner ────────────────────────────────────── */}
       {showRecoveryPrompt && recoveredDraft && (
@@ -680,10 +1031,34 @@ export default function RepayPage() {
                     >
                       Amount to repay
                     </label>
-                    <span className="text-xs text-muted">
-                      Wallet: <span className="num-tabular">{formatMoney(walletBalance)}</span>
-                    </span>
+                    {repayableBalance.status === 'loading' ? (
+                      <span className="flex items-center gap-2 text-xs text-muted" aria-busy="true">
+                        Wallet:
+                        <Skeleton width={72} height={14} />
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted">
+                        Wallet:{' '}
+                        <span className="num-tabular">
+                          {hasRepayableBalance ? formatMoney(walletBalance) : 'Unavailable'}
+                        </span>
+                      </span>
+                    )}
                   </div>
+
+                  {repayableBalance.status === 'no_trustline' && (
+                    <div
+                      className="mt-3 rounded-lg border border-error bg-error/10 p-3 text-sm text-error"
+                      role="alert"
+                    >
+                      <p className="font-semibold">
+                        Add a {SETTLEMENT_ASSET.code} trustline to repay
+                      </p>
+                      <p className="mt-1 text-xs">
+                        Add the settlement-asset trustline to your wallet, then refresh your balance.
+                      </p>
+                    </div>
+                  )}
 
                   <div className="mt-3 flex gap-2">
                     {[25, 50, 75, 100].map((pct) => (
@@ -691,6 +1066,7 @@ export default function RepayPage() {
                         key={pct}
                         type="button"
                         onClick={() => handlePercent(pct)}
+                        disabled={!hasRepayableBalance}
                         className={`rp-preset-btn flex-1 rounded-md border border-accent/30 px-2 py-1.5 text-xs font-medium text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${motionClasses(isReducedMotionActive, 'transition-colors hover:bg-accent/10')}`}
                         aria-label={`Set amount to ${pct === 100 ? 'maximum' : `${pct} percent`}`}
                       >
@@ -704,17 +1080,17 @@ export default function RepayPage() {
                       </button>
                     ))}
                     <span className="flex-1 [&>.accessible-tooltip]:w-full">
-                      <Tooltip label={suggestionMessage} disabled={suggestion.amount > 0}>
+                      <Tooltip label={suggestionMessage} disabled={!smartPayDisabled}>
                         <span
                           className="w-full rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-success"
-                          tabIndex={suggestion.amount === 0 ? 0 : undefined}
-                          aria-label={suggestion.amount === 0 ? 'Smart Pay unavailable' : undefined}
+                          tabIndex={smartPayDisabled ? 0 : undefined}
+                          aria-label={smartPayDisabled ? 'Smart Pay unavailable' : undefined}
                           aria-describedby="smart-pay-reason"
                         >
                           <button
                             type="button"
                             onClick={handleSmartPay}
-                            disabled={suggestion.amount === 0}
+                            disabled={smartPayDisabled}
                             className={`rp-smart-pay-btn w-full rounded-md border border-success/30 px-2 py-1.5 text-xs font-medium text-success disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-success ${motionClasses(isReducedMotionActive, 'transition-colors enabled:hover:bg-success/10')}`}
                             aria-label={`Smart Pay suggested repayment of ${formatMoney(suggestion.amount)}`}
                             aria-describedby="smart-pay-reason"
@@ -740,6 +1116,7 @@ export default function RepayPage() {
                       type="number"
                       value={amountStr}
                       onChange={(e) => setAmountStr(e.target.value)}
+                      disabled={!hasRepayableBalance}
                       placeholder="0.00"
                       min={1}
                       step={0.01}
@@ -880,7 +1257,7 @@ export default function RepayPage() {
                     <button
                       type="button"
                       onClick={handleReview}
-                      disabled={isInvalid || amount <= 0}
+                      disabled={!hasRepayableBalance || isInvalid || amount <= 0}
                       className={`rp-review-btn w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${motionClasses(isReducedMotionActive, 'transition-all hover:brightness-110')}`}
                     >
                       <span className="flex items-center justify-center gap-2">
@@ -891,7 +1268,7 @@ export default function RepayPage() {
                       ref={previewTriggerRef}
                       type="button"
                       onClick={() => setIsPreviewModalOpen(true)}
-                      disabled={isInvalid || amount <= 0}
+                      disabled={!hasRepayableBalance || isInvalid || amount <= 0}
                       className={`rp-preview-btn w-full rounded-lg border border-accent/40 bg-accent/10 px-4 py-2.5 text-xs font-semibold text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-40 ${motionClasses(isReducedMotionActive, 'transition-all hover:bg-accent/20')}`}
                     >
                       Preview Consequences Modal
@@ -961,6 +1338,50 @@ export default function RepayPage() {
                 </p>
               </div>
             )}
+            {isReviewBalanceLoading && (
+              <div
+                className="flex items-center justify-between rounded-lg border border-border bg-surface p-4 text-sm text-muted"
+                aria-busy="true"
+              >
+                <span>Refreshing {SETTLEMENT_ASSET.code} wallet balance</span>
+                <Skeleton width={72} height={16} />
+              </div>
+            )}
+            {reviewBalanceError && (
+              <div
+                className="rounded-lg border border-error bg-error/10 p-4 text-sm text-error"
+                role="alert"
+              >
+                {reviewBalanceError}
+              </div>
+            )}
+            {/* Issue #1188: the amount no longer validates against current
+                debt or wallet data while sitting on review (e.g. the debt was
+                refetched lower). Confirm is disabled by isReviewConfirmDisabled;
+                this alert explains why and offers the way back. */}
+            {isInvalid && (
+              <div
+                className="rounded-lg border border-error bg-error/10 p-4 text-sm text-error"
+                role="alert"
+                data-testid="repay-review-invalid-alert"
+              >
+                <p className="font-semibold">
+                  {validation?.feedback.title ?? 'Repayment amount is no longer valid'}
+                </p>
+                <p className="mt-0.5">
+                  {validation?.feedback.message ??
+                    'The amount does not match the current debt or wallet balance.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleBack}
+                  className="rp-review-edit-amount-btn mt-3 rounded-md border border-error/40 bg-error/5 px-3 py-1.5 text-xs font-semibold text-error focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  data-testid="repay-review-edit-amount"
+                >
+                  Edit amount
+                </button>
+              </div>
+            )}
             <div className="rounded-lg border border-border bg-surface p-6 text-center">
               <p className="text-sm text-muted">You are about to repay</p>
               <div className="mt-2 flex items-center justify-center gap-2">
@@ -989,7 +1410,9 @@ export default function RepayPage() {
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted">Wallet balance</span>
                   <span className="font-semibold text-success num-tabular">
-                    {formatMoney(walletBalance)}
+                    {isReviewBalanceLoading
+                      ? 'Refreshing…'
+                      : formatMoney(reviewBalance ?? walletBalance)}
                   </span>
                 </div>
                 {isAutoSchedule && (
@@ -1007,20 +1430,17 @@ export default function RepayPage() {
                 <span className="text-xs text-muted">{selectedLine.apr}% APR</span>
               </div>
               <div className="mt-3 space-y-2 text-sm">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted">Principal reduction</span>
-                  <span className="font-semibold text-foreground num-tabular">
-                    {formatMoney(principalPortion)}
+                <p className="font-semibold text-foreground" data-testid="repay-allocation-summary">
+                  Interest{' '}
+                  <span className="num-tabular">
+                    {formatMoney(allocation.interestPaid)}
                   </span>
-                </div>
-                {accruedInterest > 0 && (
-                  <div className="flex items-center justify-between gap-4 border-t border-border pt-2">
-                    <span className="text-muted">Accrued interest paid</span>
-                    <span className="font-semibold text-foreground num-tabular">
-                      {formatMoney(interestPortion)}
-                    </span>
-                  </div>
-                )}
+                  {' · '}
+                  Principal{' '}
+                  <span className="num-tabular">
+                    {formatMoney(allocation.principalPaid)}
+                  </span>
+                </p>
               </div>
             </div>
 
@@ -1054,8 +1474,8 @@ export default function RepayPage() {
               <button
                 type="button"
                 onClick={handleConfirm}
-                disabled={isConfirmDisabled}
-                aria-disabled={isConfirmDisabled || undefined}
+                disabled={isReviewConfirmDisabled}
+                aria-disabled={isReviewConfirmDisabled || undefined}
                 className={`rp-confirm-btn flex-[2] rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${motionClasses(isReducedMotionActive, 'transition-all hover:brightness-110')}`}
               >
                 <span className="flex items-center justify-center gap-2">
@@ -1066,74 +1486,6 @@ export default function RepayPage() {
           </div>
         )}
 
-        {step === 'success' && (
-          <div className="space-y-6 text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-success/20">
-              <CheckCircle className="h-8 w-8 text-success" aria-hidden="true" />
-            </div>
-
-            <div>
-              <h2 className="text-2xl font-bold text-foreground">
-                You repaid <span className="num-tabular">{formatMoney(amount)}</span>!
-              </h2>
-              <p className="mt-1 text-muted">
-                Your transaction was successful.
-              </p>
-            </div>
-
-            <div className="rounded-lg border border-border bg-surface p-4 text-left">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted">Remaining debt</span>
-                <span className="flex items-center gap-1">
-                  <span className="font-semibold text-foreground num-tabular">
-                    {formatMoney(remainingDebt)}
-                  </span>
-                  <CopyToClipboard
-                    value={formatMoney(remainingDebt)}
-                    ariaLabel="Copy remaining debt amount"
-                  />
-                </span>
-              </div>
-              <div className="mt-2 flex items-center justify-between text-sm">
-                <span className="text-muted">Credit line utilization</span>
-                <span className="font-semibold text-foreground">
-                  Reduced to <span className="num-tabular">{newPct}%</span>
-                </span>
-              </div>
-              {isAutoSchedule && (
-                <div className="mt-2 flex items-center justify-between text-sm">
-                  <span className="text-muted">Auto-schedule</span>
-                  <span className="font-semibold text-accent">Active</span>
-                </div>
-              )}
-            </div>
-
-            <PayoffProjection
-              currentDebt={selectedLine.utilized}
-              apr={selectedLine.apr}
-              repayAmount={amount}
-              limit={selectedLine.limit}
-              nextPaymentAmount={selectedLine.nextPaymentAmount}
-            />
-
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => navigate('/')}
-                className={`rp-dashboard-btn flex-1 rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${motionClasses(isReducedMotionActive, 'transition-all hover:brightness-110')}`}
-              >
-                Back to Dashboard
-              </button>
-              <button
-                type="button"
-                onClick={handleNewRepay}
-                className={`rp-new-repay-btn flex-1 rounded-lg border border-border bg-surface px-4 py-3 text-sm font-semibold text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${motionClasses(isReducedMotionActive, 'transition-all hover:bg-border')}`}
-              >
-                Make another repayment
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       <InlineHelpOverlay

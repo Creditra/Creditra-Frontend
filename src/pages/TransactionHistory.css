@@ -171,6 +171,26 @@
     line-height: var(--lh-display);
 }
 
+/* Scope qualifier appended to flow card labels ("in selected range") */
+.th-stat-scope {
+    font-size: 0.6rem;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--muted);
+    opacity: 0.75;
+    margin-left: var(--space-xs);
+    white-space: nowrap;
+}
+
+/* Sub-text below the reconciliation hint value */
+.th-stat-hint {
+    font-size: 0.65rem;
+    line-height: var(--lh-small);
+    color: var(--muted);
+    opacity: 0.8;
+    margin-top: var(--space-xs);
+}
+
 /* ─── Filters ───────────────────────────────────────────────────────────────── */
 
 .th-filters {

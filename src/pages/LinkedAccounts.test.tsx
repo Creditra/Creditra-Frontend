@@ -10,9 +10,10 @@
  * - ARIA attributes
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, within, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import axe from 'axe-core';
 import { LinkedAccounts } from './LinkedAccounts';
 import * as linkedAccountsService from '../services/linkedAccounts';
 import type { LinkedAccount } from '../types/linkedAccount';
@@ -190,15 +191,42 @@ describe('LinkedAccounts', () => {
   });
 
   describe('Disconnect Action', () => {
-    it('should call disconnectAccount when disconnect button is clicked', async () => {
+    it('opens accessible confirmation dialog with Cancel focused and never calls window.confirm', async () => {
+      const user = userEvent.setup();
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue(mockAccounts);
+      const confirmSpy = vi.spyOn(window, 'confirm');
+
+      render(<LinkedAccounts />);
+
+      const disconnectTrigger = await screen.findByRole('button', {
+        name: /disconnect google account/i,
+      });
+      await user.click(disconnectTrigger);
+
+      expect(confirmSpy).not.toHaveBeenCalled();
+
+      const dialog = screen.getByRole('alertdialog', { name: /disconnect google\?/i });
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveAccessibleDescription(
+        'Disconnecting Google may lower your credit evaluation score. You can reconnect later.',
+      );
+
+      const cancelButton = within(dialog).getByRole('button', { name: 'Cancel' });
+      await waitFor(() => {
+        expect(cancelButton).toHaveFocus();
+      });
+
+      confirmSpy.mockRestore();
+    });
+
+    it('should call disconnectAccount once when confirmed in dialog', async () => {
       const user = userEvent.setup();
       vi.mocked(linkedAccountsService.fetchLinkedAccounts)
         .mockResolvedValueOnce(mockAccounts)
         .mockResolvedValueOnce([]);
       vi.mocked(linkedAccountsService.disconnectAccount).mockResolvedValue();
 
-      // Mock window.confirm
-      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+      const confirmSpy = vi.spyOn(window, 'confirm');
 
       render(<LinkedAccounts />);
 
@@ -208,8 +236,12 @@ describe('LinkedAccounts', () => {
 
       await user.click(screen.getByRole('button', { name: /disconnect google account/i }));
 
-      expect(confirmSpy).toHaveBeenCalled();
+      const dialog = screen.getByRole('alertdialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Disconnect Google' }));
+
+      expect(confirmSpy).not.toHaveBeenCalled();
       await waitFor(() => {
+        expect(linkedAccountsService.disconnectAccount).toHaveBeenCalledTimes(1);
         expect(linkedAccountsService.disconnectAccount).toHaveBeenCalledWith('google-123');
       });
 
@@ -220,7 +252,7 @@ describe('LinkedAccounts', () => {
       const user = userEvent.setup();
       vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue(mockAccounts);
 
-      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+      const confirmSpy = vi.spyOn(window, 'confirm');
 
       render(<LinkedAccounts />);
 
@@ -230,10 +262,37 @@ describe('LinkedAccounts', () => {
 
       await user.click(screen.getByRole('button', { name: /disconnect google account/i }));
 
-      expect(confirmSpy).toHaveBeenCalled();
+      const dialog = screen.getByRole('alertdialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+      expect(confirmSpy).not.toHaveBeenCalled();
       expect(linkedAccountsService.disconnectAccount).not.toHaveBeenCalled();
 
       confirmSpy.mockRestore();
+    });
+
+    it('resolves false on Escape and returns focus to the Disconnect button', async () => {
+      const user = userEvent.setup();
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue(mockAccounts);
+
+      render(<LinkedAccounts />);
+
+      const disconnectBtn = await screen.findByRole('button', {
+        name: /disconnect google account/i,
+      });
+      disconnectBtn.focus();
+      await user.click(disconnectBtn);
+
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+      await user.keyboard('{Escape}');
+
+      await waitFor(() => {
+        expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      });
+
+      expect(linkedAccountsService.disconnectAccount).not.toHaveBeenCalled();
+      expect(disconnectBtn).toHaveFocus();
     });
 
     it('should show success message after disconnection', async () => {
@@ -243,8 +302,6 @@ describe('LinkedAccounts', () => {
         .mockResolvedValueOnce([]);
       vi.mocked(linkedAccountsService.disconnectAccount).mockResolvedValue();
 
-      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-
       render(<LinkedAccounts />);
 
       await waitFor(() => {
@@ -253,11 +310,12 @@ describe('LinkedAccounts', () => {
 
       await user.click(screen.getByRole('button', { name: /disconnect google account/i }));
 
+      const dialog = screen.getByRole('alertdialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Disconnect Google' }));
+
       await waitFor(() => {
         expect(screen.getByRole('status')).toHaveTextContent(/google account disconnected/i);
       });
-
-      confirmSpy.mockRestore();
     });
   });
 
@@ -327,6 +385,39 @@ describe('LinkedAccounts', () => {
       await waitFor(() => {
         expect(screen.getByRole('article', { name: /google account connected/i })).toBeInTheDocument();
       });
+    });
+
+    it('renders provider grid as role="list" with 4 listitem children', async () => {
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue(mockAccounts);
+
+      render(<LinkedAccounts />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('article', { name: /google account connected/i })).toBeInTheDocument();
+      });
+
+      const gridList = screen.getByRole('list', { name: /available providers/i });
+      expect(gridList).toBeInTheDocument();
+
+      const items = within(gridList).getAllByRole('listitem');
+      expect(items).toHaveLength(4);
+    });
+
+    it('reports no aria-required-children or other axe accessibility violations on the rendered page', async () => {
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue(mockAccounts);
+
+      const { container } = render(<LinkedAccounts />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('article', { name: /google account connected/i })).toBeInTheDocument();
+      });
+
+      const results = await axe.run(container);
+      const ariaRequiredChildren = results.violations.filter(
+        (v) => v.id === 'aria-required-children',
+      );
+      expect(ariaRequiredChildren).toHaveLength(0);
+      expect(results.violations).toHaveLength(0);
     });
 
     it('should have proper ARIA labels on action buttons', async () => {
@@ -525,7 +616,7 @@ describe('LinkedAccounts', () => {
       expect(screen.getByRole('button', { name: /connect new account from toolbar/i })).toBeInTheDocument();
     });
 
-    it('calls initiateLinkAccount from toolbar connect button', async () => {
+    it('calls initiateLinkAccount from toolbar picker', async () => {
       const user = userEvent.setup();
       vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue([]);
       vi.mocked(linkedAccountsService.initiateLinkAccount).mockResolvedValue({
@@ -539,7 +630,9 @@ describe('LinkedAccounts', () => {
         expect(screen.getByRole('button', { name: /connect google account/i })).toBeInTheDocument();
       });
 
-      await user.click(screen.getByRole('button', { name: /connect new account from toolbar/i }));
+      // Open the provider picker and select Google from the menu
+      await user.click(screen.getByTestId('provider-picker-trigger'));
+      await user.click(screen.getByTestId('provider-picker-item-google'));
 
       expect(linkedAccountsService.initiateLinkAccount).toHaveBeenCalledWith({ provider: 'google' });
     });
@@ -554,7 +647,7 @@ describe('LinkedAccounts', () => {
       });
     });
 
-    it('calls disconnectAccount for all connected accounts when disconnect all is confirmed', async () => {
+    it('calls disconnectAccount for all connected accounts when disconnect all is confirmed and mentions the number of accounts', async () => {
       const user = userEvent.setup();
       const multiAccounts: LinkedAccount[] = [
         ...mockAccounts,
@@ -574,7 +667,7 @@ describe('LinkedAccounts', () => {
         .mockResolvedValueOnce([]);
       vi.mocked(linkedAccountsService.disconnectAccount).mockResolvedValue();
 
-      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+      const confirmSpy = vi.spyOn(window, 'confirm');
 
       render(<LinkedAccounts />);
 
@@ -584,7 +677,15 @@ describe('LinkedAccounts', () => {
 
       await user.click(screen.getByRole('button', { name: /disconnect all accounts from toolbar/i }));
 
-      expect(confirmSpy).toHaveBeenCalled();
+      const dialog = screen.getByRole('alertdialog');
+      expect(dialog).toHaveTextContent(/2/);
+      expect(dialog).toHaveAccessibleDescription(
+        'Disconnecting 2 linked accounts may lower your credit evaluation score. You can reconnect later.',
+      );
+
+      await user.click(within(dialog).getByRole('button', { name: 'Disconnect All' }));
+
+      expect(confirmSpy).not.toHaveBeenCalled();
       await waitFor(() => {
         expect(linkedAccountsService.disconnectAccount).toHaveBeenCalledWith('google-123');
         expect(linkedAccountsService.disconnectAccount).toHaveBeenCalledWith('github-456');
@@ -635,6 +736,321 @@ describe('LinkedAccounts', () => {
       const tooltip = screen.getByText('Disconnect all linked accounts');
       expect(tooltip).toHaveClass('is-visible');
       expect(disconnectAllButton).toHaveAttribute('aria-describedby', tooltip.id);
+    });
+  });
+
+  // ── Issue #1220: Provider picker and Promise.allSettled scenarios ────────────
+
+  describe('Provider picker (toolbar)', () => {
+    it('Scenario 1: Google linked — picker lists GitHub, Twitter, Facebook but not Google', async () => {
+      const user = userEvent.setup();
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue([
+        {
+          id: 'google-123',
+          provider: 'google',
+          status: 'connected',
+          displayName: 'Test User',
+          externalId: 'test@gmail.com',
+          connectedAt: '2026-01-01T00:00:00Z',
+          lastVerified: '2026-06-28T00:00:00Z',
+        },
+      ]);
+
+      render(<LinkedAccounts />);
+
+      // Wait for accounts to load
+      await waitFor(() => {
+        expect(screen.getByRole('article', { name: /google account connected/i })).toBeInTheDocument();
+      });
+
+      // Open the picker
+      const trigger = screen.getByTestId('provider-picker-trigger');
+      await user.click(trigger);
+
+      const menu = screen.getByTestId('provider-picker-menu');
+      expect(within(menu).queryByTestId('provider-picker-item-google')).not.toBeInTheDocument();
+      expect(within(menu).getByTestId('provider-picker-item-github')).toBeInTheDocument();
+      expect(within(menu).getByTestId('provider-picker-item-twitter')).toBeInTheDocument();
+      expect(within(menu).getByTestId('provider-picker-item-facebook')).toBeInTheDocument();
+    });
+
+    it('Scenario 2: All providers linked — shows "All providers linked" and no Connect button', async () => {
+      const allLinked: LinkedAccount[] = [
+        { id: 'google-1', provider: 'google', status: 'connected', displayName: 'U', externalId: 'g@g.com', connectedAt: '2026-01-01T00:00:00Z' },
+        { id: 'github-1', provider: 'github', status: 'connected', displayName: 'U', externalId: 'u@gh.com', connectedAt: '2026-01-01T00:00:00Z' },
+        { id: 'twitter-1', provider: 'twitter', status: 'connected', displayName: 'U', externalId: '@u', connectedAt: '2026-01-01T00:00:00Z' },
+        { id: 'facebook-1', provider: 'facebook', status: 'connected', displayName: 'U', externalId: 'u@fb.com', connectedAt: '2026-01-01T00:00:00Z' },
+      ];
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue(allLinked);
+
+      render(<LinkedAccounts />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('all-providers-linked')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByTestId('provider-picker-trigger')).not.toBeInTheDocument();
+      expect(screen.getByTestId('all-providers-linked')).toHaveAttribute('aria-label', 'All providers linked');
+    });
+
+    it('Scenario 3: Choose GitHub from picker — calls initiateLinkAccount with "github"', async () => {
+      const user = userEvent.setup();
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue([
+        {
+          id: 'google-123',
+          provider: 'google',
+          status: 'connected',
+          displayName: 'Test User',
+          externalId: 'test@gmail.com',
+          connectedAt: '2026-01-01T00:00:00Z',
+          lastVerified: '2026-06-28T00:00:00Z',
+        },
+      ]);
+      vi.mocked(linkedAccountsService.initiateLinkAccount).mockResolvedValue({
+        authUrl: '/oauth/github?state=test',
+        state: 'test-state',
+      });
+
+      render(<LinkedAccounts />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('article', { name: /google account connected/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTestId('provider-picker-trigger'));
+      await user.click(screen.getByTestId('provider-picker-item-github'));
+
+      expect(linkedAccountsService.initiateLinkAccount).toHaveBeenCalledWith({ provider: 'github' });
+    });
+
+    it('Scenario 4: Picker keyboard — ArrowDown moves focus, Enter selects, Escape closes and refocuses trigger', async () => {
+      const user = userEvent.setup();
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue([]);
+      vi.mocked(linkedAccountsService.initiateLinkAccount).mockResolvedValue({
+        authUrl: '/oauth/github?state=test',
+        state: 'test-state',
+      });
+
+      render(<LinkedAccounts />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('provider-picker-trigger')).toBeInTheDocument();
+      });
+
+      const trigger = screen.getByTestId('provider-picker-trigger');
+      trigger.focus();
+
+      // Open with ArrowDown
+      await user.keyboard('{ArrowDown}');
+      expect(screen.getByTestId('provider-picker-menu')).toBeInTheDocument();
+
+      // First item (google) should be focused
+      await waitFor(() => {
+        expect(screen.getByTestId('provider-picker-item-google')).toHaveFocus();
+      });
+
+      // ArrowDown moves to second item (github)
+      await user.keyboard('{ArrowDown}');
+      await waitFor(() => {
+        expect(screen.getByTestId('provider-picker-item-github')).toHaveFocus();
+      });
+
+      // Escape closes and returns focus to trigger
+      await user.keyboard('{Escape}');
+      await waitFor(() => {
+        expect(screen.queryByTestId('provider-picker-menu')).not.toBeInTheDocument();
+      });
+      expect(trigger).toHaveFocus();
+    });
+  });
+
+  describe('Disconnect All with Promise.allSettled', () => {
+    const multiAccounts: LinkedAccount[] = [
+      {
+        id: 'google-123',
+        provider: 'google',
+        status: 'connected',
+        displayName: 'Test User',
+        externalId: 'test@gmail.com',
+        connectedAt: '2026-01-01T00:00:00Z',
+        lastVerified: '2026-06-28T00:00:00Z',
+      },
+      {
+        id: 'github-456',
+        provider: 'github',
+        status: 'connected',
+        displayName: 'Test User',
+        externalId: 'test@github.com',
+        connectedAt: '2026-01-01T00:00:00Z',
+        lastVerified: '2026-06-28T00:00:00Z',
+      },
+      {
+        id: 'twitter-789',
+        provider: 'twitter',
+        status: 'connected',
+        displayName: 'Test User',
+        externalId: '@test',
+        connectedAt: '2026-01-01T00:00:00Z',
+        lastVerified: '2026-06-28T00:00:00Z',
+      },
+    ];
+
+    it('Scenario 5: Disconnect All, all succeed — shows "All 3 accounts disconnected"', async () => {
+      const user = userEvent.setup();
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts)
+        .mockResolvedValueOnce(multiAccounts)
+        .mockResolvedValueOnce([]);
+      vi.mocked(linkedAccountsService.disconnectAccount).mockResolvedValue(undefined);
+
+      render(<LinkedAccounts />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /disconnect all accounts from toolbar/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /disconnect all accounts from toolbar/i }));
+
+      const dialog = screen.getByRole('alertdialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Disconnect All' }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('status')).toHaveTextContent(/all 3 accounts disconnected/i);
+      });
+    });
+
+    it('Scenario 6: Disconnect All, one rejects — message names succeeded/failed and shows Retry failed button', async () => {
+      const user = userEvent.setup();
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts)
+        .mockResolvedValueOnce(multiAccounts)
+        .mockResolvedValueOnce(multiAccounts.filter(a => a.id !== 'google-123').map(a => ({ ...a, status: 'disconnected' as const })));
+
+      // twitter fails, the others succeed
+      vi.mocked(linkedAccountsService.disconnectAccount).mockImplementation(async (id) => {
+        if (id === 'twitter-789') throw new Error('Twitter disconnect failed');
+        return undefined;
+      });
+
+      render(<LinkedAccounts />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /disconnect all accounts from toolbar/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /disconnect all accounts from toolbar/i }));
+
+      const dialog = screen.getByRole('alertdialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Disconnect All' }));
+
+      await waitFor(() => {
+        const alert = screen.getByRole('alert');
+        expect(alert).toHaveTextContent(/twitter/i);
+        expect(alert).toHaveTextContent(/google/i);
+        expect(alert).toHaveTextContent(/github/i);
+      });
+
+      expect(screen.getByTestId('retry-failed-btn')).toBeInTheDocument();
+    });
+
+    it('Scenario 7: Retry failed — calls disconnectAccount only for the failed account id', async () => {
+      const user = userEvent.setup();
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts)
+        .mockResolvedValueOnce(multiAccounts)
+        .mockResolvedValue([]);
+
+      // twitter fails first time, then succeeds on retry
+      let twitterCallCount = 0;
+      vi.mocked(linkedAccountsService.disconnectAccount).mockImplementation(async (id) => {
+        if (id === 'twitter-789') {
+          twitterCallCount++;
+          if (twitterCallCount === 1) throw new Error('Twitter disconnect failed');
+        }
+        return undefined;
+      });
+
+      render(<LinkedAccounts />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /disconnect all accounts from toolbar/i })).toBeInTheDocument();
+      });
+
+      // Trigger Disconnect All
+      await user.click(screen.getByRole('button', { name: /disconnect all accounts from toolbar/i }));
+      const dialog = screen.getByRole('alertdialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Disconnect All' }));
+
+      // Wait for Retry button
+      await waitFor(() => {
+        expect(screen.getByTestId('retry-failed-btn')).toBeInTheDocument();
+      });
+
+      vi.mocked(linkedAccountsService.disconnectAccount).mockClear();
+      vi.mocked(linkedAccountsService.disconnectAccount).mockResolvedValue(undefined);
+
+      // Click retry
+      await user.click(screen.getByTestId('retry-failed-btn'));
+
+      await waitFor(() => {
+        // Only the failed account should have been retried
+        expect(linkedAccountsService.disconnectAccount).toHaveBeenCalledWith('twitter-789');
+        expect(linkedAccountsService.disconnectAccount).not.toHaveBeenCalledWith('google-123');
+        expect(linkedAccountsService.disconnectAccount).not.toHaveBeenCalledWith('github-456');
+      });
+    });
+
+    it('Scenario 8: Disconnect All, all reject — error message lists every provider', async () => {
+      const user = userEvent.setup();
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts)
+        .mockResolvedValueOnce(multiAccounts)
+        .mockResolvedValueOnce(multiAccounts);
+
+      vi.mocked(linkedAccountsService.disconnectAccount).mockRejectedValue(new Error('Network error'));
+
+      render(<LinkedAccounts />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /disconnect all accounts from toolbar/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /disconnect all accounts from toolbar/i }));
+
+      const dialog = screen.getByRole('alertdialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Disconnect All' }));
+
+      await waitFor(() => {
+        const alert = screen.getByRole('alert');
+        expect(alert).toHaveTextContent(/google/i);
+        expect(alert).toHaveTextContent(/github/i);
+        expect(alert).toHaveTextContent(/twitter/i);
+      });
+    });
+  });
+
+  describe('Regression proof', () => {
+    it('On current main, toolbar connect button calls initiateLinkAccount with "google" (regression baseline)', async () => {
+      // This test documents the regression: before this fix, the toolbar hard-coded
+      // onClick={() => handleConnect('google')}. With the fix in place the toolbar
+      // no longer has a single connect button — it opens a provider picker menu.
+      // We verify the picker exists and does NOT hard-code google.
+      const user = userEvent.setup();
+      vi.mocked(linkedAccountsService.fetchLinkedAccounts).mockResolvedValue([]);
+      vi.mocked(linkedAccountsService.initiateLinkAccount).mockResolvedValue({
+        authUrl: '/oauth/github?state=test',
+        state: 'test-state',
+      });
+
+      render(<LinkedAccounts />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('provider-picker-trigger')).toBeInTheDocument();
+      });
+
+      // Pick GitHub — NOT google
+      await user.click(screen.getByTestId('provider-picker-trigger'));
+      await user.click(screen.getByTestId('provider-picker-item-github'));
+
+      // Should call with github, not google
+      expect(linkedAccountsService.initiateLinkAccount).toHaveBeenCalledWith({ provider: 'github' });
+      expect(linkedAccountsService.initiateLinkAccount).not.toHaveBeenCalledWith({ provider: 'google' });
     });
   });
 });

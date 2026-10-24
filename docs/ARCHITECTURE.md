@@ -16,7 +16,8 @@ flowchart TB
     Boot["main.tsx<br/>(StrictMode + ReactDOM root)"] --> App["App.tsx"]
     App --> EB["ErrorBoundary<br/>(class component, catches render errors)"]
     EB --> WP["WalletProvider<br/>(connection lifecycle)"]
-    WP --> Router["BrowserRouter"]
+    WP --> CDP["CreditDataProvider<br/>(wallet-scoped credit state)"]
+    CDP --> Router["BrowserRouter"]
 
     Router --> Header["Header<br/>(NavLink + WalletButton)"]
     Router --> Main["main element"]
@@ -42,6 +43,11 @@ flowchart TB
 The header is rendered outside `<Routes>` so it persists across navigation. The
 `ErrorBoundary` is wrapped *outside* `WalletProvider` so that even a failure inside the
 wallet reducer renders the error page instead of a blank screen.
+
+`CreditDataProvider` is mounted inside `WalletProvider` and outside
+`BrowserRouter`. It keys credit-line and transaction state by the connected
+wallet identity, so routes and persistent header components share one request
+and cannot render data from a previous account or network.
 
 ---
 
@@ -118,22 +124,88 @@ interface WalletContextType {
   wallet: WalletInfo | null;
   status: 'disconnected' | 'connecting' | 'connected' | 'error';
   error: WalletError | null;
-  connect: (type: WalletType) => Promise<void>;
+  connect: (type: WalletType, options?: ConnectOptions) => Promise<ConnectResult>;
   disconnect: () => void;
   clearError: () => void;
 }
+
+type ConnectResult =
+  | { ok: true; wallet: WalletInfo }
+  | { ok: false; error: WalletConnectError };
 ```
 
-`WalletError` is a discriminated union — consumers branch on `error.type` to render
-specific recovery UI:
+`connect()` returns a result object that distinguishes success from failure. On success,
+`{ ok: true, wallet }` is returned. On failure, `{ ok: false, error }` is returned and
+the context's `error` and `status` fields are also updated for backward compatibility
+with existing consumers.
+
+`WalletConnectError` is a proper Error subclass (so `instanceof` checks work) with a
+`type` discriminator that classifies the failure category:
 
 ```ts
-type WalletError =
-  | { type: 'not_found';        message: string }
-  | { type: 'connection_failed'; message: string }
-  | { type: 'wrong_network';     message: string }
-  | { type: 'user_rejected';     message: string };
+class WalletConnectError extends Error {
+  type: 'not_found' | 'connection_failed' | 'wrong_network' | 'user_rejected';
+  message: string;
+}
 ```
+
+### Wallet storage (`src/utils/wallet.ts`)
+
+`WalletContext` persists as little as possible: **only the wallet type** — never a
+public key, address, key, or signature. Auto-reconnect re-derives the address from the
+wallet extension via `connectWallet()`.
+
+| Key | Value | Written when | Cleared when |
+| --- | --- | --- | --- |
+| `creditra-wallet-info` | `{ v: 2, type }` — the active session's wallet type | `saveWalletPreference()` after a successful connect, auto-reconnect, or `stayConnected()` | `disconnectWallet()`: explicit disconnect **and** session expiry, plus any read that finds an unusable record |
+| `creditra-wallet-recent` | `WalletType[]`, most-recent last | `recordRecentWallet()` on every successful connect | `clearMRU()` only — deliberately kept across disconnect and session expiry |
+| `creditra-wallet-remember` | `true` (an absent key means "no") | `setWalletRemembered(true)` when the user opts in to auto-reconnect | `setWalletRemembered(false)`, `disconnectWallet()`, session expiry |
+
+The legacy keys `wallet_info` (v1, which did contain the public key) and
+`wallet_preference` are read once by `getStoredWallet()` purely to migrate the wallet
+type into `creditra-wallet-info` as `{ v: 2, type }`, after which both are deleted. The
+migration is idempotent and needs no user action; a record whose type is missing or
+unsupported is dropped so no reconnect is attempted from it.
+
+Session expiry (`SESSION_TIMEOUT_MS`) is a full logout: it clears in-memory state *and*
+the stored type plus the opt-in flag, so a page reload cannot silently reconnect a
+session the app just ended. The MRU list survives, exactly as on an explicit disconnect,
+because recency is activity history rather than session state.
+
+### Error classification and user-facing copy
+
+Raw errors from wallet extensions are classified by `classifyWalletError()` in
+`src/utils/wallet.ts`. The helper examines error codes and messages to detect:
+
+- **`user_rejected`** — EIP-1193 code 4001, or messages containing "reject", "decline",
+  "cancel", "denied"
+- **`not_found`** — messages containing "not found" or "not installed"
+- **`wrong_network`** — messages containing "network", "testnet", or "mainnet"
+- **`connection_failed`** — catch-all for unknown failures
+
+Each error type maps to a user-facing message centralized in `ERROR_MESSAGES`:
+
+| Error Type | User-Facing Copy |
+| --- | --- |
+| `user_rejected` | "You cancelled the request in your wallet. Try again when you're ready." |
+| `not_found` | "Wallet extension not found. Please install it first." |
+| `wrong_network` | "Switch your wallet to Testnet and try again." |
+| `connection_failed` | "Failed to connect. Please try again." |
+
+Raw error details are logged in development but never shown to users.
+
+### Error propagation flow
+
+1. **`connectWallet()`** in `src/utils/wallet.ts` throws `WalletConnectError` on failure
+2. **`WalletContext.connect()`** catches errors, classifies them via
+   `classifyWalletError()`, sets context state, and returns `{ ok: false, error }`
+3. **`WalletButton.handleWalletConnect()`** checks the result and only opens the
+   onboarding flow when `ok === true`. On failure, it re-throws the error
+4. **`WalletConnectionModal.handleWalletSelect()`** catches the error, displays it in a
+   `role="alert"` region, and keeps the modal open with buttons re-enabled
+
+This ensures users are never pushed into onboarding after a failed connection, and the
+modal provides actionable feedback instead of closing silently.
 
 ### NotificationContext
 
