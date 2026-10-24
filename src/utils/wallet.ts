@@ -1,8 +1,20 @@
-import { WalletType, WalletInfo, WalletConnectError, WalletErrorType } from '../types/wallet';
+import {
+  WalletType,
+  WalletInfo,
+  WalletConnectError,
+  WalletErrorType,
+  StoredWalletPreference,
+} from '../types/wallet';
 import { readJson, writeJson, removeKey } from './storage';
+import { isValidAccountId } from './strkey';
 
 // Re-export types for convenience
-export { WalletConnectError, type WalletType, type WalletErrorType } from '../types/wallet';
+export {
+  WalletConnectError,
+  type WalletType,
+  type WalletErrorType,
+  type StoredWalletPreference,
+} from '../types/wallet';
 
 // ─── Error classification and user-facing copy ─────────────────────────────────
 
@@ -93,22 +105,40 @@ export const classifyWalletError = (raw: unknown): WalletConnectError => {
 // they can flow through the safe wrappers in `./storage` (private-mode safe,
 // quota-safe).
 //
-//   creditra-wallet-info        — full `WalletInfo` of the active session
-//                                   (unchanged, kept for backward compat).
+//   creditra-wallet-info        — `StoredWalletPreference`, i.e. `{ v: 2, type }`
+//                                   for the active session.  Type only: the
+//                                   public key is re-asked from the extension
+//                                   on reconnect, so it never sits in storage.
 //   creditra-wallet-recent      — `WalletType[]` ordered MRU list.
 //   creditra-wallet-remember    — `boolean` opt-in flag for auto-reconnect.
 //
-// Only wallet **type** strings are ever persisted — never addresses, keys, or
-// signatures.  This keeps the surface area limited to non-PII data.
+// The remaining two keys are legacy and only ever read once, to migrate and
+// then delete them (see `getStoredWallet`):
+//
+//   wallet_info                 — v1 `WalletInfo`, which included the address.
+//   wallet_preference           — pre-MRU wallet type preference.
 const STORAGE_KEY_INFO = 'creditra-wallet-info';
 const STORAGE_KEY_RECENT = 'creditra-wallet-recent';
 const STORAGE_KEY_REMEMBER = 'creditra-wallet-remember';
 const STORAGE_KEY_PREFERENCE_LEGACY = 'wallet_preference';
 const STORAGE_KEY_INFO_LEGACY = 'wallet_info';
 
+/** Version of the `creditra-wallet-info` record written by this module. */
+const WALLET_INFO_VERSION = 2 as const;
+
 // Hard cap on MRU length — covers every supported wallet and then some, so the
 // array stays small and the rewrite cost is trivial.
 const MRU_MAX_LENGTH = 8;
+
+const validateAccountId = (publicKey: unknown): string => {
+  if (!isValidAccountId(publicKey)) {
+    throw {
+      type: 'connection_failed',
+      message: 'Your wallet returned an invalid account address',
+    } as WalletError;
+  }
+  return publicKey;
+};
 
 const SUPPORTED_WALLET_TYPES: ReadonlySet<WalletType> = new Set([
   'freighter',
@@ -165,7 +195,7 @@ export const connectWallet = async (type: WalletType): Promise<WalletInfo> => {
 
   try {
     if (type === 'freighter') {
-      const publicKey = await window.freighter.getPublicKey();
+      const publicKey = validateAccountId(await window.freighter.getPublicKey());
       const network = await window.freighter.getNetwork();
       
       if (network !== 'PUBLIC' && network !== 'TESTNET') {
@@ -182,13 +212,13 @@ export const connectWallet = async (type: WalletType): Promise<WalletInfo> => {
       const result = await window.albedo.publicKey({});
       return { 
         type, 
-        publicKey: result.pubkey, 
+        publicKey: validateAccountId(result.pubkey),
         network: 'PUBLIC' 
       };
     }
 
     if (type === 'xbull') {
-      const publicKey = await window.xBullSDK.getPublicKey();
+      const publicKey = validateAccountId(await window.xBullSDK.getPublicKey());
       return { 
         type, 
         publicKey, 
@@ -200,7 +230,7 @@ export const connectWallet = async (type: WalletType): Promise<WalletInfo> => {
       const result = await window.rabet.connect();
       return { 
         type, 
-        publicKey: result.publicKey, 
+        publicKey: validateAccountId(result.publicKey),
         network: 'PUBLIC' 
       };
     }
@@ -248,25 +278,79 @@ export const clearMRU = (): void => {
 };
 
 /**
- * Persist the connected wallet's full session record.  Only the wallet type —
- * never addresses, secrets, or signatures — ever leaves this module.
+ * Persist the active session.  Only the wallet **type** is written — the
+ * `publicKey`/`network` from `walletInfo` are intentionally dropped, because
+ * reconnect re-derives them from the extension.  That keeps the module's
+ * promise that no address ever reaches `localStorage`.
  */
 export const saveWalletPreference = (walletInfo: WalletInfo) => {
-  writeJson(STORAGE_KEY_INFO, walletInfo);
-  // Mirror to the legacy key so anything still reading `wallet_info` keeps
-  // working through the upgrade window.  Will be removed in a later release.
-  writeJson(STORAGE_KEY_INFO_LEGACY, walletInfo);
+  const stored: StoredWalletPreference = { v: WALLET_INFO_VERSION, type: walletInfo.type };
+  writeJson(STORAGE_KEY_INFO, stored);
+  // The old `wallet_info` mirror is obsolete: drop it rather than rewrite it.
+  removeKey(STORAGE_KEY_INFO_LEGACY);
 };
 
 /**
- * Read the active session.  Falls back to the legacy `wallet_info` key for
- * users who installed the application before `creditra-wallet-info` shipped.
+ * Extract a supported wallet type from any stored shape we may find:
+ * a bare type string (`wallet_preference`), or an object with a `type` field
+ * (v1 `WalletInfo`, v2 `StoredWalletPreference`).  Returns `null` for anything
+ * else, including unsupported or missing types.
  */
-export const getStoredWallet = (): WalletInfo | null => {
-  const fromNew = readJson<WalletInfo | null>(STORAGE_KEY_INFO, null);
-  if (fromNew) return fromNew;
-  const fromLegacy = readJson<WalletInfo | null>(STORAGE_KEY_INFO_LEGACY, null);
-  return fromLegacy;
+function extractWalletType(value: unknown): WalletType | null {
+  const candidate =
+    typeof value === 'string'
+      ? value
+      : value && typeof value === 'object'
+        ? (value as { type?: unknown }).type
+        : undefined;
+
+  return typeof candidate === 'string' && SUPPORTED_WALLET_TYPES.has(candidate as WalletType)
+    ? (candidate as WalletType)
+    : null;
+}
+
+/**
+ * Read the stored session, migrating older records on the way.
+ *
+ * The returned value always has the current shape — `{ v: 2, type }`.  Only the
+ * type survives: a v1 `creditra-wallet-info` record (which carried the public
+ * key) is reduced to its type, the pre-MRU `wallet_info` / `wallet_preference`
+ * keys are folded in as a fallback and then deleted.  The migration is
+ * idempotent and needs no user action; a record whose type is missing or
+ * unsupported is removed outright so no reconnect is attempted from it.
+ */
+export const getStoredWallet = (): StoredWalletPreference | null => {
+  const current = readJson<unknown>(STORAGE_KEY_INFO, null);
+  const legacyInfo = readJson<unknown>(STORAGE_KEY_INFO_LEGACY, null);
+  const legacyPreference = readJson<unknown>(STORAGE_KEY_PREFERENCE_LEGACY, null);
+
+  // Both legacy keys are obsolete as soon as we have looked at them.
+  removeKey(STORAGE_KEY_INFO_LEGACY);
+  removeKey(STORAGE_KEY_PREFERENCE_LEGACY);
+
+  const type =
+    extractWalletType(current) ??
+    extractWalletType(legacyInfo) ??
+    extractWalletType(legacyPreference);
+
+  if (!type) {
+    // Nothing usable — drop anything we found so it cannot trigger a reconnect.
+    if (current !== null) removeKey(STORAGE_KEY_INFO);
+    return null;
+  }
+
+  const stored: StoredWalletPreference = { v: WALLET_INFO_VERSION, type };
+  // Rewrite only when the on-disk record is not already the current shape, so
+  // repeated reads stay idempotent.
+  if (
+    !current ||
+    typeof current !== 'object' ||
+    (current as StoredWalletPreference).v !== WALLET_INFO_VERSION ||
+    (current as StoredWalletPreference).type !== type
+  ) {
+    writeJson(STORAGE_KEY_INFO, stored);
+  }
+  return stored;
 };
 
 // ─── MRU (most-recently-used) bookkeeping ────────────────────────────────────

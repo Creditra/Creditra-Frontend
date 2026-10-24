@@ -48,7 +48,7 @@ describe("credit lines route", () => {
       screen.getByRole("heading", { level: 1, name: "Credit Lines" }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /page not found/i }))
-      .not.toBeITheDocument();
+      .not.toBeInTheDocument();
     const creditLinesLinks = screen.getAllByRole("link", {
       name: "Credit Lines",
     });
