@@ -32,13 +32,27 @@ The Linked Accounts feature allows users to connect external accounts (Google, G
 
 ## User Flows
 
-### Connect New Account
+### Connect New Account (with Pending State)
 
-1. User clicks "Connect" button on provider card
-2. System initiates OAuth flow via `initiateLinkAccount()`
-3. User is redirected to provider's authorization page
-4. After authorization, callback completes via `completeOAuthLink()`
-5. Success message displayed, account status updated to "connected"
+1. User clicks "Connect" button on provider card.
+2. System initiates OAuth flow via `initiateLinkAccount()`, writing a pending account record (`status: 'pending'`) and OAuth state token with a timestamp.
+3. The provider card transitions immediately to a visible pending state:
+   - Displays "Waiting for [Provider] authorization…".
+   - Shows a "Cancel" button to abandon the pending link.
+   - Provider card `aria-label` announces `[Provider] account pending`.
+4. Browser redirects to the provider's OAuth authorization URL (`redirect(response.authUrl)`).
+5. **No success message** is shown at this stage.
+6. Upon return from OAuth authorization:
+   - If callback parameters (`code` and `state`) are present, `completeOAuthLink()` validates the state token and creates the connected account record (`status: 'connected'`).
+   - Only after successful completion is the success message (`"[Provider] account linked"`) displayed in an `aria-live="polite"` status region.
+   - If the user returns to `/linked-accounts` with a pending entry but no callback parameters, an alert banner is displayed ("Linking was not completed") with **Retry** and **Cancel** actions.
+
+### Pending Expiry and Pruning
+
+- Pending state tokens and pending account entries have a 10-minute TTL (`OAUTH_STATE_TTL_MS = 600,000 ms`).
+- On `fetchLinkedAccounts()`, any pending entries older than 10 minutes are identified as expired and pruned from storage automatically.
+- Users can manually cancel a pending link via `cancelLinkAccount(provider)` or by clicking the Cancel button on the pending card or incomplete link alert banner.
+- A pending entry on one provider never blocks connecting or interacting with a different provider.
 
 ### Disconnect Account
 
@@ -51,8 +65,9 @@ The Linked Accounts feature allows users to connect external accounts (Google, G
 
 1. Account enters error state (expired token, provider error)
 2. "Reconnect" button appears on provider card
-3. User clicks reconnect, initiating new OAuth flow
-4. Process follows same steps as initial connection
+3. User clicks reconnect, initiating new OAuth flow via `reconnectAccount()`
+4. Transitions provider to pending state and redirects to authorization URL without premature success announcement
+5. Completion follows OAuth callback verification
 
 ## Accessibility
 
