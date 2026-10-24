@@ -16,6 +16,7 @@ import type {
   NotificationAction,
   NotificationActionDescriptor,
 } from '../types/notification';
+import { mergeNotifications } from './notificationMerge';
 import {
   parseInbox,
   parsePreferences,
@@ -26,7 +27,7 @@ import { writeJson } from '../utils/storage';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
-interface AddToastOptions {
+export interface AddToastOptions {
   type: NotificationType;
   category?: NotificationCategory;
   title: string;
@@ -39,6 +40,11 @@ interface AddToastOptions {
   actionDescriptor?: NotificationActionDescriptor;
   /** If true, also saves to notification history */
   saveToHistory?: boolean;
+  /**
+   * If true, bypasses user category mute preferences so the toast is always displayed.
+   * Reserved for undo toasts and critical messages that must never be suppressed.
+   */
+  bypassPreferences?: boolean;
 }
 
 interface NotificationContextValue {
@@ -188,6 +194,17 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     writeJson(PREFS_KEY, serializePreferences(preferences));
   }, [preferences]);
 
+  // Clear all pending toast timers on provider unmount
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      for (const timer of timers.values()) {
+        clearTimeout(timer);
+      }
+      timers.clear();
+    };
+  }, []);
+
   const genId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
   // ─── Toasts ────────────────────────────────────────────────────────────────
@@ -203,7 +220,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const addToast = useCallback((opts: AddToastOptions): string => {
     const category = opts.category ?? 'system';
-    if (!preferences[category]) return '';
+    if (!opts.bypassPreferences && !preferences[category]) return '';
 
     const id = genId();
     const toast: Toast = {
@@ -218,12 +235,26 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       action: opts.action,
     };
 
-    setToasts(prev => [toast, ...prev].slice(0, 5)); // max 5 stacked
-
     if (!toast.persistent) {
       const timer = setTimeout(() => dismissToast(id), toast.duration);
       timersRef.current.set(id, timer);
     }
+
+    setToasts(prev => {
+      const next = [toast, ...prev];
+      if (next.length > 5) {
+        const evicted = next.slice(5);
+        for (const t of evicted) {
+          const timer = timersRef.current.get(t.id);
+          if (timer) {
+            clearTimeout(timer);
+            timersRef.current.delete(t.id);
+          }
+        }
+        return next.slice(0, 5);
+      }
+      return next;
+    });
 
     if (opts.saveToHistory !== false) {
       const notification: Notification = {
@@ -280,7 +311,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const restoreNotifications = useCallback((toRestore: Notification[]) => {
-    setNotifications(toRestore);
+    setNotifications(prev => mergeNotifications(toRestore, prev));
   }, []);
 
   const filterByCategory = useCallback(
@@ -337,3 +368,5 @@ export function useNotifications() {
   if (!ctx) throw new Error('useNotifications must be used within NotificationProvider');
   return ctx;
 }
+
+export { mergeNotifications } from './notificationMerge';

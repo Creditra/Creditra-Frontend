@@ -34,8 +34,10 @@ import { CreditLineSummaryBlock } from "@/components/CreditLineSummaryBlock";
 import { PendingButton } from "@/components/PendingButton";
 import { formatMoney } from "@/utils/amountValidation";
 import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
+import { projectDraw } from "@/lib/draw-projection";
 import { getRiskEducationState, RISK_EDUCATION_VERSION } from "@/state/riskEducation";
 import { useWalletIdentityKey } from "@/hooks/useWalletIdentityKey";
+import { useWallet } from "@/context/WalletContext";
 import { useEffect } from "react";
 
 interface ConfirmationStepProps {
@@ -165,6 +167,7 @@ export function ConfirmationStep({
     }
   };
 
+  const { status } = useWallet();
   const walletIdentityKey = useWalletIdentityKey();
   const [riskEducationState, setRiskEducationState] = useState<{
     acknowledgedVersion?: number;
@@ -181,9 +184,9 @@ export function ConfirmationStep({
   /** Controls the "How is my APR calculated?" collapsible section. */
   const [aprDisclosureOpen, setAprDisclosureOpen] = useState(false);
 
-  const utilizedBalance = creditLine.limit - creditLine.available;
   const safeAmount = Math.max(Number.isFinite(amount) ? amount : 0, 0);
 
+  const quote = getDrawPricingQuote(creditLine, safeAmount);
   const {
     fee,
     apr,
@@ -192,11 +195,16 @@ export function ConfirmationStep({
     estimatedMonthlyInterest,
     riskBand,
     termMonths,
-  } = getDrawPricingQuote(creditLine, safeAmount);
+  } = quote;
 
-  const newBalance = utilizedBalance + safeAmount + fee;
-  const remainingAvailable = Math.max(creditLine.limit - newBalance, 0);
-  const newUtilization = Math.round((newBalance / creditLine.limit) * 100);
+  const projection = projectDraw(
+    creditLine,
+    safeAmount,
+    quote,
+  );
+  const newBalance = projection.newBalance;
+  const remainingAvailable = projection.remainingAvailable;
+  const newUtilization = projection.newUtilizationPct;
   const currentUtilizationPct = creditLine.utilization;
 
   const riskBandMeta = getRiskBandMeta(riskBand);
@@ -300,6 +308,7 @@ export function ConfirmationStep({
             <dd className="mt-1 font-semibold text-foreground tabular-nums" data-testid="new-balance-display">
               {formatMoney(newBalance)}
             </dd>
+            <p className="mt-1 text-xs text-muted">Includes 1% fee ({formatMoney(fee)})</p>
           </div>
 
           <div className="rounded-lg border border-border bg-background/60 p-3">
@@ -507,6 +516,26 @@ export function ConfirmationStep({
           will be deposited within 1–2 business days.
         </span>
       </label>
+
+      {status === "connected" && !isLoading && (
+        <div
+          className="flex items-start gap-3 rounded-lg border p-4"
+          style={{
+            backgroundColor: "rgba(88,166,255,0.08)",
+            borderColor: "rgba(88,166,255,0.3)",
+          }}
+          role="status"
+        >
+          <Info
+            className="w-5 h-5 shrink-0 mt-0.5"
+            style={{ color: "#58a6ff" }}
+            aria-hidden="true"
+          />
+          <span className="text-sm font-medium" style={{ color: "#e6edf3" }}>
+            Your wallet will ask you to sign next
+          </span>
+        </div>
+      )}
 
       {/* Button order: Cancel → Back → Primary (docs/BUTTON_ORDER.md). */}
       <div className="dc-actions dc-actions--stacked">

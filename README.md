@@ -104,10 +104,17 @@ npm run lint       # eslint .
 
 ```env
 VITE_API_URL=http://localhost:3000          # backend base URL, read via import.meta.env
+VITE_IPFS_GATEWAY=https://ipfs.io/ipfs/     # HTTPS gateway for IPFS NFT images (must end in /)
 VITE_REPAY_CONFIRM_THRESHOLD=5000           # USD amount above which repayments require typed confirmation (default: 5000)
 VITE_SETTLEMENT_ASSET_CODE=USDC              # repayable wallet asset code (default: USDC)
 VITE_SETTLEMENT_ASSET_ISSUER=GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5 # default: testnet USDC issuer
 ```
+
+`VITE_IPFS_GATEWAY` configures the HTTPS gateway used to resolve `ipfs://` NFT image
+URIs. It must be a valid HTTPS URL ending in `/`; otherwise the resolver uses the default
+`https://ipfs.io/ipfs/` gateway. NFT image sources are restricted to HTTPS, root-relative
+local assets, IPFS URIs, and base64 PNG/JPEG/WebP/GIF images up to 256 KiB. Inline SVG
+data URIs are rejected.
 
 `VITE_REPAY_CONFIRM_THRESHOLD` controls the typed-amount guard in the repayment flow.
 When a repayment amount meets or exceeds this value, the review step shows a confirmation

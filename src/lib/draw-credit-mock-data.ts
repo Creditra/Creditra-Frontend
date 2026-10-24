@@ -2,6 +2,7 @@ import {
   CreditLine,
   DrawPricingRiskBand,
 } from "@/types/draw-credit.types";
+import type { CreditLineStatus } from "@/types/creditLine";
 import { getDrawAvailability } from "@/lib/credit-line-availability";
 
 /**
@@ -12,6 +13,7 @@ import { getDrawAvailability } from "@/lib/credit-line-availability";
 export interface CreditLineSpec {
   id: string;
   name: string;
+  status: CreditLineStatus;
   limit: number;
   utilization: number;
   riskBand: DrawPricingRiskBand;
@@ -28,6 +30,7 @@ export function createCreditLine(spec: CreditLineSpec): CreditLine {
   return {
     id: spec.id,
     name: spec.name,
+    status: spec.status,
     limit: spec.limit,
     utilization: spec.utilization,
     riskBand: spec.riskBand,
@@ -47,6 +50,8 @@ export function createCreditLine(spec: CreditLineSpec): CreditLine {
  * - `cl-001` (30 %) — low utilisation; should produce `success` messages
  * - `cl-002` (55 %) — medium utilisation; near the recommended-reserve floor
  * - `cl-003` (84 %) — high utilisation; reserve warnings expected
+ * - `cl-004` — Frozen; kept in the list so the selector's ineligible
+ *   (disabled) path is exercised without changing the mock source.
  *
  * `available` values are derived from `utilization` by `createCreditLine`
  * and are asserted to stay in sync by
@@ -57,6 +62,7 @@ export const mockCreditLines: CreditLine[] = [
   createCreditLine({
     id: "cl-001",
     name: "Business Line of Credit",
+    status: "Active",
     limit: 50000,
     utilization: 30,
     riskBand: "Standard",
@@ -65,6 +71,7 @@ export const mockCreditLines: CreditLine[] = [
   createCreditLine({
     id: "cl-002",
     name: "Equipment Finance",
+    status: "Active",
     limit: 100000,
     utilization: 55,
     riskBand: "Prime",
@@ -73,9 +80,19 @@ export const mockCreditLines: CreditLine[] = [
   createCreditLine({
     id: "cl-003",
     name: "Working Capital",
+    status: "Active",
     limit: 75000,
     utilization: 84,
     riskBand: "Watch",
+    termMonths: 12,
+  }),
+  createCreditLine({
+    id: "cl-004",
+    name: "Seasonal Inventory Line",
+    status: "Frozen",
+    limit: 25000,
+    utilization: 40,
+    riskBand: "Standard",
     termMonths: 12,
   }),
 ];

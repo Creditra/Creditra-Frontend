@@ -9,7 +9,7 @@
  * acknowledgement by wallet identity so a new borrower on the same browser
  * does not inherit another wallet's state.
  */
-import { useWallet, walletIdentityKey } from '../context/WalletContext';
+import { useWallet, walletIdentityKey } from '@/context/WalletContext';
 
 export function useWalletIdentityKey(): string | null {
   const { wallet } = useWallet();

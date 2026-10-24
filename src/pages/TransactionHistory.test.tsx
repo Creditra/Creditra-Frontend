@@ -1,9 +1,42 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BrowserRouter, MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import transactionHistoryCss from "./TransactionHistory.css?raw";
 import { TransactionHistory } from "./TransactionHistory";
 import { NotificationProvider } from "../context/NotificationContext";
+import { renderWithCredit } from "../test/renderWithCredit";
+
+/*
+ * Issue #1205 — real routing and a fixed instant.
+ *
+ * Router: `vitest.config.ts` aliases `react-router-dom` to a stub whose
+ * `setSearchParams` ignores the function form and whose `useLocation` reads
+ * module-level state. The page uses both (`TransactionHistory.tsx` amount chips
+ * and `clearFilters`), so this suite swaps the alias back for the real package
+ * (see `src/test/realRouter.ts`) and renders under a real `MemoryRouter`. The
+ * mock applies to this file's whole module graph, so the page and the
+ * `LocationProbe` below share one router instance.
+ *
+ * Time: the suite pins a fixed instant (below) and asserts on result counts and
+ * on instant deltas rather than on rendered calendar labels, so the page's
+ * local-time grouping maths cannot make the outcome depend on the machine's
+ * timezone. The pin is midday UTC because that keeps the pinned instant on the
+ * same local day for every offset from UTC-11 to UTC+11, which covers the two
+ * environments in the issue's test plan. Verified under `TZ=UTC` and
+ * `TZ=America/Los_Angeles` (plus `Asia/Kolkata`, `Pacific/Auckland` and
+ * `Pacific/Kiritimati` spot checks).
+ */
+vi.mock("react-router-dom", async () => await import("../test/realRouter"));
+
+/** Renders the router's current search so tests can assert on real URL state. */
+const LocationProbe = () => {
+  const location = useLocation();
+  return <div data-testid="location-search">{location.search}</div>;
+};
+
+/** The router search string (including the leading `?`) as the app sees it. */
+const currentSearch = () =>
+  screen.getByTestId("location-search").textContent ?? "";
 
 /**
  * Render helper — mounts TransactionHistory and flushes the first-paint
@@ -16,12 +49,14 @@ import { NotificationProvider } from "../context/NotificationContext";
  * state update before any assertion runs.
  */
 const renderTransactionHistory = (initialEntries: string[] = ["/transactions"]) => {
-  const result = render(
+  const result = renderWithCredit(
     <NotificationProvider>
       <MemoryRouter initialEntries={initialEntries}>
         <TransactionHistory />
+        <LocationProbe />
       </MemoryRouter>
     </NotificationProvider>,
+    { withRouter: false },
   );
   // Flush only the zero-delay loading useEffect timer (setTimeout 0).
   // Using advanceTimersByTime(1) rather than runAllTimers() so the 250ms
@@ -36,12 +71,14 @@ const renderTransactionHistory = (initialEntries: string[] = ["/transactions"]) 
  * skeleton UI before the data is available.
  */
 const renderTransactionHistoryLoading = (initialEntries: string[] = ["/transactions"]) => {
-  return render(
+  return renderWithCredit(
     <NotificationProvider>
       <MemoryRouter initialEntries={initialEntries}>
         <TransactionHistory />
+        <LocationProbe />
       </MemoryRouter>
     </NotificationProvider>,
+    { withRouter: false },
   );
 };
 
@@ -67,6 +104,9 @@ describe("TransactionHistory", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    // Midday UTC: keeps the pinned instant on the same local calendar day for
+    // offsets from UTC-11 to UTC+11. See the suite header for why that makes
+    // the assertions timezone-independent.
     vi.setSystemTime(new Date("2025-02-20T12:00:00Z"));
     URL.createObjectURL = vi.fn(() => "blob:mock-url");
     URL.revokeObjectURL = vi.fn();
@@ -137,23 +177,24 @@ describe("TransactionHistory", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("transitions from skeleton to loaded content after the loading timer fires", () => {
+    it("transitions from skeleton to loaded content when provider data resolves", async () => {
       renderTransactionHistoryLoading();
 
-      // Skeleton must be present before the timer fires.
+      // The provider is pending on first paint and resolves without a timer.
       expect(
         screen.getByRole("status", { name: /loading transaction history/i }),
       ).toBeInTheDocument();
 
-      // Flush the loading useEffect timer.
-      act(() => { vi.runAllTimers(); });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
 
-      // Skeleton must be gone.
       expect(
         screen.queryByRole("status", { name: /loading transaction history/i }),
       ).not.toBeInTheDocument();
 
-      // Fully loaded content must now be present.
       expect(screen.getByRole("table", { name: /transaction history/i })).toBeInTheDocument();
     });
 
@@ -267,7 +308,7 @@ describe("TransactionHistory", () => {
         .getByRole("button", { name: "Under $100" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(screen.getByText("12 transactions shown")).toBeTruthy();
+    expect(screen.getByText("4 transactions shown")).toBeTruthy();
   });
 
   it("shows a no-results state with a reset filters action", () => {
@@ -1163,6 +1204,100 @@ describe("TransactionHistory", () => {
       // Must show 517,500 (line balances), NOT 484,500 (flow math)
       expect(value!.textContent).toMatch(/517,500/);
       expect(value!.textContent).not.toMatch(/484,500/);
+    });
+  });
+
+  // ── URL sync (issue #1205) ────────────────────────────────────────────────
+  //
+  // The page reads `?amount=`, `?range=`, `?start=` and `?end=` on mount and
+  // writes them back through the function form of `setSearchParams` /
+  // `navigate`. Both are no-ops under the stubbed react-router-dom, so these
+  // assertions were previously impossible and are the reason this suite runs
+  // on the real router.
+
+  describe("URL sync", () => {
+    const amountGroup = () =>
+      screen.getByRole("group", { name: /amount range/i });
+    const presetGroup = () => screen.getByRole("group", { name: /presets/i });
+    const amountParam = () =>
+      new URLSearchParams(currentSearch()).get("amount");
+
+    it("applies the amount filter from ?amount= on first render", () => {
+      renderTransactionHistory(["/transactions?amount=lt100"]);
+
+      expect(
+        within(amountGroup()).getByRole("button", { name: "Under $100" }),
+      ).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("writes the clicked amount chip to the URL search", () => {
+      renderTransactionHistory();
+      expect(currentSearch()).toBe("");
+
+      fireEvent.click(
+        within(amountGroup()).getByRole("button", { name: "$25k+" }),
+      );
+
+      expect(amountParam()).toBe("25k-plus");
+      expect(
+        within(amountGroup()).getByRole("button", { name: "$25k+" }),
+      ).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("removes ?amount= when All Amounts is selected", () => {
+      renderTransactionHistory(["/transactions?amount=25k-plus"]);
+      expect(amountParam()).toBe("25k-plus");
+
+      fireEvent.click(
+        within(amountGroup()).getByRole("button", { name: "All amounts" }),
+      );
+
+      expect(currentSearch()).not.toContain("amount=");
+    });
+
+    it("preserves the other query params when the amount chip changes", () => {
+      renderTransactionHistory(["/transactions?range=this-week"]);
+
+      fireEvent.click(
+        within(amountGroup()).getByRole("button", { name: "Under $100" }),
+      );
+
+      const params = new URLSearchParams(currentSearch());
+      expect(params.get("range")).toBe("this-week");
+      expect(params.get("amount")).toBe("under-100");
+    });
+
+    it("applies the preset range from ?range= on first render", () => {
+      renderTransactionHistory(["/transactions?range=this-week"]);
+
+      expect(
+        within(presetGroup()).getByRole("button", { name: "This Week" }),
+      ).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("writes the preset range to the URL when a preset chip is clicked", () => {
+      renderTransactionHistory();
+
+      fireEvent.click(
+        within(presetGroup()).getByRole("button", { name: "This Month" }),
+      );
+
+      expect(new URLSearchParams(currentSearch()).get("range")).toBe(
+        "this-month",
+      );
+    });
+
+    it("drops ?amount= when all filters are reset", () => {
+      renderTransactionHistory(["/transactions?amount=lt100"]);
+      expect(amountParam()).toBe("lt100");
+
+      // Stack a type filter that matches none of the <$100 rows to reach the
+      // empty state, which is where "Reset all filters" lives.
+      fireEvent.click(screen.getByRole("button", { name: "Fee" }));
+      fireEvent.click(screen.getByRole("button", { name: /reset all filters/i }));
+
+      expect(currentSearch()).not.toContain("amount=");
+      expect(screen.getByText("28 transactions shown")).toBeTruthy();
     });
   });
 });
