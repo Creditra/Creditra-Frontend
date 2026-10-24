@@ -3,10 +3,11 @@ import { AlertCircle, AlertTriangle, CheckCircle, Info } from 'lucide-react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { formatMoney, getRepayAmountValidation, requiresRepayConfirmation } from '../utils/amountValidation';
 import {
-  computeFullPayoffAmount,
   formatAmountInputValue,
+  roundToCents,
 } from '../utils/currency';
 import { getAccruedInterest, getAccruedInterestDays } from '../lib/interest';
+import { allocateRepayment } from '../lib/repay-allocation';
 import { InlineHelpOverlay } from './InlineHelpOverlay';
 import { PendingButton } from './PendingButton';
 import {
@@ -135,7 +136,7 @@ export function RepayModal({
   const now = new Date();
   const accruedInterest = getAccruedInterest(creditLine, now);
   const accruedDays = getAccruedInterestDays(creditLine, now);
-  const fullPayoff = computeFullPayoffAmount(creditLine, now);
+  const fullPayoff = roundToCents(principalBalance + accruedInterest);
   const totalDue = fullPayoff;
   const validation = getRepayAmountValidation(amountStr, fullPayoff, walletBalance);
   const amount = validation.amount;
@@ -144,7 +145,8 @@ export function RepayModal({
   const repayAmountConstraintsId = 'repay-amount-constraints';
   const repayAmountStatusId = 'repay-amount-status';
 
-  const remainingDebt = validation.remainingDebt;
+  const allocation = allocateRepayment(creditLine, amount, accruedInterest);
+  const remainingDebt = allocation.remainingTotal;
   const oldPct = creditLine.limit === 0 ? 0 : Math.round((creditLine.utilized / creditLine.limit) * 100);
   const newPct = creditLine.limit === 0 ? 0 : Math.round((remainingDebt / creditLine.limit) * 100);
   const describedBy = `${repayAmountHintId} ${repayAmountConstraintsId} ${repayAmountStatusId}`;

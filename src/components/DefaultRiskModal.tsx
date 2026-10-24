@@ -65,13 +65,6 @@ interface StepContent {
 
 const MODAL_ID = 'default-risk-modal';
 
-/**
- * Version of the risk-education content below. Bump this whenever `STEPS`
- * changes materially so that every wallet is asked to re-acknowledge the
- * updated content.
- */
-export const RISK_EDUCATION_VERSION = 1;
-
 const STEPS: StepContent[] = [
   {
     title: 'What is a Default?',
