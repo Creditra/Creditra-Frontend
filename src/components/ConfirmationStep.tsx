@@ -197,16 +197,6 @@ export function ConfirmationStep({
     termAdjustmentLabel,
   } = quote;
 
-  // Reconstruct the base APR before adjustments for the disclosure panel.
-  const utilizationAdjPts =
-    creditLine.utilization >= 80
-      ? 2
-      : creditLine.utilization >= 50
-        ? 1.25
-        : 0.5;
-  const termAdjPts = termMonths > 24 ? 2.5 : termMonths > 12 ? 1.5 : 0.5;
-  const baseApr = Math.round((apr - utilizationAdjPts - termAdjPts) * 100) / 100;
-
   const projection = projectDraw(
     creditLine,
     safeAmount,
@@ -215,11 +205,6 @@ export function ConfirmationStep({
   const newBalance = projection.newBalance;
   const remainingAvailable = projection.remainingAvailable;
   const newUtilization = projection.newUtilizationPct;
-  } = getDrawPricingQuote(creditLine, safeAmount);
-
-  const newBalance = utilizedBalance + safeAmount + fee;
-  const remainingAvailable = Math.max(creditLine.limit - newBalance, 0);
-  const newUtilization = Math.round((newBalance / creditLine.limit) * 100);
   const currentUtilizationPct = creditLine.utilization;
 
   const riskBandMeta = getRiskBandMeta(riskBand);
