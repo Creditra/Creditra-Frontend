@@ -1,4 +1,4 @@
-﻿/**
+/**
  * useWalletIdentityKey — stable identity key for the connected wallet.
  *
  * Returns `type:publicKey:network` (the same value produced by
@@ -9,9 +9,9 @@
  * acknowledgement by wallet identity so a new borrower on the same browser
  * does not inherit another wallet's state.
  */
-import { useWallet, walletIdentityKey } from '../context/WalletContext';
+import { useWallet, walletIdentityKey } from '@/context/WalletContext';
 
 export function useWalletIdentityKey(): string | null {
-  const { wallet } = useWallet();
-  return wallet ? walletIdentityKey(wallet) : null;
+ const { wallet } = useWallet();
+ return wallet ? walletIdentityKey(wallet) : null;
 }

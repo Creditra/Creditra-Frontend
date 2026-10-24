@@ -14,11 +14,6 @@ interface CursorPosition {
   id: string;
 }
 
-/** Legacy cursor format for backward compatibility */
-interface LegacyCursorPosition {
-  date: string;
-  id: string;
-}
 
 const encodeCursor = (position: CursorPosition): string =>
   btoa(JSON.stringify(position))
@@ -30,7 +25,7 @@ const decodeCursor = (cursor: string): CursorPosition | null => {
   try {
     const encoded = cursor.replace(/-/g, "+").replace(/_/g, "/");
     const padded = encoded + "=".repeat((4 - (encoded.length % 4)) % 4);
-    const decoded = JSON.parse(atob(padded)) as Partial<CursorPosition> | Partial<LegacyCursorPosition>;
+    const decoded = JSON.parse(atob(padded)) as Record<string, unknown>;
     
     // Handle new format { t: number, id: string }
     if (typeof decoded.t === "number" && typeof decoded.id === "string") {

@@ -30,7 +30,7 @@ import {
   getStoredWallet,
   type WalletType,
 } from '@/utils/wallet';
-import type { WalletInfo } from '@/types/wallet';
+import type { StoredWalletPreference } from '@/types/wallet';
 import { WalletConnectError } from '@/types/wallet';
 import './WalletConnectionModal.css';
 
@@ -169,28 +169,28 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
   //
   // Compute the display order once per render.  We honour any persisted
   // recency list (`getRecentWalletOrder`); if that is empty we fall back to
-  // the `wallet_info` legacy entry so users who already connected once
-  // are not served the default ordering on their first post-upgrade visit.
+  // the stored session preference (type only) so users who already connected
+  // once are not served the default ordering on their first post-upgrade visit.
 
   const { primaryWallet, orderedWallets } = useMemo(() => {
     const recent = getRecentWalletOrder();
-    const legacy: WalletInfo | null = recent.length === 0 ? getStoredWallet() : null;
+    const stored: StoredWalletPreference | null = recent.length === 0 ? getStoredWallet() : null;
 
     // We only treat a primary wallet as "most recently used" when we have an
-    // *actual* recency signal — either a non-empty MRU list or a legacy
-    // `wallet_info` entry from before the MRU feature shipped.  When neither
+    // *actual* recency signal — either a non-empty MRU list or a stored
+    // session preference from before the MRU feature shipped.  When neither
     // is present, fall through to the full catalogue so first-time visitors
     // see every option at a glance instead of an arbitrary "Continue with"
     // prompt.
-    const hasRecency = recent.length > 0 || legacy !== null;
+    const hasRecency = recent.length > 0 || stored !== null;
 
-    // Build a unified recency ordering.  Legacy entry is treated as if it
-    // were the only MRU entry (most recent by definition).
+    // Build a unified recency ordering.  A stored session preference is
+    // treated as if it were the only MRU entry (most recent by definition).
     const recencyOrder: WalletProvider[] =
       recent.length > 0
         ? recent
-        : legacy
-        ? [legacy.type]
+        : stored
+        ? [stored.type]
         : [];
 
     // Anything in the recency list that we don't ship metadata for

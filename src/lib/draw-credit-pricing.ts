@@ -41,6 +41,12 @@ export interface DrawPricingTierHint {
   aboveAmount: number;
 }
 
+/** Return the one-time draw fee using integer cents arithmetic. */
+export function getDrawFee(amount: number): number {
+  const amountCents = Math.max(Math.round(amount * 100), 0);
+  return Math.round(amountCents / 100) / 100;
+}
+
 const BASE_APR_BY_RISK_BAND: Record<DrawPricingRiskBand, number> = {
   Prime: 7.5,
   Standard: 9.5,
@@ -124,6 +130,8 @@ export function getDrawPricingQuote(
   creditLine: CreditLine,
   amount: number,
 ): DrawPricingQuote {
+  const safeAmount = Math.max(amount, 0);
+  const fee = getDrawFee(safeAmount);
   const projection = projectDraw(creditLine, amount);
   const baseApr = BASE_APR_BY_RISK_BAND[creditLine.riskBand];
   const utilizationAdjustment = getUtilizationAdjustment(
