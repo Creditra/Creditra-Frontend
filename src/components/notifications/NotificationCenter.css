@@ -331,6 +331,11 @@
 
 .nc-item:last-child { border-bottom: none; }
 .nc-item:hover      { background: rgba(255, 255, 255, 0.03); }
+.nc-item:focus-visible,
+.nc-empty:focus-visible {
+  outline: 2px solid var(--accent, #58a6ff);
+  outline-offset: -2px;
+}
 
 .nc-item-unread { background: rgba(88, 166, 255, 0.03); }
 

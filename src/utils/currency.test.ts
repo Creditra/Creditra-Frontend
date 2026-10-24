@@ -58,12 +58,13 @@ describe('computeMonthlyAccruedInterest', () => {
 });
 
 describe('computeFullPayoffAmount', () => {
-  it('sums principal and accrued monthly interest', () => {
-    expect(computeFullPayoffAmount(3000, 12)).toBe(3030);
+  const line = { utilized: 3000, apr: 12, nextInterestAccrualDate: '2025-02-01' };
+  it('sums principal and day-count accrued interest', () => {
+    expect(computeFullPayoffAmount(line, new Date('2025-02-16T00:00:00Z'))).toBe(3014.79);
   });
 
   it('returns zero when principal is zero', () => {
-    expect(computeFullPayoffAmount(0, 12)).toBe(0);
+    expect(computeFullPayoffAmount({ ...line, utilized: 0 }, new Date('2025-02-16T00:00:00Z'))).toBe(0);
   });
 });
 

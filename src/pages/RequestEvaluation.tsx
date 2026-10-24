@@ -8,6 +8,9 @@ import { useReducedMotion } from '@/context/ReducedMotionContext';
 import { FileUploadZone } from '@/components/FileUploadZone';
 import { offlineMutation } from '@/utils/offline';
 import { useOnline } from '@/hooks/useOnline';
+import { useWallet, walletIdentityKey } from '@/context/WalletContext';
+import { creditService } from '@/services/credit';
+import { useCreditLines } from '@/hooks/useCreditLines';
 
 type Step = 1 | 2 | 3 | 4 | 5;
 type EvalState = 'idle' | 'running' | 'success' | 'rejected' | 'error';
@@ -72,18 +75,24 @@ const inputStyle: React.CSSProperties = {
   minWidth: 220,
 };
 
-interface EvalResult {
+export interface EvalResult {
   approved: boolean;
   creditLimit?: number;
   apr?: number;
   riskScore?: number;
   reason?: string;
+  offerId?: string;
+  expiresAt?: string;
+  ownerIdentityKey?: string | null;
 }
 
 export function RequestEvaluation() {
   const { isReducedMotionActive } = useReducedMotion();
   const { queueAction } = useOnline();
   const [searchParams] = useSearchParams();
+  const { wallet, status: walletStatus, connect } = useWallet();
+  const { refetch: refetchCreditLines } = useCreditLines();
+
   // Attestation remediation CTAs deep-link here with `?step=2` (Optional
   // Information), where the revenue attestation upload and identity bond
   // checkbox live. Other steps depend on in-progress evaluation state and
@@ -99,6 +108,55 @@ export function RequestEvaluation() {
   const timerRef = useRef<number | null>(null);
   const navigate = useNavigate();
   const [evaluationError, setEvaluationError] = useState('');
+
+  // Acceptance & expiry states
+  const [isAccepting, setIsAccepting] = useState(false);
+  const [acceptError, setAcceptError] = useState<string | null>(null);
+  const [createdLineId, setCreatedLineId] = useState<string | null>(null);
+  const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
+  const [liveAnnouncement, setLiveAnnouncement] = useState<string>('');
+  const announced60sRef = useRef(false);
+  const isAcceptingRef = useRef(false);
+
+  // Identity tracking
+  const currentIdentityKey = useMemo(() => walletIdentityKey(wallet), [wallet]);
+  const isWalletConnected = walletStatus === 'connected';
+  const [evaluationOwnerKey, setEvaluationOwnerKey] = useState<string | null>(null);
+
+  // Invalidate offer if wallet identity changes
+  const isWalletMismatched = useMemo(() => {
+    if (!result?.approved) return false;
+    if (!result.ownerIdentityKey) return false;
+    return currentIdentityKey !== result.ownerIdentityKey;
+  }, [result, currentIdentityKey]);
+
+  const isOfferExpired = secondsRemaining !== null && secondsRemaining <= 0;
+
+  // Track expiry countdown when an offer with expiresAt exists
+  useEffect(() => {
+    if (!result?.expiresAt || !result.approved || step !== 4) {
+      setSecondsRemaining(null);
+      return;
+    }
+
+    const expiryTime = new Date(result.expiresAt).getTime();
+    announced60sRef.current = false;
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const diffSec = Math.max(0, Math.floor((expiryTime - now) / 1000));
+      setSecondsRemaining(diffSec);
+
+      if (diffSec === 60 && !announced60sRef.current) {
+        announced60sRef.current = true;
+        setLiveAnnouncement('Offer expires in 1 minute');
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [result?.expiresAt, result?.approved, step]);
 
   const totalSteps = 5;
   const stepTitle = useMemo(() => {
@@ -137,6 +195,9 @@ export function RequestEvaluation() {
             creditLimit: 100000 + Math.round(Math.random() * 400000),
             apr: 7 + Math.round(Math.random() * 400) / 100, // 7–11%
             riskScore: Math.min(800, risk),
+            offerId: `offer-${Date.now()}`,
+            expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+            ownerIdentityKey: evaluationOwnerKey,
           });
           setEvalState('success');
         } else {
@@ -153,7 +214,7 @@ export function RequestEvaluation() {
     return () => {
       if (timerRef.current) { window.clearInterval(timerRef.current); timerRef.current = null; }
     };
-  }, [step]);
+  }, [step, evaluationOwnerKey]);
 
   const cancelEvaluation = () => {
     if (timerRef.current) { window.clearInterval(timerRef.current); timerRef.current = null; }
@@ -167,10 +228,15 @@ export function RequestEvaluation() {
   const restartEvaluation = () => {
     setEvalState('idle');
     setResult(null);
+    setAcceptError(null);
+    setCreatedLineId(null);
     setStep(1);
   };
 
   const startEvaluation = () => {
+    if (!isWalletConnected) return;
+    setEvaluationOwnerKey(currentIdentityKey);
+
     // Guard the evaluation submission: when offline, never start a fake
     // evaluation. It is queued for retry on reconnect and a clear error is shown.
     void offlineMutation({
@@ -188,8 +254,27 @@ export function RequestEvaluation() {
     });
   };
 
-  const acceptCreditLine = () => {
-    setStep(5);
+  const acceptCreditLine = async () => {
+    if (isAcceptingRef.current) return;
+    if (!isWalletConnected || isWalletMismatched || isOfferExpired) return;
+    if (!result?.approved || !result.offerId || !wallet?.publicKey) return;
+
+    isAcceptingRef.current = true;
+    setIsAccepting(true);
+    setAcceptError(null);
+
+    try {
+      const newLine = await creditService.acceptOffer(wallet.publicKey, result.offerId);
+      await refetchCreditLines();
+      setCreatedLineId(newLine.id);
+      setStep(5);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to accept credit line offer. Please try again.';
+      setAcceptError(msg);
+    } finally {
+      isAcceptingRef.current = false;
+      setIsAccepting(false);
+    }
   };
 
   const evaluationErrorMessage =
@@ -197,8 +282,21 @@ export function RequestEvaluation() {
       ? 'A network error occurred while analyzing your wallet. Please try again.'
       : '';
 
+  // Expiry display formatting
+  const formattedExpiry = useMemo(() => {
+    if (secondsRemaining === null) return '';
+    const mins = Math.floor(secondsRemaining / 60);
+    const secs = secondsRemaining % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }, [secondsRemaining]);
+
   return (
     <>
+      {/* Live region for accessibility announcements */}
+      <div role="status" aria-live="polite" className="sr-only" style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }}>
+        {liveAnnouncement}
+      </div>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem', gap: '1rem', flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ margin: '0 0 0.3rem', fontSize: '1.5rem', fontWeight: 700, color: COLOR.text }}>Open Credit Line</h1>
@@ -231,6 +329,21 @@ export function RequestEvaluation() {
               </ul>
               <p style={{ margin: 0, color: COLOR.muted }}>Estimated evaluation time: ≈ 45 seconds</p>
             </div>
+
+            {!isWalletConnected && (
+              <div role="region" aria-label="Wallet connection required" style={{ marginTop: '1rem', padding: '1rem', borderRadius: 8, border: `1px solid ${COLOR.border}`, background: COLOR.surface }}>
+                <p style={{ margin: '0 0 0.5rem', color: COLOR.text, fontWeight: 600 }}>Connect wallet to start</p>
+                <p style={{ margin: '0 0 0.75rem', color: COLOR.muted, fontSize: '0.875rem' }}>A connected wallet is required to evaluate credit eligibility and receive an offer.</p>
+                <button
+                  type="button"
+                  style={btn.primary}
+                  onClick={() => connect('freighter')}
+                >
+                  Connect wallet
+                </button>
+              </div>
+            )}
+
             {evaluationError && (
               <div role="alert" aria-live="assertive" style={{ marginTop: '0.75rem', padding: '0.75rem 1rem', borderRadius: 8, border: `1px solid ${COLOR.danger}`, background: 'rgba(248,81,73,0.1)', color: COLOR.danger, fontSize: '0.875rem' }}>
                 {evaluationError}
@@ -238,7 +351,17 @@ export function RequestEvaluation() {
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
               <button style={btn.secondary} onClick={() => navigate(-1)}>Cancel</button>
-              <button style={btn.primary} onClick={() => setStep(2)}>Start</button>
+              <button
+                style={{
+                  ...btn.primary,
+                  opacity: isWalletConnected ? 1 : 0.5,
+                  cursor: isWalletConnected ? 'pointer' : 'not-allowed',
+                }}
+                disabled={!isWalletConnected}
+                onClick={() => setStep(2)}
+              >
+                Start
+              </button>
             </div>
           </div>
         )}
@@ -280,6 +403,7 @@ export function RequestEvaluation() {
                 <PendingButton
                   pending={evalState === 'running'}
                   pendingLabel="Starting..."
+                  disabled={!isWalletConnected}
                   onClick={startEvaluation}
                   style={btn.primary}
                 >
@@ -291,32 +415,32 @@ export function RequestEvaluation() {
         )}
 
         {step === 3 && (
-  <div>
-    {/* Content-aware skeletons mimicking the result card */}
-    <div
-      style={{
-        display: 'grid',
-        gap: '0.75rem',
-        opacity: evalState === 'running' ? 1 : 0,
-        transition: isReducedMotionActive ? 'none' : 'opacity 300ms ease',
-      }}
-    >
-      {/* Title placeholder */}
-      <Skeleton width="30%" height="1.5rem" />
-      {/* Grid of metric placeholders */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
-        <Skeleton height="3rem" />
-        <Skeleton height="3rem" />
-        <Skeleton height="3rem" />
-      </div>
-      {/* Footer placeholder */}
-      <Skeleton width="80%" height="2rem" />
-    </div>
-    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
-      <button style={btn.danger} onClick={cancelEvaluation}>Cancel Evaluation</button>
-    </div>
-  </div>
-)}
+          <div>
+            {/* Content-aware skeletons mimicking the result card */}
+            <div
+              style={{
+                display: 'grid',
+                gap: '0.75rem',
+                opacity: evalState === 'running' ? 1 : 0,
+                transition: isReducedMotionActive ? 'none' : 'opacity 300ms ease',
+              }}
+            >
+              {/* Title placeholder */}
+              <Skeleton width="30%" height="1.5rem" />
+              {/* Grid of metric placeholders */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
+                <Skeleton height="3rem" />
+                <Skeleton height="3rem" />
+                <Skeleton height="3rem" />
+              </div>
+              {/* Footer placeholder */}
+              <Skeleton width="80%" height="2rem" />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
+              <button style={btn.danger} onClick={cancelEvaluation}>Cancel Evaluation</button>
+            </div>
+          </div>
+        )}
 
         {step === 4 && (
           <div>
@@ -326,8 +450,77 @@ export function RequestEvaluation() {
               tone="alert"
             />
 
+            {acceptError && (
+              <div
+                role="alert"
+                style={{
+                  padding: '0.75rem 1rem',
+                  borderRadius: 8,
+                  border: `1px solid ${COLOR.danger}`,
+                  background: 'rgba(248,81,73,0.1)',
+                  color: COLOR.danger,
+                  marginBottom: '1rem',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <span>{acceptError}</span>
+                <button
+                  style={{ ...btn.secondary, padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
+                  onClick={acceptCreditLine}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {isWalletMismatched && (
+              <div
+                role="alert"
+                style={{
+                  padding: '0.75rem 1rem',
+                  borderRadius: 8,
+                  border: `1px solid ${COLOR.danger}`,
+                  background: 'rgba(248,81,73,0.1)',
+                  color: COLOR.danger,
+                  marginBottom: '1rem',
+                }}
+              >
+                This offer was issued to a different wallet.
+              </div>
+            )}
+
             {evalState === 'success' && result?.approved && (
               <div style={{ display: 'grid', gap: '0.75rem' }}>
+                {secondsRemaining !== null && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '0.5rem 0.75rem',
+                      background: isOfferExpired ? 'rgba(248,81,73,0.1)' : COLOR.surface,
+                      borderRadius: 6,
+                      border: `1px solid ${isOfferExpired ? COLOR.danger : COLOR.border}`,
+                    }}
+                  >
+                    <span style={{ fontSize: '0.875rem', color: isOfferExpired ? COLOR.danger : COLOR.muted }}>
+                      {isOfferExpired
+                        ? 'Offer expired'
+                        : `Offer expires in ${formattedExpiry}`}
+                    </span>
+                    {isOfferExpired && (
+                      <button
+                        style={{ ...btn.secondary, padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}
+                        onClick={restartEvaluation}
+                      >
+                        Re-run evaluation
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
                   {[
                     { label: 'Credit Limit Offered', value: formatCurrency(result.creditLimit || 0), color: COLOR.accent },
@@ -367,18 +560,37 @@ export function RequestEvaluation() {
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', gap: 8 }}>
-              <button style={btn.secondary} onClick={restartEvaluation}>Try Again</button>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', gap: 8, flexWrap: 'wrap' }}>
+              <button style={btn.secondary} onClick={restartEvaluation}>
+                {isOfferExpired ? 'Re-run evaluation' : 'Try Again'}
+              </button>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <button style={btn.ghost} onClick={() => navigate('/credit-lines')}>Contact Support</button>
                 <PendingButton
-                  pending={false}
+                  pending={isAccepting}
                   pendingLabel="Accepting..."
-                  disabled={!(evalState === 'success' && result?.approved && agreeTermsPreviewed)}
+                  disabled={
+                    !(
+                      evalState === 'success' &&
+                      result?.approved &&
+                      agreeTermsPreviewed &&
+                      isWalletConnected &&
+                      !isWalletMismatched &&
+                      !isOfferExpired
+                    )
+                  }
                   onClick={acceptCreditLine}
                   style={{
                     ...btn.primary,
-                    opacity: evalState === 'success' && result?.approved && agreeTermsPreviewed ? 1 : 0.5,
+                    opacity:
+                      evalState === 'success' &&
+                      result?.approved &&
+                      agreeTermsPreviewed &&
+                      isWalletConnected &&
+                      !isWalletMismatched &&
+                      !isOfferExpired
+                        ? 1
+                        : 0.5,
                   }}
                 >
                   Accept Credit Line
@@ -395,7 +607,12 @@ export function RequestEvaluation() {
               <p style={{ margin: '0.35rem 0 0', color: COLOR.muted }}>You can now view and manage your new line from the Credit Lines page.</p>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-              <Link to="/credit-lines" style={{ ...btn.primary, textDecoration: 'none' } as React.CSSProperties}>Go to Credit Lines</Link>
+              <Link
+                to={createdLineId ? `/credit-lines?highlight=${encodeURIComponent(createdLineId)}` : '/credit-lines'}
+                style={{ ...btn.primary, textDecoration: 'none' } as React.CSSProperties}
+              >
+                Go to Credit Lines
+              </Link>
             </div>
           </div>
         )}

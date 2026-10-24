@@ -1,6 +1,13 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { SettingsAccount } from './SettingsAccount';
+
+const testFilePath = import.meta.url.startsWith('file:')
+  ? fileURLToPath(import.meta.url)
+  : resolve(process.cwd(), new URL(import.meta.url).pathname.slice(1));
 
 describe('SettingsAccount', () => {
   it('renders the heading and children', () => {
@@ -31,7 +38,7 @@ describe('SettingsAccount', () => {
   // ─── Reduced-motion CSS tests ───────────────────────────────────────────
 
   describe('reduced-motion CSS rules', () => {
-    const cssPath = resolve(__dirname, './SettingsAccount.css');
+    const cssPath = resolve(testFilePath, '..', './SettingsAccount.css');
     const css = readFileSync(cssPath, 'utf-8');
 
     it('contains @media (prefers-reduced-motion: reduce) block', () => {

@@ -12,7 +12,7 @@ describe('getUtilizationDisplay', () => {
     expect(result.available).toBe(0);
     expect(result.overLimitBy).toBe(12_750);
     expect(result.barPct).toBe(100);
-    expect(result.pct).toBeeCloseTo(117, 5);
+    expect(result.pct).toBeCloseTo(117, 5);
   });
 
   it('reports the true percentage for aria-valuenow', () => {
@@ -35,7 +35,7 @@ describe('getUtilizationDisplay', () => {
     expect(result.available).toBe(45_000);
     expect(result.overLimitBy).toBe(0);
     expect(result.barPct).toBeCloseTo(40, 5);
-    expect(result.pct).toBeeCloseTo(40, 5);
+    expect(result.pct).toBeCloseTo(40, 5);
   });
 
   it('clamps the bar percentage to 100 for over-limit lines', () => {

@@ -11,6 +11,7 @@ import type { CreditLine } from '@/types/draw-credit.types';
 const creditLine: CreditLine = {
   id: 'line-1',
   name: 'Test Line',
+  status: "Active",
   limit: 10000,
   available: 4000,
   utilization: 60,

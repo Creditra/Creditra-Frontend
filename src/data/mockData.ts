@@ -1,5 +1,11 @@
 import type { CreditLine, AprHistoryEntry } from '../types/creditLine';
 import type { Attestation } from '../types/attestation';
+import { nowMs } from '../lib/clock';
+
+/**
+ * Fixed anchor date for stable test and fixture generation.
+ */
+export const FIXTURE_ANCHOR_DATE = new Date('2025-02-20T12:00:00Z');
 
 // ─── History cursor state ────────────────────────────────────────────────────
 /**
@@ -38,15 +44,16 @@ export function setHistoryCursor(filterKey: string, cursor: string | null): void
  * Uses a simple bounded random walk anchored to `currentApr`.
  * Deterministic seed per credit-line id keeps snapshots stable.
  */
-function generateAprHistory(
+export function generateAprHistory(
   currentApr: number,
   days = 365,
   seed = 42,
+  anchorDate: Date = FIXTURE_ANCHOR_DATE,
 ): AprHistoryEntry[] {
   const entries: AprHistoryEntry[] = [];
   // Park the pseudo-random walk at currentApr at T=0 and walk backwards
   let apr = currentApr;
-  const now = new Date();
+  const now = anchorDate;
 
   // Simple LCG PRNG for stable, deterministic sequences
   let s = seed;
@@ -240,15 +247,15 @@ export const MOCK_ATTESTATIONS: Attestation[] = [
   {
     id: 'identity-bond',
     label: 'Identity Bond',
-    lastVerifiedAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-    expiresAt: new Date(Date.now() + 150 * 24 * 60 * 60 * 1000).toISOString(),
+    lastVerifiedAt: new Date(nowMs() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    expiresAt: new Date(nowMs() + 150 * 24 * 60 * 60 * 1000).toISOString(),
     remediationStep: 2,
   },
   {
     id: 'revenue-proof',
     label: 'Revenue Proof',
-    lastVerifiedAt: new Date(Date.now() - 170 * 24 * 60 * 60 * 1000).toISOString(),
-    expiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+    lastVerifiedAt: new Date(nowMs() - 170 * 24 * 60 * 60 * 1000).toISOString(),
+    expiresAt: new Date(nowMs() + 5 * 24 * 60 * 60 * 1000).toISOString(),
     remediationStep: 2,
   },
   {
@@ -263,6 +270,9 @@ import type { Session } from '../types/session';
 
 /**
  * Mock active sessions returned by the /auth/sessions endpoint.
+ *
+ * Documented exception: MOCK_SESSIONS simulates active authentication sessions
+ * from other devices and is excluded from credit-lifecycle clock pinning.
  *
  * The first entry (`sess-001`) is flagged `isCurrent: true` to represent the
  * in-progress browser session.  The rest simulate sessions from other devices.
