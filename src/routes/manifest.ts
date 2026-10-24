@@ -138,6 +138,13 @@ export const ROUTE_MANIFEST: RouteManifestEntry[] = [
     },
   },
   {
+    path: '/dutch-auctions/:auctionId',
+    pageName: 'Dutch Auction Detail',
+    description: 'View details and purchase history for a specific Creditra Dutch auction.',
+    load: () => import('../pages/DutchAuctionDetail').then((m) => ({ default: m.default })),
+    Component: lazy(() => import('../pages/DutchAuctionDetail').then((m) => ({ default: m.default }))),
+  },
+  {
     path: '/linked-accounts',
     pageName: 'Linked Accounts',
     description: 'Manage linked external accounts and credentials for your Creditra profile.',
