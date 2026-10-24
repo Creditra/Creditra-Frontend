@@ -108,8 +108,11 @@
 /* Illustration */
 
 .error-illustration {
+  display: block;
   width: 160px;
   height: auto;
+  margin-left: auto;
+  margin-right: auto;
   margin-bottom: 1.25rem;
   color: var(--text);
 }

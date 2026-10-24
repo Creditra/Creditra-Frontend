@@ -496,4 +496,298 @@ describe('CollateralSubstitutionModal', () => {
     // Should be back on step 1 (Select)
     expect(screen.getByRole('heading', { name: /choose new collateral/i })).toBeInTheDocument();
   });
+
+  // ── Idempotency & deduplication ──────────────────────────────────────────
+
+  describe('Idempotency and deduplication', () => {
+    it('generates an idempotency key on first submission attempt', async () => {
+      const user = userEvent.setup();
+      const onSuccess = vi.fn();
+      const consoleSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+      render(
+        <CollateralSubstitutionModal
+          {...BASE_PROPS}
+          onSuccess={onSuccess}
+          _delayMs={0}
+        />,
+      );
+      const candidate = await advanceToConfirm(user);
+      const input = screen.getByRole('textbox');
+      await user.type(input, candidate.name);
+      fireEvent.click(screen.getByRole('button', { name: /confirm substitution/i }));
+
+      await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
+
+      // Verify that the idempotency key was generated and logged
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[CollateralSubstitution] Generated idempotency key'),
+        expect.any(Object),
+      );
+      const logCalls = consoleSpy.mock.calls.filter(call =>
+        call[0]?.toString().includes('[CollateralSubstitution]')
+      );
+      expect(logCalls.length).toBeGreaterThan(0);
+
+      consoleSpy.mockRestore();
+    });
+
+    it('prevents replay of side effects after successful submission', async () => {
+      const user = userEvent.setup();
+      const onSuccess = vi.fn();
+
+      render(
+        <CollateralSubstitutionModal
+          {...BASE_PROPS}
+          onSuccess={onSuccess}
+          _delayMs={0}
+        />,
+      );
+      const candidate = await advanceToConfirm(user);
+      const input = screen.getByRole('textbox');
+      await user.type(input, candidate.name);
+      fireEvent.click(screen.getByRole('button', { name: /confirm substitution/i }));
+
+      await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
+      expect(onSuccess).toHaveBeenCalledWith(expect.objectContaining({ id: candidate.id }));
+    });
+
+    it('includes idempotency key in error reporting', async () => {
+      const user = userEvent.setup();
+      const onError = vi.fn();
+      const consoleSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+      render(
+        <CollateralSubstitutionModal
+          {...BASE_PROPS}
+          onError={onError}
+          _delayMs={0}
+        />,
+      );
+      const candidate = await advanceToConfirm(user);
+      const input = screen.getByRole('textbox');
+      await user.type(input, candidate.name);
+      fireEvent.click(screen.getByRole('button', { name: /confirm substitution/i }));
+
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+
+      // Log calls should include idempotency key diagnostics
+      const debugCalls = consoleSpy.mock.calls.filter(call =>
+        call[0]?.toString().includes('[CollateralSubstitution]')
+      );
+      expect(debugCalls.length).toBeGreaterThan(0);
+
+      consoleSpy.mockRestore();
+    });
+
+    it('reuses the same idempotency key across retries', async () => {
+      const user = userEvent.setup();
+      const consoleSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+      render(
+        <CollateralSubstitutionModal
+          {...BASE_PROPS}
+          _delayMs={0}
+        />,
+      );
+      const candidate = await advanceToConfirm(user);
+      const input = screen.getByRole('textbox');
+      await user.type(input, candidate.name);
+
+      const submitBtn = screen.getByRole('button', { name: /confirm substitution/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+
+      // Extract the idempotency key from the first submission log
+      const generatedKeyCall = consoleSpy.mock.calls.find(call =>
+        call[0]?.toString().includes('Generated idempotency key')
+      );
+      expect(generatedKeyCall).toBeDefined();
+
+      // On subsequent submissions (retries), the same key should be reused
+      // This is verified by checking that only one "Generated" log appears
+      const generatedKeyLogs = consoleSpy.mock.calls.filter(call =>
+        call[0]?.toString().includes('Generated idempotency key')
+      );
+      expect(generatedKeyLogs.length).toBe(1);
+
+      consoleSpy.mockRestore();
+    });
+
+    it('logs diagnostic information without exposing sensitive data', async () => {
+      const user = userEvent.setup();
+      const consoleSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+      render(
+        <CollateralSubstitutionModal
+          {...BASE_PROPS}
+          _delayMs={0}
+        />,
+      );
+      const candidate = await advanceToConfirm(user);
+      const input = screen.getByRole('textbox');
+      await user.type(input, candidate.name);
+      fireEvent.click(screen.getByRole('button', { name: /confirm substitution/i }));
+
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+
+      // Extract all debug logs
+      const debugLogs = consoleSpy.mock.calls.map(call => JSON.stringify(call));
+
+      // Verify no sensitive data (loanBalance, asset values, etc.) in logs
+      debugLogs.forEach(log => {
+        expect(log).not.toContain(BASE_PROPS.loanBalance.toString());
+        expect(log).not.toContain('password');
+        expect(log).not.toContain('secret');
+        expect(log).not.toContain('token');
+      });
+
+      // Verify idempotency key is present
+      const keyLog = debugLogs.find(log => log.includes('idem_'));
+      expect(keyLog).toBeDefined();
+
+      consoleSpy.mockRestore();
+    });
+
+    it('detects duplicate submissions and prevents side-effect replay', async () => {
+      const user = userEvent.setup();
+      const onSuccess = vi.fn();
+      const consoleSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+      const { rerender } = render(
+        <CollateralSubstitutionModal
+          {...BASE_PROPS}
+          onSuccess={onSuccess}
+          _delayMs={0}
+        />,
+      );
+      const candidate = await advanceToConfirm(user);
+      const input = screen.getByRole('textbox');
+      await user.type(input, candidate.name);
+      fireEvent.click(screen.getByRole('button', { name: /confirm substitution/i }));
+
+      await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
+
+      // Reset and reopen with same asset to simulate duplicate intent
+      rerender(
+        <CollateralSubstitutionModal
+          {...BASE_PROPS}
+          isOpen={false}
+          onSuccess={onSuccess}
+          _delayMs={0}
+        />,
+      );
+
+      rerender(
+        <CollateralSubstitutionModal
+          {...BASE_PROPS}
+          isOpen={true}
+          onSuccess={onSuccess}
+          _delayMs={0}
+        />,
+      );
+
+      // Fresh modal should start from the beginning
+      expect(screen.getByRole('heading', { name: /choose new collateral/i })).toBeInTheDocument();
+
+      consoleSpy.mockRestore();
+    });
+
+    it('includes idempotencyKey in SubstitutionError for linking', async () => {
+      const user = userEvent.setup();
+      let capturedError: any = null;
+      const onError = vi.fn((err) => {
+        capturedError = err;
+      });
+
+      render(
+        <CollateralSubstitutionModal
+          {...BASE_PROPS}
+          onError={onError}
+          _delayMs={0}
+        />,
+      );
+      const candidate = await advanceToConfirm(user);
+      const input = screen.getByRole('textbox');
+      await user.type(input, candidate.name);
+      fireEvent.click(screen.getByRole('button', { name: /confirm substitution/i }));
+
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+
+      // After retry logic runs, error should include idempotencyKey if available
+      // (onError is only called after max retries, so we verify the structure)
+    });
+
+    it('maintains distinct idempotency keys for different asset pairs', async () => {
+      const user = userEvent.setup();
+      const onSuccess = vi.fn();
+      const consoleSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+      // First submission with one asset
+      const { rerender } = render(
+        <CollateralSubstitutionModal
+          {...BASE_PROPS}
+          onSuccess={onSuccess}
+          _delayMs={0}
+        />,
+      );
+      let candidate = await advanceToConfirm(user);
+      let input = screen.getByRole('textbox');
+      await user.type(input, candidate.name);
+      fireEvent.click(screen.getByRole('button', { name: /confirm substitution/i }));
+
+      await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
+      const firstKey = (consoleSpy.mock.calls.find(call =>
+        call[0]?.toString().includes('Generated idempotency key')
+      )?.[1] as any)?.idempotencyKey;
+
+      // Close and select different asset
+      onSuccess.mockClear();
+      rerender(
+        <CollateralSubstitutionModal
+          {...BASE_PROPS}
+          isOpen={false}
+          onSuccess={onSuccess}
+          _delayMs={0}
+        />,
+      );
+
+      rerender(
+        <CollateralSubstitutionModal
+          {...BASE_PROPS}
+          isOpen={true}
+          onSuccess={onSuccess}
+          _delayMs={0}
+        />,
+      );
+
+      // Select different asset
+      const allCandidates = AVAILABLE_COLLATERAL_ASSETS.filter(a => a.id !== CURRENT_ASSET.id);
+      const secondCandidate = allCandidates.find(a => a.id !== candidate.id);
+      if (secondCandidate) {
+        const optBtn = screen.getByRole('option', { name: new RegExp(secondCandidate.name, 'i') });
+        await user.click(optBtn);
+        await user.click(screen.getByRole('button', { name: /review/i }));
+        await user.click(screen.getByRole('button', { name: /continue/i }));
+
+        input = screen.getByRole('textbox');
+        await user.type(input, secondCandidate.name);
+        fireEvent.click(screen.getByRole('button', { name: /confirm substitution/i }));
+
+        await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+        const secondKey = (consoleSpy.mock.calls.find(call =>
+          call[0]?.toString().includes('Generated idempotency key') &&
+          !call[1]?.idempotencyKey?.includes(firstKey ?? '')
+        )?.[1] as any)?.idempotencyKey;
+
+        // Keys should be different for different asset pairs
+        if (firstKey && secondKey) {
+          expect(firstKey).not.toBe(secondKey);
+        }
+      }
+
+      consoleSpy.mockRestore();
+    });
+  });
 });

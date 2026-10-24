@@ -28,11 +28,25 @@
  *     a meaningful visual fallback rather than a frozen rotation frame.
  */
 
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback, useContext } from "react";
 import { Skeleton } from "@/components/Skeleton";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useReducedMotion } from "@/context/ReducedMotionContext";
-import { loadDraft, saveDraft, clearDraft } from "@/state/wizardDraft";
+import {
+  loadDraft,
+  saveDraft,
+  clearDraft,
+  type WizardDraftState,
+} from "@/state/wizardDraft";
+import { useWallet, walletIdentityKey } from "@/context/WalletContext";
+import { getStoredWallet, isWalletRemembered } from "@/utils/wallet";
+import { readJson, writeJson } from "@/utils/storage";
+import {
+  DEFAULT_RISK_ACK_KEY,
+  DEFAULT_RISK_BANNER_DISMISSED_KEY,
+  GRANTFOX_RISK_EDUCATION_ACK_KEY,
+} from "@/constants/storageKeys";
+import { DefaultRiskModal } from "@/components/DefaultRiskModal";
 import { CreditLineSelector } from "@/components/CreditLineSelector";
 import { AmountInput } from "@/components/AmountInput";
 import { PreviewSection } from "@/components/PreviewSection";
@@ -44,6 +58,18 @@ import { LiveRegion } from "@/components/LiveRegion";
 import { CreditLine, DrawStep, Transaction } from "@/types/draw-credit.types";
 import { mockCreditLines } from "@/lib/draw-credit-mock-data";
 import { normalizeCreditLineAvailability } from "@/lib/credit-line-availability";
+import {
+  DRAW_INELIGIBILITY_REASON_LABELS,
+  getDrawEligibility,
+  type DrawIneligibilityReason,
+} from "@/lib/draw-eligibility";
+import { classifyDrawError, type DrawErrorKind } from "@/lib/draw-errors";
+import { getDrawAmountValidation } from "@/utils/amountValidation";
+import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
+import { projectDraw } from "@/lib/draw-projection";
+import { offlineMutation } from "@/utils/offline";
+import { NotificationContext } from "@/context/NotificationContext";
+import { useOnline } from "@/hooks/useOnline";
 import { WhyApr } from "@/components/WhyApr";
 import { DrawSummaryBar } from "@/components/DrawSummaryBar";
 import { useDrawWizardMicroProgress } from "@/hooks/useDrawWizardMicroProgress";
@@ -60,6 +86,18 @@ const drawSteps = [
 
 type ProgressStep = (typeof drawSteps)[number]["id"];
 
+interface RestoredDraft {
+  draft: WizardDraftState | null;
+  line: CreditLine | null;
+  notice: string;
+}
+
+const EMPTY_RESTORED_DRAFT: RestoredDraft = {
+  draft: null,
+  line: null,
+  notice: "",
+};
+
 /** Returns true if the currently focused element can receive text input. */
 function isFocusedOnInput(): boolean {
   const el = document.activeElement;
@@ -71,30 +109,211 @@ function isFocusedOnInput(): boolean {
 
 export default function DrawCreditPage() {
   const navigate = useNavigate();
+  // Read the context directly (not `useNotifications()`) so this
+  // component renders in isolation tests without a provider.
+  // In production, App.tsx always wraps this in <NotificationProvider>,
+  // so `addToast` is defined and the toast fires.
+  const notifCtx = useContext(NotificationContext);
+  const addToast = notifCtx?.addToast;
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
   const location = useLocation();
-  const routeTransaction = location.state?.transaction as Transaction | undefined;
-  const draftState = routeTransaction ? null : loadDraft();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isLearnMode = searchParams.get("learn") === "1";
 
-  const [step, setStep] = useState<DrawStep>(
-    routeTransaction ? "status" : draftState?.step ?? "select",
+  // The default-risk education is offered, never forced: first-time borrowers
+  // see a dismissible inline banner (remembered in localStorage) and can open
+  // the 3-step modal from it. `?learn=1` still opens the modal directly.
+  const [hasAcknowledgedRisk, setHasAcknowledgedRisk] = useState(
+    () =>
+      readJson<boolean>(DEFAULT_RISK_ACK_KEY, false) ||
+      readJson<boolean>(GRANTFOX_RISK_EDUCATION_ACK_KEY, false) ||
+      readJson<boolean>(DEFAULT_RISK_BANNER_DISMISSED_KEY, false),
   );
-  const [selectedCreditLine, setSelectedCreditLine] =
-    useState<CreditLine | null>(
-      draftState?.selectedCreditLine
-        ? normalizeCreditLineAvailability(draftState.selectedCreditLine)
-        : null,
+  const [isRiskModalOpen, setIsRiskModalOpen] = useState(() => isLearnMode);
+  const riskBannerTriggerRef = useRef<HTMLButtonElement>(null);
+  const stepHeadingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    if (isLearnMode) {
+      setIsRiskModalOpen(true);
+    }
+  }, [isLearnMode]);
+
+  const closeRiskModal = useCallback(() => {
+    if (isLearnMode) {
+      // Strip ?learn=1 from the URL without adding a history entry.
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete("learn");
+      setSearchParams(nextParams, { replace: true });
+    }
+    setIsRiskModalOpen(false);
+  }, [isLearnMode, searchParams, setSearchParams]);
+
+  const handleRiskModalDismiss = useCallback(() => {
+    closeRiskModal();
+    // The banner stays mounted (hidden) while the modal is open, so the
+    // trigger is still connected and can receive focus after the exit
+    // animation completes.
+    requestAnimationFrame(() => {
+      riskBannerTriggerRef.current?.focus();
+    });
+  }, [closeRiskModal]);
+
+  // Declared before handleRiskModalAcknowledgeAndFocus, whose dependency
+  // array reads it during render.
+  const handleRiskModalAcknowledge = useCallback(() => {
+    writeJson(DEFAULT_RISK_ACK_KEY, true);
+    writeJson(GRANTFOX_RISK_EDUCATION_ACK_KEY, true);
+    setHasAcknowledgedRisk(true);
+    closeRiskModal();
+  }, [closeRiskModal]);
+
+  const handleRiskModalAcknowledgeAndFocus = useCallback(() => {
+    handleRiskModalAcknowledge();
+    requestAnimationFrame(() => {
+      stepHeadingRef.current?.focus();
+    });
+  }, [handleRiskModalAcknowledge]);
+
+  const handleDismissRiskBanner = useCallback(() => {
+    writeJson(DEFAULT_RISK_BANNER_DISMISSED_KEY, true);
+    setHasAcknowledgedRisk(true);
+  }, []);
+
+  const { queueAction } = useOnline();
+  const { wallet } = useWallet();
+  // Auto-reconnect starts after the first render, so fall back to the
+  // remembered wallet during that window. Without this, a draft saved by the
+  // remembered wallet would look foreign to the initial `null` identity and be
+  // discarded before reconnection completes. The owner-change effect still
+  // clears it if a different wallet connects.
+  const rememberedWallet = isWalletRemembered() ? getStoredWallet() : null;
+  const draftOwner = walletIdentityKey(wallet ?? rememberedWallet);
+  const routeTransaction = location.state?.transaction as Transaction | undefined;
+
+  /**
+   * Resolve a persisted draft exactly once, at mount.
+   *
+   * The stored line id is re-resolved against the current line data rather
+   * than trusting a snapshot. A missing or fully-drawn line discards the
+   * draft and leaves an informational note instead of opening a stale flow.
+   */
+  const [restoredDraft] = useState<RestoredDraft>(() => {
+    if (routeTransaction) return EMPTY_RESTORED_DRAFT;
+
+    const draft = loadDraft(draftOwner);
+    if (!draft) return EMPTY_RESTORED_DRAFT;
+
+    if (draft.step === "select") {
+      return { draft, line: null, notice: "" };
+    }
+
+    const line = mockCreditLines.find(
+      (candidate) => candidate.id === draft.lineId,
     );
-  const [amount, setAmount] = useState(draftState?.amount ?? 0);
+
+    if (!line) {
+      clearDraft();
+      return {
+        draft: null,
+        line: null,
+        notice:
+          "Your saved draw draft was discarded because that credit line is no longer available.",
+      };
+    }
+
+    // A restored draft may reference a line that has since become Suspended,
+    // Defaulted, Frozen, Closed or fully drawn. Never resume such a draft.
+    const normalizedLine = normalizeCreditLineAvailability(line);
+    if (!getDrawEligibility(normalizedLine).eligible) {
+      clearDraft();
+      return {
+        draft: null,
+        line: null,
+        notice:
+          "Your saved draw draft was discarded because that credit line is no longer eligible for a draw.",
+      };
+    }
+
+    // Even if the stored step were ever tampered with, an amount-step draft
+    // can never land on confirm: the user always re-reviews current pricing.
+    return { draft, line: normalizedLine, notice: "" };
+  });
+
+  const [draftNotice, setDraftNotice] = useState(restoredDraft.notice);
+  const [step, setStep] = useState<DrawStep>(() => {
+    if (routeTransaction) return "status";
+    return restoredDraft.draft?.step === "amount" && restoredDraft.line
+      ? "amount"
+      : "select";
+  });
+  const [selectedCreditLine, setSelectedCreditLine] = useState<CreditLine | null>(
+    restoredDraft.line,
+  );
+  const [amount, setAmount] = useState(() =>
+    restoredDraft.draft?.step === "amount"
+      ? restoredDraft.draft.amountCents / 100
+      : 0,
+  );
+
+  // Drafts belong to the wallet identity that created them. Clear the
+  // persisted draft when the wallet disconnects or switches accounts, and skip
+  // the save effect for the commit that observed the change so the old flow is
+  // not immediately re-persisted under the new owner.
+  const previousDraftOwner = useRef(draftOwner);
+  const skipNextDraftSave = useRef(false);
+
+  useEffect(() => {
+    if (previousDraftOwner.current === draftOwner) return;
+
+    previousDraftOwner.current = draftOwner;
+    clearDraft();
+    skipNextDraftSave.current = true;
+    setDraftNotice(
+      draftOwner
+        ? "Your saved draw draft was cleared because the wallet changed."
+        : "Your saved draw draft was cleared because the wallet disconnected.",
+    );
+  }, [draftOwner]);
 
   useEffect(() => {
     if (step === "status") {
       clearDraft();
-    } else {
-      saveDraft({ step, selectedCreditLine, amount });
+      return;
     }
-  }, [step, selectedCreditLine, amount]);
+
+    if (skipNextDraftSave.current) {
+      skipNextDraftSave.current = false;
+      return;
+    }
+
+    saveDraft(
+      {
+        // Persist the confirm step as its preceding amount step so a reload
+        // always re-enters at the last reviewable position.
+        step: step === "confirm" ? "amount" : step,
+        lineId: selectedCreditLine?.id ?? null,
+        amountCents: Math.round(amount * 100),
+      },
+      draftOwner,
+    );
+  }, [step, selectedCreditLine, amount, draftOwner]);
 
   const [isLoading, setIsLoading] = useState(false);
+  /**
+   * Concurrent submission guard (issue #932). The ref is flipped to `true`
+   * synchronously inside `handleConfirm`, so a duplicate activation — a
+   * double-click on the Confirm button, or a repeated ArrowRight key-down that
+   * lands before React re-renders the status step — is rejected
+   * deterministically instead of issuing a second draw.
+   */
+  const isSubmittingRef = useRef(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const helpTriggerRef = useRef<HTMLButtonElement>(null);
   const [isWhyAprOpen, setIsWhyAprOpen] = useState(false);
@@ -102,8 +321,13 @@ export default function DrawCreditPage() {
   const [transaction, setTransaction] = useState<Transaction | null>(
     routeTransaction ?? null,
   );
+  const [errorKind, setErrorKind] = useState<DrawErrorKind | undefined>(undefined);
   const [confirmationAcknowledged, setConfirmationAcknowledged] =
     useState(false);
+  const [eligibilityAlert, setEligibilityAlert] =
+    useState<DrawIneligibilityReason | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const amountInputRef = useRef<HTMLInputElement>(null);
 
   const { debouncedAnnouncement: microProgressAnnouncement } =
     useDrawWizardMicroProgress({
@@ -122,40 +346,136 @@ export default function DrawCreditPage() {
     setSelectedCreditLine(normalizeCreditLineAvailability(creditLine));
     setAmount(0);
     setConfirmationAcknowledged(false);
+    setEligibilityAlert(null);
     setStep("amount");
   };
 
   const handleAmountNext = (selectedAmount: number) => {
     setAmount(selectedAmount);
+    setEligibilityAlert(null);
     setStep("confirm");
   };
 
+  const [isOfflineBlocked, setIsOfflineBlocked] = useState(false);
+
   const handleConfirm = async () => {
+    const line = selectedCreditLine;
+
+    // Reject any activation while a submission is already in flight, even one
+    // that reaches this handler before React flushes the pending state.
+    if (isSubmittingRef.current) return;
+
+    // State-transition invariant: only the confirm step may submit, and it
+    // requires a credit line and a positive amount.
+    if (step !== "confirm" || !line || amount <= 0) return;
+
+    // Re-check eligibility against the latest line data (status may have
+    // changed while the user was entering an amount). Never submit a draw
+    // against Suspended, Defaulted, Frozen, Closed or fully drawn lines.
+    const latestLine =
+      mockCreditLines.find((candidate) => candidate.id === line.id) ?? line;
+    const latestEligibility = getDrawEligibility(
+      normalizeCreditLineAvailability(latestLine),
+    );
+    if (!latestEligibility.eligible) {
+      setEligibilityAlert(latestEligibility.reason);
+      return;
+    }
+    setEligibilityAlert(null);
+
+    // Submit-time validation (defense in depth). The amount step guards user
+    // input, but re-validating here ensures an out-of-bounds amount restored
+    // from a wizard draft can never be silently submitted.
+    const validation = getDrawAmountValidation(String(amount), line);
+    if (!validation.isValid) {
+      setSubmitError(validation.feedback.message);
+      return;
+    }
+    const projection = projectDraw(
+      line,
+      amount,
+      getDrawPricingQuote(line, amount),
+    );
+    if (projection.exceedsLimit) {
+      setSubmitError("This draw exceeds the credit line limit after the 1% fee.");
+      return;
+    }
+
+    isSubmittingRef.current = true;
     setIsLoading(true);
     setStep("status");
+    setIsOfflineBlocked(false);
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Guard the mutation: when offline, never fabricate a success. The
+    // draw is queued for retry on reconnect and a clear error surfaces.
+    try {
+      await offlineMutation({
+        fn: async () => {
+          // Simulate API call
+          await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    const succeeded = Math.random() > 0.2;
-    const newTransaction: Transaction = {
-      id: `TXN-${Date.now()}`,
-      creditLineId: selectedCreditLine!.id,
-      amount,
-      status: succeeded ? "success" : "error",
-      message: succeeded ? undefined : "Insufficient funds available",
-      timestamp: new Date(),
-    };
+          const succeeded = Math.random() > 0.2;
+          const newTransaction: Transaction = {
+            id: `TXN-${Date.now()}`,
+            creditLineId: line.id,
+            amount,
+            status: succeeded ? "success" : "error",
+            message: succeeded ? undefined : "Insufficient funds available",
+            timestamp: new Date(),
+          };
 
-    setTransaction(newTransaction);
-    setIsLoading(false);
-    setStep("status");
+          // Issue #1180: if the user left the page during processing,
+          // do not mutate unmounted React state and do not hijack
+          // navigation. Surface the result as a toast instead.
+          if (!isMountedRef.current) {
+            addToast?.({
+              type: succeeded ? "success" : "error",
+              category: "transaction",
+              title: succeeded
+                ? `Your $${amount} draw succeeded`
+                : `Your $${amount} draw failed`,
+              message: succeeded
+                ? "View the details in your transaction history."
+                : "Insufficient funds available.",
+              action: {
+                label: "View transactions",
+                onClick: () => navigate("/transactions"),
+              },
+              saveToHistory: true,
+            });
+            return;
+          }
 
-    if (newTransaction.status === "success") {
-      navigate("/draw-credit/success", {
-        replace: true,
-        state: { transaction: newTransaction },
+          setTransaction(newTransaction);
+          setErrorKind(succeeded ? undefined : classifyDrawError(newTransaction));
+          setIsLoading(false);
+          setStep("status");
+
+          if (newTransaction.status === "success") {
+            navigate("/draw-credit/success", {
+              replace: true,
+              state: { transaction: newTransaction },
+            });
+          }
+        },
+        onOffline: () => {
+          queueAction(() => {
+            void handleConfirm();
+          }, "draw-confirm");
+        },
+        offlineMessage:
+          "You are offline, so your draw cannot be processed yet. It has been queued and will be submitted when your connection is restored.",
       });
+    } catch {
+      setIsLoading(false);
+      setIsOfflineBlocked(true);
     }
+    // Always release the lock (success, offline-block, or throw) so a later
+    // draw attempt — e.g. after reconnecting and flushing the queue, a failed
+    // submission, or "Make Another Draw" — is never blocked by a stale flag.
+    // Note: dedup via the 'draw-confirm' key still prevents double-submission
+    // when the user re-triggers while offline.
+    isSubmittingRef.current = false;
   };
 
   const handleNewDraw = () => {
@@ -164,17 +484,40 @@ export default function DrawCreditPage() {
     setSelectedCreditLine(null);
     setAmount(0);
     setConfirmationAcknowledged(false);
+    setEligibilityAlert(null);
     setTransaction(null);
+    setErrorKind(undefined);
+    setSubmitError(null);
   };
+
+  const handleRetry = useCallback(() => {
+    if (!selectedCreditLine) {
+      setStep("select");
+      return;
+    }
+    setConfirmationAcknowledged(false);
+    setTransaction(null);
+    setErrorKind(undefined);
+    const validation = getDrawAmountValidation(String(amount), selectedCreditLine);
+    if (!validation.isValid) {
+      setStep("amount");
+      return;
+    }
+    setStep("confirm");
+  }, [selectedCreditLine, amount]);
 
   const handleBack = useCallback(() => {
     if (step === "amount") {
       setStep("select");
       setSelectedCreditLine(null);
       setConfirmationAcknowledged(false);
+      setEligibilityAlert(null);
+      setSubmitError(null);
     } else if (step === "confirm") {
       setStep("amount");
       setConfirmationAcknowledged(false);
+      setEligibilityAlert(null);
+      setSubmitError(null);
     }
   }, [step]);
 
@@ -182,9 +525,43 @@ export default function DrawCreditPage() {
     navigate("/");
   }, [navigate]);
 
+  // Issue #1180: warn on tab close while a submission is in flight.
+  useEffect(() => {
+    if (!isLoading) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isLoading]);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       if (isFocusedOnInput()) return;
+
+      // Any open dialog — the inline help overlay, WhyApr, or the risk modal —
+      // owns the keyboard, so wizard shortcuts stay inert (#1173). Scoped to
+      // aria-modal="true" so always-mounted panels (e.g. the closed
+      // notification center) don't permanently block the shortcuts.
+      const hasOpenDialog =
+        isRiskModalOpen ||
+        document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
+
+      if (e.key === "?") {
+        // Capture phase + swallow: on this route the page-level `?` runs before
+        // App's document-level bubble listener, which skips prevented events.
+        // The key is always consumed so the global ShortcutHelpOverlay can
+        // never open alongside a wizard dialog; only a clean page opens the
+        // contextual help.
+        e.preventDefault();
+        e.stopPropagation();
+        if (!hasOpenDialog) setIsHelpOpen(true);
+        return;
+      }
+
+      if (hasOpenDialog) return;
 
       switch (e.key) {
         case "Escape":
@@ -205,9 +582,18 @@ export default function DrawCreditPage() {
           break;
 
         case "ArrowRight":
-          if (step === "amount" && amount > 0) {
+          if (step === "amount" && selectedCreditLine) {
             e.preventDefault();
-            handleAmountNext(amount);
+            const validation = getDrawAmountValidation(
+              String(amount),
+              selectedCreditLine,
+            );
+            if (validation.isValid) {
+              handleAmountNext(amount);
+            } else {
+              amountInputRef.current?.focus();
+              setSubmitError(validation.message);
+            }
           }
           if (step === "confirm" && confirmationAcknowledged) {
             e.preventDefault();
@@ -215,28 +601,70 @@ export default function DrawCreditPage() {
           }
           break;
 
-        case "?":
-          e.preventDefault();
-          setIsHelpOpen(true);
-          break;
-
         default:
           break;
       }
     };
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [step, amount, confirmationAcknowledged, handleBack, handleCancel]);
+    // Capture phase so this runs before App's bubble-phase `?` handler (#1173).
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [step, amount, selectedCreditLine, confirmationAcknowledged, handleBack, handleCancel, isRiskModalOpen]);
 
   return (
     <main className="dc-page" aria-label="Draw credit">
+      <DefaultRiskModal
+        isOpen={isRiskModalOpen}
+        onAcknowledge={handleRiskModalAcknowledgeAndFocus}
+        onDismiss={handleRiskModalDismiss}
+        triggerRef={riskBannerTriggerRef}
+      />
       <LiveRegion
         id="draw-wizard-progress-announcement"
         message={microProgressAnnouncement}
       />
+      {submitError && step === "amount" && (
+        <LiveRegion
+          id="draw-wizard-amount-error-announcement"
+          message={submitError}
+        />
+      )}
       <div className="dc-page__inner">
+        {!hasAcknowledgedRisk && (
+          <div className="dc-risk-banner" role="note" hidden={isRiskModalOpen}>
+            <p className="dc-risk-banner__text">
+              <strong>First draw?</strong> Take a 1-minute primer on what a
+              default is and how to avoid one.
+            </p>
+            <div className="dc-risk-banner__actions">
+              <button
+                ref={riskBannerTriggerRef}
+                type="button"
+                className="dc-risk-banner__learn"
+                onClick={() => setIsRiskModalOpen(true)}
+              >
+                Learn about default risk
+              </button>
+              <button
+                type="button"
+                className="dc-risk-banner__dismiss"
+                onClick={handleDismissRiskBanner}
+                aria-label="Dismiss default-risk primer"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
         <div className="dc-page__card">
+          <h2 ref={stepHeadingRef} tabIndex={-1} className="sr-only">
+            Draw credit step
+          </h2>
+          {draftNotice && (
+            <p className="dc-draft-notice" role="status">
+              {draftNotice}
+            </p>
+          )}
           {step === "select" && (
             <>
               <CreditLineSelector
@@ -261,7 +689,9 @@ export default function DrawCreditPage() {
           {step === "amount" && selectedCreditLine && (
             <div className="dc-step">
               <AmountInput
+                ref={amountInputRef}
                 creditLine={selectedCreditLine}
+                initialAmount={amount}
                 onAmountChange={setAmount}
                 onNext={handleAmountNext}
                 onBack={handleBack}
@@ -277,7 +707,7 @@ export default function DrawCreditPage() {
                   keys={["←", "→"]}
                   label="Back / Continue"
                   separator="/"
-                  description="Use left and right arrow keys to go back or continue"
+                  description="Use left and right arrow keys to go back or continue; → requires a valid amount"
                 />
                 <KbdHint
                   keys="Esc"
@@ -295,6 +725,35 @@ export default function DrawCreditPage() {
 
           {step === "confirm" && selectedCreditLine && (
             <>
+              {eligibilityAlert && (
+                <div
+                  className="dc-eligibility-alert"
+                  role="alert"
+                  aria-live="assertive"
+                >
+                  <strong>This credit line can no longer be drawn from.</strong>{" "}
+                  {DRAW_INELIGIBILITY_REASON_LABELS[eligibilityAlert]}. Please
+                  choose another line before submitting.
+                </div>
+              )}
+              {submitError && (
+                <div className="dc-step dc-step--error" role="alert">
+                  <p className="dc-step__subtitle">
+                    This amount is no longer valid: {submitError}
+                  </p>
+                  <button
+                    type="button"
+                    className="focus-ring dc-step__back-btn"
+                    onClick={() => {
+                      setSubmitError(null);
+                      setConfirmationAcknowledged(false);
+                      setStep("amount");
+                    }}
+                  >
+                    Change amount
+                  </button>
+                </div>
+              )}
               <ConfirmationStep
                 creditLine={selectedCreditLine}
                 amount={amount}
@@ -326,7 +785,7 @@ export default function DrawCreditPage() {
             </>
           )}
 
-          {step === "status" && (isLoading || transaction) && (
+          {step === "status" && (isLoading || transaction || isOfflineBlocked) && (
             <>
               {isLoading && (
                 <div
@@ -383,13 +842,47 @@ export default function DrawCreditPage() {
                     <p className="dc-step__subtitle">
                       Your draw request is being processed.
                     </p>
+                    <p
+                      className="dc-step__subtitle"
+                      data-testid="draw-status-hint"
+                      style={{ marginTop: "0.25rem", fontSize: "0.8125rem" }}
+                    >
+                      You can leave this page; we&apos;ll notify you when it
+                      completes.
+                    </p>
                   </div>
+                </div>
+              )}
+              {isOfflineBlocked && !isLoading && (
+                <div
+                  className="dc-step"
+                  role="alert"
+                  aria-live="assertive"
+                >
+                  <h2 className="dc-step__title">You're offline</h2>
+                  <p className="dc-step__subtitle">
+                    Your draw cannot be processed while offline. It has been
+                    queued and will be submitted automatically when your
+                    connection is restored.
+                  </p>
+                  <button
+                    type="button"
+                    className="focus-ring dc-step__back-btn"
+                    onClick={() => {
+                      setIsOfflineBlocked(false);
+                      setStep("confirm");
+                    }}
+                  >
+                    Back to review
+                  </button>
                 </div>
               )}
               {transaction && !isLoading && (
                 <TransactionStatus
                   transaction={transaction}
                   onNewDraw={handleNewDraw}
+                  onRetry={handleRetry}
+                  errorKind={errorKind}
                 />
               )}
             </>
@@ -449,7 +942,11 @@ export function DrawCreditPageSkeleton() {
                   <div className="dc-credit-line-item">
                     <div className="dc-credit-line-item__inner w-full">
                       <div className="dc-credit-line-item__body w-full">
-                        <Skeleton width="120px" height="24px" className="mb-3" />
+                        <Skeleton
+                          width="120px"
+                          height="24px"
+                          className="mb-3"
+                        />
                         <div className="flex gap-6 mb-3">
                           <div className="space-y-1">
                             <Skeleton width="60px" height="14px" />

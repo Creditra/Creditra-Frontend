@@ -11,6 +11,14 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 /*
+ * Issue #1205 — the shape-parity comparisons below render the loaded page, so
+ * this suite runs on the real router as well: the aliased stub's module-level
+ * location would otherwise be shared between the two renders being compared.
+ * See `src/test/realRouter.ts`.
+ */
+vi.mock('react-router-dom', async () => await import('../test/realRouter'));
+
+/*
  * Read the stylesheets from disk rather than via `?raw`: this vitest config
  * runs with CSS handling disabled, so a `?raw` import resolves to an empty
  * string and every source assertion would pass vacuously.

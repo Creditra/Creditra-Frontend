@@ -1,26 +1,40 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
-
+import { describe, it, expect, vi } from 'vitest';
+import { screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
+import { renderWithCredit } from '../../test/renderWithCredit';
+import type { CreditLine } from '../../types/creditLine';
 // Local mock — this file is the empty-state suite, so we override the
 // module with `vi.mock` (hoisted) right at the top. The populated suite in
 // `RepayPage.test.tsx` is unaffected because they live in separate files.
-vi.mock('@/data/mockData', () => ({
-  MOCK_CREDIT_LINES: [],
-}));
+vi.mock('@/data/mockData', async () => {
+  const { REPAY_EMPTY_CREDIT_LINES } = await import('@/test/fixtures/repayCreditLines');
+  return { MOCK_CREDIT_LINES: REPAY_EMPTY_CREDIT_LINES };
+});
+
+vi.mock('@/context/WalletContext', async () => {
+  const actual = await vi.importActual<typeof import('@/context/WalletContext')>(
+    '@/context/WalletContext',
+  );
+  return {
+    ...actual,
+    useWallet: () => ({
+      wallet: { publicKey: 'GTEST', network: 'TESTNET' },
+      status: 'connected',
+      balances: [],
+      refreshBalance: async () => [],
+    }),
+  };
+});
 
 import RepayPage from '../RepayPage';
 
-function renderEmpty(initialEntries = ['/repay']) {
-  const result = render(
+function renderEmpty(initialEntries = ['/repay'], lines: CreditLine[] = []) {
+  return renderWithCredit(
     <MemoryRouter initialEntries={initialEntries}>
       <RepayPage />
     </MemoryRouter>,
+    { withRouter: false, lines },
   );
-  act(() => {
-    vi.advanceTimersByTime(1000);
-  });
-  return result;
 }
 
 /**
@@ -38,18 +52,11 @@ function renderEmpty(initialEntries = ['/repay']) {
  * with the populated suite (see comment in `RepayPage.test.tsx`).
  */
 describe('RepayPage empty state (issue #581)', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.runOnlyPendingTimers();
-    vi.useRealTimers();
-  });
-  it('renders the themed empty state when no repayable lines exist', () => {
+  it('renders the themed empty state when no repayable lines exist', async () => {
     renderEmpty();
 
     expect(
-      screen.getByRole('heading', { name: 'Nothing to repay right now' }),
+      await screen.findByRole('heading', { name: 'Nothing to repay right now' }),
     ).toBeInTheDocument();
     // Match a description-unique fragment so the assertion stays specific
     // (independent of the apostrophe glyph used in the source string).
@@ -58,24 +65,27 @@ describe('RepayPage empty state (issue #581)', () => {
     ).toBeInTheDocument();
   });
 
-  it('exposes primary CTA to /open-credit', () => {
+  it('exposes primary CTA to /open-credit', async () => {
     renderEmpty();
+    await screen.findByRole('heading', { name: 'Nothing to repay right now' });
 
     const cta = screen.getByRole('link', { name: /request a credit line/i });
     expect(cta).toBeInTheDocument();
     expect(cta).toHaveAttribute('href', '/open-credit');
   });
 
-  it('exposes a secondary CTA back to the dashboard', () => {
+  it('exposes a secondary CTA back to the dashboard', async () => {
     renderEmpty();
+    await screen.findByRole('heading', { name: 'Nothing to repay right now' });
 
     const secondary = screen.getByRole('link', { name: /back to dashboard/i });
     expect(secondary).toBeInTheDocument();
     expect(secondary).toHaveAttribute('href', '/');
   });
 
-  it('exposes the empty-state region with role=status and aria-live=polite', () => {
+  it('exposes the empty-state region with role=status and aria-live=polite', async () => {
     renderEmpty();
+    await screen.findByRole('heading', { name: 'Nothing to repay right now' });
 
     const region = screen.getByTestId('repay-empty-state');
     expect(region).toHaveAttribute('role', 'status');
@@ -88,18 +98,20 @@ describe('RepayPage empty state (issue #581)', () => {
     expect(region).toHaveClass('empty-state--success');
   });
 
-  it('renders the illustrative SVG and the accent eyebrow', () => {
+  it('renders the illustrative SVG and the accent eyebrow', async () => {
     const { container } = renderEmpty();
+    await screen.findByRole('heading', { name: 'Nothing to repay right now' });
 
-    const illustration = container.querySelector('.empty-state-illustration');
+    const illustration = container.querySelector('.empty-state-illustration--muted');
     expect(illustration).not.toBeNull();
     expect(illustration?.getAttribute('aria-hidden')).toBe('true');
 
     expect(screen.getByText('All caught up')).toBeInTheDocument();
   });
 
-  it('hides the credit-line list selection buttons in the empty state', () => {
+  it('hides the credit-line list selection buttons in the empty state', async () => {
     renderEmpty();
+    await screen.findByRole('heading', { name: 'Nothing to repay right now' });
 
     // No credit-line selection buttons should be present.
     expect(
@@ -109,8 +121,9 @@ describe('RepayPage empty state (issue #581)', () => {
     expect(screen.getByRole('button', { name: /^back$/i })).toBeInTheDocument();
   });
 
-  it('preserves the Back button and the page header', () => {
+  it('preserves the Back button and the page header', async () => {
     renderEmpty();
+    await screen.findByRole('heading', { name: 'Nothing to repay right now' });
 
     // Page header eyebrow + title still rendered above the empty state.
     expect(screen.getByText('Repay Credit')).toBeInTheDocument();
@@ -126,50 +139,26 @@ describe('RepayPage empty state (issue #581)', () => {
  * illustration path must still engage.
  */
 describe('RepayPage empty state when all utilization is zero', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.runOnlyPendingTimers();
-    vi.useRealTimers();
-  });
   it('renders the empty state when the only line has utilized === 0', async () => {
-    // Override the mock for this single test by re-mocking the module via
-    // dynamic import; the file-level mock keeps things tidy otherwise.
-    vi.doMock('@/data/mockData', () => ({
-      MOCK_CREDIT_LINES: [
-        {
-          id: 'CL-EMPTY-001',
-          name: 'Paid Off Business Line',
-          status: 'Active',
-          limit: 100000,
-          utilized: 0,
-          apr: 7.5,
-          riskScore: 800,
-          openedAt: '2024-01-01',
-          updatedAt: '2025-01-01T00:00:00Z',
-          transactions: [],
-          statusHistory: [],
-        },
-      ],
-    }));
-    vi.resetModules();
-    const { default: FreshRepayPage } = await import('../RepayPage');
-
-    render(
-      <MemoryRouter initialEntries={['/repay']}>
-        <FreshRepayPage />
-      </MemoryRouter>,
-    );
-    act(() => {
-      vi.advanceTimersByTime(1000);
-    });
-
-    expect(
-      screen.getByRole('heading', { name: 'Nothing to repay right now' }),
-    ).toBeInTheDocument();
+    const zeroUtilizationLine = {
+      id: 'CL-EMPTY-001',
+      name: 'Paid Off Business Line',
+      status: 'Active' as const,
+      limit: 100_000,
+      utilized: 0,
+      apr: 7.5,
+      riskScore: 800,
+      collateral: 'Equipment',
+      openedAt: '2024-01-01',
+      updatedAt: '2025-01-01T00:00:00Z',
+      transactions: [],
+      statusHistory: [],
+      aprHistory: [],
+    };
+    renderEmpty(['/repay'], [zeroUtilizationLine]);
+    await screen.findByRole('heading', { name: 'Nothing to repay right now' });
 
     // The paid-off line itself must not appear in the selection list.
-    expect(screen.queryByText('Paid Off Business Line')).not.toBeInTheDocument();
+    expect(screen.queryByText(zeroUtilizationLine.name)).not.toBeInTheDocument();
   });
 });

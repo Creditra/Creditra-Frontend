@@ -53,11 +53,11 @@ export function Settings() {
           Manage your in-app category notifications and delivery channels.
         </p>
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          <Link to="/settings/notifications" className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}>
+          <Link to="/settings/notifications" className="inline-flex items-center gap-2 min-h-11 rounded-lg border border-accent bg-accent px-4 text-sm font-semibold text-background no-underline hover:brightness-110">
             <Bell size={16} aria-hidden="true" />
             Category Preferences
           </Link>
-          <Link to="/notification-preferences" className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}>
+          <Link to="/notification-preferences" className="inline-flex items-center gap-2 min-h-11 rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground no-underline hover:border-accent">
             Delivery Channels
           </Link>
         </div>

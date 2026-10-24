@@ -82,7 +82,7 @@ export function RecentTransactionsRail({ transactions, isLoading = false, filter
           No transactions yet
         </p>
       ) : (
-        >
+        <>
           {transactions.map((tx, i) => (
             <div key={`${tx.id}-${i}`} className="activity-item">
               <div
@@ -93,7 +93,7 @@ export function RecentTransactionsRail({ transactions, isLoading = false, filter
                 }}
                 aria-hidden="true"
               >
-                {TXICON[tx.type]}
+                {TX_ICON[tx.type]}
               </div>
               <div className="activity-content">
                 <div className="activity-title">{tx.note || tx.type}</div>
@@ -103,12 +103,12 @@ export function RecentTransactionsRail({ transactions, isLoading = false, filter
                 {fmtAmount(tx.type, tx.amount)}
               </div>
             </div>
-          ))
+          ))}
           <Link to="/transactions" className="rtr-view-all">
             View all transactions &rarr;
           </Link>
-        <>
-      )
+        </>
+      )}
     </div>
   );
 }

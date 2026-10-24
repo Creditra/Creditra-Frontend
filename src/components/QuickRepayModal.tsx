@@ -2,7 +2,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle, Info } from 'lucide-react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { formatMoney, getRepayAmountValidation, requiresRepayConfirmation } from '../utils/amountValidation';
+import {
+  computeMonthlyAccruedInterest,
+  roundToCents,
+} from '../utils/currency';
+import { allocateRepayment } from '../lib/repay-allocation';
 import { PendingButton } from './PendingButton';
+import { Skeleton } from './Skeleton';
+import { ConnectWalletPrompt } from './ConnectWalletPrompt';
+import type { RepayableBalanceResult } from '../lib/repayable-balance';
+import { SETTLEMENT_ASSET } from '../lib/repayable-balance';
 import {
   TypedAmountConfirmField,
   isTypedAmountMatch,
@@ -18,7 +27,9 @@ interface RepaymentCreditLine {
 
 interface QuickRepayModalProps {
   creditLine: RepaymentCreditLine;
-  walletBalance: number;
+  walletBalance: number | null;
+  balanceStatus: RepayableBalanceResult['status'];
+  walletConnected: boolean;
   initialAmount?: string;
   onClose: () => void;
   onSuccess: (amount: number) => void;
@@ -79,6 +90,8 @@ const fmt = (n: number) =>
 export function QuickRepayModal({
   creditLine,
   walletBalance,
+  balanceStatus,
+  walletConnected,
   initialAmount,
   onClose,
   onSuccess,
@@ -89,7 +102,7 @@ export function QuickRepayModal({
   const [step, setStep] = useState<'confirm' | 'pending' | 'success'>('confirm');
   
   const modalRef = useFocusTrap({
-    isActive: step !== 'success',
+    isActive: true,
     triggerRef,
     onEscape: step !== 'pending' ? onClose : undefined,
   });
@@ -100,17 +113,30 @@ export function QuickRepayModal({
     } else if (step === 'success') {
       document.body.style.overflow = '';
     }
+    // Manage focus across step states to prevent focus dropping to body
+    if (step !== 'confirm') {
+      requestAnimationFrame(() => {
+        modalRef.current?.focus();
+      });
+    }
     return () => {
       document.body.style.overflow = '';
     };
-  }, [step]);
+  }, [step, modalRef]);
 
-  const totalDue = creditLine.utilized;
-  const validation = getRepayAmountValidation(amountStr, totalDue, walletBalance);
+  const accruedInterest = computeMonthlyAccruedInterest(
+    creditLine.utilized,
+    creditLine.apr,
+  );
+  const totalDue = roundToCents(creditLine.utilized + accruedInterest);
+  const hasRepayableBalance =
+    walletConnected && balanceStatus === 'ok' && walletBalance !== null;
+  const validation = getRepayAmountValidation(amountStr, totalDue, walletBalance ?? 0);
   const amount = validation.amount;
   const isInvalid = !validation.isValid;
-  
-  const remainingDebt = validation.remainingDebt;
+
+  const allocation = allocateRepayment(creditLine, amount, accruedInterest);
+  const remainingDebt = allocation.remainingTotal;
   const oldPct = creditLine.limit === 0 ? 0 : Math.round((creditLine.utilized / creditLine.limit) * 100);
   const newPct = creditLine.limit === 0 ? 0 : Math.round((remainingDebt / creditLine.limit) * 100);
 
@@ -124,7 +150,9 @@ export function QuickRepayModal({
 
   const needsConfirm = requiresRepayConfirmation(amount);
   const isConfirmDisabled =
-    isInvalid || (needsConfirm && !isTypedAmountMatch(confirmAmountStr, amount));
+    !hasRepayableBalance ||
+    isInvalid ||
+    (needsConfirm && !isTypedAmountMatch(confirmAmountStr, amount));
 
   const handleConfirm = () => {
     setStep('pending');
@@ -148,6 +176,7 @@ export function QuickRepayModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="quick-repay-title"
+        tabIndex={-1}
       >
         <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${COLOR.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
@@ -160,11 +189,64 @@ export function QuickRepayModal({
               </p>
             )}
           </div>
-          {step !== 'pending' && <button onClick={onClose} style={{ ...btn.ghost, padding: '0.4rem', borderRadius: 4 }} aria-label="Close modal">✕</button>}
+          {step !== 'pending' && <button className="focus-ring" onClick={onClose} style={{ ...btn.ghost, padding: '0.4rem', borderRadius: 4 }} aria-label="Close modal">✕</button>}
         </div>
 
-        {step === 'confirm' && (
+        {step === 'confirm' && !walletConnected && (
           <div style={{ padding: '1.5rem' }}>
+            <ConnectWalletPrompt assetCode={SETTLEMENT_ASSET.code} />
+          </div>
+        )}
+
+        {step === 'confirm' && walletConnected && balanceStatus === 'no_trustline' && (
+          <div style={{ padding: '1.5rem' }}>
+            <div
+              role="alert"
+              style={{
+                border: `1px solid ${COLOR.danger}`,
+                background: 'rgba(248,81,73,0.08)',
+                color: COLOR.text,
+                borderRadius: 8,
+                padding: '1rem',
+              }}
+            >
+              <p style={{ margin: 0, fontWeight: 600 }}>
+                Add a {SETTLEMENT_ASSET.code} trustline to repay
+              </p>
+              <p style={{ margin: '0.5rem 0 0', color: COLOR.muted }}>
+                Add the settlement-asset trustline to your wallet, then refresh your balance.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {step === 'confirm' && walletConnected && balanceStatus !== 'no_trustline' && (
+          <div style={{ padding: '1.5rem' }}>
+            <div
+              aria-busy={balanceStatus === 'loading'}
+              role="status"
+              aria-live="polite"
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '1rem',
+                color: COLOR.muted,
+                fontSize: '0.85rem',
+              }}
+            >
+              <span>{SETTLEMENT_ASSET.code} wallet balance</span>
+              {balanceStatus === 'loading' ? (
+                <>
+                  <span className="sr-only">
+                    Loading {SETTLEMENT_ASSET.code} balance
+                  </span>
+                  <Skeleton width={72} height={16} />
+                </>
+              ) : (
+                <span>{fmt(walletBalance ?? 0)}</span>
+              )}
+            </div>
             <div style={{ marginBottom: '1.5rem', background: COLOR.bg, padding: '1rem', borderRadius: 8, border: `1px solid ${COLOR.border}` }}>
               <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: COLOR.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Outstanding debt
@@ -178,7 +260,7 @@ export function QuickRepayModal({
               <label htmlFor="quick-repay-amount" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: COLOR.text, fontWeight: 500 }}>Repayment amount</label>
               <div style={{ position: 'relative' }}>
                 <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', fontSize: '1.25rem', color: COLOR.muted }} aria-hidden="true">$</span>
-                <input
+                <input className="focus-ring"
                   id="quick-repay-amount"
                   type="number"
                   value={amountStr}
@@ -246,7 +328,7 @@ export function QuickRepayModal({
               />
             )}
 
-            <button
+            <button className="focus-ring"
               onClick={handleConfirm}
               disabled={isConfirmDisabled}
               style={{
@@ -296,7 +378,7 @@ export function QuickRepayModal({
             <p style={{ margin: '0 0 1.5rem', fontSize: '0.9rem', color: COLOR.muted }}>
               Your transaction was successful.
             </p>
-            <button onClick={handleCloseComplete} style={{ ...btn.primary, width: '100%' }}>
+            <button className="focus-ring" onClick={handleCloseComplete} style={{ ...btn.primary, width: '100%' }}>
               Back to Dashboard
             </button>
           </div>

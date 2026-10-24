@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { StatusBadge } from "../components/StatusBadge";
 import { CreditLineRowMenu } from "../components/CreditLineRowMenu";
 import { Skeleton } from "../components/Skeleton";
@@ -9,8 +9,11 @@ import { NoLines } from "../components/illustrations";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useInertBackdrop } from "../hooks/useInertBackdrop";
 import { useBodyScrollLock } from "../hooks/useBodyScrollLock";
-import { MOCK_CREDIT_LINES } from "../data/mockData";
+import { useCreditLines } from "../hooks/useCreditLines";
+import { setLineFrozen } from "../services/creditLine";
+import { compareCreditLines } from "../data/mockData";
 import type {
+  CreditLine,
   CreditLineStatus,
   SortField,
   SortDirection,
@@ -18,9 +21,8 @@ import type {
 import type { CollateralAsset } from "../types/collateral";
 import {
   HealthFactorChart,
-  buildHealthHistory,
   deriveHealthFactor,
-} from '../components/HealthFactorChart';
+} from "../components/HealthFactorChart";
 import {
   COLOR,
   UTIL_COLOR,
@@ -38,7 +40,8 @@ import { NextAccrualChip } from "../components/NextAccrualChip";
 import { LiveRegion } from "../components/LiveRegion";
 import { LastActivityStamp } from "../components/LastActivityStamp";
 import { RepaymentPlanChart } from "../components/RepaymentPlanChart";
-import { AgingTag } from "../components/AgingTag";
+import { CreditLineAging } from "../components/CreditLineAging";
+import { now as clockNow } from "../lib/clock";
 import {
   RepaymentSchedule,
   buildRepaymentScheduleFromLines,
@@ -49,9 +52,73 @@ import {
   getStablePage,
   reconcileStableOrder,
 } from "../utils/stableListPagination";
+import {
+  loadComparisonSelection,
+  saveComparisonSelection,
+} from "../utils/comparisonSelection";
 
 const CREDIT_LINES_PAGE_SIZE = 6;
-const getCreditLineId = (line: (typeof MOCK_CREDIT_LINES)[number]) => line.id;
+const getCreditLineId = (line: CreditLine) => line.id;
+
+// ─── URL state helpers ────────────────────────────────────────────────────────
+
+const VALID_SORT_FIELDS = new Set<SortField>([
+  "status",
+  "limit",
+  "utilization",
+  "updatedAt",
+  "apr",
+  "riskScore",
+]);
+const VALID_DIRECTIONS = new Set<SortDirection>(["asc", "desc"]);
+const VALID_STATUSES = new Set<CreditLineStatus>([
+  "Active",
+  "Suspended",
+  "Defaulted",
+  "Closed",
+  "Frozen",
+]);
+
+const DEFAULT_SORT_FIELD: SortField = "updatedAt";
+const DEFAULT_SORT_DIR: SortDirection = "desc";
+const DEFAULT_STATUS_FILTER: CreditLineStatus | "all" = "all";
+const DEFAULT_PAGE = 0;
+
+function parseSortField(raw: string | null): SortField {
+  return raw && VALID_SORT_FIELDS.has(raw as SortField)
+    ? (raw as SortField)
+    : DEFAULT_SORT_FIELD;
+}
+
+function parseSortDir(raw: string | null): SortDirection {
+  return raw && VALID_DIRECTIONS.has(raw as SortDirection)
+    ? (raw as SortDirection)
+    : DEFAULT_SORT_DIR;
+}
+
+function parseStatusFilter(raw: string | null): CreditLineStatus | "all" {
+  if (!raw || raw === "all") return DEFAULT_STATUS_FILTER;
+  return VALID_STATUSES.has(raw as CreditLineStatus)
+    ? (raw as CreditLineStatus)
+    : DEFAULT_STATUS_FILTER;
+}
+
+function parsePageIndex(raw: string | null): number {
+  const n = parseInt(raw ?? "", 10);
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_PAGE;
+}
+
+/**
+ * Severity order for status sort: higher rank = more urgent = sorts first in desc.
+ * Defaulted > Suspended > Frozen > Active > Closed
+ */
+const STATUS_SEVERITY: Record<CreditLineStatus, number> = {
+  Defaulted: 4,
+  Suspended: 3,
+  Frozen: 2,
+  Active: 1,
+  Closed: 0,
+};
 
 // ─── Credit Line Card ────────────────────────────────────────────────────────
 
@@ -66,11 +133,11 @@ function CreditLineCard({
   onFreeze,
   onUnfreeze,
 }: {
-  line: (typeof MOCK_CREDIT_LINES)[0];
+  line: CreditLine;
   isSelected: boolean;
   onToggle: () => void;
   onSwapCollateral?: (
-    line: (typeof MOCK_CREDIT_LINES)[0],
+    line: CreditLine,
     triggerRef: React.RefObject<HTMLButtonElement | null>,
   ) => void;
   onRepay?: () => void;
@@ -83,8 +150,8 @@ function CreditLineCard({
   const level = getUtilizationLevel(line.utilized, line.limit);
   const swapTriggerRef = useRef<HTMLButtonElement>(null);
 
-  const isDefaulted = line.status === 'Defaulted';
-  const canFreeze = line.status === 'Active' || line.status === 'Frozen';
+  const isDefaulted = line.status === "Defaulted";
+  const canFreeze = line.status === "Active" || line.status === "Suspended" || line.status === "Frozen";
 
   return (
     <div
@@ -94,56 +161,51 @@ function CreditLineCard({
       }
       tabIndex={0}
     >
-       <div className="cl-card-header">
-         <div className="cl-card-title-row">
-           <label className="cl-row-select">
-             <input
-               type="checkbox"
-               checked={isSelected}
-               onChange={onToggle}
-               aria-label={`Select ${line.name} for comparison`}
-               className="focus-ring"
-             />
-             <span>Compare</span>
-           </label>
-           <div>
-             <h3 className="cl-name">{line.name}</h3>
-             <p className="cl-id">{line.id}</p>
-           </div>
-         </div>
-          <div className="flex items-center gap-2">
-            <StatusBadge status={line.status} />
-            {(() => {
-              if (line.status === 'Defaulted' || line.status === 'Suspended') {
-                const overdueEntry = line.statusHistory.find(
-                  (h) => h.status === 'Suspended' || h.status === 'Defaulted'
-                );
-                if (overdueEntry) {
-                  const diffTime = Math.abs(new Date().getTime() - new Date(overdueEntry.date).getTime());
-                  const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                  return <AgingTag daysPastDue={days} />;
-                }
-              }
-              return null;
-            })()}
-            <CreditLineRowMenu
-             lineId={line.id}
-             lineName={line.name}
-             frozen={line.status === 'Frozen'}
-             onRepay={onRepay}
-             onFreeze={canFreeze ? onFreeze : undefined}
-             onUnfreeze={canFreeze ? onUnfreeze : undefined}
-             onSchedule={onSchedule}
-             onDetails={onDetails}
-           />
-         </div>
-       </div>
+      <div className="cl-card-header">
+        <div className="cl-card-title-row">
+          <label className="cl-row-select">
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={onToggle}
+              aria-label={`Select ${line.name} for comparison`}
+              className="focus-ring"
+            />
+            <span>Compare</span>
+          </label>
+          <div>
+            <h3 className="cl-name">{line.name}</h3>
+            <p className="cl-id">{line.id}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <StatusBadge status={line.status} />
+          <CreditLineAging line={line} />
+          <CreditLineRowMenu
+            lineId={line.id}
+            lineName={line.name}
+            frozen={line.status === "Frozen"}
+            onRepay={onRepay}
+            onFreeze={canFreeze ? onFreeze : undefined}
+            onUnfreeze={canFreeze ? onUnfreeze : undefined}
+            onSchedule={onSchedule}
+            onDetails={onDetails}
+          />
+        </div>
+      </div>
 
       <div className="cl-card-body">
-        <div className="cl-metrics" role="group" aria-label="Credit line metrics">
-           <div className="cl-metric">
+        <div
+          className="cl-metrics"
+          role="group"
+          aria-label="Credit line metrics"
+        >
+          <div className="cl-metric">
             <span className="cl-metric-label">Limit</span>
-            <span className="cl-metric-value tabular-nums amount cl-amount" style={{ color: COLOR.accent }}>
+            <span
+              className="cl-metric-value tabular-nums amount cl-amount"
+              style={{ color: COLOR.accent }}
+            >
               {fmt(line.limit)}
             </span>
           </div>
@@ -158,7 +220,10 @@ function CreditLineCard({
           </div>
           <div className="cl-metric">
             <span className="cl-metric-label">Available</span>
-            <span className="cl-metric-value tabular-nums amount cl-amount" style={{ color: COLOR.success }}>
+            <span
+              className="cl-metric-value tabular-nums amount cl-amount"
+              style={{ color: COLOR.success }}
+            >
               {fmt(line.limit - line.utilized)}
             </span>
           </div>
@@ -167,7 +232,12 @@ function CreditLineCard({
         <div className="cl-util-bar">
           <div className="cl-util-header">
             <span>Utilization</span>
-            <span className="tabular-nums amount cl-amount" style={{ color: UTIL_COLOR[level] }}>{pct}%</span>
+            <span
+              className="tabular-nums amount cl-amount"
+              style={{ color: UTIL_COLOR[level] }}
+            >
+              {pct}%
+            </span>
           </div>
           <div className="cl-util-track">
             <div
@@ -177,14 +247,22 @@ function CreditLineCard({
           </div>
         </div>
 
-        <div className="cl-details" role="group" aria-label="Credit line details">
+        <div
+          className="cl-details"
+          role="group"
+          aria-label="Credit line details"
+        >
           <div className="cl-detail">
             <span className="label">APR</span>
-            <span className="value tabular-nums amount cl-amount">{line.apr}%</span>
+            <span className="value tabular-nums amount cl-amount">
+              {line.apr}%
+            </span>
           </div>
           <div className="cl-detail">
             <span className="label">Risk Score</span>
-            <span className="value tabular-nums amount cl-amount">{line.riskScore}</span>
+            <span className="value tabular-nums amount cl-amount">
+              {line.riskScore}
+            </span>
           </div>
           <div className="cl-detail">
             <span className="label">Opened</span>
@@ -204,7 +282,7 @@ function CreditLineCard({
             <HealthFactorChart
               lineName={line.name}
               current={hf}
-              data={buildHealthHistory(hf)}
+              data={line.healthHistory ?? []}
             />
           );
         })()}
@@ -223,8 +301,6 @@ function CreditLineCard({
   );
 }
 
-
-
 // ─── Credit Line Card Skeleton ───────────────────────────────────────────────
 
 /**
@@ -236,49 +312,116 @@ function CreditLineCard({
  */
 function CreditLineCardSkeleton() {
   return (
-    <div className="cl-card" aria-hidden="true">
+    <div className="cl-card cl-card--skeleton" aria-hidden="true">
       <div className="cl-card-header">
         <div className="cl-card-title-row">
           <div>
-            <Skeleton style={{ width: "140px", height: "18px", marginBottom: "6px", borderRadius: "4px" }} />
-            <Skeleton style={{ width: "90px", height: "13px", borderRadius: "4px" }} />
+            <Skeleton
+              style={{
+                width: "140px",
+                height: "18px",
+                marginBottom: "6px",
+                borderRadius: "4px",
+              }}
+            />
+            <Skeleton
+              style={{ width: "90px", height: "13px", borderRadius: "4px" }}
+            />
           </div>
         </div>
-        <Skeleton style={{ width: "70px", height: "22px", borderRadius: "999px" }} />
+        <Skeleton
+          style={{ width: "70px", height: "22px", borderRadius: "999px" }}
+        />
       </div>
 
       <div className="cl-card-body">
         <div className="cl-metrics">
           <div className="cl-metric">
-            <Skeleton style={{ width: "50px", height: "12px", marginBottom: "6px", borderRadius: "4px" }} />
-            <Skeleton style={{ width: "80px", height: "18px", borderRadius: "4px" }} />
+            <Skeleton
+              style={{
+                width: "50px",
+                height: "12px",
+                marginBottom: "6px",
+                borderRadius: "4px",
+              }}
+            />
+            <Skeleton
+              style={{ width: "80px", height: "18px", borderRadius: "4px" }}
+            />
           </div>
           <div className="cl-metric">
-            <Skeleton style={{ width: "60px", height: "12px", marginBottom: "6px", borderRadius: "4px" }} />
-            <Skeleton style={{ width: "80px", height: "18px", borderRadius: "4px" }} />
+            <Skeleton
+              style={{
+                width: "60px",
+                height: "12px",
+                marginBottom: "6px",
+                borderRadius: "4px",
+              }}
+            />
+            <Skeleton
+              style={{ width: "80px", height: "18px", borderRadius: "4px" }}
+            />
           </div>
           <div className="cl-metric">
-            <Skeleton style={{ width: "65px", height: "12px", marginBottom: "6px", borderRadius: "4px" }} />
-            <Skeleton style={{ width: "80px", height: "18px", borderRadius: "4px" }} />
+            <Skeleton
+              style={{
+                width: "65px",
+                height: "12px",
+                marginBottom: "6px",
+                borderRadius: "4px",
+              }}
+            />
+            <Skeleton
+              style={{ width: "80px", height: "18px", borderRadius: "4px" }}
+            />
           </div>
         </div>
 
         <div className="cl-util-bar">
-          <Skeleton style={{ width: "100%", height: "8px", borderRadius: "4px" }} />
+          <Skeleton
+            style={{ width: "100%", height: "8px", borderRadius: "4px" }}
+          />
         </div>
 
         <div className="cl-details">
           <div className="cl-detail">
-            <Skeleton style={{ width: "40px", height: "11px", marginBottom: "4px", borderRadius: "4px" }} />
-            <Skeleton style={{ width: "50px", height: "14px", borderRadius: "4px" }} />
+            <Skeleton
+              style={{
+                width: "40px",
+                height: "11px",
+                marginBottom: "4px",
+                borderRadius: "4px",
+              }}
+            />
+            <Skeleton
+              style={{ width: "50px", height: "14px", borderRadius: "4px" }}
+            />
           </div>
           <div className="cl-detail">
-            <Skeleton style={{ width: "70px", height: "11px", marginBottom: "4px", borderRadius: "4px" }} />
-            <Skeleton style={{ width: "30px", height: "14px", borderRadius: "4px" }} />
+            <Skeleton
+              style={{
+                width: "70px",
+                height: "11px",
+                marginBottom: "4px",
+                borderRadius: "4px",
+              }}
+            />
+            <Skeleton
+              style={{ width: "30px", height: "14px", borderRadius: "4px" }}
+            />
           </div>
           <div className="cl-detail">
-            <Skeleton style={{ width: "55px", height: "11px", marginBottom: "4px", borderRadius: "4px" }} />
-            <Skeleton style={{ width: "80px", height: "14px", borderRadius: "4px" }} />
+            <Skeleton
+              style={{
+                width: "55px",
+                height: "11px",
+                marginBottom: "4px",
+                borderRadius: "4px",
+              }}
+            />
+            <Skeleton
+              style={{ width: "80px", height: "14px", borderRadius: "4px" }}
+            />
           </div>
         </div>
       </div>
@@ -288,37 +431,185 @@ function CreditLineCardSkeleton() {
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 
-export default function CreditLines({ defaultLoading = true }: { defaultLoading?: boolean }) {
+export default function CreditLines({
+  defaultLoading = true,
+}: {
+  defaultLoading?: boolean;
+}) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   // Track both the OS-level prefers-reduced-motion signal AND the in-app
   // override (ReducedMotionContext toggle).  Exposed as a data-attribute on
   // the page root so CSS / tests / dev-tools can single-source the override.
   const { isReducedMotionActive } = useReducedMotion();
-  const [sortField, setSortField] = useState<SortField>("updatedAt");
-  const [sortDir, setSortDir] = useState<SortDirection>("desc");
-  const [statusFilter, setStatusFilter] = useState<CreditLineStatus | "all">(
-    "all",
+
+  // ── URL-backed list state ─────────────────────────────────────────────────
+  const sortField = parseSortField(searchParams.get("sort"));
+  const sortDir = parseSortDir(searchParams.get("dir"));
+  const statusFilter = parseStatusFilter(searchParams.get("status"));
+  const pageIndex = parsePageIndex(searchParams.get("page"));
+
+  /** Write new list params into the URL with replace:true so Back from /repay
+   *  restores the filter/sort/page rather than adding a history entry. */
+  const setListParams = useCallback(
+    (updates: {
+      sort?: SortField;
+      dir?: SortDirection;
+      status?: CreditLineStatus | "all";
+      page?: number;
+    }) => {
+      const next = new URLSearchParams(searchParams);
+      const newSort = updates.sort ?? sortField;
+      const newDir = updates.dir ?? sortDir;
+      const newStatus = updates.status ?? statusFilter;
+      const newPage = updates.page ?? pageIndex;
+
+      // Omit defaults from the URL to keep it canonical
+      if (newSort === DEFAULT_SORT_FIELD) next.delete("sort");
+      else next.set("sort", newSort);
+
+      if (newDir === DEFAULT_SORT_DIR) next.delete("dir");
+      else next.set("dir", newDir);
+
+      if (newStatus === DEFAULT_STATUS_FILTER) next.delete("status");
+      else next.set("status", newStatus);
+
+      if (newPage === DEFAULT_PAGE) next.delete("page");
+      else next.set("page", String(newPage));
+
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams, sortField, sortDir, statusFilter, pageIndex],
   );
+
   const [announcement, setAnnouncement] = useState("");
 
-  const [creditLines, setCreditLines] = useState(MOCK_CREDIT_LINES);
-  const [isLoading, setIsLoading] = useState(true);
-  const hasCreditLines = creditLines.length > 0;
+  // ── Credit lines come from the global provider (useCreditLines) so that
+  //    freeze/unfreeze changes are visible to Dashboard, Quick Repay, etc.
+  //    The hook reads from the in-memory store in useCreditLines.ts; the
+  //    setLineFrozen service writes to that same store.
+  const { lines: creditLines, status, error, refetch, setLines } = useCreditLines();
+  void defaultLoading;
 
-  const [loading, setLoading] = useState(defaultLoading);
-  useEffect(() => {
-    if (!defaultLoading) return;
-    const timer = setTimeout(() => {
-      setLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [defaultLoading]);
+  // ── Freeze/unfreeze optimistic state ─────────────────────────────────
+  /** Deep snapshot of each line before an optimistic update, keyed by lineId.
+   *  Used for exact rollback on failure. */
+  const [freezeError, setFreezeError] = useState<string | null>(null);
+  const [retryLineId, setRetryLineId] = useState<string | null>(null);
+
+  /** Per-line in-flight freeze/unfreeze operations for serialisation.
+   *  Keyed by lineId → { frozen: boolean; previousLine: CreditLine } */
+  const inFlightRef = useRef<Map<string, { frozen: boolean; previousLine: CreditLine }>>(new Map());
+
+  /** Persist a freeze or unfreeze through the credit data source with
+   *  optimistic UI and exact rollback on failure. Concurrent toggles on
+   *  the same line are serialised: the latest intent wins, and an earlier
+   *  failure cannot roll back a later success. */
+  const handleFreezeToggle = useCallback(
+    async (lineId: string, frozen: boolean) => {
+      const lines = creditLines;
+      const currentLine = lines.find((cl) => cl.id === lineId);
+      if (!currentLine) return;
+
+      // Serialise: if there is already an in-flight operation for this line,
+      // the new intent replaces it. The earlier operation's failure will
+      // check `inFlightRef` and see it no longer holds the latest intent,
+      // so it won't roll back.
+      const previousLine = { ...currentLine, statusHistory: [...currentLine.statusHistory] };
+      inFlightRef.current.set(lineId, { frozen, previousLine });
+
+      // Optimistic update: apply the target status immediately
+      const optimisticStatus: CreditLineStatus = frozen ? "Frozen" : "Active";
+      const optimisticLines: CreditLine[] = lines.map((cl) =>
+          cl.id === lineId
+            ? {
+                ...cl,
+                status: optimisticStatus,
+                updatedAt: clockNow().toISOString(),
+                statusHistory: [
+                  ...cl.statusHistory,
+                  {
+                    status: optimisticStatus,
+                    date: clockNow().toISOString(),
+                    note: frozen ? "Freezing…" : "Unfreezing…",
+                  },
+                ],
+              }
+            : cl,
+        );
+      setLines(optimisticLines);
+      setAnnouncement(`Credit line ${currentLine.name} ${frozen ? "freezing…" : "unfreezing…"}`);
+      setFreezeError(null);
+      setRetryLineId(null);
+
+      try {
+        const serverLine = await setLineFrozen(lineId, frozen, optimisticLines);
+
+        // Check if we're still the latest intent for this line.
+        // If a newer toggle has started, don't overwrite — the newer one wins.
+        const latest = inFlightRef.current.get(lineId);
+        if (latest && latest.frozen !== frozen) {
+          // A newer intent has started; don't apply our result.
+          return;
+        }
+
+        // Apply the server-authoritative record
+        setLines(creditLines.map((cl) => (cl.id === lineId ? serverLine : cl)));
+        setAnnouncement(
+          `Credit line ${currentLine.name} ${frozen ? "frozen." : "unfrozen."}`,
+        );
+        inFlightRef.current.delete(lineId);
+      } catch (err) {
+        // Check if we're still the latest intent.
+        const latest = inFlightRef.current.get(lineId);
+        if (latest && latest.frozen !== frozen) {
+          // A newer intent has started; don't roll back — the newer one wins.
+          return;
+        }
+
+        // Exact rollback: restore the exact previous line object
+        setLines(creditLines.map((cl) => (cl.id === lineId ? previousLine : cl)));
+        setAnnouncement(
+          `Failed to ${frozen ? "freeze" : "unfreeze"} ${currentLine.name}. ${frozen ? "Free" : "Unfree"}ze could not be completed — try again.`,
+        );
+        setFreezeError(
+          `Failed to ${frozen ? "freeze" : "unfreeze"} ${currentLine.name}. Please try again.`,
+        );
+        setRetryLineId(lineId);
+        inFlightRef.current.delete(lineId);
+      }
+    },
+    [creditLines, setLines],
+  );
+
+  const handleFreeze = (lineId: string) => {
+    handleFreezeToggle(lineId, true);
+  };
+
+  const handleUnfreeze = (lineId: string) => {
+    handleFreezeToggle(lineId, false);
+  };
+
+  const handleRetryFreeze = () => {
+    if (retryLineId) {
+      const line = creditLines.find((cl) => cl.id === retryLineId);
+      // Retry with the opposite of the current frozen state
+      const frozen = line ? line.status !== "Frozen" : true;
+      handleFreezeToggle(retryLineId, frozen);
+    }
+  };
 
   const [showCompare, setShowCompare] = useState(false);
-  const [selectedLines, setSelectedLines] = useState<string[]>([]);
+  const [selectedLines, setSelectedLines] = useState<string[]>(() =>
+    loadComparisonSelection(),
+  );
   const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    saveComparisonSelection(selectedLines);
+  }, [selectedLines]);
   const [modalTarget, setModalTarget] = useState<{
-    line: (typeof MOCK_CREDIT_LINES)[0];
+    line: CreditLine;
     currentAsset: string;
     triggerRef: React.RefObject<HTMLButtonElement | null>;
   } | null>(null);
@@ -328,7 +619,7 @@ export default function CreditLines({ defaultLoading = true }: { defaultLoading?
     setModalTarget(null);
   };
   const handleSwapCollateral = (
-    line: (typeof MOCK_CREDIT_LINES)[0],
+    line: CreditLine,
     triggerRef: React.RefObject<HTMLButtonElement | null>,
   ) => {
     setModalTarget({
@@ -340,53 +631,6 @@ export default function CreditLines({ defaultLoading = true }: { defaultLoading?
 
   const handleRepay = (lineId: string) => {
     navigate(`/repay?line=${lineId}`);
-  };
-
-  const handleFreeze = (lineId: string) => {
-    const lineToFreeze = creditLines.find((cl) => cl.id === lineId);
-    if (lineToFreeze) {
-      setAnnouncement(`Credit line ${lineToFreeze.name} frozen.`);
-    }
-    setCreditLines((prev) =>
-      prev.map((cl) =>
-        cl.id === lineId
-          ? {
-              ...cl,
-              status: 'Frozen' as const,
-              updatedAt: new Date().toISOString(),
-              statusHistory: [
-                ...cl.statusHistory,
-                { status: 'Frozen' as const, date: new Date().toISOString(), note: 'Frozen by user' },
-              ],
-            }
-          : cl,
-      ),
-    );
-  };
-
-  const handleUnfreeze = (lineId: string) => {
-    const lineToUnfreeze = creditLines.find((cl) => cl.id === lineId);
-    if (lineToUnfreeze) {
-      setAnnouncement(`Credit line ${lineToUnfreeze.name} unfrozen.`);
-    }
-    setCreditLines((prev) =>
-      prev.map((cl) => {
-        if (cl.id !== lineId) return cl;
-        const lastNonFrozen = cl.statusHistory
-          .filter((s) => s.status !== 'Frozen')
-          .pop();
-        const restoredStatus = lastNonFrozen?.status || 'Active';
-        return {
-          ...cl,
-          status: restoredStatus,
-          updatedAt: new Date().toISOString(),
-          statusHistory: [
-            ...cl.statusHistory,
-            { status: restoredStatus, date: new Date().toISOString(), note: 'Unfrozen by user' },
-          ],
-        };
-      }),
-    );
   };
 
   const handleSchedule = (lineId: string) => {
@@ -408,10 +652,16 @@ export default function CreditLines({ defaultLoading = true }: { defaultLoading?
       let bVal: number | string = 0;
 
       switch (sortField) {
-        case "status":
-          aVal = a.status;
-          bVal = b.status;
-          break;
+        case "status": {
+          // Severity order: Defaulted > Suspended > Frozen > Active > Closed
+          const aSev = STATUS_SEVERITY[a.status] ?? 0;
+          const bSev = STATUS_SEVERITY[b.status] ?? 0;
+          if (aSev !== bSev) {
+            return sortDir === "asc" ? aSev - bSev : bSev - aSev;
+          }
+          // Ties broken deterministically by compareCreditLines
+          return compareCreditLines(a, b);
+        }
         case "limit":
           aVal = a.limit;
           bVal = b.limit;
@@ -452,13 +702,15 @@ export default function CreditLines({ defaultLoading = true }: { defaultLoading?
   const [stableOrder, setStableOrder] = useState(() =>
     createStableOrder(filteredAndSorted, getCreditLineId),
   );
-  const [pageIndex, setPageIndex] = useState(0);
 
   // A sort/filter change is an explicit new query, so it starts a fresh
   // pagination session. Live data updates do not reset this anchor.
   useEffect(() => {
-    setStableOrder(createStableOrder(latestFilteredRef.current, getCreditLineId));
-    setPageIndex(0);
+    setStableOrder(
+      createStableOrder(latestFilteredRef.current, getCreditLineId),
+    );
+    setListParams({ page: DEFAULT_PAGE });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paginationKey]);
 
   // Preserve the session's existing slots during live updates and append only
@@ -470,28 +722,30 @@ export default function CreditLines({ defaultLoading = true }: { defaultLoading?
     );
   }, [filteredAndSorted]);
 
+  const effectiveStableOrder = stableOrder.length === 0 && filteredAndSorted.length > 0
+    ? createStableOrder(filteredAndSorted, getCreditLineId)
+    : stableOrder;
   const stablePage = useMemo(
     () =>
-      getStablePage(filteredAndSorted, stableOrder, {
+      getStablePage(filteredAndSorted, effectiveStableOrder, {
         pageIndex,
         pageSize: CREDIT_LINES_PAGE_SIZE,
         getId: getCreditLineId,
       }),
-    [filteredAndSorted, stableOrder, pageIndex],
+    [filteredAndSorted, effectiveStableOrder, pageIndex],
   );
 
   useEffect(() => {
     if (stablePage.pageIndex !== pageIndex) {
-      setPageIndex(stablePage.pageIndex);
+      setListParams({ page: stablePage.pageIndex });
     }
   }, [stablePage.pageIndex, pageIndex]);
 
   const handleSort = (field: SortField) => {
     if (field === sortField) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      setListParams({ dir: sortDir === "asc" ? "desc" : "asc" });
     } else {
-      setSortField(field);
-      setSortDir("desc");
+      setListParams({ sort: field, dir: "desc" });
     }
   };
 
@@ -508,12 +762,13 @@ export default function CreditLines({ defaultLoading = true }: { defaultLoading?
 
   const toggleSelection = (id: string) => {
     setSelectedLines((prev) => {
-      if (prev.includes(id)) {
-        return prev.filter((lineId) => lineId !== id);
-      } else if (prev.length < 2) {
-        return [...prev, id];
-      }
-      return prev;
+      const next = prev.includes(id)
+        ? prev.filter((lineId) => lineId !== id)
+        : prev.length < 2
+          ? [...prev, id]
+          : prev;
+
+      return next;
     });
   };
 
@@ -532,41 +787,35 @@ export default function CreditLines({ defaultLoading = true }: { defaultLoading?
   );
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setIsLoading(false);
-    }, 600);
-
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'SELECT' ||
-        target.tagName === 'TEXTAREA' ||
+        target.tagName === "INPUT" ||
+        target.tagName === "SELECT" ||
+        target.tagName === "TEXTAREA" ||
         target.isContentEditable
       ) {
         return;
       }
 
-      if (e.key === 'c' || e.key === 'C') {
+      if (e.key === "c" || e.key === "C") {
         if (selectedLines.length === 2 && !showCompare) {
           e.preventDefault();
           handleOpenCompare();
         }
-      } else if (e.key === 'f' || e.key === 'F') {
+      } else if (e.key === "f" || e.key === "F") {
         if (selectedLines.length === 2) {
           e.preventDefault();
-          navigate(`/compare-credit-lines?a=${selectedLines[0]}&b=${selectedLines[1]}`);
+          navigate(
+            `/compare-credit-lines?a=${selectedLines[0]}&b=${selectedLines[1]}`,
+          );
         }
-      } else if (e.key === 'n' || e.key === 'N') {
+      } else if (e.key === "n" || e.key === "N") {
         e.preventDefault();
-        navigate('/open-credit');
-      } else if (e.key === 'r' || e.key === 'R') {
+        navigate("/open-credit");
+      } else if (e.key === "r" || e.key === "R") {
         const delinquentLine = creditLines.find(
-          (cl) => cl.status === 'Defaulted' || cl.status === 'Suspended'
+          (cl) => cl.status === "Defaulted" || cl.status === "Suspended",
         );
         if (delinquentLine) {
           e.preventDefault();
@@ -575,21 +824,44 @@ export default function CreditLines({ defaultLoading = true }: { defaultLoading?
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedLines, showCompare, navigate, creditLines]);
 
-  if (isLoading) {
+  if (status === "loading") {
     return (
-      <div className="credit-lines-page" role="status" aria-live="polite" aria-busy="true" aria-label="Loading credit lines">
+      <div
+        className="credit-lines-page"
+        data-testid="creditlines-skeleton-grid"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        aria-label="Loading credit lines"
+      >
         <div className="cl-page-header">
           <div>
-            <Skeleton width="180px" height="2rem" className="cl-skeleton-title" />
-            <Skeleton width="220px" height="1rem" className="cl-skeleton-subtitle" />
+            <Skeleton
+              width="180px"
+              height="2rem"
+              className="cl-skeleton-title"
+            />
+            <Skeleton
+              width="220px"
+              height="1rem"
+              className="cl-skeleton-subtitle"
+            />
           </div>
           <div className="cl-skeleton-actions">
-            <Skeleton width="180px" height="2.75rem" className="cl-skeleton-pill" />
-            <Skeleton width="172px" height="2.75rem" className="cl-skeleton-pill" />
+            <Skeleton
+              width="180px"
+              height="2.75rem"
+              className="cl-skeleton-pill"
+            />
+            <Skeleton
+              width="172px"
+              height="2.75rem"
+              className="cl-skeleton-pill"
+            />
           </div>
         </div>
 
@@ -607,30 +879,25 @@ export default function CreditLines({ defaultLoading = true }: { defaultLoading?
 
         <div className="cl-grid cl-grid--skeleton" aria-hidden="true">
           {Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className="cl-card cl-card--skeleton">
-              <div className="cl-card-header">
-                <div style={{ width: "100%" }}>
-                  <Skeleton width="72%" height="1.1rem" className="cl-skeleton-card-title" />
-                  <Skeleton width="45%" height="0.8rem" className="cl-skeleton-card-subtitle" />
-                </div>
-                <Skeleton width="96px" height="1.95rem" />
-              </div>
-              <div className="cl-card-body">
-                <div className="cl-metrics">
-                  <Skeleton width="100%" height="3.25rem" />
-                  <Skeleton width="100%" height="3.25rem" />
-                  <Skeleton width="100%" height="3.25rem" />
-                </div>
-                <Skeleton width="100%" height="0.7rem" className="cl-skeleton-block" />
-                <Skeleton width="70%" height="0.7rem" className="cl-skeleton-block" />
-                <div className="cl-details">
-                  <Skeleton width="100%" height="2.25rem" />
-                  <Skeleton width="100%" height="2.25rem" />
-                  <Skeleton width="100%" height="2.25rem" />
-                </div>
-              </div>
-            </div>
+            <CreditLineCardSkeleton key={index} />
           ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <div className="credit-lines-page">
+        <div role="alert" className="cl-error-card">
+          <p>{error?.message ?? "Unable to load credit lines."}</p>
+          <button
+            type="button"
+            className="cl-primary-btn focus-ring"
+            onClick={() => void refetch().catch(() => undefined)}
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -649,53 +916,64 @@ export default function CreditLines({ defaultLoading = true }: { defaultLoading?
             className="cl-primary-btn focus-ring"
             onClick={handleOpenCompare}
             disabled={selectedLines.length !== 2}
-            style={{ opacity: selectedLines.length === 2 ? 1 : 0.6, display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+            style={{
+              opacity: selectedLines.length === 2 ? 1 : 0.6,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.5rem",
+            }}
           >
             <span>Compare Selected ({selectedLines.length}/2)</span>
-            <KbdHint keys={['C']} description="Compare Selected" />
+            <KbdHint keys={["C"]} description="Compare Selected" />
           </button>
           {/* Full-page compare — only enabled when exactly 2 lines are selected */}
           <Link
             to={
               selectedLines.length === 2
                 ? `/compare-credit-lines?a=${selectedLines[0]}&b=${selectedLines[1]}`
-                : '#'
+                : "#"
             }
             className="cl-primary-btn focus-ring"
             aria-disabled={selectedLines.length !== 2}
             aria-label={
               selectedLines.length === 2
-                ? 'Open full-page comparison for the two selected credit lines'
-                : 'Select exactly 2 credit lines to open the full comparison page'
+                ? "Open full-page comparison for the two selected credit lines"
+                : "Select exactly 2 credit lines to open the full comparison page"
             }
             style={{
-              background: 'var(--surface)',
-              border: '1px solid var(--border)',
-              color: selectedLines.length === 2 ? 'var(--text)' : 'var(--muted)',
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              color:
+                selectedLines.length === 2 ? "var(--text)" : "var(--muted)",
               opacity: selectedLines.length === 2 ? 1 : 0.6,
-              pointerEvents: selectedLines.length === 2 ? 'auto' : 'none',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.5rem'
+              pointerEvents: selectedLines.length === 2 ? "auto" : "none",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.5rem",
             }}
             tabIndex={selectedLines.length === 2 ? 0 : -1}
           >
             <span>Full Compare →</span>
-            <KbdHint keys={['F']} description="Full Compare" />
+            <KbdHint keys={["F"]} description="Full Compare" />
           </Link>
-          <Link 
-            to="/open-credit" 
+          <Link
+            to="/open-credit"
             className="cl-primary-btn focus-ring"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.5rem",
+            }}
           >
             <span>+ Open New Line</span>
-            <KbdHint keys={['N']} description="Open New Line" />
+            <KbdHint keys={["N"]} description="Open New Line" />
           </Link>
         </div>
       </div>
 
       <div aria-live="polite" className="sr-only">
-        {filteredAndSorted.length} credit line{filteredAndSorted.length !== 1 ? 's' : ''} found
+        {filteredAndSorted.length} credit line
+        {filteredAndSorted.length !== 1 ? "s" : ""} found
         {statusFilter !== "all" ? ` with status ${statusFilter}` : ""}
       </div>
 
@@ -706,7 +984,7 @@ export default function CreditLines({ defaultLoading = true }: { defaultLoading?
             className="focus-ring"
             value={statusFilter}
             onChange={(e) =>
-              setStatusFilter(e.target.value as CreditLineStatus | "all")
+              setListParams({ status: e.target.value as CreditLineStatus | "all", page: DEFAULT_PAGE })
             }
           >
             <option value="all">All Statuses</option>
@@ -734,13 +1012,55 @@ export default function CreditLines({ defaultLoading = true }: { defaultLoading?
         </div>
         <button
           className="cl-sort-dir focus-ring"
-          onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+          onClick={() => setListParams({ dir: sortDir === "asc" ? "desc" : "asc" })}
         >
           {sortDir === "asc" ? "↑" : "↓"}
         </button>
       </div>
 
       <LiveRegion message={announcement} id="cl-live-region" />
+      {freezeError && (
+        <div
+          className="banner-alert banner-alert--danger"
+          role="alert"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.75rem",
+            padding: "0.75rem 1rem",
+            margin: "0 0 1rem 0",
+            borderRadius: "8px",
+            background: "rgba(248, 81, 73, 0.1)",
+            border: "1px solid rgba(248, 81, 73, 0.3)",
+          }}
+        >
+          <p style={{ margin: 0, flex: 1 }}>{freezeError}</p>
+          <button
+            onClick={handleRetryFreeze}
+            className="cl-primary-btn focus-ring"
+            style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem" }}
+            data-testid="retry-freeze-btn"
+          >
+            Retry
+          </button>
+          <button
+            onClick={() => {
+              setFreezeError(null);
+              setRetryLineId(null);
+            }}
+            className="banner-alert__close"
+            aria-label="Dismiss freeze error"
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--muted)",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {showCompare && selectedCreditLines.length === 2 && (
         <div
           id="compare-lines-drawer"
@@ -774,101 +1094,113 @@ export default function CreditLines({ defaultLoading = true }: { defaultLoading?
         </div>
       )}
 
-      <div role="status" aria-live="polite" aria-busy={loading}>
-        <span className="sr-only">
-          {loading ? "Loading credit lines" : "Credit lines loaded"}
-        </span>
-        {loading ? (
-          <div className="cl-grid">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <CreditLineCardSkeleton key={i} />
-            ))}
-          </div>
-        ) : filteredAndSorted.length === 0 ? (
-          <div className="cl-empty" role="region" aria-label="No credit lines">
-            <NoLines className="empty-state-illustration--muted" />
-            <h2 className="cl-empty-title">Get started with Credit Lines</h2>
-            <p className="cl-empty-desc">
-              Credit lines give you access to flexible capital when you need it.
-              Open your first line and unlock funding tailored to your business.
-            </p>
-            <ul className="cl-empty-features">
-              <li>Flexible funding up to $500K</li>
-              <li>Competitive rates from 7.5% APR</li>
-              <li>Quick approval with digital collateral</li>
-            </ul>
-            <Link to="/open-credit" className="cl-primary-btn focus-ring">
-              Open Credit Line
-            </Link>
-          </div>
-      ) : (
-        <>
-          {stablePage.items.length > 0 ? (
-            <div className="cl-grid" data-testid="cl-grid">
-              {stablePage.items.map((line) => (
-                <CreditLineCard
-                  key={line.id}
-                  line={line}
-                  isSelected={selectedLines.includes(line.id)}
-                  onToggle={() => toggleSelection(line.id)}
-                  onSwapCollateral={handleSwapCollateral}
-                  onRepay={() => handleRepay(line.id)}
-                  onFreeze={handleFreeze}
-                  onUnfreeze={handleUnfreeze}
-                  onSchedule={() => handleSchedule(line.id)}
-                  onDetails={() => handleDetails(line.id)}
-                />
-              ))}
+      <div role="status" aria-live="polite" aria-busy={false}>
+        {filteredAndSorted.length === 0 ? (
+          creditLines.length > 0 ? (
+            <div className="cl-empty" role="region" aria-label="No matching credit lines">
+              <NoLines className="empty-state-illustration--muted" />
+              <h2 className="cl-empty-title">No matching credit lines</h2>
+              <p className="cl-empty-desc">Try changing the status filter to see your credit lines.</p>
+              <button
+                type="button"
+                className="cl-primary-btn focus-ring"
+                onClick={() => setStatusFilter("all")}
+              >
+                Clear Filters
+              </button>
             </div>
           ) : (
-            <p role="status" style={{ color: "var(--muted)", margin: "1rem 0" }}>
-              No current records on this page. Page positions are being held stable while live updates settle.
-            </p>
-          )}
-
-          {stablePage.pageCount > 1 && (
-            <nav
-              aria-label="Credit line pagination"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "0.75rem",
-                marginTop: "1.5rem",
-              }}
-            >
-              <button
-                type="button"
-                className="cl-primary-btn focus-ring"
-                onClick={() => setPageIndex((current) => Math.max(0, current - 1))}
-                disabled={stablePage.pageIndex === 0}
-                style={{ opacity: stablePage.pageIndex === 0 ? 0.5 : 1 }}
+            <div className="cl-empty" role="region" aria-label="No credit lines">
+              <NoLines className="empty-state-illustration--muted" />
+              <h2 className="cl-empty-title">Get started with Credit Lines</h2>
+              <p className="cl-empty-desc">
+                Credit lines give you access to flexible capital when you need it.
+                Open your first line and unlock funding tailored to your business.
+              </p>
+              <ul className="cl-empty-features">
+                <li>Flexible funding up to $500K</li>
+                <li>Competitive rates from 7.5% APR</li>
+                <li>Quick approval with digital collateral</li>
+              </ul>
+              <Link to="/open-credit" className="cl-primary-btn focus-ring">
+                Open Credit Line
+              </Link>
+            </div>
+          )
+        ) : (
+          <>
+            {stablePage.items.length > 0 ? (
+              <div className="cl-grid" data-testid="cl-grid">
+                {stablePage.items.map((line) => (
+                  <CreditLineCard
+                    key={line.id}
+                    line={line}
+                    isSelected={selectedLines.includes(line.id)}
+                    onToggle={() => toggleSelection(line.id)}
+                    onSwapCollateral={handleSwapCollateral}
+                    onRepay={() => handleRepay(line.id)}
+                    onFreeze={handleFreeze}
+                    onUnfreeze={handleUnfreeze}
+                    onSchedule={() => handleSchedule(line.id)}
+                    onDetails={() => handleDetails(line.id)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p
+                role="status"
+                style={{ color: "var(--muted)", margin: "1rem 0" }}
               >
-                Previous
-              </button>
-              <span aria-live="polite">
-                Page {stablePage.pageIndex + 1} of {stablePage.pageCount}
-              </span>
-              <button
-                type="button"
-                className="cl-primary-btn focus-ring"
-                onClick={() =>
-                  setPageIndex((current) =>
-                    Math.min(stablePage.pageCount - 1, current + 1),
-                  )
-                }
-                disabled={stablePage.pageIndex >= stablePage.pageCount - 1}
+                No current records on this page. Page positions are being held
+                stable while live updates settle.
+              </p>
+            )}
+
+            {stablePage.pageCount > 1 && (
+              <nav
+                aria-label="Credit line pagination"
                 style={{
-                  opacity:
-                    stablePage.pageIndex >= stablePage.pageCount - 1 ? 0.5 : 1,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "0.75rem",
+                  marginTop: "1.5rem",
                 }}
               >
-                Next
-              </button>
-            </nav>
-          )}
-        </>
-      )}
+                <button
+                  type="button"
+                  className="cl-primary-btn focus-ring"
+                  onClick={() =>
+                    setListParams({ page: Math.max(0, pageIndex - 1) })
+                  }
+                  disabled={stablePage.pageIndex === 0}
+                  style={{ opacity: stablePage.pageIndex === 0 ? 0.5 : 1 }}
+                >
+                  Previous
+                </button>
+                <span aria-live="polite">
+                  Page {stablePage.pageIndex + 1} of {stablePage.pageCount}
+                </span>
+                <button
+                  type="button"
+                  className="cl-primary-btn focus-ring"
+                  onClick={() =>
+                    setListParams({ page: Math.min(stablePage.pageCount - 1, pageIndex + 1) })
+                  }
+                  disabled={stablePage.pageIndex >= stablePage.pageCount - 1}
+                  style={{
+                    opacity:
+                      stablePage.pageIndex >= stablePage.pageCount - 1
+                        ? 0.5
+                        : 1,
+                  }}
+                >
+                  Next
+                </button>
+              </nav>
+            )}
+          </>
+        )}
       </div>
 
       {/* ── Repayment Schedule (Issue #428) ───────────────────────────────

@@ -220,7 +220,7 @@ export function RiskExplainerOverlay({
 
         <footer className="risk-explainer-overlay__footer">
           <a
-            href="/docs/risk-pricing"
+            href="/docs#risk-pricing"
             className="risk-explainer-overlay__docs-link"
             aria-label="Read the full risk pricing documentation"
           >

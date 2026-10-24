@@ -15,8 +15,9 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import RepayPage from './RepayPage';
+import RepaySuccess from './RepaySuccess';
 
 // ── Module mocks ─────────────────────────────────────────────────────────
 
@@ -34,35 +35,29 @@ vi.mock('../context/WalletContext', () => ({
       network: 'TESTNET',
     },
     status: 'connected',
+    balances: [{
+      asset: 'USDC',
+      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      balance: '50000.0000000',
+    }],
+    refreshBalance: async () => [{
+      asset: 'USDC',
+      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      balance: '50000.0000000',
+    }],
   }),
 }));
 
 vi.mock('../utils/storage', () => ({
   readJson: vi.fn((_key: string, fallback: unknown) => fallback),
   writeJson: vi.fn(),
+  removeKey: vi.fn(),
 }));
 
-vi.mock('../data/mockData', () => ({
-  MOCK_CREDIT_LINES: [
-    {
-      id: 'CL-2024-001',
-      name: 'Primary Business Line',
-      status: 'Active',
-      limit: 500000,
-      utilized: 187500,
-      apr: 8.5,
-      riskScore: 720,
-      collateral: 'Commercial Real Estate',
-      openedAt: '2024-03-15',
-      updatedAt: '2025-02-20T14:32:00Z',
-      nextPaymentDate: '2025-03-01',
-      nextPaymentAmount: 3200,
-      transactions: [],
-      statusHistory: [],
-      aprHistory: [],
-    },
-  ],
-}));
+vi.mock('../data/mockData', async () => {
+  const { REPAY_TEST_CREDIT_LINES } = await import('@/test/fixtures/repayCreditLines');
+  return { MOCK_CREDIT_LINES: REPAY_TEST_CREDIT_LINES };
+});
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -73,7 +68,10 @@ vi.mock('../data/mockData', () => ({
 function renderWithLine(initialEntries = ['/?line=CL-2024-001']) {
   const result = render(
     <MemoryRouter initialEntries={initialEntries}>
-      <RepayPage />
+      <Routes>
+        <Route path="/repay/success" element={<RepaySuccess />} />
+        <Route path="*" element={<RepayPage />} />
+      </Routes>
     </MemoryRouter>,
   );
   act(() => {
@@ -266,89 +264,23 @@ describe('RepayPage — tabular-nums on numeric displays (FWC26)', () => {
     });
   });
 
-  describe('Success step — numeric displays', () => {
-    it('success: repaid amount should carry num-tabular class', () => {
-      const { container } = renderWithLine();
+  describe('success route', () => {
+    it('shows the confirmed amount on the routed success page', () => {
+      renderWithLine();
+      fireEvent.change(screen.getByLabelText(/amount to repay/i), { target: { value: '100' } });
+      fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm repayment/i }));
 
-      const input = container.querySelector(
-        'input[id="repay-amount"]',
-      ) as HTMLInputElement;
-      fireEvent.change(input, { target: { value: '100' } });
-
-      const reviewBtn = screen.queryByText(/Review Repayment/i);
-      if (reviewBtn) {
-        fireEvent.click(reviewBtn);
-
-        const confirmBtn = screen.queryByText(/Confirm Repayment/i);
-        if (confirmBtn && !confirmBtn.hasAttribute('disabled')) {
-          fireEvent.click(confirmBtn);
-
-          const successText = container.querySelector(
-            'h2.text-2xl.font-bold.text-foreground',
-          );
-          if (successText) {
-            const tabularInSuccess = successText.querySelector('.num-tabular');
-            expect(tabularInSuccess).toBeInTheDocument();
-            expect(tabularInSuccess?.classList.contains('num-tabular')).toBe(
-              true,
-            );
-          }
-        }
-      }
+      expect(screen.getByRole('heading', { name: 'You repaid $100.00!' })).toBeInTheDocument();
     });
 
-    it('success: remaining debt should carry num-tabular class', () => {
-      const { container } = renderWithLine();
+    it('shows the remaining balance on the routed success page', () => {
+      renderWithLine();
+      fireEvent.change(screen.getByLabelText(/amount to repay/i), { target: { value: '50' } });
+      fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
+      fireEvent.click(screen.getByRole('button', { name: /confirm repayment/i }));
 
-      const input = container.querySelector(
-        'input[id="repay-amount"]',
-      ) as HTMLInputElement;
-      fireEvent.change(input, { target: { value: '50' } });
-
-      const reviewBtn = screen.queryByText(/Review Repayment/i);
-      if (reviewBtn) {
-        fireEvent.click(reviewBtn);
-
-        const confirmBtn = screen.queryByText(/Confirm Repayment/i);
-        if (confirmBtn && !confirmBtn.hasAttribute('disabled')) {
-          fireEvent.click(confirmBtn);
-
-          const successDebt = container.querySelector(
-            '.bg-surface.p-4.text-left .num-tabular',
-          );
-          expect(successDebt).toBeInTheDocument();
-          expect(successDebt?.classList.contains('num-tabular')).toBe(true);
-        }
-      }
-    });
-
-    it('success: utilization percentage should carry num-tabular class', () => {
-      const { container } = renderWithLine();
-
-      const input = container.querySelector(
-        'input[id="repay-amount"]',
-      ) as HTMLInputElement;
-      fireEvent.change(input, { target: { value: '75' } });
-
-      const reviewBtn = screen.queryByText(/Review Repayment/i);
-      if (reviewBtn) {
-        fireEvent.click(reviewBtn);
-
-        const confirmBtn = screen.queryByText(/Confirm Repayment/i);
-        if (confirmBtn && !confirmBtn.hasAttribute('disabled')) {
-          fireEvent.click(confirmBtn);
-
-          const successText = container.textContent;
-          if (successText?.includes('Reduced to')) {
-            const reducedText = container.querySelector(
-              '.bg-surface.p-4.text-left',
-            );
-            const pctElement = reducedText?.querySelector('.num-tabular');
-            expect(pctElement).toBeInTheDocument();
-            expect(pctElement?.classList.contains('num-tabular')).toBe(true);
-          }
-        }
-      }
+      expect(screen.getByText('$187,450.00')).toBeInTheDocument();
     });
   });
 

@@ -147,4 +147,45 @@ export interface SubstitutionError {
   retryable: boolean;
   /** Optional upstream error code for logging / diagnostics. */
   code?: string;
+  /** Optional idempotency key for linking errors to specific submission attempts. */
+  idempotencyKey?: string;
+}
+
+// ─── Idempotency & deduplication ─────────────────────────────────────────────
+
+/**
+ * Canonical parameters for a collateral substitution operation.
+ * Used to generate deterministic, collision-resistant idempotency keys
+ * that prevent retries from creating duplicate intents.
+ */
+export interface CollateralSubstitutionIntent {
+  /** The credit line being modified (stable ID from backend). */
+  creditLineId: string;
+  /** The asset currently pledged (undefined if none exists). */
+  outgoingAssetId?: string;
+  /** The asset being pledged. Must be different from outgoing. */
+  incomingAssetId: string;
+  /** Unix timestamp (ms) when the user initiated this substitution flow. */
+  initiatedAtMs: number;
+}
+
+/**
+ * Tracking state for a single submission attempt in the collateral substitution flow.
+ * Persisted locally to detect and prevent duplicate submissions and side-effect replay.
+ */
+export interface CollateralSubstitutionSubmissionState {
+  /** The immutable intent parameters that define this operation. */
+  intent: CollateralSubstitutionIntent;
+  /** Deterministic idempotency key for this intent (generated from canonical params). */
+  idempotencyKey: string;
+  /** How many times this key has been submitted to the server. */
+  attemptCount: number;
+  /** Unix timestamp (ms) of the most recent submission. */
+  lastSubmittedAtMs?: number;
+  /** The most recent server response, if any (prevents replay of already-succeeded operations). */
+  lastServerResponse?: {
+    statusOrReason: string;
+    message?: string;
+    receivedAtMs: number;
+  };
 }

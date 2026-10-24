@@ -70,7 +70,7 @@ export function DateRangeChips({
           >
             {option.label}
           </button>
-        ))
+        ))}
       </div>
 
       {selectedPreset === 'custom' && (
@@ -90,7 +90,7 @@ export function DateRangeChips({
             min={customStartDate || undefined}
           />
         </div>
-      )
+      )}
     </div>
   );
 }
