@@ -117,6 +117,7 @@ describe('tabular-nums CSS utility', () => {
     const creditLine = {
       id: 'cl-001',
       name: 'Business Line of Credit',
+      status: "Active",
       limit: 50000,
       available: 35000,
       utilization: 30,
@@ -142,6 +143,7 @@ describe('tabular-nums CSS utility', () => {
     const creditLine = {
       id: 'cl-001',
       name: 'Business Line of Credit',
+      status: "Active",
       limit: 50000,
       available: 35000,
       utilization: 30,

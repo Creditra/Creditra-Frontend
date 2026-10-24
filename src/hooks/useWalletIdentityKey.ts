@@ -1,13 +1,17 @@
-import { useWallet } from "../context/WalletContext";
-import { walletIdentityKey } from "../context/WalletContext";
-
 /**
- * Returns a stable identity key for the currently connected wallet.
- * Used by ConfirmationStep to scope risk education state to the wallet.
+ * useWalletIdentityKey — stable identity key for the connected wallet.
  *
- * Returns null when no wallet is connected.
+ * Returns `type:publicKey:network` (the same value produced by
+ * `walletIdentityKey` in WalletContext) or `null` when no wallet is connected.
+ *
+ * Consumers use the key to scope persisted state per wallet. The confirm-step
+ * risk-education nudge in `ConfirmationStep`, for example, keys its
+ * acknowledgement by wallet identity so a new borrower on the same browser
+ * does not inherit another wallet's state.
  */
+import { useWallet, walletIdentityKey } from '@/context/WalletContext';
+
 export function useWalletIdentityKey(): string | null {
-  const { wallet } = useWallet();
-  return walletIdentityKey(wallet);
+ const { wallet } = useWallet();
+ return wallet ? walletIdentityKey(wallet) : null;
 }

@@ -52,6 +52,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import type { WalletInfo } from "@/types/wallet";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -65,6 +66,28 @@ import {
   __getNavigateCalls,
   __clearNavigateCalls,
 } from "react-router-dom";
+import { DRAFT_KEY, saveDraft } from "@/state/wizardDraft";
+
+// ---------------------------------------------------------------------------
+// Mocks
+// ---------------------------------------------------------------------------
+
+// The wizard scopes persisted drafts to the connected wallet identity. These
+// tests do not need a full WalletProvider, so expose a mutable wallet slot for
+// the context hook and use the real identity-key format.
+const walletState = vi.hoisted(() => ({
+  current: null as WalletInfo | null,
+}));
+
+vi.mock("@/context/WalletContext", () => ({
+  useWallet: () => ({ wallet: walletState.current }),
+  walletIdentityKey: (wallet: WalletInfo | null) =>
+    wallet ? `${wallet.type}:${wallet.publicKey}:${wallet.network}` : null,
+}));
+
+beforeEach(() => {
+  walletState.current = null;
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -128,7 +151,7 @@ describe("DrawCreditPage — step navigation & token audit", () => {
       screen.getByRole("heading", { name: /select credit line/i }),
     ).toBeInTheDocument();
 
-    // Mock data has 3 credit lines; each is a button with an aria-label
+    // Mock data includes active and frozen lines; each is a button with an aria-label
     expect(
       screen.getByRole("button", {
         name: /select business line of credit/i,
@@ -815,10 +838,10 @@ describe("DrawCreditPage — default-risk education gate (REQ-6.2)", () => {
     __setMockLocation("/draw-credit");
   });
 
-  it("modal is shown when creditra.default_risk_ack is absent from localStorage", () => {
+  it("shows the dismissible risk banner when creditra.default_risk_ack is absent from localStorage", () => {
     render(<DrawCreditPage />);
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByText("What is a Default?")).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent(/first draw\?/i);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("modal is NOT shown when creditra.default_risk_ack is true in localStorage", () => {
@@ -840,6 +863,9 @@ describe("DrawCreditPage — default-risk education gate (REQ-6.2)", () => {
 
   it("acknowledging the modal sets creditra.default_risk_ack in localStorage", () => {
     render(<DrawCreditPage />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /learn about default risk/i }),
+    );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
 
     // Step 1 -> Step 2
@@ -861,7 +887,7 @@ describe("DrawCreditPage — default-risk education gate (REQ-6.2)", () => {
     expect(readJson(DEFAULT_RISK_ACK_KEY, false)).toBe(true);
   });
 
-  it("acknowledging in ?learn=1 mode removes the query param but does not re-write localStorage", () => {
+  it("acknowledging in ?learn=1 mode removes the query param and records the acknowledgment", () => {
     expect(readJson(DEFAULT_RISK_ACK_KEY, false)).toBe(false);
 
     __setMockLocation("/draw-credit", "?learn=1");
@@ -881,8 +907,155 @@ describe("DrawCreditPage — default-risk education gate (REQ-6.2)", () => {
     // Query parameter ?learn=1 removed
     expect(__getMockSearch()).not.toContain("learn=1");
 
-    // localStorage key was NOT written
-    expect(readJson(DEFAULT_RISK_ACK_KEY, false)).toBe(false);
+    // The acknowledgment is recorded so the banner does not reappear.
+    expect(readJson(DEFAULT_RISK_ACK_KEY, false)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — persisted draw draft hardening (issue #1174)
+// ---------------------------------------------------------------------------
+
+describe("DrawCreditPage — persisted draw draft hardening", () => {
+  const WALLET_A = {
+    type: "freighter" as const,
+    publicKey: "GAAA111",
+    network: "TESTNET" as const,
+  };
+  const WALLET_B = {
+    type: "freighter" as const,
+    publicKey: "GBBB222",
+    network: "TESTNET" as const,
+  };
+  const ownerKey = (wallet: WalletInfo) =>
+    `${wallet.type}:${wallet.publicKey}:${wallet.network}`;
+
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem("creditra.default_risk_ack", "true");
+    __setMockLocation("/draw-credit");
+  });
+
+  it("restores a valid same-owner draft at the amount step with its amount", () => {
+    saveDraft(
+      { step: "amount", lineId: "cl-001", amountCents: 123400 },
+      null,
+    );
+
+    setup();
+
+    expect(
+      screen.getByRole("heading", { name: /enter amount/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton")).toHaveValue(1234);
+    expect(
+      screen.queryByRole("heading", { name: /review (&|and) confirm/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("restores a remembered wallet's draft before auto-reconnect completes", () => {
+    localStorage.setItem("creditra-wallet-remember", "true");
+    localStorage.setItem(
+      "creditra-wallet-info",
+      JSON.stringify(WALLET_A),
+    );
+    saveDraft(
+      { step: "amount", lineId: "cl-001", amountCents: 250000 },
+      ownerKey(WALLET_A),
+    );
+    // The provider has not finished reconnecting yet.
+    walletState.current = null;
+
+    setup();
+
+    expect(
+      screen.getByRole("heading", { name: /enter amount/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton")).toHaveValue(2500);
+  });
+
+  it("discards a draft created by a different wallet identity", () => {
+    saveDraft(
+      { step: "amount", lineId: "cl-001", amountCents: 50000 },
+      ownerKey(WALLET_B),
+    );
+    walletState.current = WALLET_A;
+
+    setup();
+
+    expect(
+      screen.getByRole("heading", { name: /select credit line/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
+  });
+
+  it("discards a draft whose credit line no longer exists and explains why", () => {
+    saveDraft(
+      { step: "amount", lineId: "cl-does-not-exist", amountCents: 50000 },
+      null,
+    );
+
+    setup();
+
+    expect(
+      screen.getByRole("heading", { name: /select credit line/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/saved draw draft was discarded/i),
+    ).toHaveAttribute("role", "status");
+    expect(
+      screen.getByText(/saved draw draft was discarded/i),
+    ).toHaveTextContent(/no longer available/i);
+  });
+
+  it("discards a legacy draft containing a full credit-line snapshot", () => {
+    localStorage.setItem(
+      DRAFT_KEY,
+      JSON.stringify({
+        step: "confirm",
+        amount: 1000,
+        selectedCreditLine: {
+          id: "cl-001",
+          name: "Business Line of Credit",
+          limit: 50000,
+          available: 35000,
+          utilization: 30,
+          riskBand: "Standard",
+          termMonths: 24,
+        },
+      }),
+    );
+
+    setup();
+
+    expect(
+      screen.getByRole("heading", { name: /select credit line/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /review (&|and) confirm/i }),
+    ).not.toBeInTheDocument();
+    expect(localStorage.getItem(DRAFT_KEY)).not.toContain(
+      "selectedCreditLine",
+    );
+  });
+
+  it("clears the draft when the wallet disconnects", () => {
+    walletState.current = WALLET_A;
+    saveDraft(
+      { step: "amount", lineId: "cl-001", amountCents: 50000 },
+      ownerKey(WALLET_A),
+    );
+
+    const { rerender } = render(<DrawCreditPage />);
+    expect(
+      screen.getByRole("heading", { name: /enter amount/i }),
+    ).toBeInTheDocument();
+    expect(localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+
+    walletState.current = null;
+    rerender(<DrawCreditPage />);
+
+    expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
   });
 });
 

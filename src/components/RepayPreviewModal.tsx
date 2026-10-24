@@ -17,9 +17,10 @@ import {
   requiresRepayConfirmation,
 } from '../utils/amountValidation';
 import {
-  computeFullPayoffAmount,
   computeMonthlyAccruedInterest,
+  roundToCents,
 } from '../utils/currency';
+import { allocateRepayment } from '../lib/repay-allocation';
 import {
   computeDefaultMonthlyPayment,
   computePayoffProjection,
@@ -115,14 +116,18 @@ export function RepayPreviewModal({
     principalBalance,
     creditLine.apr,
   );
-  const fullPayoff = computeFullPayoffAmount(principalBalance, creditLine.apr);
-  const totalDue = fullPayoff;
+  const totalDue = roundToCents(principalBalance + accruedInterest);
+  const allocation = allocateRepayment(
+    creditLine,
+    repayAmount,
+    accruedInterest,
+  );
 
-  const isFullPayoff = repayAmount >= totalDue || (totalDue > 0 && Math.abs(repayAmount - totalDue) < 0.01);
-  const interestPortion = Math.min(repayAmount, accruedInterest);
-  const principalPortion = Math.max(0, repayAmount - interestPortion);
+  const isFullPayoff = allocation.isFullPayoff;
+  const interestPortion = allocation.interestPaid;
+  const principalPortion = allocation.principalPaid;
 
-  const remainingDebt = isFullPayoff ? 0 : Math.max(0, totalDue - repayAmount);
+  const remainingDebt = allocation.remainingTotal;
   const currentAvailable = Math.max(0, creditLine.limit - principalBalance);
   const newAvailable = isFullPayoff
     ? creditLine.limit
@@ -273,19 +278,12 @@ export function RepayPreviewModal({
               <DollarSign size={14} aria-hidden="true" /> Repayment Allocation
             </h3>
             <div className="repay-preview-row">
-              <span className="repay-preview-row-label">Principal Reduction</span>
-              <span className="repay-preview-row-value">
-                <span className="tabular-nums">{fmt(principalPortion)}</span>
+              <span className="repay-preview-row-label" data-testid="repay-preview-allocation">
+                Interest <span className="tabular-nums">{fmt(interestPortion)}</span>
+                {' · '}
+                Principal <span className="tabular-nums">{fmt(principalPortion)}</span>
               </span>
             </div>
-            {accruedInterest > 0 && (
-              <div className="repay-preview-row">
-                <span className="repay-preview-row-label">Accrued Interest Paid</span>
-                <span className="repay-preview-row-value">
-                  <span className="tabular-nums">{fmt(interestPortion)}</span>
-                </span>
-              </div>
-            )}
           </div>
 
           {/* Credit Utilization Bar */}

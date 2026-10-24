@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import './SettingsAccount.css';
 
 export interface SettingsAccountProps {
   /** Content to render inside the settings account page. */
