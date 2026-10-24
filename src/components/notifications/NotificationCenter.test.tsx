@@ -9,6 +9,7 @@ import {
   resolveSheetSnapFromRatio,
   SHEET_SNAP_RATIOS,
 } from './NotificationCenter';
+import { ToastContainer } from './ToastContainer';
 
 vi.mock('../../hooks/useBodyScrollLock', () => ({
   useBodyScrollLock: vi.fn(),
@@ -582,6 +583,318 @@ describe('NotificationCenter mark all as read', () => {
     // Since we can't easily test the global state without opening panel,
     // we verify the panel is not in the document
     expect(screen.queryByRole('dialog', { name: 'Notification center' })).not.toBeInTheDocument();
+  });
+
+  it('restores exactly the originally unread notifications on undo (scenario 1)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    localStorage.setItem(
+      'creditra_notifications',
+      JSON.stringify([
+        { id: 'u1', type: 'info', category: 'transaction', title: 'Unread One', message: 'm1', timestamp: new Date(1000).toISOString(), read: false },
+        { id: 'u2', type: 'info', category: 'transaction', title: 'Unread Two', message: 'm2', timestamp: new Date(2000).toISOString(), read: false },
+        { id: 'r1', type: 'info', category: 'transaction', title: 'Read One', message: 'm3', timestamp: new Date(3000).toISOString(), read: true },
+        { id: 'r2', type: 'info', category: 'transaction', title: 'Read Two', message: 'm4', timestamp: new Date(4000).toISOString(), read: true },
+        { id: 'r3', type: 'info', category: 'transaction', title: 'Read Three', message: 'm5', timestamp: new Date(5000).toISOString(), read: true },
+      ]),
+    );
+
+    function Harness() {
+      const { openPanel } = useNotifications();
+      return (
+        <>
+          <button type="button" onClick={openPanel}>Open panel</button>
+          <NotificationCenter />
+          <ToastContainer />
+        </>
+      );
+    }
+
+    render(
+      <NotificationProvider>
+        <Harness />
+      </NotificationProvider>,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // 2 unread initially
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Unread One, unread' })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Unread Two, unread' })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Read One, read' })).toBeInTheDocument();
+
+    // Mark all as read
+    const markAllBtn = screen.getByRole('button', { name: /mark all notifications as read, 2 unread/i });
+    await user.click(markAllBtn);
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // All should be read now
+    expect(screen.queryByText('2')).not.toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Unread One, read' })).toBeInTheDocument();
+
+    // Click Undo on the toast
+    const undoBtn = screen.getByRole('button', { name: /undo/i });
+    await user.click(undoBtn);
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // Exactly the 2 originally unread are unread again!
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Unread One, unread' })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Unread Two, unread' })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Read One, read' })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Read Two, read' })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Read Three, read' })).toBeInTheDocument();
+  });
+
+  it('restores cleared snapshot merged with newly arrived notifications on clear-all undo (scenario 2)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    localStorage.setItem(
+      'creditra_notifications',
+      JSON.stringify([
+        { id: 'orig-1', type: 'info', category: 'transaction', title: 'Orig 1', message: 'm1', timestamp: new Date(1000).toISOString(), read: false },
+        { id: 'orig-2', type: 'info', category: 'transaction', title: 'Orig 2', message: 'm2', timestamp: new Date(2000).toISOString(), read: false },
+        { id: 'orig-3', type: 'info', category: 'transaction', title: 'Orig 3', message: 'm3', timestamp: new Date(3000).toISOString(), read: false },
+        { id: 'orig-4', type: 'info', category: 'transaction', title: 'Orig 4', message: 'm4', timestamp: new Date(4000).toISOString(), read: false },
+        { id: 'orig-5', type: 'info', category: 'transaction', title: 'Orig 5', message: 'm5', timestamp: new Date(5000).toISOString(), read: false },
+      ]),
+    );
+
+    function Harness() {
+      const { openPanel, addToast } = useNotifications();
+      return (
+        <>
+          <button type="button" onClick={openPanel}>Open panel</button>
+          <button
+            type="button"
+            onClick={() => {
+              addToast({
+                type: 'info',
+                category: 'transaction',
+                title: 'New Arrival',
+                message: 'new message',
+                saveToHistory: true,
+              });
+            }}
+          >
+            Add new notification
+          </button>
+          <NotificationCenter />
+          <ToastContainer />
+        </>
+      );
+    }
+
+    render(
+      <NotificationProvider>
+        <Harness />
+      </NotificationProvider>,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // 5 original items in feed
+    expect(screen.getAllByRole('article')).toHaveLength(5);
+
+    // Clear all
+    const clearAllBtn = screen.getByRole('button', { name: 'Clear all notifications' });
+    await user.click(clearAllBtn);
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(screen.getByText('No notifications')).toBeInTheDocument();
+
+    // A new notification arrives during undo window
+    await user.click(screen.getByRole('button', { name: 'Add new notification' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // Only the new notification is in the feed now
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    expect(screen.getByRole('article', { name: 'New Arrival, unread' })).toBeInTheDocument();
+
+    // Click Undo on the clear-all toast
+    const undoBtn = screen.getByRole('button', { name: /undo/i });
+    await user.click(undoBtn);
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // Feed now has all 6 items: the 5 originals plus the new arrival!
+    const articles = screen.getAllByRole('article');
+    expect(articles).toHaveLength(6);
+    expect(screen.getByRole('article', { name: 'New Arrival, unread' })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Orig 1, unread' })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Orig 5, unread' })).toBeInTheDocument();
+  });
+
+  it('is idempotent when undo is triggered twice (scenario 3)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    localStorage.setItem(
+      'creditra_notifications',
+      JSON.stringify([
+        { id: 'u1', type: 'info', category: 'transaction', title: 'Unread One', message: 'm1', timestamp: new Date(1000).toISOString(), read: false },
+        { id: 'r1', type: 'info', category: 'transaction', title: 'Read One', message: 'm2', timestamp: new Date(2000).toISOString(), read: true },
+      ]),
+    );
+
+    function Harness() {
+      const { openPanel, undoRead } = useNotifications();
+      return (
+        <>
+          <button type="button" onClick={openPanel}>Open panel</button>
+          <button type="button" onClick={() => undoRead(['u1'])}>Trigger Second Restoration</button>
+          <NotificationCenter />
+          <ToastContainer />
+        </>
+      );
+    }
+
+    render(
+      <NotificationProvider>
+        <Harness />
+      </NotificationProvider>,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    await user.click(screen.getByRole('button', { name: /mark all notifications as read/i }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    const undoBtn = screen.getByRole('button', { name: /undo/i });
+    await user.click(undoBtn);
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // First undo state
+    expect(screen.getByRole('article', { name: 'Unread One, unread' })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Read One, read' })).toBeInTheDocument();
+
+    // Second undo attempt
+    await user.click(screen.getByRole('button', { name: 'Trigger Second Restoration' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // State identical
+    expect(screen.getByRole('article', { name: 'Unread One, unread' })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Read One, read' })).toBeInTheDocument();
+  });
+
+  it('renders undo toast even when preferences.system is false (scenario 4)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    localStorage.setItem(
+      'creditra_notification_prefs',
+      JSON.stringify({ system: false }),
+    );
+    localStorage.setItem(
+      'creditra_notifications',
+      JSON.stringify([
+        { id: 'u1', type: 'info', category: 'transaction', title: 'Unread One', message: 'm1', timestamp: new Date(1000).toISOString(), read: false },
+      ]),
+    );
+
+    function Harness() {
+      const { openPanel } = useNotifications();
+      return (
+        <>
+          <button type="button" onClick={openPanel}>Open panel</button>
+          <NotificationCenter />
+          <ToastContainer />
+        </>
+      );
+    }
+
+    render(
+      <NotificationProvider>
+        <Harness />
+      </NotificationProvider>,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    const markAllBtn = screen.getByRole('button', { name: /mark all notifications as read/i });
+    await user.click(markAllBtn);
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // Undo button on toast must still be rendered because bypassPreferences: true
+    expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
+  });
+
+  it('ignores Shift+R when focus is in an input inside the panel (scenario 6)', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderWithNotifications();
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // Verify 3 unread
+    expect(screen.getByText('3')).toBeInTheDocument();
+
+    // Open preferences panel
+    await user.click(screen.getByRole('button', { name: 'Notification preferences' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // Focus a checkbox input inside the preferences panel
+    const toggles = screen.getAllByRole('checkbox');
+    expect(toggles.length).toBeGreaterThan(0);
+    toggles[0].focus();
+    expect(document.activeElement).toBe(toggles[0]);
+
+    // Press Shift+R while input is focused
+    await user.keyboard('{Shift>}R{/Shift}');
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // Should NOT mark all as read; unread count remains 3!
+    expect(screen.getByText('3')).toBeInTheDocument();
   });
 });
 

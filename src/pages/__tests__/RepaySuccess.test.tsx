@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import RepaySuccess from '../RepaySuccess';
+import { freezeTime, unfreezeTime } from '@/test/freezeTime';
 
 const { getTransaction } = vi.hoisted(() => ({
   getTransaction: vi.fn(),
@@ -93,6 +94,11 @@ describe('RepaySuccess page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getTransaction.mockReturnValue(new Promise(() => {}));
+    freezeTime();
+  });
+
+  afterEach(() => {
+    unfreezeTime();
   });
 
   // ── Happy paths ─────────────────────────────────────────────────────────

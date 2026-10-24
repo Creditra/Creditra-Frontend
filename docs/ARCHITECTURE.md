@@ -310,7 +310,43 @@ See [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) for the full catalogue and theming mo
 
 ---
 
-## 8. Folder map (annotated)
+## 8. Price decay
+
+Dutch auctions linearly decay the purchase price from `startPrice` to `floorPrice` over
+`[startTime, endTime]`. To eliminate floating-point drift (e.g. IEEE 754 precision issues like
+`0.3 - 0.1` producing `0.19999999999999998`), price computation is isolated in the pure module
+`src/lib/dutch-auction-pricing.ts`.
+
+### Integer stroops and rounding rules
+
+- **Integer arithmetic:** Amounts are converted to and computed in integer **stroops**
+  ($1\text{ USDC} = 10^7\text{ stroops}$, Stellar's atomic base unit) via `toStroops(amount: number): bigint`.
+- **Linear decay formula:**
+  $$\text{decay} = \frac{(\text{startStroops} - \text{floorStroops}) \times \text{elapsedMs}}{\text{totalMs}}$$
+  $$\text{price} = \text{startStroops} - \text{decay}$$
+- **Rounding direction (Round UP):** Standard integer division truncates $\text{decay}$ downward.
+  Since price is $\text{start} - \text{decay}$, truncating the subtracted decay mathematically
+  rounds the resulting price **UP** to the nearest stroop ($\text{start} - \lfloor \text{decay} \rfloor = \lceil \text{start} - \text{decay} \rceil$).
+- **Buyer protection:** Rounding up ensures the buyer is never undercharged and that the price
+  displayed in the interface never understates the amount submitted on-chain or agreed to by the user.
+- **Monotonicity & Boundedness:** For any valid schedule, the price never increases over time
+  ($t_1 \le t_2 \implies P(t_1) \ge P(t_2)$) and is strictly bounded within $[\text{floorPrice}, \text{startPrice}]$.
+
+### Schedule validation rules
+
+Before calculating prices or enabling purchases, schedules are validated with `validateSchedule(auction)`.
+A schedule is rejected with a typed failure reason:
+- `'invalid_time'`: `startTime` or `endTime` cannot be parsed into a valid timestamp (`NaN`).
+- `'non_positive_duration'`: `endTime <= startTime` (zero or negative auction duration).
+- `'floor_above_start'`: `floorPrice > startPrice` (inverted price boundary).
+- `'negative_price'`: `startPrice` or `floorPrice` is negative or non-finite.
+
+When validation fails, `<DutchAuctionCard>` displays "Pricing unavailable" (with the specific rejection
+reason in visually hidden text for screen readers) and omits the purchase button entirely.
+
+---
+
+## 9. Folder map (annotated)
 
 ```
 src/

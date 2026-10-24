@@ -1,10 +1,10 @@
-
 import React, { useState } from 'react';
 import { DutchAuctionCard } from '../components/DutchAuctionCard';
 import { EmptyState } from '@/components/EmptyState';
 import { NoDataGraph } from '@/components/illustrations';
 import { MOCK_DUTCH_AUCTIONS } from '../data/mockDutchAuctions';
 import { COLOR } from '../utils/tokens';
+import { purchaseAuction } from '../services/dutchAuctions';
 import { getEffectiveStatus } from '../lib/dutch-auction-lifecycle';
 
 export const DutchAuctions: React.FC = () => {
@@ -18,7 +18,9 @@ export const DutchAuctions: React.FC = () => {
     return true;
   });
 
-
+  const handlePurchase = async (auctionId: string, priceStroops: bigint) => {
+    await purchaseAuction(auctionId, priceStroops);
+  };
 
   return (
     <div style={{ padding: '1rem' }}>
@@ -78,6 +80,7 @@ export const DutchAuctions: React.FC = () => {
             <DutchAuctionCard
               key={auction.id}
               auction={auction}
+              onPurchase={handlePurchase}
             />
           ))
         )}
@@ -85,4 +88,3 @@ export const DutchAuctions: React.FC = () => {
     </div>
   );
 };
-

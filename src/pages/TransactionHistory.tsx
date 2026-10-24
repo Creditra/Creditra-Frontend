@@ -18,7 +18,12 @@ import {
   type AmountRangePreset,
 } from "../components/AmountRangeChips";
 import { useDebounceValue } from "../hooks/useDebounceValue";
-import { toCsv, downloadCsv } from "../utils/csv";
+import { downloadCsv } from "../utils/csv";
+import {
+  buildTransactionCsv,
+  buildTransactionCsvFilename,
+  DEFAULT_TRANSACTION_CSV_ASSET,
+} from "../lib/transaction-csv";
 import { useNotifications } from "../context/NotificationContext";
 import { useCreditLines, useCreditTransactions } from "../hooks/useCreditLines";
 import {
@@ -37,6 +42,7 @@ import {
   getCalendarGroup,
   relativeTime as formatCalendarRelative,
 } from "../utils/dates";
+import { now as clockNow, nowMs as clockNowMs } from "../lib/clock";
 import { COLOR, fmt, fmtDateTime } from "../utils/tokens";
 import "./TransactionHistory.css";
 import { NoActivity, NoDataGraph, NoLines } from "../components/illustrations";
@@ -182,58 +188,14 @@ const RANGE_PRESET_OPTIONS: Array<{
 const relativeTime = (iso: string): string => {
   // Issue #1189: delegate to the shared calendar-aware helper.
   // Handles future timestamps ("in 3m") and "just now" correctly.
-  return formatCalendarRelative(iso);
+  return formatCalendarRelative(iso, clockNow());
 };
 
 const getDateGroup = (iso: string): string => {
   // Issue #1189: local calendar boundaries, with 'Upcoming' + 'Unknown date'
   // for future-dated and unparseable rows.
-  return getCalendarGroup(iso, new Date());
+  return getCalendarGroup(iso, clockNow());
 };
-
-function getExportFilename(transactions: TransactionWithLine[]): string {
-  const validDates = transactions
-    .map((tx) => new Date(tx.date))
-    .filter((date) => !Number.isNaN(date.getTime()))
-    .sort((a, b) => a.getTime() - b.getTime());
-
-  const formatDateForFilename = (date: Date) => date.toISOString().slice(0, 10);
-  const start = validDates[0] ? formatDateForFilename(validDates[0]) : "all";
-  const end = validDates[validDates.length - 1]
-    ? formatDateForFilename(validDates[validDates.length - 1])
-    : "all";
-
-  return `creditra-transactions-${start}-${end}.csv`;
-}
-
-function buildTransactionCsv(transactions: TransactionWithLine[]): string {
-  const headers = [
-    "Date",
-    "Type",
-    "Amount",
-    "Credit Line",
-    "Credit Line ID",
-    "Status",
-    "Note",
-    "Transaction Hash",
-  ] as const;
-
-  const rows = transactions.map(
-    (tx) =>
-      [
-        fmtDateTime(tx.date),
-        TX_TYPE_LABELS[tx.type],
-        tx.amount,
-        tx.lineName,
-        tx.lineId,
-        tx.status,
-        tx.note ?? "",
-        tx.txHash ?? "",
-      ] as const,
-  );
-
-  return toCsv(headers, rows);
-}
 
 function TransactionRow({
   tx,
@@ -603,7 +565,7 @@ export function TransactionHistory() {
           return false;
       }
 
-      const now = new Date();
+      const now = clockNow();
       const startOfToday = new Date(
         now.getFullYear(),
         now.getMonth(),
@@ -611,18 +573,18 @@ export function TransactionHistory() {
       ).getTime();
 
       if (dateRange === "today" && txTime < startOfToday) return false;
-      if (dateRange === "7d" && txTime < Date.now() - 7 * 24 * 60 * 60 * 1000) {
+      if (dateRange === "7d" && txTime < clockNowMs() - 7 * 24 * 60 * 60 * 1000) {
         return false;
       }
       if (
         dateRange === "30d" &&
-        txTime < Date.now() - 30 * 24 * 60 * 60 * 1000
+        txTime < clockNowMs() - 30 * 24 * 60 * 60 * 1000
       ) {
         return false;
       }
       if (
         dateRange === "90d" &&
-        txTime < Date.now() - 90 * 24 * 60 * 60 * 1000
+        txTime < clockNowMs() - 90 * 24 * 60 * 60 * 1000
       ) {
         return false;
       }
@@ -752,8 +714,10 @@ export function TransactionHistory() {
   const handleExportCsv = () => {
     if (exportDisabled) return;
 
-    const csv = buildTransactionCsv(filteredTransactions);
-    const filename = getExportFilename(filteredTransactions);
+    const csv = buildTransactionCsv(filteredTransactions, {
+      asset: DEFAULT_TRANSACTION_CSV_ASSET,
+    });
+    const filename = buildTransactionCsvFilename(filteredTransactions);
 
     downloadCsv(filename, csv);
 

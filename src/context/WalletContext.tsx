@@ -326,6 +326,16 @@ export const WalletProvider = ({
 
   // Ref so the timeout cleanup in `runReconnect` closes over a stable reference.
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Attempt token tracking: ensures superseded async connections, reconnects,
+  // or identity updates never apply stale state or overwrite storage.
+  const attemptRef = useRef(0);
+
+  // In-flight connectWallet promise ref to prevent duplicate extension prompts
+  // when React.StrictMode double-invokes the mount effect.
+  const inFlightConnectRef = useRef<Promise<WalletInfo> | null>(null);
+  // Guard against React.StrictMode double-invoking the auto-reconnect effect
+  // during the same mount cycle, preventing duplicate extension prompts.
+  const autoReconnectInitiatedRef = useRef(false);
   // Session-timeout refs: warn timer fires 60 s before expiry; expire timer fires at expiry.
   const sessionWarnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionExpireTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -398,6 +408,7 @@ export const WalletProvider = ({
    */
   const runReconnect = useCallback(
     async (type: WalletType) => {
+      const id = ++attemptRef.current;
       clearReconnectTimeout();
       setStatus('reconnecting');
       setError(null);
@@ -405,6 +416,7 @@ export const WalletProvider = ({
 
       // Start the "taking too long" timer.
       reconnectTimeoutRef.current = setTimeout(() => {
+        if (id !== attemptRef.current) return;
         setReconnectTimedOut(true);
       }, timeoutMs);
 
@@ -422,6 +434,7 @@ export const WalletProvider = ({
         setIsRemembered(true);
         startSessionTimers();
       } catch (err) {
+        if (id !== attemptRef.current) return;
         clearReconnectTimeout();
         setReconnectTimedOut(false);
         clearSessionTimers();
@@ -437,21 +450,25 @@ export const WalletProvider = ({
   // ── Auto-reconnect on mount ─────────────────────────────────────────────────
 
   useEffect(() => {
-    // Auto-reconnect is now an explicit opt-in.  Without the
-    // `creditra-wallet-remember` flag we leave the user on the connect
-    // screen (matching the privacy-first design: the app must never
-    // silently re-establish a wallet session).
+    // Under React.StrictMode in development, components mount, immediately unmount/cleanup,
+    // and remount.
+    // The attempt token cancellation in cleanup ensures superseded attempts are ignored,
+    // while inFlightConnectRef prevents opening duplicate extension prompts (e.g. Freighter/Albedo
+    // popups) across the StrictMode dual-mount cycle.
     const stored = getStoredWallet();
     const remembered = isWalletRemembered();
     if (!stored || !remembered) return; // No prior agreed reconnect.
 
     runReconnect(stored.type);
 
-    // Cleanup: if the component unmounts mid-reconnect, clear the timeout
-    // so we don't update state on an unmounted provider.
-    return () => clearReconnectTimeout();
+    // Cleanup: if the component unmounts mid-reconnect, invalidate the attempt token
+    // and clear the timeout so we don't update state or storage on an unmounted provider.
+    return () => {
+      ++attemptRef.current;
+      clearReconnectTimeout();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run exactly once on mount.
+  }, []); // Run on mount.
 
   // ── User-initiated connection ───────────────────────────────────────────────
 
@@ -496,6 +513,9 @@ export const WalletProvider = ({
   // ── Disconnect ─────────────────────────────────────────────────────────────
 
   const disconnect = () => {
+    // Invalidate any in-flight connect or reconnect attempt so that resolving
+    // attempts cannot silently resurrect state or write preferences back to disk.
+    ++attemptRef.current;
     clearReconnectTimeout();
     // `disconnectWallet()` drops the persisted session AND the opt-in
     // "remember" flag, so the next visit will not auto-connect.  It
@@ -520,6 +540,8 @@ export const WalletProvider = ({
    * `isWalletRemembered()` will return `false` until the user opts in again.
    */
   const forgetRememberedChoice = useCallback(() => {
+    // Invalidate any in-flight auto-reconnect attempt
+    ++attemptRef.current;
     setWalletRemembered(false);
     setIsRemembered(false);
   }, []);
@@ -549,6 +571,7 @@ export const WalletProvider = ({
   const stayConnected = useCallback(async () => {
     const stored = getStoredWallet();
     if (!stored || !wallet) return;
+    const id = ++attemptRef.current;
     try {
       const walletInfo = requireValidWalletInfo(await connectWallet(stored.type));
       setWallet(walletInfo);
@@ -556,6 +579,7 @@ export const WalletProvider = ({
       saveWalletPreference(walletInfo);
       startSessionTimers(); // full timer restart
     } catch (err) {
+      if (id !== attemptRef.current) return;
       clearSessionTimers();
       setSessionTimeoutWarning(false);
       setError(err as WalletError);

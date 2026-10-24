@@ -25,6 +25,12 @@ const STEP_ICON_CLASS = "h-4 w-4 stroke-[2.5]";
 
 export interface AmountInputProps {
   creditLine?: CreditLine;
+  /**
+   * Amount to seed the input with on mount. Used when restoring a wizard
+   * draft (issue #1174) or returning from the confirm step. Changes after
+   * mount are ignored because the input owns its own editing state.
+   */
+  initialAmount?: number;
   onAmountChange?: (amount: number) => void;
   onNext?: (amount: number) => void;
   onBack?: () => void;
@@ -120,12 +126,19 @@ export function AmountInputSkeleton() {
 
 export function AmountInput({
   creditLine,
+  initialAmount,
   onAmountChange,
   onNext,
   onBack,
   isLoading = false,
 }: AmountInputProps) {
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState(() =>
+    typeof initialAmount === "number" &&
+    Number.isFinite(initialAmount) &&
+    initialAmount > 0
+      ? String(initialAmount)
+      : "",
+  );
   const [pasteAnnouncement, setPasteAnnouncement] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = "draw-amount-input";

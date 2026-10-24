@@ -3,6 +3,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import RepayPage from '../RepayPage';
 import RepaySuccess from '../RepaySuccess';
+import { freezeTime, unfreezeTime } from '@/test/freezeTime';
 
 const { wallet, refreshBalance } = vi.hoisted(() => ({
   wallet: { publicKey: 'GTESTWALLET', network: 'TESTNET' },
@@ -70,12 +71,12 @@ async function flushReviewBalanceRefresh() {
 
 describe('RepayPage', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
+    freezeTime();
   });
 
   afterEach(() => {
     vi.runOnlyPendingTimers();
-    vi.useRealTimers();
+    unfreezeTime();
   });
 
   it('shows loading skeleton initially', () => {

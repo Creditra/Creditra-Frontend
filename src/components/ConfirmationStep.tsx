@@ -37,6 +37,7 @@ import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
 import { projectDraw } from "@/lib/draw-projection";
 import { getRiskEducationState, RISK_EDUCATION_VERSION } from "@/state/riskEducation";
 import { useWalletIdentityKey } from "@/hooks/useWalletIdentityKey";
+import { useWallet } from "@/context/WalletContext";
 import { useEffect } from "react";
 
 interface ConfirmationStepProps {
@@ -166,6 +167,7 @@ export function ConfirmationStep({
     }
   };
 
+  const { status } = useWallet();
   const walletIdentityKey = useWalletIdentityKey();
   const [riskEducationState, setRiskEducationState] = useState<{
     acknowledgedVersion?: number;
@@ -193,11 +195,13 @@ export function ConfirmationStep({
     estimatedMonthlyInterest,
     riskBand,
     termMonths,
-    utilizationAdjustmentLabel,
-    termAdjustmentLabel,
   } = quote;
 
-  const projection = projectDraw(creditLine, safeAmount, quote);
+  const projection = projectDraw(
+    creditLine,
+    safeAmount,
+    quote,
+  );
   const newBalance = projection.newBalance;
   const remainingAvailable = projection.remainingAvailable;
   const newUtilization = projection.newUtilizationPct;
@@ -512,6 +516,26 @@ export function ConfirmationStep({
           will be deposited within 1–2 business days.
         </span>
       </label>
+
+      {status === "connected" && !isLoading && (
+        <div
+          className="flex items-start gap-3 rounded-lg border p-4"
+          style={{
+            backgroundColor: "rgba(88,166,255,0.08)",
+            borderColor: "rgba(88,166,255,0.3)",
+          }}
+          role="status"
+        >
+          <Info
+            className="w-5 h-5 shrink-0 mt-0.5"
+            style={{ color: "#58a6ff" }}
+            aria-hidden="true"
+          />
+          <span className="text-sm font-medium" style={{ color: "#e6edf3" }}>
+            Your wallet will ask you to sign next
+          </span>
+        </div>
+      )}
 
       {/* Button order: Cancel → Back → Primary (docs/BUTTON_ORDER.md). */}
       <div className="dc-actions dc-actions--stacked">

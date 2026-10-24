@@ -7,32 +7,35 @@ import { useWallet } from '../context/WalletContext';
 import { canPurchase } from '../lib/dutch-auction-purchase';
 import { purchaseAuction } from '../services/dutchAuctions';
 import { EXPECTED_NETWORK } from '../utils/wallet';
+import { resolveNftImage } from '../utils/nft-image';
 import { LiveRegion } from './LiveRegion';
 import { clearAlert, listAlerts, setAlert } from '../state/auctionAlerts';
+import { Image as ImageIcon } from 'lucide-react';
 import { getEffectiveStatus, type EffectiveDutchAuctionStatus } from '../lib/dutch-auction-lifecycle';
+import { validateSchedule, priceAt, fromStroops } from '../lib/dutch-auction-pricing';
 
-interface DutchAuctionCardProps {
+export interface DutchAuctionCardProps {
   auction: DutchAuction;
+  onPurchase?: (auctionId: string, priceStroops: bigint) => void | Promise<void>;
 }
 
-const calculateCurrentPrice = (auction: DutchAuction): number => {
-  const now = Date.now();
-  const start = new Date(auction.startTime).getTime();
-  const end = new Date(auction.endTime).getTime();
-  
-  if (now < start) return auction.startPrice;
-  if (now > end) return auction.floorPrice;
-  
-  const elapsed = now - start;
-  const total = end - start;
-  const progress = elapsed / total;
-  
-  return auction.startPrice - progress * (auction.startPrice - auction.floorPrice);
+/**
+ * Current price in integer stroops, computed with bigint arithmetic by
+ * `priceAt`. Returns null for schedules that fail validation.
+ */
+const calculateCurrentPriceStroops = (auction: DutchAuction, nowMs: number = Date.now()): bigint | null => {
+  if (!validateSchedule(auction).ok) return null;
+  try {
+    return priceAt(auction, nowMs);
+  } catch {
+    return null;
+  }
 };
 
 const formatTimeLeft = (endTime: string): string => {
   const now = Date.now();
   const end = new Date(endTime).getTime();
+  if (Number.isNaN(end)) return 'Unavailable';
   const diff = end - now;
   
   if (diff <= 0) return 'Ended';
@@ -66,18 +69,35 @@ const formatTimeUntilStart = (startTime: string): string => {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
-export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) => {
-  const [currentPrice, setCurrentPrice] = useState(calculateCurrentPrice(auction));
+export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onPurchase }) => {
+  const validation = validateSchedule(auction);
+  const [currentPriceStroops, setCurrentPriceStroops] = useState<bigint | null>(() => calculateCurrentPriceStroops(auction));
+  const currentPrice = currentPriceStroops !== null ? fromStroops(currentPriceStroops) : 0;
   const [timeLeft, setTimeLeft] = useState(formatTimeLeft(auction.endTime));
+  const [imageFailed, setImageFailed] = useState(false);
   const [timeUntilStart, setTimeUntilStart] = useState(formatTimeUntilStart(auction.startTime));
   const [effectiveStatus, setEffectiveStatus] = useState<EffectiveDutchAuctionStatus>(getEffectiveStatus(auction));
   const { wallet, status } = useWallet();
   const [pending, setPending] = useState(false);
+  const pendingRef = useRef(false);
   const [feedback, setFeedback] = useState('');
   const [politeness, setPoliteness] = useState<'polite' | 'assertive'>('polite');
   const [targetInput, setTargetInput] = useState('');
   const [alertError, setAlertError] = useState('');
   const [savedTarget, setSavedTarget] = useState<number | null>(() => listAlerts().find(item => item.auctionId === auction.id)?.targetStroops ?? null);
+  const image = resolveNftImage(auction.nft.image);
+  const imageSrc = 'src' in image ? image.src : undefined;
+  const imageLabel = `${auction.nft.name} from ${auction.nft.collection}`;
+  const collectionInitials = auction.nft.collection
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(word => word[0]?.toUpperCase() ?? '')
+    .join('') || 'NFT';
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageSrc]);
   const intervalRef = useRef<number | undefined>(undefined);
 
   // Update price, timer, and effective status
@@ -91,7 +111,8 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
         const now = Date.now();
         const updatedStatus = getEffectiveStatus(auction, now);
         setEffectiveStatus(updatedStatus);
-        setCurrentPrice(calculateCurrentPrice(auction));
+        const nextPrice = calculateCurrentPriceStroops(auction, now);
+        if (nextPrice !== null) setCurrentPriceStroops(nextPrice);
         setTimeLeft(formatTimeLeft(auction.endTime));
         setTimeUntilStart(formatTimeUntilStart(auction.startTime));
 
@@ -152,19 +173,29 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
   };
 
   const handlePurchase = async () => {
-    if (pending) return; // guard concurrent calls
+    if (pendingRef.current || !validation.ok) return; // guard concurrent calls & invalid schedules
     const check = canPurchase(auction, wallet, status);
     if (!check.ok) return; // should not happen as button disabled
+
+    pendingRef.current = true;
     setPending(true);
     setFeedback('');
     try {
-      await purchaseAuction(auction.id, Math.round(currentPrice * 1e7)); // price in stroops approximation
-      setFeedback(`Purchased auction ${auction.id} for ${fmt(currentPrice)} USD!`);
+      // Price is computed in integer stroops at click time so the submitted
+      // amount matches what the contract would settle.
+      const priceStroops = priceAt(auction, Date.now());
+      if (onPurchase) {
+        await onPurchase(auction.id, priceStroops);
+      } else {
+        await purchaseAuction(auction.id, priceStroops);
+      }
+      setFeedback(`Purchased auction ${auction.id} for ${fmt(fromStroops(priceStroops))} USD!`);
       setPoliteness('assertive');
     } catch (e) {
       setFeedback('Purchase failed. Please try again.');
       setPoliteness('assertive');
     } finally {
+      pendingRef.current = false;
       setPending(false);
     }
   };
@@ -173,7 +204,7 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
   let buttonDisabled = false;
   let buttonLabel = `Purchase Now for ${fmt(currentPrice)}`;
   let helperText = '';
-  const showPurchaseButton = effectiveStatus === 'Active';
+  const showPurchaseButton = effectiveStatus === 'Active' && validation.ok;
 
   if (!wallet && showPurchaseButton) {
     buttonLabel = 'Connect wallet to buy';
@@ -189,22 +220,53 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
   return (
     <div className="card" style={{ padding: '1rem', marginBottom: '1rem' }}>
       <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-        <img
-          width={120}
-          height={120}
-          loading="lazy"
-          src={auction.nft.image}
-          alt={auction.nft.name}
-          style={{
-            width: '120px',
-            height: '120px',
-            borderRadius: '8px',
-            objectFit: 'cover',
-            flexShrink: 0,
-            background: COLOR.surface,
-            border: `1px solid ${COLOR.border}`,
-          }}
-        />
+        {imageSrc && !imageFailed ? (
+          <img
+            width={120}
+            height={120}
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            src={imageSrc}
+            alt={imageLabel}
+            onError={() => setImageFailed(true)}
+            style={{
+              width: '120px',
+              height: '120px',
+              boxSizing: 'border-box',
+              borderRadius: '8px',
+              objectFit: 'cover',
+              flexShrink: 0,
+              background: COLOR.surface,
+              border: `1px solid ${COLOR.border}`,
+            }}
+          />
+        ) : (
+          <div
+            role="img"
+            aria-label={imageLabel}
+            style={{
+              width: '120px',
+              height: '120px',
+              boxSizing: 'border-box',
+              borderRadius: '8px',
+              flexShrink: 0,
+              background: COLOR.surface,
+              border: `1px solid ${COLOR.border}`,
+              color: COLOR.accent,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+            }}
+          >
+            <ImageIcon size={32} aria-hidden="true" />
+            <span aria-hidden="true" style={{ color: COLOR.muted, fontSize: '0.8rem', fontWeight: 600 }}>
+              {collectionInitials}
+            </span>
+          </div>
+        )}
         <div style={{ flex: '1 1 220px', minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
             <div style={{ marginBottom: '0.5rem' }}>
@@ -233,7 +295,27 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
                 {effectiveStatus === 'Scheduled' ? 'Opening Price' : effectiveStatus === 'Ended' ? 'Final Asking Price' : 'Current Price'}
               </p>
               <p style={{ margin: 0, color: COLOR.accent, fontSize: '1.25rem', fontWeight: 600 }}>
-                {effectiveStatus === 'Scheduled' 
+                {!validation.ok ? (
+                  <span>
+                    Pricing unavailable
+                    <span
+                      className="visually-hidden"
+                      style={{
+                        position: 'absolute',
+                        width: '1px',
+                        height: '1px',
+                        padding: 0,
+                        margin: '-1px',
+                        overflow: 'hidden',
+                        clip: 'rect(0, 0, 0, 0)',
+                        whiteSpace: 'nowrap',
+                        border: 0,
+                      }}
+                    >
+                      {` (${validation.reason})`}
+                    </span>
+                  </span>
+                ) : effectiveStatus === 'Scheduled' 
                   ? fmt(auction.startPrice) 
                   : effectiveStatus === 'Ended'
                   ? fmt(auction.floorPrice)
@@ -247,7 +329,8 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
             <div>
               <p style={{ margin: 0, color: COLOR.muted, fontSize: '0.75rem' }}>Start / Floor</p>
               <p style={{ margin: 0, color: COLOR.text, fontSize: '0.9rem' }}>
-                {fmt(auction.startPrice)} / {fmt(auction.floorPrice)}
+                {Number.isFinite(auction.startPrice) ? fmt(auction.startPrice) : '-'} /{' '}
+                {Number.isFinite(auction.floorPrice) ? fmt(auction.floorPrice) : '-'}
               </p>
             </div>
             {effectiveStatus === 'Scheduled' && (
@@ -256,7 +339,7 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
                 <p style={{ margin: 0, color: COLOR.warning, fontSize: '1rem', fontWeight: 600 }}>{timeUntilStart}</p>
               </div>
             )}
-            {effectiveStatus === 'Active' && (
+            {effectiveStatus === 'Active' && validation.ok && (
               <div>
                 <p style={{ margin: 0, color: COLOR.muted, fontSize: '0.75rem' }}>Time Left</p>
                 <p style={{ margin: 0, color: COLOR.warning, fontSize: '1rem', fontWeight: 600 }}>{timeLeft}</p>
@@ -277,7 +360,7 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
               </div>
             )}
           </div>
-          {effectiveStatus === 'Active' && (
+          {effectiveStatus === 'Active' && validation.ok && (
             <div style={{ marginTop: '1rem' }}>
               {savedTarget !== null ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
@@ -330,4 +413,3 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction }) =
     </div>
   );
 };
-

@@ -41,6 +41,7 @@ import { LiveRegion } from "../components/LiveRegion";
 import { LastActivityStamp } from "../components/LastActivityStamp";
 import { RepaymentPlanChart } from "../components/RepaymentPlanChart";
 import { CreditLineAging } from "../components/CreditLineAging";
+import { now as clockNow } from "../lib/clock";
 import {
   RepaymentSchedule,
   buildRepaymentScheduleFromLines,
@@ -524,12 +525,12 @@ export default function CreditLines({
             ? {
                 ...cl,
                 status: optimisticStatus,
-                updatedAt: new Date().toISOString(),
+                updatedAt: clockNow().toISOString(),
                 statusHistory: [
                   ...cl.statusHistory,
                   {
                     status: optimisticStatus,
-                    date: new Date().toISOString(),
+                    date: clockNow().toISOString(),
                     note: frozen ? "Freezing…" : "Unfreezing…",
                   },
                 ],
@@ -831,6 +832,7 @@ export default function CreditLines({
     return (
       <div
         className="credit-lines-page"
+        data-testid="creditlines-skeleton-grid"
         role="status"
         aria-live="polite"
         aria-busy="true"

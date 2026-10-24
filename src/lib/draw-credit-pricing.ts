@@ -41,6 +41,7 @@ export interface DrawPricingTierHint {
   aboveAmount: number;
 }
 
+
 const BASE_APR_BY_RISK_BAND: Record<DrawPricingRiskBand, number> = {
   Prime: 7.5,
   Standard: 9.5,

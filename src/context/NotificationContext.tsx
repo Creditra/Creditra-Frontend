@@ -16,6 +16,7 @@ import type {
   NotificationAction,
   NotificationActionDescriptor,
 } from '../types/notification';
+import { mergeNotifications } from './notificationMerge';
 import {
   parseInbox,
   parsePreferences,
@@ -26,7 +27,7 @@ import { writeJson } from '../utils/storage';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
-interface AddToastOptions {
+export interface AddToastOptions {
   type: NotificationType;
   category?: NotificationCategory;
   title: string;
@@ -39,6 +40,11 @@ interface AddToastOptions {
   actionDescriptor?: NotificationActionDescriptor;
   /** If true, also saves to notification history */
   saveToHistory?: boolean;
+  /**
+   * If true, bypasses user category mute preferences so the toast is always displayed.
+   * Reserved for undo toasts and critical messages that must never be suppressed.
+   */
+  bypassPreferences?: boolean;
 }
 
 interface NotificationContextValue {
@@ -214,7 +220,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const addToast = useCallback((opts: AddToastOptions): string => {
     const category = opts.category ?? 'system';
-    if (!preferences[category]) return '';
+    if (!opts.bypassPreferences && !preferences[category]) return '';
 
     const id = genId();
     const toast: Toast = {
@@ -305,7 +311,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const restoreNotifications = useCallback((toRestore: Notification[]) => {
-    setNotifications(toRestore);
+    setNotifications(prev => mergeNotifications(toRestore, prev));
   }, []);
 
   const filterByCategory = useCallback(
@@ -362,3 +368,5 @@ export function useNotifications() {
   if (!ctx) throw new Error('useNotifications must be used within NotificationProvider');
   return ctx;
 }
+
+export { mergeNotifications } from './notificationMerge';

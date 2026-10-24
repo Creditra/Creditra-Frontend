@@ -19,8 +19,9 @@ import { useWallet } from "../context/WalletContext";
 import { RiskExplainerOverlay } from "../components/RiskExplainerOverlay";
 import { ContinuePrompt } from "../components/ContinuePrompt";
 import { MOCK_ATTESTATIONS } from "../data/mockData";
+import { getPaymentDueState } from "../lib/payment-due";
 import { useCreditLines, useCreditTransactions } from "@/hooks/useCreditLines";
-import { summarizeCreditLines } from "@/lib/credit-summary";
+import { getBorrowerRiskScore, summarizeCreditLines } from "@/lib/credit-summary";
 import type { Transaction } from "../types/creditLine";
 import {
   COLOR,
@@ -43,6 +44,7 @@ import { LiveRegion } from "../components/LiveRegion";
 import { useReducedMotion } from "../context/ReducedMotionContext";
 import { HealthTipsPanel } from "../components/HealthTipsPanel";
 import { SyncIndicator } from "@/components/SyncIndicator";
+import { now as clockNow, nowMs as clockNowMs } from "../lib/clock";
 import {
   loadComparisonSelection,
   saveComparisonSelection,
@@ -53,7 +55,7 @@ export { RiskGauge };
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const relativeTime = (iso: string): string => {
-  const diff = Date.now() - new Date(iso).getTime();
+  const diff = clockNowMs() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
@@ -200,6 +202,16 @@ export function Dashboard() {
     [creditLines],
   );
 
+  const riskScoreLines = useMemo(
+    () => creditLines.filter((cl) => cl.status !== "Closed"),
+    [creditLines],
+  );
+
+  const borrowerRiskScore = useMemo(
+    () => getBorrowerRiskScore(creditLines),
+    [creditLines],
+  );
+
   const creditSummary = useMemo(() => summarizeCreditLines(creditLines), [creditLines]);
   const totalLimit = creditSummary.drawableLimit;
   const totalUtilized = creditSummary.totalOutstanding;
@@ -208,14 +220,6 @@ export function Dashboard() {
   const overallPct = utilizationPct(totalActiveUtilized, totalLimit || 1);
   const overallLevel =
     totalLimit > 0 ? getUtilizationLevel(totalActiveUtilized, totalLimit) : "low";
-
-  const avgRiskScore =
-    activeLinesOnly.length > 0
-      ? Math.round(
-          activeLinesOnly.reduce((s, cl) => s + cl.riskScore, 0) /
-            activeLinesOnly.length,
-        )
-      : 0;
 
   const recentActivity = useMemo(() => {
     const all: (Transaction & { lineName: string; lineId: string })[] = [];
@@ -229,16 +233,75 @@ export function Dashboard() {
   }, [creditLines]);
 
   const notifications = useMemo(() => {
-    const notes: {
+    type NotificationNote = {
       icon: string;
       content: React.ReactNode;
       type: "info" | "warning" | "danger";
       time?: string;
-    }[] = [];
+    };
+
+    const overdueNotes: NotificationNote[] = [];
+    const dueTodayNotes: NotificationNote[] = [];
+    const upcomingNotes: NotificationNote[] = [];
+    const otherNotes: NotificationNote[] = [];
 
     creditLines.forEach((cl) => {
+      // 1. Payment due notices for Active and Suspended lines
+      if (cl.status === "Active" || cl.status === "Suspended") {
+        const dueState = getPaymentDueState(cl);
+        if (dueState.kind === "overdue") {
+          overdueNotes.push({
+            icon: "🚨",
+            content: (
+              <>
+                Payment of{" "}
+                <strong className="tabular-nums">
+                  {fmt(cl.nextPaymentAmount ?? 0)}
+                </strong>{" "}
+                for {cl.name} is{" "}
+                <span className="tabular-nums">{dueState.days}</span> day
+                {dueState.days !== 1 ? "s" : ""} overdue.{" "}
+                <Link to={`/repay?line=${cl.id}`}>Repay now</Link>
+              </>
+            ),
+            type: "danger",
+          });
+        } else if (dueState.kind === "due_today") {
+          dueTodayNotes.push({
+            icon: "⚠️",
+            content: (
+              <>
+                Payment of{" "}
+                <strong className="tabular-nums">
+                  {fmt(cl.nextPaymentAmount ?? 0)}
+                </strong>{" "}
+                for {cl.name} is due today.{" "}
+                <Link to={`/repay?line=${cl.id}`}>Repay now</Link>
+              </>
+            ),
+            type: "warning",
+          });
+        } else if (dueState.kind === "upcoming") {
+          upcomingNotes.push({
+            icon: "🗓️",
+            content: (
+              <>
+                Payment of{" "}
+                <strong className="tabular-nums">
+                  {fmt(cl.nextPaymentAmount ?? 0)}
+                </strong>{" "}
+                due in <span className="tabular-nums">{dueState.days}</span> day
+                {dueState.days !== 1 ? "s" : ""} for {cl.name}.
+              </>
+            ),
+            type: "info",
+          });
+        }
+      }
+
+      // 2. Lifecycle status notices
       if (cl.status === "Suspended") {
-        notes.push({
+        otherNotes.push({
           icon: "⚠️",
           content: (
             <>
@@ -251,7 +314,7 @@ export function Dashboard() {
         });
       }
       if (cl.status === "Defaulted") {
-        notes.push({
+        otherNotes.push({
           icon: "🚨",
           content: (
             <>
@@ -266,7 +329,7 @@ export function Dashboard() {
       if (cl.status === "Active") {
         const util = cl.utilized / cl.limit;
         if (util >= 0.75) {
-          notes.push({
+          otherNotes.push({
             icon: "📊",
             content: (
               <>
@@ -278,30 +341,16 @@ export function Dashboard() {
             type: "warning",
           });
         }
-        if (cl.nextPaymentDate) {
-          const daysUntil = Math.ceil(
-            (new Date(cl.nextPaymentDate).getTime() - Date.now()) / 86400000,
-          );
-          if (daysUntil > 0 && daysUntil <= 7) {
-            notes.push({
-              icon: "🗓️",
-              content: (
-                <>
-                  Payment of{" "}
-                  <strong className="tabular-nums">
-                    {fmt(cl.nextPaymentAmount ?? 0)}
-                  </strong>{" "}
-                  due in <span className="tabular-nums">{daysUntil}</span> day
-                  {daysUntil !== 1 ? "s" : ""} for {cl.name}.
-                </>
-              ),
-              type: "info",
-            });
-          }
-        }
       }
     });
-    return notes;
+
+    // Overdue first, then due today, then upcoming, then other lifecycle/utilization notices
+    return [
+      ...overdueNotes,
+      ...dueTodayNotes,
+      ...upcomingNotes,
+      ...otherNotes,
+    ];
   }, [creditLines]);
 
   const hasLines = creditLines.length > 0;
@@ -784,10 +833,17 @@ export function Dashboard() {
               </div>
             ) : (
               <RiskGauge
-                score={avgRiskScore}
+                score={borrowerRiskScore.score}
+                caption={
+                  borrowerRiskScore.basis === "limit_weighted"
+                    ? `Weighted across ${riskScoreLines.length} lines`
+                    : borrowerRiskScore.basis === "borrower"
+                      ? "Borrower-level score"
+                      : undefined
+                }
                 trend="improving"
                 lastUpdated={
-                  activeLinesOnly[0]?.updatedAt ?? new Date().toISOString()
+                  riskScoreLines[0]?.updatedAt ?? clockNow().toISOString()
                 }
               />
             )}
