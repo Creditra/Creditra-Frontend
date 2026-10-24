@@ -34,11 +34,12 @@ import type { CreditLine, CreditLineStatus } from "../types/creditLine";
 export async function setLineFrozen(
   lineId: string,
   frozen: boolean,
+  currentLines?: CreditLine[],
 ): Promise<CreditLine> {
   // Simulate network latency
   await new Promise((r) => setTimeout(r, 50));
 
-  const lines = getGlobalCreditLines();
+  const lines = currentLines ?? getGlobalCreditLines();
   const lineIndex = lines.findIndex((cl) => cl.id === lineId);
   if (lineIndex === -1) {
     throw new Error(`Credit line ${lineId} not found`);
@@ -90,7 +91,7 @@ export async function setLineFrozen(
   };
 
   const newLines = lines.map((cl) => (cl.id === lineId ? updatedLine : cl));
-  setGlobalCreditLines(newLines);
+  if (!currentLines) setGlobalCreditLines(newLines);
 
   return updatedLine;
 }

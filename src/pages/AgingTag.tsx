@@ -4,7 +4,7 @@ import { AgingTag } from '../components/AgingTag';
 import { EmptyState } from '../components/EmptyState';
 import { NoOverdue } from '../components/illustrations';
 import { StatusBadge } from '../components/StatusBadge';
-import { MOCK_CREDIT_LINES } from '../data/mockData';
+import { useCreditLines } from '../hooks/useCreditLines';
 import { COLOR, fmt } from '../utils/tokens';
 import type { CreditLine } from '../types/creditLine';
 import './AgingTag.css';
@@ -66,11 +66,12 @@ function CreditLineRow({ line }: { line: CreditLine }) {
 }
 
 export function AgingTagPage() {
+  const { lines } = useCreditLines();
   const delinquentLines = useMemo(
-    () => MOCK_CREDIT_LINES.filter(
+    () => lines.filter(
       (cl) => cl.status === 'Defaulted' || cl.status === 'Suspended'
     ),
-    [],
+    [lines],
   );
 
   const hasDelinquent = delinquentLines.length > 0;

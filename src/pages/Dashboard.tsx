@@ -19,8 +19,9 @@ import { useWallet } from "../context/WalletContext";
 import { RiskExplainerOverlay } from "../components/RiskExplainerOverlay";
 import { ContinuePrompt } from "../components/ContinuePrompt";
 import { MOCK_ATTESTATIONS } from "../data/mockData";
+import { getPaymentDueState } from "../lib/payment-due";
 import { useCreditLines, useCreditTransactions } from "@/hooks/useCreditLines";
-import { summarizeCreditLines } from "@/lib/credit-summary";
+import { getBorrowerRiskScore, summarizeCreditLines } from "@/lib/credit-summary";
 import type { Transaction } from "../types/creditLine";
 import {
   COLOR,
@@ -99,6 +100,8 @@ export function Dashboard() {
   const navigate = useNavigate();
   const {
     lines: creditLines,
+    status,
+    error: creditError,
     lastUpdatedAt: creditSyncedAt,
     refetch: refetchCreditLines,
   } = useCreditLines();
@@ -109,11 +112,15 @@ export function Dashboard() {
     refetch: refetchTransactions,
   } = useCreditTransactions();
 
-  const [status, setStatus] = useState<
-    "idle" | "loading" | "success" | "error"
-  >("idle");
   const [announcement, setAnnouncement] = useState<string>("");
   const [isExplainOpen, setIsExplainOpen] = useState(false);
+  const statusAnnouncement = status === "loading"
+    ? "Loading dashboard data."
+    : status === "success"
+      ? "Dashboard loaded successfully."
+      : status === "error"
+        ? `Failed to load dashboard: ${creditError?.message ?? "Unknown error"}`
+        : "";
 
   const handleCreditRefresh = useCallback(async () => {
     try {
@@ -182,50 +189,6 @@ export function Dashboard() {
   });
   useBodyScrollLock({ isLocked: showCompare });
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadDashboard = () => {
-      setStatus("loading");
-      setAnnouncement("Loading dashboard data...");
-
-      try {
-        if (typeof fetch === "function") {
-          const res = fetch("/api/health");
-          if (res && typeof (res as Promise<unknown>).catch === "function") {
-            (res as Promise<unknown>).catch(() => {
-              if (isMounted) {
-                setStatus("error");
-                setAnnouncement("Failed to load dashboard. Please try again.");
-              }
-            });
-          }
-        }
-        setTimeout(() => {
-          if (isMounted) {
-            setStatus((prev) => (prev === "error" ? "error" : "success"));
-            setAnnouncement((prev) =>
-              prev === "Failed to load dashboard. Please try again."
-                ? prev
-                : "Dashboard loaded successfully.",
-            );
-          }
-        }, 500);
-      } catch (err) {
-        if (isMounted) {
-          setStatus("error");
-          setAnnouncement("Failed to load dashboard. Please try again.");
-        }
-      }
-    };
-
-    loadDashboard();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
   const activeLines = useMemo(
     () =>
       creditLines.filter(
@@ -239,6 +202,16 @@ export function Dashboard() {
     [creditLines],
   );
 
+  const riskScoreLines = useMemo(
+    () => creditLines.filter((cl) => cl.status !== "Closed"),
+    [creditLines],
+  );
+
+  const borrowerRiskScore = useMemo(
+    () => getBorrowerRiskScore(creditLines),
+    [creditLines],
+  );
+
   const creditSummary = useMemo(() => summarizeCreditLines(creditLines), [creditLines]);
   const totalLimit = creditSummary.drawableLimit;
   const totalUtilized = creditSummary.totalOutstanding;
@@ -247,14 +220,6 @@ export function Dashboard() {
   const overallPct = utilizationPct(totalActiveUtilized, totalLimit || 1);
   const overallLevel =
     totalLimit > 0 ? getUtilizationLevel(totalActiveUtilized, totalLimit) : "low";
-
-  const avgRiskScore =
-    activeLinesOnly.length > 0
-      ? Math.round(
-          activeLinesOnly.reduce((s, cl) => s + cl.riskScore, 0) /
-            activeLinesOnly.length,
-        )
-      : 0;
 
   const recentActivity = useMemo(() => {
     const all: (Transaction & { lineName: string; lineId: string })[] = [];
@@ -268,16 +233,75 @@ export function Dashboard() {
   }, [creditLines]);
 
   const notifications = useMemo(() => {
-    const notes: {
+    type NotificationNote = {
       icon: string;
       content: React.ReactNode;
       type: "info" | "warning" | "danger";
       time?: string;
-    }[] = [];
+    };
+
+    const overdueNotes: NotificationNote[] = [];
+    const dueTodayNotes: NotificationNote[] = [];
+    const upcomingNotes: NotificationNote[] = [];
+    const otherNotes: NotificationNote[] = [];
 
     creditLines.forEach((cl) => {
+      // 1. Payment due notices for Active and Suspended lines
+      if (cl.status === "Active" || cl.status === "Suspended") {
+        const dueState = getPaymentDueState(cl);
+        if (dueState.kind === "overdue") {
+          overdueNotes.push({
+            icon: "🚨",
+            content: (
+              <>
+                Payment of{" "}
+                <strong className="tabular-nums">
+                  {fmt(cl.nextPaymentAmount ?? 0)}
+                </strong>{" "}
+                for {cl.name} is{" "}
+                <span className="tabular-nums">{dueState.days}</span> day
+                {dueState.days !== 1 ? "s" : ""} overdue.{" "}
+                <Link to={`/repay?line=${cl.id}`}>Repay now</Link>
+              </>
+            ),
+            type: "danger",
+          });
+        } else if (dueState.kind === "due_today") {
+          dueTodayNotes.push({
+            icon: "⚠️",
+            content: (
+              <>
+                Payment of{" "}
+                <strong className="tabular-nums">
+                  {fmt(cl.nextPaymentAmount ?? 0)}
+                </strong>{" "}
+                for {cl.name} is due today.{" "}
+                <Link to={`/repay?line=${cl.id}`}>Repay now</Link>
+              </>
+            ),
+            type: "warning",
+          });
+        } else if (dueState.kind === "upcoming") {
+          upcomingNotes.push({
+            icon: "🗓️",
+            content: (
+              <>
+                Payment of{" "}
+                <strong className="tabular-nums">
+                  {fmt(cl.nextPaymentAmount ?? 0)}
+                </strong>{" "}
+                due in <span className="tabular-nums">{dueState.days}</span> day
+                {dueState.days !== 1 ? "s" : ""} for {cl.name}.
+              </>
+            ),
+            type: "info",
+          });
+        }
+      }
+
+      // 2. Lifecycle status notices
       if (cl.status === "Suspended") {
-        notes.push({
+        otherNotes.push({
           icon: "⚠️",
           content: (
             <>
@@ -290,7 +314,7 @@ export function Dashboard() {
         });
       }
       if (cl.status === "Defaulted") {
-        notes.push({
+        otherNotes.push({
           icon: "🚨",
           content: (
             <>
@@ -305,7 +329,7 @@ export function Dashboard() {
       if (cl.status === "Active") {
         const util = cl.utilized / cl.limit;
         if (util >= 0.75) {
-          notes.push({
+          otherNotes.push({
             icon: "📊",
             content: (
               <>
@@ -317,30 +341,16 @@ export function Dashboard() {
             type: "warning",
           });
         }
-        if (cl.nextPaymentDate) {
-          const daysUntil = Math.ceil(
-            (new Date(cl.nextPaymentDate).getTime() - clockNowMs()) / 86400000,
-          );
-          if (daysUntil > 0 && daysUntil <= 7) {
-            notes.push({
-              icon: "🗓️",
-              content: (
-                <>
-                  Payment of{" "}
-                  <strong className="tabular-nums">
-                    {fmt(cl.nextPaymentAmount ?? 0)}
-                  </strong>{" "}
-                  due in <span className="tabular-nums">{daysUntil}</span> day
-                  {daysUntil !== 1 ? "s" : ""} for {cl.name}.
-                </>
-              ),
-              type: "info",
-            });
-          }
-        }
       }
     });
-    return notes;
+
+    // Overdue first, then due today, then upcoming, then other lifecycle/utilization notices
+    return [
+      ...overdueNotes,
+      ...dueTodayNotes,
+      ...upcomingNotes,
+      ...otherNotes,
+    ];
   }, [creditLines]);
 
   const hasLines = creditLines.length > 0;
@@ -351,11 +361,11 @@ export function Dashboard() {
     ? `${wallet.publicKey.slice(0, 6)}...${wallet.publicKey.slice(-4)}`
     : "";
 
-  if (status === "success" && !hasLines) {
+  if ((status === "success" && !hasLines) || status === "idle") {
     return (
       <>
         <LiveRegion
-          message={announcement}
+          message={announcement || statusAnnouncement}
           aria-live="polite"
         />
         <div className="dashboard-header">
@@ -425,9 +435,17 @@ export function Dashboard() {
   return (
     <div aria-busy={status === "loading"} className="dashboard-root">
       <LiveRegion
-        message={announcement}
+        message={announcement || statusAnnouncement}
         aria-live={status === "error" ? "assertive" : "polite"}
       />
+      {status === "error" && (
+        <div role="alert" className="dashboard-error-card">
+          <p>{creditError?.message ?? "Unable to load credit data."}</p>
+          <button type="button" onClick={() => void refetchCreditLines().catch(() => undefined)}>
+            Retry
+          </button>
+        </div>
+      )}
 
       <div className="dashboard-header">
         <div>
@@ -655,7 +673,7 @@ export function Dashboard() {
           <div className="card" style={animDelay({ animationDelay: "0.1s" })}>
             <h2>
               <span className="icon">📊</span> Credit Summary
-              {status === "success" && (
+              {status === "success" && creditSyncedAt && (
                 <SyncIndicator
                   lastSyncedAt={creditSyncedAt}
                   onRefresh={handleCreditRefresh}
@@ -735,7 +753,7 @@ export function Dashboard() {
           >
             <h2>
               <span className="icon">🛡️</span> Risk Score
-              {status === "success" && (
+              {status === "success" && activitySyncedAt && (
                 <button
                   ref={explainTriggerRef}
                   type="button"
@@ -815,16 +833,23 @@ export function Dashboard() {
               </div>
             ) : (
               <RiskGauge
-                score={avgRiskScore}
+                score={borrowerRiskScore.score}
+                caption={
+                  borrowerRiskScore.basis === "limit_weighted"
+                    ? `Weighted across ${riskScoreLines.length} lines`
+                    : borrowerRiskScore.basis === "borrower"
+                      ? "Borrower-level score"
+                      : undefined
+                }
                 trend="improving"
                 lastUpdated={
-                  activeLinesOnly[0]?.updatedAt ?? clockNow().toISOString()
+                  riskScoreLines[0]?.updatedAt ?? clockNow().toISOString()
                 }
               />
             )}
           </div>
 
-          {status === "success" && (
+          {status === "success" && activitySyncedAt && (
             <AttestationCard attestations={MOCK_ATTESTATIONS} />
           )}
 
@@ -1278,7 +1303,7 @@ export function Dashboard() {
           >
             <h2>
               <span className="icon">📝</span> Recent Activity
-              {status === "success" && (
+              {status === "success" && activitySyncedAt && (
                 <SyncIndicator
                   lastSyncedAt={activitySyncedAt}
                   onRefresh={handleActivityRefresh}

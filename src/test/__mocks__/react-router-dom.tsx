@@ -6,12 +6,11 @@
  */
 
 import {
-  Children,
   createElement,
   Fragment,
-  isValidElement,
   useSyncExternalStore,
 } from 'react';
+import { matchPath } from './matchPath';
 
 /*
  * Module-level "current location", set by MemoryRouter when it renders and
@@ -22,6 +21,9 @@ let currentPathname = '/';
 let currentSearch = '';
 let currentHash = '';
 let currentState: unknown = null;
+// Issue #1180: record navigation calls so tests can assert `navigate` was
+// (or was not) called.
+const navigateCalls: Array<string | number> = [];
 let locationVersion = 0;
 
 function bumpLocation() {
@@ -95,6 +97,9 @@ function getLocationSnapshot() {
 }
 
 export function BrowserRouter({ children }: { children: React.ReactNode }) {
+  if (typeof window !== 'undefined' && window.location) {
+    applyEntry(window.location.pathname + (window.location.search || '') + (window.location.hash || ''));
+  }
   return createElement(Fragment, null, children);
 }
 
@@ -119,7 +124,21 @@ export function Link({
   children: React.ReactNode;
   [key: string]: unknown;
 }) {
-  return createElement('a', { href: to, ...props }, children);
+  return createElement(
+    'a',
+    {
+      href: to,
+      ...props,
+      onClick: (e: React.MouseEvent) => {
+        if (typeof (props as any).onClick === 'function') (props as any).onClick(e);
+        if (!e.defaultPrevented) {
+          e.preventDefault();
+          applyEntry(to);
+        }
+      },
+    },
+    children
+  );
 }
 
 export function NavLink({
@@ -135,10 +154,26 @@ export function NavLink({
   end?: boolean;
   [key: string]: unknown;
 }) {
-  const isActive = false;
+  const isActive = currentPathname === to;
   const cls = typeof className === 'function' ? className({ isActive }) : className;
   const content = typeof children === 'function' ? children({ isActive }) : children;
-  return createElement('a', { href: to, className: cls, ...props }, content);
+  return createElement(
+    'a',
+    {
+      href: to,
+      className: cls,
+      ...(isActive ? { 'aria-current': 'page' } : {}),
+      ...props,
+      onClick: (e: React.MouseEvent) => {
+        if (typeof (props as any).onClick === 'function') (props as any).onClick(e);
+        if (!e.defaultPrevented) {
+          e.preventDefault();
+          applyEntry(to);
+        }
+      },
+    },
+    content
+  );
 }
 
 /**
@@ -156,36 +191,28 @@ export function Routes({ children }: { children: React.ReactNode }) {
     getLocationSnapshot,
     getLocationSnapshot,
   );
-  const current = currentPathname.replace(/\/+$/, '') || '/';
-  let fallback: React.ReactNode = null;
-  let matched: React.ReactNode = null;
-
-  for (const child of Children.toArray(children)) {
-    if (!isValidElement(child)) continue;
-    const props = child.props as { path?: string; element?: React.ReactNode };
-    const path = props.path;
-    if (path === undefined) continue;
-    if (path === '*') {
-      if (fallback === null) fallback = props.element;
-      continue;
-    }
-    const normalized = path.replace(/\/+$/, '') || '/';
-    if (normalized === current) {
-      matched = props.element;
-      break;
+  const childrenArray = Array.isArray(children) ? children : [children];
+  const flattened = childrenArray.flat(Infinity);
+  for (const child of flattened) {
+    if (!child || typeof child !== 'object' || !('props' in child)) continue;
+    const { path, element } = child.props as { path?: string; element?: React.ReactNode };
+    if (!path || path === '*' || matchPath({ path, end: true }, currentPathname)) {
+      return createElement(Fragment, null, element);
     }
   }
-
-  const element = matched ?? fallback;
-  return element !== null && element !== undefined
-    ? createElement(Fragment, null, element)
-    : null;
+  return null;
 }
 
-/** Rendered only when `Routes` selects a Route that inlines children. */
-export function Route({ element, children }: Record<string, unknown>) {
-  if (element !== undefined && element !== null) return null;
-  return createElement(Fragment, null, children as React.ReactNode);
+export function Route(props: {
+  path?: string;
+  element?: React.ReactNode;
+  children?: React.ReactNode;
+  [key: string]: unknown;
+}) {
+  if (props.element !== undefined && props.element !== null) {
+    return createElement(Fragment, null, props.element);
+  }
+  return createElement(Fragment, null, props.children as React.ReactNode);
 }
 
 export function Navigate(_props: Record<string, unknown>) {
@@ -224,6 +251,7 @@ export function __getMockSearch() {
  */
 export function useNavigate() {
   return (to: string | number, opts?: { state?: unknown }) => {
+    navigateCalls.push(to);
     if (typeof to !== 'string') return;
     applyEntry(to);
     currentState = opts?.state ?? null;
@@ -260,9 +288,20 @@ export function __setMockLocation(pathname: string, search = '') {
   bumpLocation();
 }
 
+/** Returns every target that `navigate` was called with since the last clear. */
+export function __getNavigateCalls(): Array<string | number> {
+  return navigateCalls;
+}
+
+/** Clears the recorded navigate calls. Call in beforeEach. */
+export function __clearNavigateCalls(): void {
+  // Mutate in place so closures that captured the array see cleared state.
+  navigateCalls.length = 0;
+}
+
 export function useParams() {
   return {};
 }
 
-export { matchPath } from './matchPath';
+export { matchPath };
 

@@ -5,27 +5,43 @@ import RepayPage from '../RepayPage';
 import RepaySuccess from '../RepaySuccess';
 import { freezeTime, unfreezeTime } from '@/test/freezeTime';
 
+const { wallet, refreshBalance } = vi.hoisted(() => ({
+  wallet: { publicKey: 'GTESTWALLET', network: 'TESTNET' },
+  refreshBalance: vi.fn().mockResolvedValue([
+    {
+      asset: 'USDC',
+      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      balance: '50000.0000000',
+    },
+  ]),
+}));
+
 vi.mock('@/context/WalletContext', () => ({
   useWallet: () => ({
-    wallet: { publicKey: 'GTEST', network: 'TESTNET' },
+    wallet,
     status: 'connected',
-    balances: [{
-      asset: 'USDC',
-      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
-      balance: '50000.0000000',
-    }],
-    refreshBalance: async () => [{
-      asset: 'USDC',
-      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
-      balance: '50000.0000000',
-    }],
+    balances: [
+      {
+        asset: 'USDC',
+        issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+        balance: '50000.0000000',
+      },
+    ],
+    refreshBalance,
   }),
+  walletIdentityKey: (value: { publicKey: string; network: string } | null) =>
+    value ? `undefined:${value.publicKey}:${value.network}` : null,
 }));
 
 vi.mock('@/data/mockData', async () => {
   const { REPAY_TEST_CREDIT_LINES } = await import('@/test/fixtures/repayCreditLines');
   return { MOCK_CREDIT_LINES: REPAY_TEST_CREDIT_LINES };
 });
+
+vi.mock('../../context/ThemeContext', () => ({
+  useTheme: () => ({ theme: 'default' }),
+  ThemeProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
 
 function renderPage(initialEntries = ['/repay'], advanceTimers = true) {
   const result = render(
@@ -44,6 +60,13 @@ function renderPage(initialEntries = ['/repay'], advanceTimers = true) {
   }
   
   return result;
+}
+
+async function flushReviewBalanceRefresh() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
 }
 
 describe('RepayPage', () => {
@@ -230,10 +253,11 @@ describe('RepayPage', () => {
       expect(helpBtn.classList.contains('focus-visible:outline-blue-400')).toBe(false);
     });
 
-    it('navigates to the success page after a confirmed repayment', () => {
+    it('applies focus-visible classes and rp-* classes on success step buttons', async () => {
       renderPage(['/repay?line=CL-2024-001']);
       fireEvent.click(screen.getByRole('button', { name: /smart pay/i }));
       fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
+      await flushReviewBalanceRefresh();
       fireEvent.click(screen.getByRole('button', { name: /confirm repayment/i }));
 
       expect(screen.getByRole('heading', { name: /you repaid/i })).toBeInTheDocument();
@@ -300,21 +324,23 @@ describe('RepayPage — copy-to-clipboard buttons (FWC26)', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('$3,200.00');
   });
 
-  it('shows remaining debt on the success route', () => {
+  it('renders copy button for remaining debt on success step', async () => {
     renderPage(['/repay?line=CL-2024-001']);
     fireEvent.click(screen.getByRole('button', { name: /smart pay/i }));
     fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
+    await flushReviewBalanceRefresh();
     fireEvent.click(screen.getByRole('button', { name: /confirm repayment/i }));
-    expect(screen.getByText('$184,300.00')).toBeInTheDocument();
+    expect(screen.getByText('$185,628.13')).toBeInTheDocument();
   });
 
-  it('does not render repayment form actions on the success route', () => {
+  it('does not render repayment form actions on the success route', async () => {
     renderPage(['/repay?line=CL-2024-001']);
     fireEvent.click(screen.getByRole('button', { name: /smart pay/i }));
     fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
+    await flushReviewBalanceRefresh();
     fireEvent.click(screen.getByRole('button', { name: /confirm repayment/i }));
     expect(screen.queryByRole('button', { name: /confirm repayment/i })).not.toBeInTheDocument();
-    expect(screen.getByText('$184,300.00')).toBeInTheDocument();
+    expect(screen.getByText('$185,628.13')).toBeInTheDocument();
   });
 
   it('shows copied feedback after clicking copy button', async () => {
@@ -371,7 +397,7 @@ describe('RepayPage — copy-to-clipboard buttons (FWC26)', () => {
       expect(screen.getByRole('button', { name: /review repayment/i })).toBeInTheDocument();
     });
 
-    it('Enter with focus on the page body still advances from input to review, and from review to success', () => {
+    it('Enter with focus on the page body still advances from input to review, and from review to success', async () => {
       renderPage(['/repay?line=CL-2024-001']);
       fireEvent.click(screen.getByRole('button', { name: /smart pay/i }));
 
@@ -380,16 +406,18 @@ describe('RepayPage — copy-to-clipboard buttons (FWC26)', () => {
       fireEvent.keyDown(window, { key: 'Enter', bubbles: true, target: document.body });
 
       expect(screen.getByText(/review your repayment/i)).toBeInTheDocument();
+      await flushReviewBalanceRefresh();
 
       fireEvent.keyDown(window, { key: 'Enter', bubbles: true, target: document.body });
 
       expect(screen.getByRole('heading', { name: /you repaid/i })).toBeInTheDocument();
     });
 
-    it('Enter on Confirm Repayment button does not double-fire handleConfirm (isSubmitting lock)', () => {
+    it('Enter on Confirm Repayment button does not double-fire handleConfirm (isSubmitting lock)', async () => {
       renderPage(['/repay?line=CL-2024-001']);
       fireEvent.click(screen.getByRole('button', { name: /smart pay/i }));
       fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
+      await flushReviewBalanceRefresh();
 
       const confirmBtn = screen.getByRole('button', { name: /confirm repayment/i });
       confirmBtn.focus();

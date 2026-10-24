@@ -104,7 +104,7 @@ export function TransactionStatus({
   const config = STATUS_CONFIG[transaction.status];
   const { Icon, title, colorMod, patternMod } = config;
   const isError = transaction.status === "error";
-  const headingRef = useRef<HTMMHeadingElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
   // Move focus to the error heading when an error is shown so the failure
   // and its recovery actions are reachable immediately.

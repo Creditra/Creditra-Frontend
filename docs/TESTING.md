@@ -5,9 +5,44 @@
 `src/utils/csv.test.ts` verifies RFC-style escaping for commas, quotes,
 and newlines without adding a third-party CSV dependency.
 
+`src/lib/transaction-csv.ts` builds the versioned, machine-readable export and
+`src/lib/transaction-csv.test.ts` pins the schema, timezone determinism, signed
+amounts, quoting and filename rules.
+
 `src/pages/TransactionHistory.test.tsx` covers the disabled export state,
 the `aria-describedby` explanation, and the polite confirmation toast shown
 after a filtered export completes.
+
+### Schema v1
+
+The export is RFC 4180 CSV with a single header row and no preamble or comment
+lines. The version is carried in the filename:
+
+```
+creditra-transactions-v1-<start>-<end>.csv
+```
+
+`<start>` and `<end>` are the earliest and latest `timestamp_utc` dates in the
+current filter, formatted as UTC `YYYY-MM-DD` so they always agree with the
+rows. Both filename dates use UTC, not the browser's local timezone.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `timestamp_utc` | ISO-8601 UTC | Always ends in `Z`; never a locale display string. |
+| `type` | enum | Raw model value: `Draw`, `Repay`, `Fee`, `Interest`, `StatusChange`. |
+| `direction` | enum | `debit` (debt increases), `credit` (debt decreases), `none`. |
+| `amount` | decimal | Unsigned. 2 dp for fiat (`USD`, `EUR`, …), 7 dp for on-chain assets (`XLM`, `USDC`, …). |
+| `signed_amount` | decimal | `Draw`, `Fee` and `Interest` are positive; `Repay` is negative; non-monetary events are `0.00`. |
+| `asset` | string | Asset code for the amount convention; defaults to `USD`. |
+| `status` | enum | `Completed`, `Pending`, `Failed`. |
+| `line_id` | string | Credit-line identifier. |
+| `line_name` | string | Credit-line display name. |
+| `note` | string | Optional; quoted when it contains a comma, quote or newline. |
+| `tx_hash` | string | Optional on-chain transaction hash. |
+
+Amounts are rounded to their target precision before formatting, so binary
+floating-point artefacts such as `0.1 + 0.2` are exported as `0.30`, never as
+`0.30000000000000004`.
 
 
 Tests are how we make execution quality visible to reviewers. They also keep regressions

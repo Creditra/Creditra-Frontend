@@ -17,10 +17,10 @@ import {
   requiresRepayConfirmation,
 } from '../utils/amountValidation';
 import {
-  computeMonthlyAccruedInterest,
   roundToCents,
 } from '../utils/currency';
 import { allocateRepayment } from '../lib/repay-allocation';
+import { getAccruedInterest, getAccruedInterestDays } from '../lib/interest';
 import {
   computeDefaultMonthlyPayment,
   computePayoffProjection,
@@ -40,6 +40,8 @@ export interface RepaymentCreditLine {
   limit: number;
   utilized: number;
   apr: number;
+  nextInterestAccrualDate?: string;
+  transactions?: Array<{ type: string; date: string }>;
   nextPaymentAmount?: number;
 }
 
@@ -112,10 +114,9 @@ export function RepayPreviewModal({
   if (!isOpen) return null;
 
   const principalBalance = creditLine.utilized;
-  const accruedInterest = computeMonthlyAccruedInterest(
-    principalBalance,
-    creditLine.apr,
-  );
+  const now = new Date();
+  const accruedInterest = getAccruedInterest(creditLine, now);
+  const accruedDays = getAccruedInterestDays(creditLine, now);
   const totalDue = roundToCents(principalBalance + accruedInterest);
   const allocation = allocateRepayment(
     creditLine,
@@ -283,6 +284,9 @@ export function RepayPreviewModal({
                 {' · '}
                 Principal <span className="tabular-nums">{fmt(principalPortion)}</span>
               </span>
+            </div>
+            <div className="repay-preview-row">
+              <span className="repay-preview-row-label">Accrued interest ({accruedDays ?? 30} days)</span>
             </div>
           </div>
 

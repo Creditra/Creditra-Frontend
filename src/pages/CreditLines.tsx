@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { StatusBadge } from "../components/StatusBadge";
 import { CreditLineRowMenu } from "../components/CreditLineRowMenu";
 import { Skeleton } from "../components/Skeleton";
@@ -9,10 +9,9 @@ import { NoLines } from "../components/illustrations";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useInertBackdrop } from "../hooks/useInertBackdrop";
 import { useBodyScrollLock } from "../hooks/useBodyScrollLock";
-import { useCreditLines, setGlobalCreditLines, getGlobalCreditLines } from "../hooks/useCreditLines";
+import { useCreditLines } from "../hooks/useCreditLines";
 import { setLineFrozen } from "../services/creditLine";
-import { MOCK_CREDIT_LINES } from "../data/mockData";
-import { createCreditDataSource } from "../services/credit";
+import { compareCreditLines } from "../data/mockData";
 import type {
   CreditLine,
   CreditLineStatus,
@@ -59,7 +58,67 @@ import {
 } from "../utils/comparisonSelection";
 
 const CREDIT_LINES_PAGE_SIZE = 6;
-const getCreditLineId = (line: (typeof MOCK_CREDIT_LINES)[number]) => line.id;
+const getCreditLineId = (line: CreditLine) => line.id;
+
+// ─── URL state helpers ────────────────────────────────────────────────────────
+
+const VALID_SORT_FIELDS = new Set<SortField>([
+  "status",
+  "limit",
+  "utilization",
+  "updatedAt",
+  "apr",
+  "riskScore",
+]);
+const VALID_DIRECTIONS = new Set<SortDirection>(["asc", "desc"]);
+const VALID_STATUSES = new Set<CreditLineStatus>([
+  "Active",
+  "Suspended",
+  "Defaulted",
+  "Closed",
+  "Frozen",
+]);
+
+const DEFAULT_SORT_FIELD: SortField = "updatedAt";
+const DEFAULT_SORT_DIR: SortDirection = "desc";
+const DEFAULT_STATUS_FILTER: CreditLineStatus | "all" = "all";
+const DEFAULT_PAGE = 0;
+
+function parseSortField(raw: string | null): SortField {
+  return raw && VALID_SORT_FIELDS.has(raw as SortField)
+    ? (raw as SortField)
+    : DEFAULT_SORT_FIELD;
+}
+
+function parseSortDir(raw: string | null): SortDirection {
+  return raw && VALID_DIRECTIONS.has(raw as SortDirection)
+    ? (raw as SortDirection)
+    : DEFAULT_SORT_DIR;
+}
+
+function parseStatusFilter(raw: string | null): CreditLineStatus | "all" {
+  if (!raw || raw === "all") return DEFAULT_STATUS_FILTER;
+  return VALID_STATUSES.has(raw as CreditLineStatus)
+    ? (raw as CreditLineStatus)
+    : DEFAULT_STATUS_FILTER;
+}
+
+function parsePageIndex(raw: string | null): number {
+  const n = parseInt(raw ?? "", 10);
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_PAGE;
+}
+
+/**
+ * Severity order for status sort: higher rank = more urgent = sorts first in desc.
+ * Defaulted > Suspended > Frozen > Active > Closed
+ */
+const STATUS_SEVERITY: Record<CreditLineStatus, number> = {
+  Defaulted: 4,
+  Suspended: 3,
+  Frozen: 2,
+  Active: 1,
+  Closed: 0,
+};
 
 // ─── Credit Line Card ────────────────────────────────────────────────────────
 
@@ -74,11 +133,11 @@ function CreditLineCard({
   onFreeze,
   onUnfreeze,
 }: {
-  line: (typeof MOCK_CREDIT_LINES)[0];
+  line: CreditLine;
   isSelected: boolean;
   onToggle: () => void;
   onSwapCollateral?: (
-    line: (typeof MOCK_CREDIT_LINES)[0],
+    line: CreditLine,
     triggerRef: React.RefObject<HTMLButtonElement | null>,
   ) => void;
   onRepay?: () => void;
@@ -253,7 +312,7 @@ function CreditLineCard({
  */
 function CreditLineCardSkeleton() {
   return (
-    <div className="cl-card" aria-hidden="true">
+    <div className="cl-card cl-card--skeleton" aria-hidden="true">
       <div className="cl-card-header">
         <div className="cl-card-title-row">
           <div>
@@ -378,55 +437,59 @@ export default function CreditLines({
   defaultLoading?: boolean;
 }) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   // Track both the OS-level prefers-reduced-motion signal AND the in-app
   // override (ReducedMotionContext toggle).  Exposed as a data-attribute on
   // the page root so CSS / tests / dev-tools can single-source the override.
   const { isReducedMotionActive } = useReducedMotion();
-  const [sortField, setSortField] = useState<SortField>("updatedAt");
-  const [sortDir, setSortDir] = useState<SortDirection>("desc");
-  const [statusFilter, setStatusFilter] = useState<CreditLineStatus | "all">(
-    "all",
+
+  // ── URL-backed list state ─────────────────────────────────────────────────
+  const sortField = parseSortField(searchParams.get("sort"));
+  const sortDir = parseSortDir(searchParams.get("dir"));
+  const statusFilter = parseStatusFilter(searchParams.get("status"));
+  const pageIndex = parsePageIndex(searchParams.get("page"));
+
+  /** Write new list params into the URL with replace:true so Back from /repay
+   *  restores the filter/sort/page rather than adding a history entry. */
+  const setListParams = useCallback(
+    (updates: {
+      sort?: SortField;
+      dir?: SortDirection;
+      status?: CreditLineStatus | "all";
+      page?: number;
+    }) => {
+      const next = new URLSearchParams(searchParams);
+      const newSort = updates.sort ?? sortField;
+      const newDir = updates.dir ?? sortDir;
+      const newStatus = updates.status ?? statusFilter;
+      const newPage = updates.page ?? pageIndex;
+
+      // Omit defaults from the URL to keep it canonical
+      if (newSort === DEFAULT_SORT_FIELD) next.delete("sort");
+      else next.set("sort", newSort);
+
+      if (newDir === DEFAULT_SORT_DIR) next.delete("dir");
+      else next.set("dir", newDir);
+
+      if (newStatus === DEFAULT_STATUS_FILTER) next.delete("status");
+      else next.set("status", newStatus);
+
+      if (newPage === DEFAULT_PAGE) next.delete("page");
+      else next.set("page", String(newPage));
+
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams, sortField, sortDir, statusFilter, pageIndex],
   );
+
   const [announcement, setAnnouncement] = useState("");
 
   // ── Credit lines come from the global provider (useCreditLines) so that
   //    freeze/unfreeze changes are visible to Dashboard, Quick Repay, etc.
   //    The hook reads from the in-memory store in useCreditLines.ts; the
   //    setLineFrozen service writes to that same store.
-  const { lines: creditLines, refetch } = useCreditLines();
-  const [isLoading, setIsLoading] = useState(
-    typeof import.meta !== "undefined" &&
-      import.meta.env?.VITE_CREDIT_DATA_SOURCE === "soroban",
-  );
-  const hasCreditLines = creditLines.length > 0;
-
-  useEffect(() => {
-    if (
-      typeof import.meta !== "undefined" &&
-      import.meta.env?.VITE_CREDIT_DATA_SOURCE === "soroban"
-    ) {
-      const dataSource = createCreditDataSource("soroban");
-      const borrower =
-        "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H";
-
-      setIsLoading(true);
-
-      dataSource
-        .listCreditLines(borrower)
-        .then((lines) => {
-          setGlobalCreditLines(lines);
-        })
-        .catch((err) => {
-          console.error(
-            "[CreditLines] Failed to load credit lines from Soroban RPC:",
-            err,
-          );
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
-    }
-  }, []);
+  const { lines: creditLines, status, error, refetch, setLines } = useCreditLines();
+  void defaultLoading;
 
   // ── Freeze/unfreeze optimistic state ─────────────────────────────────
   /** Deep snapshot of each line before an optimistic update, keyed by lineId.
@@ -444,7 +507,7 @@ export default function CreditLines({
    *  failure cannot roll back a later success. */
   const handleFreezeToggle = useCallback(
     async (lineId: string, frozen: boolean) => {
-      const lines = refetch ? await refetch().catch(() => creditLines) : creditLines;
+      const lines = creditLines;
       const currentLine = lines.find((cl) => cl.id === lineId);
       if (!currentLine) return;
 
@@ -456,31 +519,31 @@ export default function CreditLines({
       inFlightRef.current.set(lineId, { frozen, previousLine });
 
       // Optimistic update: apply the target status immediately
-      setGlobalCreditLines(
-        lines.map((cl) =>
+      const optimisticStatus: CreditLineStatus = frozen ? "Frozen" : "Active";
+      const optimisticLines: CreditLine[] = lines.map((cl) =>
           cl.id === lineId
             ? {
                 ...cl,
-                status: frozen ? "Frozen" : "Active",
+                status: optimisticStatus,
                 updatedAt: clockNow().toISOString(),
                 statusHistory: [
                   ...cl.statusHistory,
                   {
-                    status: frozen ? "Frozen" : "Active",
+                    status: optimisticStatus,
                     date: clockNow().toISOString(),
                     note: frozen ? "Freezing…" : "Unfreezing…",
                   },
                 ],
               }
             : cl,
-        ),
-      );
+        );
+      setLines(optimisticLines);
       setAnnouncement(`Credit line ${currentLine.name} ${frozen ? "freezing…" : "unfreezing…"}`);
       setFreezeError(null);
       setRetryLineId(null);
 
       try {
-        const serverLine = await setLineFrozen(lineId, frozen);
+        const serverLine = await setLineFrozen(lineId, frozen, optimisticLines);
 
         // Check if we're still the latest intent for this line.
         // If a newer toggle has started, don't overwrite — the newer one wins.
@@ -491,10 +554,7 @@ export default function CreditLines({
         }
 
         // Apply the server-authoritative record
-        const currentLines = getGlobalCreditLines();
-        setGlobalCreditLines(
-          currentLines.map((cl) => (cl.id === lineId ? serverLine : cl)),
-        );
+        setLines(creditLines.map((cl) => (cl.id === lineId ? serverLine : cl)));
         setAnnouncement(
           `Credit line ${currentLine.name} ${frozen ? "frozen." : "unfrozen."}`,
         );
@@ -508,10 +568,7 @@ export default function CreditLines({
         }
 
         // Exact rollback: restore the exact previous line object
-        const currentLines = getGlobalCreditLines();
-        setGlobalCreditLines(
-          currentLines.map((cl) => (cl.id === lineId ? previousLine : cl)),
-        );
+        setLines(creditLines.map((cl) => (cl.id === lineId ? previousLine : cl)));
         setAnnouncement(
           `Failed to ${frozen ? "freeze" : "unfreeze"} ${currentLine.name}. ${frozen ? "Free" : "Unfree"}ze could not be completed — try again.`,
         );
@@ -522,7 +579,7 @@ export default function CreditLines({
         inFlightRef.current.delete(lineId);
       }
     },
-    [creditLines, refetch],
+    [creditLines, setLines],
   );
 
   const handleFreeze = (lineId: string) => {
@@ -542,15 +599,6 @@ export default function CreditLines({
     }
   };
 
-  const [loading, setLoading] = useState(defaultLoading);
-  useEffect(() => {
-    if (!defaultLoading) return;
-    const timer = setTimeout(() => {
-      setLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [defaultLoading]);
-
   const [showCompare, setShowCompare] = useState(false);
   const [selectedLines, setSelectedLines] = useState<string[]>(() =>
     loadComparisonSelection(),
@@ -561,7 +609,7 @@ export default function CreditLines({
     saveComparisonSelection(selectedLines);
   }, [selectedLines]);
   const [modalTarget, setModalTarget] = useState<{
-    line: (typeof MOCK_CREDIT_LINES)[0];
+    line: CreditLine;
     currentAsset: string;
     triggerRef: React.RefObject<HTMLButtonElement | null>;
   } | null>(null);
@@ -571,7 +619,7 @@ export default function CreditLines({
     setModalTarget(null);
   };
   const handleSwapCollateral = (
-    line: (typeof MOCK_CREDIT_LINES)[0],
+    line: CreditLine,
     triggerRef: React.RefObject<HTMLButtonElement | null>,
   ) => {
     setModalTarget({
@@ -604,10 +652,16 @@ export default function CreditLines({
       let bVal: number | string = 0;
 
       switch (sortField) {
-        case "status":
-          aVal = a.status;
-          bVal = b.status;
-          break;
+        case "status": {
+          // Severity order: Defaulted > Suspended > Frozen > Active > Closed
+          const aSev = STATUS_SEVERITY[a.status] ?? 0;
+          const bSev = STATUS_SEVERITY[b.status] ?? 0;
+          if (aSev !== bSev) {
+            return sortDir === "asc" ? aSev - bSev : bSev - aSev;
+          }
+          // Ties broken deterministically by compareCreditLines
+          return compareCreditLines(a, b);
+        }
         case "limit":
           aVal = a.limit;
           bVal = b.limit;
@@ -648,7 +702,6 @@ export default function CreditLines({
   const [stableOrder, setStableOrder] = useState(() =>
     createStableOrder(filteredAndSorted, getCreditLineId),
   );
-  const [pageIndex, setPageIndex] = useState(0);
 
   // A sort/filter change is an explicit new query, so it starts a fresh
   // pagination session. Live data updates do not reset this anchor.
@@ -656,7 +709,8 @@ export default function CreditLines({
     setStableOrder(
       createStableOrder(latestFilteredRef.current, getCreditLineId),
     );
-    setPageIndex(0);
+    setListParams({ page: DEFAULT_PAGE });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paginationKey]);
 
   // Preserve the session's existing slots during live updates and append only
@@ -668,28 +722,30 @@ export default function CreditLines({
     );
   }, [filteredAndSorted]);
 
+  const effectiveStableOrder = stableOrder.length === 0 && filteredAndSorted.length > 0
+    ? createStableOrder(filteredAndSorted, getCreditLineId)
+    : stableOrder;
   const stablePage = useMemo(
     () =>
-      getStablePage(filteredAndSorted, stableOrder, {
+      getStablePage(filteredAndSorted, effectiveStableOrder, {
         pageIndex,
         pageSize: CREDIT_LINES_PAGE_SIZE,
         getId: getCreditLineId,
       }),
-    [filteredAndSorted, stableOrder, pageIndex],
+    [filteredAndSorted, effectiveStableOrder, pageIndex],
   );
 
   useEffect(() => {
     if (stablePage.pageIndex !== pageIndex) {
-      setPageIndex(stablePage.pageIndex);
+      setListParams({ page: stablePage.pageIndex });
     }
   }, [stablePage.pageIndex, pageIndex]);
 
   const handleSort = (field: SortField) => {
     if (field === sortField) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      setListParams({ dir: sortDir === "asc" ? "desc" : "asc" });
     } else {
-      setSortField(field);
-      setSortDir("desc");
+      setListParams({ sort: field, dir: "desc" });
     }
   };
 
@@ -729,14 +785,6 @@ export default function CreditLines({
     () => creditLines.filter((line) => selectedLines.includes(line.id)),
     [creditLines, selectedLines],
   );
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setIsLoading(false);
-    }, 600);
-
-    return () => window.clearTimeout(timer);
-  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -780,7 +828,7 @@ export default function CreditLines({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedLines, showCompare, navigate, creditLines]);
 
-  if (isLoading || loading) {
+  if (status === "loading") {
     return (
       <div
         className="credit-lines-page"
@@ -831,46 +879,25 @@ export default function CreditLines({
 
         <div className="cl-grid cl-grid--skeleton" aria-hidden="true">
           {Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className="cl-card cl-card--skeleton">
-              <div className="cl-card-header">
-                <div style={{ width: "100%" }}>
-                  <Skeleton
-                    width="72%"
-                    height="1.1rem"
-                    className="cl-skeleton-card-title"
-                  />
-                  <Skeleton
-                    width="45%"
-                    height="0.8rem"
-                    className="cl-skeleton-card-subtitle"
-                  />
-                </div>
-                <Skeleton width="96px" height="1.95rem" />
-              </div>
-              <div className="cl-card-body">
-                <div className="cl-metrics">
-                  <Skeleton width="100%" height="3.25rem" />
-                  <Skeleton width="100%" height="3.25rem" />
-                  <Skeleton width="100%" height="3.25rem" />
-                </div>
-                <Skeleton
-                  width="100%"
-                  height="0.7rem"
-                  className="cl-skeleton-block"
-                />
-                <Skeleton
-                  width="70%"
-                  height="0.7rem"
-                  className="cl-skeleton-block"
-                />
-                <div className="cl-details">
-                  <Skeleton width="100%" height="2.25rem" />
-                  <Skeleton width="100%" height="2.25rem" />
-                  <Skeleton width="100%" height="2.25rem" />
-                </div>
-              </div>
-            </div>
+            <CreditLineCardSkeleton key={index} />
           ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <div className="credit-lines-page">
+        <div role="alert" className="cl-error-card">
+          <p>{error?.message ?? "Unable to load credit lines."}</p>
+          <button
+            type="button"
+            className="cl-primary-btn focus-ring"
+            onClick={() => void refetch().catch(() => undefined)}
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -957,7 +984,7 @@ export default function CreditLines({
             className="focus-ring"
             value={statusFilter}
             onChange={(e) =>
-              setStatusFilter(e.target.value as CreditLineStatus | "all")
+              setListParams({ status: e.target.value as CreditLineStatus | "all", page: DEFAULT_PAGE })
             }
           >
             <option value="all">All Statuses</option>
@@ -985,7 +1012,7 @@ export default function CreditLines({
         </div>
         <button
           className="cl-sort-dir focus-ring"
-          onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+          onClick={() => setListParams({ dir: sortDir === "asc" ? "desc" : "asc" })}
         >
           {sortDir === "asc" ? "↑" : "↓"}
         </button>
@@ -1067,33 +1094,39 @@ export default function CreditLines({
         </div>
       )}
 
-      <div role="status" aria-live="polite" aria-busy={loading}>
-        <span className="sr-only">
-          {loading ? "Loading credit lines" : "Credit lines loaded"}
-        </span>
-        {loading ? (
-          <div className="cl-grid">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <CreditLineCardSkeleton key={i} />
-            ))}
-          </div>
-        ) : filteredAndSorted.length === 0 ? (
-          <div className="cl-empty" role="region" aria-label="No credit lines">
-            <NoLines className="empty-state-illustration--muted" />
-            <h2 className="cl-empty-title">Get started with Credit Lines</h2>
-            <p className="cl-empty-desc">
-              Credit lines give you access to flexible capital when you need it.
-              Open your first line and unlock funding tailored to your business.
-            </p>
-            <ul className="cl-empty-features">
-              <li>Flexible funding up to $500K</li>
-              <li>Competitive rates from 7.5% APR</li>
-              <li>Quick approval with digital collateral</li>
-            </ul>
-            <Link to="/open-credit" className="cl-primary-btn focus-ring">
-              Open Credit Line
-            </Link>
-          </div>
+      <div role="status" aria-live="polite" aria-busy={false}>
+        {filteredAndSorted.length === 0 ? (
+          creditLines.length > 0 ? (
+            <div className="cl-empty" role="region" aria-label="No matching credit lines">
+              <NoLines className="empty-state-illustration--muted" />
+              <h2 className="cl-empty-title">No matching credit lines</h2>
+              <p className="cl-empty-desc">Try changing the status filter to see your credit lines.</p>
+              <button
+                type="button"
+                className="cl-primary-btn focus-ring"
+                onClick={() => setStatusFilter("all")}
+              >
+                Clear Filters
+              </button>
+            </div>
+          ) : (
+            <div className="cl-empty" role="region" aria-label="No credit lines">
+              <NoLines className="empty-state-illustration--muted" />
+              <h2 className="cl-empty-title">Get started with Credit Lines</h2>
+              <p className="cl-empty-desc">
+                Credit lines give you access to flexible capital when you need it.
+                Open your first line and unlock funding tailored to your business.
+              </p>
+              <ul className="cl-empty-features">
+                <li>Flexible funding up to $500K</li>
+                <li>Competitive rates from 7.5% APR</li>
+                <li>Quick approval with digital collateral</li>
+              </ul>
+              <Link to="/open-credit" className="cl-primary-btn focus-ring">
+                Open Credit Line
+              </Link>
+            </div>
+          )
         ) : (
           <>
             {stablePage.items.length > 0 ? (
@@ -1138,7 +1171,7 @@ export default function CreditLines({
                   type="button"
                   className="cl-primary-btn focus-ring"
                   onClick={() =>
-                    setPageIndex((current) => Math.max(0, current - 1))
+                    setListParams({ page: Math.max(0, pageIndex - 1) })
                   }
                   disabled={stablePage.pageIndex === 0}
                   style={{ opacity: stablePage.pageIndex === 0 ? 0.5 : 1 }}
@@ -1152,9 +1185,7 @@ export default function CreditLines({
                   type="button"
                   className="cl-primary-btn focus-ring"
                   onClick={() =>
-                    setPageIndex((current) =>
-                      Math.min(stablePage.pageCount - 1, current + 1),
-                    )
+                    setListParams({ page: Math.min(stablePage.pageCount - 1, pageIndex + 1) })
                   }
                   disabled={stablePage.pageIndex >= stablePage.pageCount - 1}
                   style={{
