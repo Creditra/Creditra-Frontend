@@ -25,7 +25,11 @@ import {
   DEFAULT_TRANSACTION_CSV_ASSET,
 } from "../lib/transaction-csv";
 import { useNotifications } from "../context/NotificationContext";
-import { useCreditLines, useCreditTransactions } from "../hooks/useCreditLines";
+import {
+  useCreditLines,
+  useCreditTransactions,
+  usesLedgerHistory,
+} from "../hooks/useCreditLines";
 import {
   amountPresetFromUrl,
   matchesAmountFilter,
@@ -383,8 +387,7 @@ export function TransactionHistory() {
   const location = useLocation();
   const navigate = useNavigate();
   const { addToast } = useNotifications();
-  const { lines: creditLines, status, error, refetch } = useCreditLines();
-  const { transactions } = useCreditTransactions();
+  const { lines: creditLines, status, error, refetch, source } = useCreditLines();
 
   // ─── Filter and UI State ───
   const [selectedLine, setSelectedLine] = useState<string>("all");
@@ -438,6 +441,28 @@ export function TransactionHistory() {
     undefined,
   ]);
   const itemsPerPage = ITEMS_PER_PAGE;
+
+  /**
+   * With a ledger-backed source the page asks for one page at a time and treats
+   * the returned cursor as opaque; otherwise the hook hands back the whole
+   * fixture history and pagination stays local.
+   */
+  const ledgerPaged = usesLedgerHistory(source);
+  const {
+    transactions,
+    nextCursor: serverNextCursor,
+    serverPaged,
+  } = useCreditTransactions(
+    ledgerPaged
+      ? {
+          cursor: pageCursors[currentPage - 1],
+          limit: itemsPerPage,
+          // Asking the ledger for one line's activity keeps each page full;
+          // otherwise a page of network activity can hold no row of the line.
+          lineId: selectedLine === "all" ? undefined : selectedLine,
+        }
+      : {},
+  );
 
   const [liveAnnouncement, setLiveAnnouncement] = useState("");
   const isFirstRender = useRef(true);
@@ -624,7 +649,10 @@ export function TransactionHistory() {
     customEndDate,
   ]);
 
-  const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
+  const totalPages = serverPaged
+    ? // The ledger never reports a total, so the count grows while a cursor exists.
+      currentPage + (serverNextCursor ? 1 : 0)
+    : Math.ceil(filteredTransactions.length / itemsPerPage);
   const filterKey = JSON.stringify([
     selectedLine,
     selectedType,
@@ -650,13 +678,26 @@ export function TransactionHistory() {
 
   const currentPageResult = useMemo(
     () =>
-      paginateByCursor(filteredTransactions, {
-        cursor: pageCursors[currentPage - 1],
-        pageSize: itemsPerPage,
-        getDate: (tx) => tx.date,
-        getId: (tx) => tx.id,
-      }),
-    [filteredTransactions, pageCursors, currentPage, itemsPerPage],
+      serverPaged
+        ? {
+            items: filteredTransactions,
+            nextCursor: serverNextCursor,
+            hasNextPage: serverNextCursor !== null,
+          }
+        : paginateByCursor(filteredTransactions, {
+            cursor: pageCursors[currentPage - 1],
+            pageSize: itemsPerPage,
+            getDate: (tx) => tx.date,
+            getId: (tx) => tx.id,
+          }),
+    [
+      filteredTransactions,
+      pageCursors,
+      currentPage,
+      itemsPerPage,
+      serverPaged,
+      serverNextCursor,
+    ],
   );
   const paginatedTransactions = currentPageResult.items;
 

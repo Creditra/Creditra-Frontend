@@ -46,6 +46,11 @@ export interface Transaction {
   status: TransactionStatus;
   /** On-chain transaction hash. Absent for pending submissions. */
   txHash?: string;
+  /**
+   * Credit line the entry belongs to. Carried by rows that come straight from
+   * a chain history source, which has no enclosing line object to join against.
+   */
+  lineId?: string;
 }
 
 /** A single point in a credit line's lifecycle history. */

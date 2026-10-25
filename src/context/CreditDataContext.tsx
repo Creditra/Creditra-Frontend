@@ -22,6 +22,11 @@ export interface CreditDataState {
   lastUpdatedAt: Date | null;
   owner: string | null;
   wallet: WalletInfo | null;
+  /**
+   * The resolved data source, so history consumers can page from the ledger
+   * instead of re-deriving which adapter is configured.
+   */
+  source: CreditDataSource;
   refetch: () => Promise<CreditLine[]>;
   setLines: (lines: CreditLine[]) => void;
 }
@@ -147,6 +152,7 @@ export function CreditDataProvider({ children, source }: CreditDataProviderProps
         ...visibleState,
         owner,
         wallet,
+        source: dataSource,
         refetch,
         setLines,
       }}

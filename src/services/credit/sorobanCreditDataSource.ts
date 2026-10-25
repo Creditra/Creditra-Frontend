@@ -13,26 +13,34 @@ import {
   CreditDataError,
   type CreditDataOptions,
   type CreditDataSource,
+  type TransactionPage,
+  type TransactionPageQuery,
 } from './CreditDataSource';
 import { getSorobanConfig, type SorobanCreditConfig } from './config';
 import { decodeCreditLine } from './decoder';
+import { HorizonCreditHistorySource } from './horizonHistorySource';
 
 export interface SorobanCreditDataSourceOptions {
   rpcUrl?: string;
+  horizonUrl?: string;
   networkPassphrase?: string;
   contractId?: string;
   server?: rpc.Server;
   defaultTimeoutMs?: number;
+  /** Injectable for tests: the operations reader used for transaction history. */
+  historySource?: Pick<HorizonCreditHistorySource, 'listTransactions'>;
 }
 
 const THROWAWAY_ACCOUNT = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 export class SorobanCreditDataSource implements CreditDataSource {
+  readonly kind = 'soroban' as const;
   private readonly server: rpc.Server;
   private readonly networkPassphrase: string;
   private readonly contractId: string;
   private readonly defaultTimeoutMs: number;
+  private readonly historySource: Pick<HorizonCreditHistorySource, 'listTransactions'>;
 
   constructor(options: SorobanCreditDataSourceOptions = {}) {
     const config: SorobanCreditConfig = getSorobanConfig();
@@ -42,6 +50,12 @@ export class SorobanCreditDataSource implements CreditDataSource {
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS;
 
     this.server = options.server || new rpc.Server(rpcUrl, { allowHttp: rpcUrl.startsWith('http://') });
+    this.historySource =
+      options.historySource ??
+      new HorizonCreditHistorySource({
+        horizonUrl: options.horizonUrl || config.horizonUrl,
+        contractId: this.contractId,
+      });
   }
 
   /**
@@ -210,5 +224,16 @@ export class SorobanCreditDataSource implements CreditDataSource {
     }
 
     return decodeCreditLine(nativeVal);
+  }
+
+  /**
+   * History lives on chain rather than inside the credit line struct, so it is
+   * read from Horizon operations instead of the simulated contract calls.
+   */
+  listTransactions(borrower: string, query?: TransactionPageQuery): Promise<TransactionPage> {
+    return this.historySource.listTransactions(borrower, {
+      ...query,
+      timeoutMs: query?.timeoutMs ?? this.defaultTimeoutMs,
+    });
   }
 }

@@ -7,6 +7,7 @@ import {
 } from './CreditDataSource';
 
 export class MockCreditDataSource implements CreditDataSource {
+  readonly kind = 'mock' as const;
   private lines: CreditLine[];
 
   constructor(initialLines: CreditLine[] = MOCK_CREDIT_LINES) {

@@ -12,4 +12,6 @@ interface ImportMetaEnv {
   readonly VITE_SOROBAN_RPC_URL?: string;
   readonly VITE_STELLAR_NETWORK_PASSPHRASE?: string;
   readonly VITE_CREDIT_CONTRACT_ID?: string;
+  /** `soroban` reads credit state and history from the chain; anything else uses fixtures. */
+  readonly VITE_CREDIT_DATA_SOURCE?: 'mock' | 'soroban' | string;
 }
