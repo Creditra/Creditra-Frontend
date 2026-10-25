@@ -13,6 +13,8 @@ import { clearAlert, listAlerts, setAlert } from '../state/auctionAlerts';
 import { Image as ImageIcon } from 'lucide-react';
 import { getEffectiveStatus, type EffectiveDutchAuctionStatus } from '../lib/dutch-auction-lifecycle';
 import { validateSchedule, priceAt, fromStroops } from '../lib/dutch-auction-pricing';
+import { useAuctionAnnouncer } from './AuctionAnnouncer';
+import { crossedMilestone, formatMilestoneAnnouncement } from '../lib/auction-milestones';
 
 export interface DutchAuctionCardProps {
   auction: DutchAuction;
@@ -100,10 +102,23 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
   }, [imageSrc]);
   const intervalRef = useRef<number | undefined>(undefined);
 
+  const { enqueueMilestone } = useAuctionAnnouncer();
+  const endMs = new Date(auction.endTime).getTime();
+  const prevRemainingMsRef = useRef<number>(endMs - Date.now());
+  const [isEndingSoon, setIsEndingSoon] = useState<boolean>(() => {
+    const diff = endMs - Date.now();
+    return diff > 0 && diff <= 5 * 60 * 1000;
+  });
+
   // Update price, timer, and effective status
   useEffect(() => {
     const newStatus = getEffectiveStatus(auction);
     setEffectiveStatus(newStatus);
+
+    // Initialize remainingMs reference based on current time
+    const initialRemaining = new Date(auction.endTime).getTime() - Date.now();
+    prevRemainingMsRef.current = initialRemaining;
+    setIsEndingSoon(initialRemaining > 0 && initialRemaining <= 5 * 60 * 1000);
 
     // Only run interval for non-terminal states
     if (newStatus === 'Scheduled' || newStatus === 'Active') {
@@ -115,6 +130,27 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
         if (nextPrice !== null) setCurrentPriceStroops(nextPrice);
         setTimeLeft(formatTimeLeft(auction.endTime));
         setTimeUntilStart(formatTimeUntilStart(auction.startTime));
+
+        const currentEndTime = new Date(auction.endTime).getTime();
+        const currentRemaining = currentEndTime - now;
+        setIsEndingSoon(currentRemaining > 0 && currentRemaining <= 5 * 60 * 1000);
+
+        if (updatedStatus === 'Active' || updatedStatus === 'Ended') {
+          const crossed = crossedMilestone(prevRemainingMsRef.current, currentRemaining);
+          if (crossed) {
+            const priceToFormat = nextPrice !== null ? fromStroops(nextPrice) : currentPrice;
+            const message = formatMilestoneAnnouncement(
+              auction.nft.name,
+              crossed,
+              fmt(priceToFormat)
+            );
+            enqueueMilestone({
+              auctionId: auction.id,
+              message,
+            });
+          }
+        }
+        prevRemainingMsRef.current = currentRemaining;
 
         // Clear interval when reaching terminal state
         if (updatedStatus === 'Ended' || updatedStatus === 'Completed' || updatedStatus === 'Cancelled') {
@@ -132,7 +168,7 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
         intervalRef.current = undefined;
       }
     };
-  }, [auction]);
+  }, [auction, currentPrice, enqueueMilestone]);
 
   const purchaseCheck = canPurchase(auction, wallet, status);
   const helperId = `purchase-helper-${auction.id}`;
@@ -342,7 +378,15 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
             {effectiveStatus === 'Active' && validation.ok && (
               <div>
                 <p style={{ margin: 0, color: COLOR.muted, fontSize: '0.75rem' }}>Time Left</p>
-                <p style={{ margin: 0, color: COLOR.warning, fontSize: '1rem', fontWeight: 600 }}>{timeLeft}</p>
+                <p
+                  role="timer"
+                  aria-live="off"
+                  aria-label={`Time left for ${auction.nft.name}`}
+                  style={{ margin: 0, color: COLOR.warning, fontSize: '1rem', fontWeight: 600 }}
+                >
+                  {isEndingSoon && <span style={{ marginRight: '0.35rem' }}>Ending soon</span>}
+                  {timeLeft}
+                </p>
               </div>
             )}
             {effectiveStatus === 'Ended' && (

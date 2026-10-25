@@ -14,6 +14,7 @@ import {
   isSortOption,
   sortAuctions,
 } from '../lib/dutch-auction-sort';
+import { AuctionAnnouncerProvider, useAuctionAnnouncer } from '../components/AuctionAnnouncer';
 
 export type AuctionStatusFilter = 'all' | 'scheduled' | 'active' | 'completed';
 
@@ -54,6 +55,7 @@ class WalletFallbackBoundary extends React.Component<
 }
 
 export const DutchAuctionsView: React.FC = () => {
+  const { isMuted, toggleMute } = useAuctionAnnouncer();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const statusParam = searchParams.get('status');
@@ -253,34 +255,46 @@ export const DutchAuctionsView: React.FC = () => {
           ))}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <label
-            htmlFor="auction-sort-select"
-            style={{ fontSize: '0.85rem', color: COLOR.muted, fontWeight: 500 }}
-          >
-            Sort by
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.85rem', color: COLOR.text }}>
+            <input
+              type="checkbox"
+              checked={isMuted}
+              onChange={toggleMute}
+              aria-label="Mute auction alerts"
+            />
+            <span>Mute auction alerts</span>
           </label>
-          <select
-            id="auction-sort-select"
-            aria-label="Sort auctions"
-            value={sort}
-            onChange={handleSortChange}
-            style={{
-              padding: '0.5rem 0.75rem',
-              minHeight: '44px',
-              borderRadius: '6px',
-              border: `1px solid ${COLOR.border}`,
-              background: COLOR.surface,
-              color: COLOR.text,
-              fontSize: '0.85rem',
-              cursor: 'pointer',
-              boxSizing: 'border-box',
-            }}
-          >
-            <option value="ending">Ending soonest</option>
-            <option value="price">Lowest price</option>
-            <option value="discount">Biggest discount</option>
-          </select>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <label
+              htmlFor="auction-sort-select"
+              style={{ fontSize: '0.85rem', color: COLOR.muted, fontWeight: 500 }}
+            >
+              Sort by
+            </label>
+            <select
+              id="auction-sort-select"
+              aria-label="Sort auctions"
+              value={sort}
+              onChange={handleSortChange}
+              style={{
+                padding: '0.5rem 0.75rem',
+                minHeight: '44px',
+                borderRadius: '6px',
+                border: `1px solid ${COLOR.border}`,
+                background: COLOR.surface,
+                color: COLOR.text,
+                fontSize: '0.85rem',
+                cursor: 'pointer',
+                boxSizing: 'border-box',
+              }}
+            >
+              <option value="ending">Ending soonest</option>
+              <option value="price">Lowest price</option>
+              <option value="discount">Biggest discount</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -357,8 +371,10 @@ export const DutchAuctionsView: React.FC = () => {
 
 export const DutchAuctions: React.FC = () => {
   return (
-    <WalletFallbackBoundary>
-      <DutchAuctionsView />
-    </WalletFallbackBoundary>
+    <AuctionAnnouncerProvider>
+      <WalletFallbackBoundary>
+        <DutchAuctionsView />
+      </WalletFallbackBoundary>
+    </AuctionAnnouncerProvider>
   );
 };
