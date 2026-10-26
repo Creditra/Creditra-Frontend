@@ -191,7 +191,7 @@ describe("RiskExplainerOverlay", () => {
     const docsLink = screen.getByRole("link", {
       name: /risk pricing documentation/i,
     });
-    expect(docsLink).toHaveAttribute("href", "/docs/risk-pricing");
+    expect(docsLink).toHaveAttribute("href", "/docs#risk-pricing");
   });
 
   it("is invocable from a trigger button (typical Dashboard wiring)", () => {

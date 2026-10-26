@@ -42,6 +42,7 @@
 
 import type { RefObject } from "react";
 import { createPortal } from "react-dom";
+import { Link } from "react-router-dom";
 import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useInertBackdrop } from "@/hooks/useInertBackdrop";
@@ -219,14 +220,14 @@ export function RiskExplainerOverlay({
         </ul>
 
         <footer className="risk-explainer-overlay__footer">
-          <a
-            href="/docs#risk-pricing"
+          <Link
+            to="/docs#risk-pricing"
             className="risk-explainer-overlay__docs-link"
             aria-label="Read the full risk pricing documentation"
           >
             Read the full risk-pricing docs
             <span aria-hidden="true">{"\u2192"}</span>
-          </a>
+          </Link>
           <button
             type="button"
             onClick={onClose}

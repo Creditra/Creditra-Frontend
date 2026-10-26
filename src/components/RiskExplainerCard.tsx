@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 
 export function RiskExplainerCard() {
   const [dismissed, setDismissed] = useState(false);
@@ -40,9 +41,9 @@ export function RiskExplainerCard() {
             and market conditions to determine your personalized APR. Better repayment
             history means lower rates.
           </p>
-          <a href="/docs#risk-pricing" className="risk-explainer-link" aria-label="Learn more about risk pricing">
+          <Link to="/docs#risk-pricing" className="risk-explainer-link" aria-label="Learn more about risk pricing">
             Learn more
-          </a>
+          </Link>
         </div>
       </div>
       <button className="risk-explainer-dismiss" onClick={handleDismiss} aria-label="Dismiss risk pricing explainer">
