@@ -48,12 +48,43 @@ export const PROVIDER_INFO: Record<AccountProvider, { name: string; icon: string
  * @returns Promise resolving to array of linked accounts
  * @throws Error if fetch fails
  */
+export const OAUTH_STATE_KEY = 'creditra:oauth-state';
+export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+/**
+ * Fetch all linked accounts for the current user.
+ * Prunes any pending accounts older than 10-minute state TTL.
+ * 
+ * @returns Promise resolving to array of linked accounts
+ * @throws Error if fetch fails
+ */
 export async function fetchLinkedAccounts(): Promise<LinkedAccount[]> {
   await delay(MOCK_API_DELAY);
   
   try {
     const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
-    return accounts.filter(acc => acc.status !== 'disconnected');
+    const now = Date.now();
+    let hasPruned = false;
+
+    const filtered = accounts.filter(acc => {
+      if (acc.status === 'disconnected') {
+        return false;
+      }
+      if (acc.status === 'pending') {
+        const connectedTime = new Date(acc.connectedAt).getTime();
+        if (now - connectedTime > OAUTH_STATE_TTL_MS) {
+          hasPruned = true;
+          return false;
+        }
+      }
+      return true;
+    });
+
+    if (hasPruned) {
+      writeJson(STORAGE_KEY, filtered);
+    }
+
+    return filtered;
   } catch (error) {
     throw new Error('Failed to fetch linked accounts');
   }
@@ -61,6 +92,7 @@ export async function fetchLinkedAccounts(): Promise<LinkedAccount[]> {
 
 /**
  * Initiate OAuth flow to link a new external account.
+ * Stores a pending account entry and OAuth state token.
  * 
  * @param request - Provider and optional redirect URL
  * @returns Promise resolving to OAuth authorization URL and state token
@@ -90,7 +122,8 @@ export async function initiateLinkAccount(request: LinkAccountRequest): Promise<
       const returnPath = safeReturnPath(request.redirectUrl);
 
       // Generate state token for CSRF protection
-      const state = `${request.provider}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      const now = Date.now();
+      const state = `${request.provider}-${now}-${Math.random().toString(36).substring(7)}`;
 
       // Store pending state alongside the sanitised return path
       writeJson('creditra:oauth-state', {
@@ -111,6 +144,31 @@ export async function initiateLinkAccount(request: LinkAccountRequest): Promise<
 }
 
 /**
+ * Cancel a pending account link for a provider.
+ * Removes the pending account entry and clears pending OAuth state.
+ *
+ * @param provider - Account provider to cancel linking for
+ */
+export async function cancelLinkAccount(provider: AccountProvider): Promise<void> {
+  return offlineMutation({
+    fn: async () => {
+      await delay(200);
+
+      const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
+      const updated = accounts.filter(
+        acc => !(acc.provider === provider && acc.status === 'pending')
+      );
+      writeJson(STORAGE_KEY, updated);
+
+      const storedState = readJson<{ state: string; provider: string; timestamp: number } | null>(OAUTH_STATE_KEY, null);
+      if (storedState && storedState.provider === provider) {
+        writeJson(OAUTH_STATE_KEY, null);
+      }
+    },
+  });
+}
+
+/**
  * Complete OAuth flow after provider callback.
  * 
  * @param request - Provider, authorization code, and state token
@@ -123,7 +181,7 @@ export async function completeOAuthLink(request: CompleteOAuthRequest): Promise<
       await delay(MOCK_API_DELAY);
 
       // Verify state token
-      const storedState = readJson<{ state: string; provider: string; timestamp: number } | null>('creditra:oauth-state', null);
+      const storedState = readJson<{ state: string; provider: string; timestamp: number } | null>(OAUTH_STATE_KEY, null);
 
       if (!storedState || storedState.state !== request.state || storedState.provider !== request.provider) {
         const error: AccountLinkError = {
@@ -134,7 +192,7 @@ export async function completeOAuthLink(request: CompleteOAuthRequest): Promise<
       }
 
       // Check if state is expired (10 minutes)
-      if (Date.now() - storedState.timestamp > 10 * 60 * 1000) {
+      if (Date.now() - storedState.timestamp > OAUTH_STATE_TTL_MS) {
         const error: AccountLinkError = {
           code: 'token_expired',
           message: 'OAuth session expired. Please try again.',
@@ -153,13 +211,14 @@ export async function completeOAuthLink(request: CompleteOAuthRequest): Promise<
         lastVerified: new Date().toISOString(),
       };
 
-      // Save to storage
+      // Save to storage, replacing any pending/disconnected entries for this provider
       const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
-      accounts.push(newAccount);
-      writeJson(STORAGE_KEY, accounts);
+      const remainingAccounts = accounts.filter(acc => acc.provider !== request.provider);
+      remainingAccounts.push(newAccount);
+      writeJson(STORAGE_KEY, remainingAccounts);
 
       // Clean up OAuth state
-      writeJson('creditra:oauth-state', null);
+      writeJson(OAUTH_STATE_KEY, null);
 
       return newAccount;
     },

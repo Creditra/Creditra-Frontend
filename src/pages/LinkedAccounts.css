@@ -94,6 +94,11 @@
   border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
+.provider-card--pending {
+  border-color: var(--muted);
+  border-style: dashed;
+}
+
 .provider-card--error {
   border-color: var(--error);
 }
@@ -315,6 +320,12 @@
 .banner-alert__content p {
   margin: 0;
   line-height: var(--lh-body);
+}
+
+.banner-alert__actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
 }
 
 .banner-alert__close {
