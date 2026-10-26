@@ -167,6 +167,58 @@ describe('DutchAuctionCard', () => {
     // LiveRegion feedback
     expect(await screen.findByText(/Purchased auction AUCTION-101/i)).toBeInTheDocument();
   });
+
+  it('blocks purchases on the wrong network and explains why', () => {
+    const onPurchaseMock = vi.fn();
+    mockUseWallet.mockReturnValue({
+      ...connectedBuyer,
+      wallet: {
+        ...connectedBuyer.wallet,
+        network: 'PUBLIC',
+      },
+    } as any);
+
+    render(<DutchAuctionCard auction={baseAuction} onPurchase={onPurchaseMock} />);
+
+    const button = screen.getByRole('button', { name: /Purchase Now for/i });
+    expect(button).toBeDisabled();
+    expect(screen.getByText(`Switch to ${EXPECTED_NETWORK} to buy`)).toBeInTheDocument();
+
+    fireEvent.click(button);
+    expect(onPurchaseMock).not.toHaveBeenCalled();
+  });
+
+  it('blocks the seller from buying their own auction', () => {
+    const onPurchaseMock = vi.fn();
+    mockUseWallet.mockReturnValue({
+      ...connectedBuyer,
+      wallet: {
+        ...connectedBuyer.wallet,
+        publicKey: baseAuction.seller,
+      },
+    } as any);
+
+    render(<DutchAuctionCard auction={baseAuction} onPurchase={onPurchaseMock} />);
+
+    const button = screen.getByRole('button', { name: /Purchase Now for/i });
+    expect(button).toBeDisabled();
+    expect(screen.getByText('You are the seller')).toBeInTheDocument();
+
+    fireEvent.click(button);
+    expect(onPurchaseMock).not.toHaveBeenCalled();
+  });
+
+  it('does not purchase without a connected wallet', () => {
+    const onPurchaseMock = vi.fn();
+    mockUseWallet.mockReturnValue({ wallet: null, status: 'disconnected' } as any);
+
+    render(<DutchAuctionCard auction={baseAuction} onPurchase={onPurchaseMock} />);
+
+    const button = screen.getByRole('button', { name: 'Connect wallet to buy' });
+    fireEvent.click(button);
+
+    expect(onPurchaseMock).not.toHaveBeenCalled();
+  });
 });
 
 function renderCard() {

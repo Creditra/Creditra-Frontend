@@ -58,6 +58,7 @@ export const DutchAuctionsView: React.FC = () => {
 
   const statusParam = searchParams.get('status');
   const sortParam = searchParams.get('sort');
+  const listSearch = searchParams.toString() ? `?${searchParams.toString()}` : '';
 
   const hasInvalidStatus = statusParam !== null && !isAuctionStatusFilter(statusParam);
   const hasInvalidSort = sortParam !== null && !isSortOption(sortParam);
@@ -345,6 +346,7 @@ export const DutchAuctionsView: React.FC = () => {
             >
               <DutchAuctionCard
                 auction={auction}
+                listSearch={listSearch}
                 onPurchase={handlePurchase}
               />
             </div>
