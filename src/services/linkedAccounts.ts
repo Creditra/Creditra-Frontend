@@ -15,6 +15,7 @@
 import { readJson, writeJson } from '../utils/storage';
 import { safeReturnPath } from '../utils/safe-redirect';
 import { offlineMutation } from '../utils/offline';
+import { scopedKey } from '../utils/scoped-storage';
 import type {
   LinkedAccount,
   AccountProvider,
@@ -24,7 +25,12 @@ import type {
   AccountLinkError,
 } from '../types/linkedAccount';
 
-const STORAGE_KEY = 'creditra:linked-accounts';
+const BASE_STORAGE_KEY = scopedKey('creditra:linked-accounts');
+const BASE_OAUTH_KEY = scopedKey('creditra:oauth-state');
+
+const getStorageKey = (scope?: string | null) => scopedKey(BASE_STORAGE_KEY, scope);
+const getOAuthKey = (scope?: string | null) => scopedKey(BASE_OAUTH_KEY, scope);
+
 const MOCK_API_DELAY = 800; // Simulate network latency
 
 /**
@@ -45,14 +51,16 @@ export const PROVIDER_INFO: Record<AccountProvider, { name: string; icon: string
 /**
  * Fetch all linked accounts for the current user.
  * 
+ * @param scope - Connected wallet address for scoped storage
  * @returns Promise resolving to array of linked accounts
  * @throws Error if fetch fails
  */
-export async function fetchLinkedAccounts(): Promise<LinkedAccount[]> {
+export async function fetchLinkedAccounts(scope?: string | null): Promise<LinkedAccount[]> {
   await delay(MOCK_API_DELAY);
   
   try {
-    const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
+    const key = getStorageKey(scope);
+    const accounts = readJson<LinkedAccount[]>(key, []);
     return accounts.filter(acc => acc.status !== 'disconnected');
   } catch (error) {
     throw new Error('Failed to fetch linked accounts');
@@ -63,16 +71,23 @@ export async function fetchLinkedAccounts(): Promise<LinkedAccount[]> {
  * Initiate OAuth flow to link a new external account.
  * 
  * @param request - Provider and optional redirect URL
+ * @param scope - Connected wallet address for scoped storage
  * @returns Promise resolving to OAuth authorization URL and state token
  * @throws Error if provider is already linked or request fails
  */
-export async function initiateLinkAccount(request: LinkAccountRequest): Promise<LinkAccountResponse> {
+export async function initiateLinkAccount(
+  request: LinkAccountRequest,
+  scope?: string | null,
+): Promise<LinkAccountResponse> {
   return offlineMutation({
     fn: async () => {
       await delay(400);
 
+      const storageKey = getStorageKey(scope);
+      const oauthKey = getOAuthKey(scope);
+
       // Check if provider is already linked
-      const existing = readJson<LinkedAccount[]>(STORAGE_KEY, []);
+      const existing = readJson<LinkedAccount[]>(storageKey, []);
       const alreadyLinked = existing.find(
         acc => acc.provider === request.provider && acc.status === 'connected'
       );
@@ -93,7 +108,7 @@ export async function initiateLinkAccount(request: LinkAccountRequest): Promise<
       const state = `${request.provider}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
       // Store pending state alongside the sanitised return path
-      writeJson('creditra:oauth-state', {
+      writeJson(oauthKey, {
         state,
         provider: request.provider,
         returnPath,
@@ -114,16 +129,23 @@ export async function initiateLinkAccount(request: LinkAccountRequest): Promise<
  * Complete OAuth flow after provider callback.
  * 
  * @param request - Provider, authorization code, and state token
+ * @param scope - Connected wallet address for scoped storage
  * @returns Promise resolving to the newly linked account
  * @throws Error if verification fails or account cannot be linked
  */
-export async function completeOAuthLink(request: CompleteOAuthRequest): Promise<LinkedAccount> {
+export async function completeOAuthLink(
+  request: CompleteOAuthRequest,
+  scope?: string | null,
+): Promise<LinkedAccount> {
   return offlineMutation({
     fn: async () => {
       await delay(MOCK_API_DELAY);
 
+      const storageKey = getStorageKey(scope);
+      const oauthKey = getOAuthKey(scope);
+
       // Verify state token
-      const storedState = readJson<{ state: string; provider: string; timestamp: number } | null>('creditra:oauth-state', null);
+      const storedState = readJson<{ state: string; provider: string; timestamp: number } | null>(oauthKey, null);
 
       if (!storedState || storedState.state !== request.state || storedState.provider !== request.provider) {
         const error: AccountLinkError = {
@@ -154,12 +176,12 @@ export async function completeOAuthLink(request: CompleteOAuthRequest): Promise<
       };
 
       // Save to storage
-      const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
+      const accounts = readJson<LinkedAccount[]>(storageKey, []);
       accounts.push(newAccount);
-      writeJson(STORAGE_KEY, accounts);
+      writeJson(storageKey, accounts);
 
       // Clean up OAuth state
-      writeJson('creditra:oauth-state', null);
+      writeJson(oauthKey, null);
 
       return newAccount;
     },
@@ -170,15 +192,17 @@ export async function completeOAuthLink(request: CompleteOAuthRequest): Promise<
  * Disconnect a linked external account.
  * 
  * @param accountId - Unique identifier of the account to disconnect
+ * @param scope - Connected wallet address for scoped storage
  * @returns Promise resolving when disconnection is complete
  * @throws Error if account not found or disconnection fails
  */
-export async function disconnectAccount(accountId: string): Promise<void> {
+export async function disconnectAccount(accountId: string, scope?: string | null): Promise<void> {
   return offlineMutation({
     fn: async () => {
       await delay(600);
 
-      const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
+      const storageKey = getStorageKey(scope);
+      const accounts = readJson<LinkedAccount[]>(storageKey, []);
       const accountIndex = accounts.findIndex(acc => acc.id === accountId);
 
       if (accountIndex === -1) {
@@ -187,7 +211,7 @@ export async function disconnectAccount(accountId: string): Promise<void> {
 
       // Mark as disconnected instead of deleting for audit trail
       accounts[accountIndex].status = 'disconnected';
-      writeJson(STORAGE_KEY, accounts);
+      writeJson(storageKey, accounts);
     },
   });
 }
@@ -196,15 +220,17 @@ export async function disconnectAccount(accountId: string): Promise<void> {
  * Reconnect a previously linked account (refresh OAuth token).
  * 
  * @param accountId - Unique identifier of the account to reconnect
+ * @param scope - Connected wallet address for scoped storage
  * @returns Promise resolving to OAuth URL for re-authentication
  * @throws Error if account not found or reconnection fails
  */
-export async function reconnectAccount(accountId: string): Promise<LinkAccountResponse> {
+export async function reconnectAccount(accountId: string, scope?: string | null): Promise<LinkAccountResponse> {
   return offlineMutation({
     fn: async () => {
       await delay(400);
 
-      const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
+      const storageKey = getStorageKey(scope);
+      const accounts = readJson<LinkedAccount[]>(storageKey, []);
       const account = accounts.find(acc => acc.id === accountId);
 
       if (!account) {
@@ -212,7 +238,7 @@ export async function reconnectAccount(accountId: string): Promise<LinkAccountRe
       }
 
       // Initiate new OAuth flow for this provider
-      return initiateLinkAccount({ provider: account.provider });
+      return initiateLinkAccount({ provider: account.provider }, scope);
     },
   });
 }
@@ -221,15 +247,17 @@ export async function reconnectAccount(accountId: string): Promise<LinkAccountRe
  * Verify a linked account's current status with the provider.
  * 
  * @param accountId - Unique identifier of the account to verify
+ * @param scope - Connected wallet address for scoped storage
  * @returns Promise resolving to updated account status
  * @throws Error if verification fails
  */
-export async function verifyAccount(accountId: string): Promise<LinkedAccount> {
+export async function verifyAccount(accountId: string, scope?: string | null): Promise<LinkedAccount> {
   return offlineMutation({
     fn: async () => {
       await delay(1000);
 
-      const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
+      const storageKey = getStorageKey(scope);
+      const accounts = readJson<LinkedAccount[]>(storageKey, []);
       const accountIndex = accounts.findIndex(acc => acc.id === accountId);
 
       if (accountIndex === -1) {
@@ -252,7 +280,7 @@ export async function verifyAccount(accountId: string): Promise<LinkedAccount> {
         delete accounts[accountIndex].error;
       }
 
-      writeJson(STORAGE_KEY, accounts);
+      writeJson(storageKey, accounts);
       return accounts[accountIndex];
     },
   });

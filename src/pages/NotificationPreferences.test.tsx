@@ -38,6 +38,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NotificationPreferences } from './NotificationPreferences';
+import { scopedKey } from '../utils/scoped-storage';
 
 describe('NotificationPreferences', () => {
   beforeEach(() => {
@@ -245,7 +246,7 @@ describe('NotificationPreferences', () => {
         expect(screen.getByText(/preferences saved successfully/i)).toBeInTheDocument();
       });
 
-      const stored = localStorage.getItem('creditra_channel_prefs');
+      const stored = localStorage.getItem(scopedKey('creditra_channel_prefs'));
       expect(stored).not.toBeNull();
 
       const parsed = JSON.parse(stored!);

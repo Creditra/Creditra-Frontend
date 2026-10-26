@@ -4,6 +4,7 @@ import { vi } from 'vitest';
 import { NotificationProvider, useNotifications } from '../../context/NotificationContext';
 import { NotificationCenter } from './NotificationCenter';
 import { ToastContainer } from './ToastContainer';
+import { scopedKey } from '../../utils/scoped-storage';
 import type { Notification } from '../../types/notification';
 
 vi.mock('../../hooks/useBodyScrollLock', () => ({
@@ -29,7 +30,7 @@ function createNotification(overrides?: Partial<Notification>): Notification {
 
 function seedNotifications(notifications: Notification[]) {
   window.localStorage.setItem(
-    'creditra_notifications',
+    scopedKey('creditra_notifications'),
     JSON.stringify(notifications),
   );
 }

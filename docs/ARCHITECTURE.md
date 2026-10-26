@@ -161,6 +161,27 @@ wallet extension via `connectWallet()`.
 | `creditra-wallet-recent` | `WalletType[]`, most-recent last | `recordRecentWallet()` on every successful connect | `clearMRU()` only — deliberately kept across disconnect and session expiry |
 | `creditra-wallet-remember` | `true` (an absent key means "no") | `setWalletRemembered(true)` when the user opts in to auto-reconnect | `setWalletRemembered(false)`, `disconnectWallet()`, session expiry |
 
+### Storage scoping (`src/utils/scoped-storage.ts`)
+
+Per-user data is isolated under a storage-scoping layer keyed by the connected wallet.
+Keys are formed as `${base}::${hash(address)}` using a short SHA-256 prefix so raw 56-character
+public keys never appear as storage keys. While disconnected, user-scoped features show an
+empty state and suppress writes. Device preferences remain global.
+
+| Key | Category | Description | Scope |
+| --- | --- | --- | --- |
+| `creditra_notifications::<hash>` | Notifications | Durable notification inbox entries | Wallet-scoped |
+| `creditra_notification_prefs::<hash>` | Notifications | Per-category mute preferences | Wallet-scoped |
+| `creditra:linked-accounts::<hash>` | Linked Accounts | External identity provider links | Wallet-scoped |
+| `creditra:oauth-state::<hash>` | Linked Accounts | In-flight OAuth CSRF state | Wallet-scoped |
+| `creditra_channel_prefs::<hash>` | Notification Channels | Delivery channels (email, SMS, push) | Wallet-scoped |
+| `creditra-theme` | Appearance | Color-scheme theme preference | Device-global |
+| `creditra-contrast` | Accessibility | High-contrast override flag | Device-global |
+| `creditra-wallet-info` | Connection | Active session's wallet type | Device-global |
+| `creditra-wallet-recent` | Connection | Recency-ordered wallet types (MRU) | Device-global |
+| `creditra-wallet-remember` | Connection | Next-visit auto-reconnect opt-in | Device-global |
+| `creditra:storage-migrated` | Migration | One-time scoping upgrade flag | Device-global |
+
 The legacy keys `wallet_info` (v1, which did contain the public key) and
 `wallet_preference` are read once by `getStoredWallet()` purely to migrate the wallet
 type into `creditra-wallet-info` as `{ v: 2, type }`, after which both are deleted. The

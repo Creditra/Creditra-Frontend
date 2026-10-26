@@ -21,6 +21,7 @@ import {
   PROVIDER_INFO,
 } from '../linkedAccounts';
 import * as storage from '../../utils/storage';
+import { scopedKey } from '../../utils/scoped-storage';
 import type { LinkedAccount } from '../../types/linkedAccount';
 
 // Mock storage utilities
@@ -61,7 +62,7 @@ describe('linkedAccounts service', () => {
       const result = await promise;
 
       expect(result).toEqual(mockAccounts);
-      expect(storage.readJson).toHaveBeenCalledWith('creditra:linked-accounts', []);
+      expect(storage.readJson).toHaveBeenCalledWith(scopedKey('creditra:linked-accounts'), []);
     });
 
     it('should filter out disconnected accounts', async () => {
@@ -210,7 +211,7 @@ describe('linkedAccounts service', () => {
         displayName: expect.any(String),
         externalId: expect.any(String),
       });
-      expect(storage.writeJson).toHaveBeenCalledWith('creditra:linked-accounts', expect.arrayContaining([result]));
+      expect(storage.writeJson).toHaveBeenCalledWith(scopedKey('creditra:linked-accounts'), expect.arrayContaining([result]));
       expect(storage.writeJson).toHaveBeenCalledWith('creditra:oauth-state', null);
     });
 
@@ -295,7 +296,7 @@ describe('linkedAccounts service', () => {
       vi.advanceTimersByTime(600);
       await promise;
 
-      expect(storage.writeJson).toHaveBeenCalledWith('creditra:linked-accounts', [
+      expect(storage.writeJson).toHaveBeenCalledWith(scopedKey('creditra:linked-accounts'), [
         expect.objectContaining({
           id: 'google-123',
           status: 'disconnected',

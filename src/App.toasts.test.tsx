@@ -4,6 +4,7 @@ import '@testing-library/jest-dom';
 import App from './App';
 import { NotificationProvider, useNotifications } from './context/NotificationContext';
 import { ToastContainer } from './components/notifications/ToastContainer';
+import { scopedKey } from './utils/scoped-storage';
 
 // Mock the Dashboard route component to expose buttons for notification testing
 vi.mock('./pages/Dashboard', () => ({
@@ -226,7 +227,7 @@ describe('App Toast and Banner Shell Mounting', () => {
   // Scenario 7: Mark all as read in NotificationCenter -> Undo toast visible with an Undo button
   it('Scenario 7: renders Undo toast with Undo button when marking all as read in NotificationCenter', async () => {
     localStorage.setItem(
-      'creditra_notifications',
+      scopedKey('creditra_notifications'),
       JSON.stringify([
         {
           id: 'notif-1',

@@ -31,7 +31,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Bell, Mail, Smartphone, TabletSmartphone, CheckCircle, AlertCircle, RotateCcw } from 'lucide-react';
 import { PendingButton } from '../components/PendingButton';
-import { readJson, writeJson } from '../utils/storage';
+import { useScopedStorage, scopedKey } from '../utils/scoped-storage';
 import type {
   NotificationChannelPreferences,
   NotificationPreferenceCategory,
@@ -41,7 +41,7 @@ import './NotificationPreferences.css';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
-const STORAGE_KEY = 'creditra_channel_prefs';
+const BASE_STORAGE_KEY = scopedKey('creditra_channel_prefs');
 
 /** Human-readable labels for each category group. */
 const CATEGORY_META: Record<NotificationPreferenceCategory, {
@@ -77,11 +77,6 @@ const DEFAULT_PREFS: NotificationChannelPreferences = {
 };
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
-
-/** Load saved preferences or return defaults. */
-function loadPreferences(): NotificationChannelPreferences {
-  return readJson<NotificationChannelPreferences>(STORAGE_KEY, DEFAULT_PREFS);
-}
 
 /** Deep-equal two channel prefs objects. */
 function prefsEqual(a: NotificationChannelPreferences, b: NotificationChannelPreferences): boolean {
@@ -168,10 +163,18 @@ function CategoryGroup({ category, preferences, onChannelChange }: CategoryGroup
 // ─── Page Component ────────────────────────────────────────────────────────────
 
 export function NotificationPreferences() {
-  const [prefs, setPrefs] = useState<NotificationChannelPreferences>(loadPreferences);
-  const [savedPrefs, setSavedPrefs] = useState<NotificationChannelPreferences>(loadPreferences);
+  const [savedPrefs, setSavedPrefs] = useScopedStorage<NotificationChannelPreferences>(
+    BASE_STORAGE_KEY,
+    DEFAULT_PREFS,
+  );
+  const [prefs, setPrefs] = useState<NotificationChannelPreferences>(savedPrefs);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<'success' | 'error' | null>(null);
+
+  // Sync state whenever saved preferences change (e.g. wallet switch or initial load)
+  useEffect(() => {
+    setPrefs(savedPrefs);
+  }, [savedPrefs]);
 
   // Auto-dismiss success feedback after 5 s
   useEffect(() => {
@@ -200,11 +203,10 @@ export function NotificationPreferences() {
     setFeedback(null);
     // Simulate a short network round-trip so the pending state is perceivable
     await new Promise(resolve => setTimeout(resolve, 600));
-    writeJson(STORAGE_KEY, prefs);
     setSavedPrefs({ ...prefs });
     setFeedback('success');
     setSaving(false);
-  }, [prefs]);
+  }, [prefs, setSavedPrefs]);
 
   const handleReset = useCallback(() => {
     setPrefs({ ...DEFAULT_PREFS });
