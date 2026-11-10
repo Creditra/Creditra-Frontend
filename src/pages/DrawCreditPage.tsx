@@ -609,7 +609,7 @@ export default function DrawCreditPage() {
     // Capture phase so this runs before App's bubble-phase `?` handler (#1173).
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [step, amount, selectedCreditLine, confirmationAcknowledged, handleBack, handleCancel, isRiskModalOpen]);
+  }, [step, amount, selectedCreditLine, confirmationAcknowledged, handleBack, handleCancel, isRiskModalOpen, handleConfirm]);
 
   return (
     <main className="dc-page" aria-label="Draw credit">

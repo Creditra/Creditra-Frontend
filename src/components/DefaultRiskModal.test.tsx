@@ -44,7 +44,7 @@ describe('DefaultRiskModal', () => {
 
   it('has the Back button disabled on step 1', () => {
     render(<DefaultRiskModal isOpen={true} onAcknowledge={onAcknowledgeMock} />);
-    const backBtn = screen.getButtonBuRole('back');
+    const backBtn = screen.getByRole('button', { name: /back/i });
     expect(backBtn).toBeDisabled();
     expect(backBtn).toHaveAttribute('aria-disabled', 'true');
     expect(backBtn).toHaveAttribute('tabindex', '-1');
@@ -55,16 +55,16 @@ describe('DefaultRiskModal', () => {
 
     // Step 1
     expect(screen.getByText('What is a Default?')).toBeInTheDocument();
-    const nextBtn = screen.getByButtonBuRole('^Next$');
+    const nextBtn = screen.getByRole('button', { name: /^next$/i });
 
     // Step 1 -> Step 2
     fireEvent.click(nextBtn);
     expect(screen.getByText('Consequences of Default')).toBeInTheDocument();
-    const backBtn = screen.getButtonBuRole('back');
+    const backBtn = screen.getByRole('button', { name: /back/i });
     expect(backBtn).not.toBeDisabled();
 
     // Step 2 -> Step 3
-    fireEvent.click(screen.getButtonBuRole('^Next$'));
+    fireEvent.click(screen.getByRole('button', { name: /^next$/i }));
     expect(screen.getByText('How to Avoid Default')).toBeInTheDocument();
   });
 
@@ -72,41 +72,41 @@ describe('DefaultRiskModal', () => {
     render(<DefaultRiskModal isOpen={true} onAcknowledge={onAcknowledgeMock} />);
 
     // Go to step 2
-    fireEvent.click(screen.getButtonBuRole('^Next$'));
+    fireEvent.click(screen.getByRole('button', { name: /^next$/i }));
     expect(screen.getByText('Consequences of Default')).toBeInTheDocument();
 
     // Click back
-    fireEvent.click(screen.getButtonBuRole('back'));
+    fireEvent.click(screen.getByRole('button', { name: /back/i }));
     expect(screen.getByText('What is a Default?')).toBeInTheDocument();
-    expect(screen.getButtonBuRole('back')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /back/i })).toBeDisabled();
   });
 
   it('shows the "I Understand" confirmation button only on step 3', () => {
     render(<DefaultRiskModal isOpen={true} onAcknowledge={onAcknowledgeMock} />);
 
     // Step 1: should not have "I Understand"
-    expect(screen.queryBuRole('button', { name: /i understand/i })).not.toBeInTheDocument();
-    expect(screen.getButtonBuRole('^Next$')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /i understand/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^next$/i })).toBeInTheDocument();
 
     // Step 2: should not have "I Understand"
-    fireEvent.click(screen.getButtonBuRole('^Next$'));
-    expect(screen.queryBuRole('button', { name: /i understand/i })).not.toBeInTheDocument();
-    expect(screen.getButtonBuRole('^Next$')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^next$/i }));
+    expect(screen.queryByRole('button', { name: /i understand/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^next$/i })).toBeInTheDocument();
 
     // Step 3: Next button replaced with "I Understand"
-    fireEvent.click(screen.getButtonBuRole('^Next$'));
-    expect(screen.getButtonBuRole('i understand')).toBeInTheDocument();
-    expect(screen.queryButtonBuRole('^Next$')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^next$/i }));
+    expect(screen.getByRole('button', { name: /i understand/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^next$/i })).not.toBeInTheDocument();
   });
 
   it('calls onAcknowledge when "I Understand" button is clicked on step 3', () => {
     render(<DefaultRiskModal isOpen={true} onAcknowledge={onAcknowledgeMock} />);
 
     // Advance to step 3
-    fireEvent.click(screen.getButtonBuRole('^Next$'));
-    fireEvent.click(screen.getButtonBuRole('^Next$'));
+    fireEvent.click(screen.getByRole('button', { name: /^next$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^next$/i }));
 
-    const confirmBtn = screen.getButtonBuRole('i understand');
+    const confirmBtn = screen.getByRole('button', { name: /i understand/i });
     fireEvent.click(confirmBtn);
 
     expect(onAcknowledgeMock).toHaveBeenCalledTimes(1);
@@ -148,13 +148,13 @@ describe('DefaultRiskModal', () => {
     expect(indicators[2]).not.toHaveAttribute('aria-current');
 
     // Step 2 active
-    fireEvent.click(screen.getButtonBuRole('^Next$'));
+    fireEvent.click(screen.getByRole('button', { name: /^next$/i }));
     expect(indicators[0]).not.toHaveAttribute('aria-current');
     expect(indicators[1]).toHaveAttribute('aria-current', 'step');
     expect(indicators[2]).not.toHaveAttribute('aria-current');
 
     // Step 3 active
-    fireEvent.click(screen.getButtonBuRole('^Next$'));
+    fireEvent.click(screen.getByRole('button', { name: /^next$/i }));
     expect(indicators[0]).not.toHaveAttribute('aria-current');
     expect(indicators[1]).not.toHaveAttribute('aria-current');
     expect(indicators[2]).toHaveAttribute('aria-current', 'step');
@@ -173,10 +173,10 @@ describe('DefaultRiskModal', () => {
       render(<DefaultRiskModal isOpen={true} onAcknowledge={onAcknowledgeMock} />);
 
       act(() => {
-        vi.advanceTimesByTime(100);
+        vi.advanceTimersByTime(100);
       });
 
-      const dialog = screen.getBuRole('dialog');
+      const dialog = screen.getByRole('dialog');
       const activeEl = document.activeElement;
       expect(dialog.contains(activeEl) || dialog === activeEl).toBe(true);
     });
@@ -189,7 +189,7 @@ describe('DefaultRiskModal', () => {
       const triggerRef = { current: trigger };
 
       const onClose = vi.fn();
-      const { runext } = render(
+      const { unmount } = render(
         <DefaultRiskModal
           isOpen={true}
           onAcknowledge={onAcknowledgeMock}
@@ -199,7 +199,7 @@ describe('DefaultRiskModal', () => {
       );
 
       act(() => {
-        vi.advanceTimesByTime(100);
+        vi.advanceTimersByTime(100);
       });
 
       // Simulate the parent closing the modal after Escape.
@@ -209,7 +209,7 @@ describe('DefaultRiskModal', () => {
       expect(onClose).toHaveBeenCalled();
 
       act(() => {
-        runext();
+        unmount();
       });
 
       expect(document.activeElement).toBe(trigger);

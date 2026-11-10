@@ -85,6 +85,14 @@ const INELIGIBLE_COPY: Record<DrawIneligibilityReason, IneligibleCopy> = {
  *
  * Side effects: none. This is a controlled, presentational component —
  * selection state lives in the parent (`DrawCreditPage`).
+ *
+ * Accessibility:
+ * - Rows are real `<button>` elements with a descriptive `aria-label`
+ *   (`Select <name> credit line, available balance <fmt>`).
+ * - Rows are keyboard-activatable via native button semantics (Enter/Space).
+ * - The step heading is exposed via `id="select-credit-line-heading"`
+ *   so the parent can wire it as the labelling element for the wizard
+ *   container.
  */
 export function CreditLineSelector({
   creditLines,
@@ -165,7 +173,7 @@ export function CreditLineSelector({
                           Available:
                         </span>
                         <span className="dc-credit-line-item__value tabular-nums">
-                          ${line.available.toLocaleString()}
+                          {formatMoney(line.available)}
                         </span>
                       </div>
 
@@ -189,6 +197,7 @@ export function CreditLineSelector({
                         <div
                           className="dc-credit-line-item__warning-badge"
                           role="status"
+                          aria-live="polite"
                         >
                           <AlertCircle
                             className="dc-banner__icon"
@@ -203,7 +212,7 @@ export function CreditLineSelector({
                     <div
                       className="dc-progress-track"
                       role="progressbar"
-                      aria-valuenow={line.utilization}
+                      aria-valuenow={Math.round(line.utilization)}
                       aria-valuemin={0}
                       aria-valuemax={100}
                       aria-label={`${line.name} utilization: ${line.utilization}%`}

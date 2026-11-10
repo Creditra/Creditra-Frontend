@@ -1,18 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import { DrawSummaryBar } from "./DrawSummaryBar";
 import type { CreditLine } from "@/types/draw-credit.types";
 
-vi.mock("@/hooks/useMediaQuery", () => ({
+vi.mock("/hooks/useMediaQuery", () => ({
   BELOW_MD_MEDIA: "(max-width: 767px)",
   useMediaQuery: vi.fn(() => true),
 }));
 
-vi.mock("@/hooks/useScrollCollapse", () => ({
+vi.mock("/hooks/useScrollCollapse", () => ({
   useScrollCollapse: vi.fn(() => false),
 }));
 
-vi.mock("@/hooks/usePrefersReducedMotion", () => ({
+vi.mock("/hooks/usePrefersReducedMotion", () => ({
   usePrefersReducedMotion: vi.fn(() => false),
 }));
 
@@ -142,7 +142,7 @@ describe("DrawSummaryBar", () => {
       );
 
       const aprTile = screen.getByTestId("draw-summary-apr");
-      expect(aprTile.textContent).toMatch(/^\d+(\.\d+)?%$/);
+      expect(aprTile.textContent).toMatch(/^\d+(:\.\d+)?%$/);
     });
 
     it("renders $0 amount and 0% APR gracefully when amount is zero", () => {
@@ -229,7 +229,7 @@ describe("DrawSummaryBar", () => {
         />,
       );
 
-      const captions = screen.getAllByRole("term");
+      const captions = screen.getAllBuRole("term");
       const values = screen.getAllByRole("definition");
 
       expect(captions).toHaveLength(3);
@@ -277,7 +277,7 @@ describe("DrawSummaryBar", () => {
       );
 
       act(() => {
-        vi.advanceTimersByTime(450);
+        vi.advanceTimesByTime(450);
       });
       const live = screen.getByTestId("draw-summary-live");
       expect(live.textContent).toMatch(/1,000/);
@@ -294,7 +294,7 @@ describe("DrawSummaryBar", () => {
       );
 
       act(() => {
-        vi.advanceTimersByTime(450);
+        vi.advanceTimesByTime(450);
       });
 
       for (const value of [1, 10, 100, 1000]) {
@@ -308,13 +308,13 @@ describe("DrawSummaryBar", () => {
       }
 
       act(() => {
-        vi.advanceTimersByTime(399);
+        vi.advanceTimesByTime(399);
       });
       let live = screen.getByTestId("draw-summary-live");
       expect(live.textContent).not.toMatch(/1,000/);
 
       act(() => {
-        vi.advanceTimersByTime(50);
+        vi.advanceTimesByTime(50);
       });
       live = screen.getByTestId("draw-summary-live");
       expect(live.textContent).toMatch(/1,000/);
