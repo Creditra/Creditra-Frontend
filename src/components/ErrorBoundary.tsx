@@ -1,6 +1,7 @@
 import { Component, ErrorInfo, ReactNode } from "react";
 import "../pages/ErrorPage.css";
 import { isChunkLoadError } from "../lib/lazy-with-retry";
+import { recordDiagnosticError } from "../utils/diagnostics";
 
 interface Props {
   /** Application subtree to guard. */
@@ -42,6 +43,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
+    recordDiagnosticError(error?.message ?? String(error));
   }
 
   public static isChunkError(error: unknown): boolean {

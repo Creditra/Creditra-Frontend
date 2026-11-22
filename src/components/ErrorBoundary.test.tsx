@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { BrowserRouter } from "react-router-dom";
 import { vi } from "vitest";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { buildDiagnosticsBundle } from "../utils/diagnostics";
 
 const ThrowError = () => {
   throw new Error("Test error");
@@ -66,5 +67,21 @@ describe("ErrorBoundary", () => {
     expect(
       screen.getByRole("link", { name: /contact support/i }),
     ).toBeInTheDocument();
+  });
+
+  it("records render errors in the diagnostics buffer", () => {
+    const before = buildDiagnosticsBundle().recentErrors.length;
+
+    render(
+      <BrowserRouter>
+        <ErrorBoundary>
+          <ThrowError />
+        </ErrorBoundary>
+      </BrowserRouter>,
+    );
+
+    const errors = buildDiagnosticsBundle().recentErrors;
+    expect(errors.length).toBe(before + 1);
+    expect(errors[errors.length - 1]).toContain("Test error");
   });
 });
