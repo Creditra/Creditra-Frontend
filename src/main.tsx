@@ -12,7 +12,16 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { recordDiagnosticError } from "./utils/diagnostics";
 import "./index.css";
+
+window.addEventListener("error", (event) => {
+  recordDiagnosticError(event.message || event.error?.message);
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  recordDiagnosticError(event.reason);
+});
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>

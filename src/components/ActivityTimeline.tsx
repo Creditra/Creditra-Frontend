@@ -4,7 +4,7 @@ import './ActivityTimeline.css';
 /**
  * Types for activity entries. Adjust according to your backend schema.
  */
-interface ActivityEntry {
+export interface ActivityEntry {
   id: string;
   type: string; // e.g., 'borrow', 'repay', 'payment'
   timestamp: string; // ISO date string
@@ -13,18 +13,27 @@ interface ActivityEntry {
 
 /**
  * ActivityTimeline component displays a list of user activities.
- * Currently uses a mock fetch; replace with real API call as needed.
+ * When `entries` is provided, renders those entries directly; otherwise
+ * falls back to the mock fetch.
  */
-interface ActivityTimelineProps {
+export interface ActivityTimelineProps {
   filter?: string;
+  entries?: ActivityEntry[];
 }
 
-const ActivityTimeline: React.FC<ActivityTimelineProps> = ({ filter }) => {
-  const [activities, setActivities] = useState<ActivityEntry[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+const ActivityTimeline: React.FC<ActivityTimelineProps> = ({ filter, entries }) => {
+  const [activities, setActivities] = useState<ActivityEntry[]>(entries ?? []);
+  const [isLoading, setIsLoading] = useState<boolean>(entries === undefined);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (entries !== undefined) {
+      setActivities(entries);
+      setIsLoading(false);
+      setError(null);
+      return;
+    }
+
     let cancelled = false;
     setActivities([]);
     setIsLoading(true);
@@ -62,7 +71,7 @@ const ActivityTimeline: React.FC<ActivityTimelineProps> = ({ filter }) => {
     return () => {
       cancelled = true;
     };
-  }, [filter]);
+  }, [filter, entries]);
 
   if (isLoading) {
     return <div className="activity-loading" aria-live="polite">Loading activity...</div>;

@@ -3,6 +3,7 @@ const roundToCents = (amount: number) => Math.round(amount * 100) / 100;
 export type DayCountConvention = 'ACT/365' | 'ACT/360';
 
 export interface InterestBearingLine {
+  id?: string;
   utilized: number;
   apr: number;
   nextInterestAccrualDate?: string;
@@ -10,6 +11,13 @@ export interface InterestBearingLine {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+const warnedMissingAccrualIds = new Set<string>();
+
+/** Clears the per-line "missing accrual date" warning cache (for tests). */
+export function resetInterestWarnings(): void {
+  warnedMissingAccrualIds.clear();
+}
 
 /** Returns the number of whole elapsed UTC days since the last known accrual. */
 export function getAccruedInterestDays(line: InterestBearingLine, now: Date): number | null {
@@ -47,7 +55,11 @@ export function getAccruedInterest(
   if (line.utilized <= 0 || line.apr <= 0) return 0;
   const days = getAccruedInterestDays(line, now);
   if (days === null) {
-    console.warn(`Missing accrual date for credit line; using monthly interest fallback.`);
+    const warningKey = line.id ?? 'unknown';
+    if (!warnedMissingAccrualIds.has(warningKey)) {
+      warnedMissingAccrualIds.add(warningKey);
+      console.warn('Missing accrual date for credit line; using monthly interest fallback.');
+    }
     return roundToCents((line.utilized * (line.apr / 100)) / 12);
   }
   const denominator = opts.dayCount === 'ACT/360' ? 360 : 365;

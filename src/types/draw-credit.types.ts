@@ -43,6 +43,7 @@ export interface Transaction {
   creditLineId: string;
   amount: number;
   status: "pending" | "success" | "error";
+  txHash?: string;
   message?: string;
   timestamp?: Date;
 }

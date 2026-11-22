@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { SmartPayCTA } from './SmartPayCTA';
 import { Link } from 'react-router-dom';
 
@@ -96,5 +96,49 @@ describe('SmartPayCTA', () => {
       />,
     );
     expect(screen.getByText('Enter')).toBeInTheDocument();
+  });
+
+  it('renders strategy toggle, accessible rationale, and allocation table when lines and budget are provided', () => {
+    const onApplyPlan = vi.fn();
+    render(
+      <SmartPayCTA
+        title="Smart Pay Optimiser"
+        description="Allocate across lines."
+        cta={null}
+        lines={[
+          { id: 'L-high', name: 'High APR', balance: 2000, apr: 24, status: 'Active' },
+          { id: 'L-small', name: 'Small Balance', balance: 500, apr: 8, status: 'Active' },
+        ]}
+        budget={1000}
+        onApplyPlan={onApplyPlan}
+      />,
+    );
+
+    const avalancheBtn = screen.getByRole('button', { name: /avalanche/i });
+    const snowballBtn = screen.getByRole('button', { name: /snowball/i });
+    expect(avalancheBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(snowballBtn).toHaveAttribute('aria-pressed', 'false');
+
+    const rationale = screen.getByRole('status');
+    expect(rationale).toHaveTextContent(/avalanche/i);
+    expect(rationale).toHaveTextContent(/saves an estimated/i);
+
+    // Under avalanche, High APR gets the full $1,000.00
+    const highRow = screen.getByTestId('smartpay-row-L-high');
+    expect(within(highRow).getByText('$1,000.00')).toBeInTheDocument();
+
+    // Switch to snowball: Small Balance gets $500.00, High APR gets $500.00
+    fireEvent.click(snowballBtn);
+    expect(snowballBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(avalancheBtn).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('status')).toHaveTextContent(/snowball/i);
+
+    const smallRow = screen.getByTestId('smartpay-row-L-small');
+    expect(within(smallRow).getAllByText('$500.00').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: /apply plan/i }));
+    expect(onApplyPlan).toHaveBeenCalledTimes(1);
+    expect(onApplyPlan.mock.calls[0][0].strategy).toBe('snowball');
+    expect(onApplyPlan.mock.calls[0][0].totalAllocated).toBe(1000);
   });
 });

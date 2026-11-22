@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AmountInput, AmountInputSkeleton } from "./AmountInput";
 import * as ReducedMotionContext from "../context/ReducedMotionContext";
@@ -717,5 +717,32 @@ describe("AmountInput", () => {
 
     expect(screen.getByText("↑ / ↓")).toBeInTheDocument();
     expect(screen.getByText("Adjust amount")).toBeInTheDocument();
+  });
+
+  it("clears the pending paste-selection timer on unmount", () => {
+    vi.useFakeTimers();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { container, unmount } = render(
+        <AmountInput
+          creditLine={creditLine}
+          onAmountChange={vi.fn()}
+          onNext={vi.fn()}
+          onBack={vi.fn()}
+        />,
+      );
+      const input = container.querySelector<HTMLInputElement>("#draw-amount-input")!;
+      fireEvent.paste(input, {
+        clipboardData: { getData: () => "1234" },
+      });
+      unmount();
+      act(() => {
+        vi.advanceTimersByTime(10);
+      });
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

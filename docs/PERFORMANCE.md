@@ -168,7 +168,7 @@ We do not silently ship over budget.
 | --- | --- | --- |
 | `vite build` | Per-chunk gzip size printed in the build summary | Locally and CI |
 | Lighthouse CI (recommended) | LCP/INP/CLS/TBT against the budgets above | CI on every PR |
-| `@axe-core/react` (recommended) | A11y regressions that also frequently surface perf regressions | CI on every PR |
+| `@axe-core/react` (optional recommendation; install separately if adopted) | A11y regressions that also frequently surface perf regressions | CI on every PR |
 | Bundle visualizer (`rollup-plugin-visualizer`, recommended) | Per-chunk treemap when a budget is breached | Local |
 
 When budgets are breached, the recovery order is: (1) lazy-split, (2) shrink dependency,

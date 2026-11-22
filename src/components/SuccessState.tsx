@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './SuccessState.css';
 import { RepaySuccessShareCard } from './RepaySuccessShareCard';
 
@@ -46,6 +47,7 @@ const SuccessState: React.FC<SuccessStateProps> = ({
   onClose,
   onViewHistory
 }) => {
+  const navigate = useNavigate();
   const [showShareCard, setShowShareCard] = useState(false);
 
   const getContent = () => {
@@ -114,7 +116,7 @@ const SuccessState: React.FC<SuccessStateProps> = ({
         {content.showHistoryLink && (
           <button 
             className="btn-secondary" 
-            onClick={onViewHistory || (() => window.location.hash = '#/history')}
+            onClick={onViewHistory || (() => navigate('/transactions'))}
           >
             View Transaction History
           </button>

@@ -1,4 +1,5 @@
 import type { CreditLine, CreditLineStatus } from "../types/creditLine";
+import { parseLocalDate } from "../utils/dates";
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
@@ -6,26 +7,9 @@ function isDelinquent(status: CreditLineStatus): boolean {
   return status === "Suspended" || status === "Defaulted";
 }
 
-function parseLocalDate(date: string): Date | null {
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-  const parsed = dateOnly
-    ? new Date(
-        Number(dateOnly[1]),
-        Number(dateOnly[2]) - 1,
-        Number(dateOnly[3]),
-      )
-    : new Date(date);
-
-  if (Number.isNaN(parsed.getTime())) return null;
-  if (
-    dateOnly &&
-    (parsed.getFullYear() !== Number(dateOnly[1]) ||
-      parsed.getMonth() !== Number(dateOnly[2]) - 1 ||
-      parsed.getDate() !== Number(dateOnly[3]))
-  ) {
-    return null;
-  }
-
+function parseLocalCalendarDate(date: string): Date | null {
+  const parsed = parseLocalDate(date);
+  if (!parsed) return null;
   parsed.setHours(0, 0, 0, 0);
   return parsed;
 }
@@ -46,7 +30,7 @@ export function getDelinquencyStartDate(
   for (const entry of line.statusHistory) {
     if (isDelinquent(entry.status)) {
       if (previousStatus === null || !isDelinquent(previousStatus)) {
-        episodeStart = parseLocalDate(entry.date);
+        episodeStart = parseLocalCalendarDate(entry.date);
       }
     } else {
       episodeStart = null;
@@ -55,7 +39,7 @@ export function getDelinquencyStartDate(
   }
 
   const missedPaymentDate = line.nextPaymentDate
-    ? parseLocalDate(line.nextPaymentDate)
+    ? parseLocalCalendarDate(line.nextPaymentDate)
     : null;
   const today = Number.isNaN(now.getTime()) ? null : calendarDayNumber(now);
   const validMissedPaymentDate =

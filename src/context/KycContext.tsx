@@ -27,10 +27,12 @@ import type {
   KycStepId,
   KycStepStatus,
 } from '../types/kyc';
+import { KYC_STORAGE_KEY } from '../constants/storageKeys';
+import { readVersioned, writeVersioned } from '../utils/storage';
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 
-const STORAGE_KEY = 'creditra_kyc';
+const KYC_SCHEMA_VERSION = 1;
 
 /** The canonical ordered step list. */
 const DEFAULT_STEPS: KycStep[] = [
@@ -108,35 +110,45 @@ function deriveResumeStepId(steps: KycStep[]): KycStepId | null {
   return notStarted?.id ?? null;
 }
 
-function loadFromStorage(): KycStep[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_STEPS;
-    const parsed = JSON.parse(raw) as KycPersistedState;
-    if (parsed.version !== 1) return DEFAULT_STEPS;
-    // Merge stored statuses onto the canonical step list so new steps
-    // added in code appear with their defaults.
-    const stored = new Map(parsed.steps.map(s => [s.id, s]));
-    return DEFAULT_STEPS.map(def => {
-      const s = stored.get(def.id);
-      return s ? { ...def, status: s.status, updatedAt: s.updatedAt } : def;
-    });
-  } catch {
-    return DEFAULT_STEPS;
+function isKycPersistedState(data: unknown): data is KycPersistedState {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+  const record = data as Record<string, unknown>;
+  return record.version === 1 && Array.isArray(record.steps);
+}
+
+function migrateKycState(raw: unknown, fromVersion: number): KycPersistedState | undefined {
+  if (fromVersion === 0 && isKycPersistedState(raw)) {
+    return raw;
   }
+  return undefined;
+}
+
+function loadFromStorage(): KycStep[] {
+  const parsed = readVersioned<KycPersistedState | null>(KYC_STORAGE_KEY, {
+    version: KYC_SCHEMA_VERSION,
+    fallback: null,
+    migrate: migrateKycState,
+    validate: isKycPersistedState,
+  });
+
+  if (!parsed) return DEFAULT_STEPS;
+
+  // Merge stored statuses onto the canonical step list so new steps
+  // added in code appear with their defaults.
+  const stored = new Map(parsed.steps.map(s => [s.id, s]));
+  return DEFAULT_STEPS.map(def => {
+    const s = stored.get(def.id);
+    return s ? { ...def, status: s.status, updatedAt: s.updatedAt } : def;
+  });
 }
 
 function saveToStorage(steps: KycStep[]): void {
-  try {
-    const payload: KycPersistedState = {
-      version: 1,
-      steps,
-      lastUpdated: new Date().toISOString(),
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  } catch {
-    // Silently ignore storage quota errors.
-  }
+  const payload: KycPersistedState = {
+    version: 1,
+    steps,
+    lastUpdated: new Date().toISOString(),
+  };
+  writeVersioned(KYC_STORAGE_KEY, payload, { version: KYC_SCHEMA_VERSION });
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
