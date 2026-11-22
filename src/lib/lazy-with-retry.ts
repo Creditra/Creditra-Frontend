@@ -20,7 +20,7 @@ export interface LazyWithRetryOptions {
 }
 
 export class ChunkLoadError extends Error {
-  public readonly cause?: unknown;
+  public override readonly cause?: unknown;
 
   constructor(message = "Failed to load a code chunk.", cause?: unknown) {
     super(message);

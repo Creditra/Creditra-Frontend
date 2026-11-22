@@ -1,0 +1,75 @@
+.auction-price-curve {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+  min-width: 0;
+  margin-top: 0.75rem;
+}
+
+.auction-price-curve__svg {
+  width: 100%;
+  height: 56px;
+  display: block;
+  overflow: visible;
+}
+
+.auction-price-curve__line {
+  fill: none;
+  stroke: var(--accent, #58a6ff);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.auction-price-curve__marker {
+  fill: var(--accent, #58a6ff);
+  stroke: var(--surface, #161b22);
+  stroke-width: 1.5;
+  transition: cx 0.25s linear, cy 0.25s linear;
+}
+
+.auction-price-curve__labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--muted, #8b949e);
+  font-variant-numeric: tabular-nums;
+}
+
+.auction-price-curve__label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 480px) {
+  .auction-price-curve__svg {
+    height: 48px;
+  }
+
+  .auction-price-curve__labels {
+    font-size: 0.65rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auction-price-curve__marker {
+    transition: none;
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .auction-price-curve__line {
+    stroke: ButtonText;
+    stroke-width: 2;
+  }
+
+  .auction-price-curve__marker {
+    fill: Highlight;
+    stroke: Canvas;
+  }
+}

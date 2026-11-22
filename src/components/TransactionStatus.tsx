@@ -75,7 +75,7 @@ const STATUS_CONFIG = {
     colorMod: "success",
     /** Diagonal stripes (45°, upward sweep) — positive direction cue. */
     patternMod: "success",
-    message: "Funds have been disbursed to your account.",
+    message: "Your draw request was submitted to the Stellar network.",
   },
   error: {
     Icon: AlertCircle,
@@ -194,7 +194,9 @@ export function TransactionStatus({
       {transaction.status === "success" && (
         <div className="dc-success-notice">
           <p>
-            Funds will be deposited to your account within 1-2 business days.
+            {transaction.txHash
+              ? "Your draw is confirmed on the Stellar ledger. Funds are available in your wallet as soon as the transaction settles, usually within seconds."
+              : "Waiting for ledger confirmation."}
           </p>
         </div>
       )}

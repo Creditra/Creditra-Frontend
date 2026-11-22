@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, lazy, Suspense } from "react";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { CommandPalette } from "./components/CommandPalette";
 import { RouteAnnouncer, RouteHeadProvider } from "./components/RouteAnnouncer";
 import { WalletProvider } from "./context/WalletContext";
@@ -39,31 +39,8 @@ function RouteLoadingFallback() {
   );
 }
 
-/**
- * Application root.
- *
- * Provider composition order (outer → inner):
- *
- *   <ErrorBoundary>      — catches render errors in everything below
- *     <ThemeProvider>    — colour-scheme (light/dark) preference
- *       <ContrastProvider> — high-contrast override, [data-contrast="high"]
- *         <WalletProvider> — wallet lifecycle visible to every route
- *           <CreditDataProvider> — wallet-scoped credit line and transaction data
- *             <BrowserRouter>
- *             <header />   — persistent nav chrome
- *             <main>
- *               <Routes /> — current route
- *             </main>
- *             </BrowserRouter>
- *           </CreditDataProvider>
- *         </WalletProvider>
- *       </ContrastProvider>
- *     </ThemeProvider>
- *   </ErrorBoundary>
- *
- * See docs/ARCHITECTURE.md for the full component topology.
- */
-function App() {
+function AppShell() {
+  const navigate = useNavigate();
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [openedFromSettingsLink, setOpenedFromSettingsLink] = useState(false);
   const [isKycDrawerOpen, setIsKycDrawerOpen] = useState(false);
@@ -99,6 +76,99 @@ function App() {
   }, []);
 
   return (
+    <>
+      <AuctionAlertWatcher />
+      <RouteHeadProvider>
+        <RouteAnnouncer />
+        <div className="app">
+          <Header
+            settingsTriggerRef={settingsTriggerRef}
+            kycTriggerRef={kycTriggerRef}
+            onSettingsClick={() => {
+              setOpenedFromSettingsLink(true);
+              setIsShortcutHelpOpen(true);
+            }}
+            onKycClick={() => setIsKycDrawerOpen(true)}
+          />
+
+          {/* Wallet auto-reconnect timeout banner — self-dismissing,
+              non-blocking; only visible when reconnect takes > 8 s. */}
+          <WalletReconnectBanner />
+          {/* Session-timeout warning banner — visible 60 s before
+              the wallet extension silently disconnects (#227). */}
+          <Suspense fallback={null}>
+            <SessionTimeoutBanner />
+          </Suspense>
+          <main className="main">
+            <BannerAlerts />
+            <NetworkMismatchBanner />
+            <Suspense fallback={<RouteLoadingFallback />}>
+              <Routes>
+                {ROUTE_MANIFEST.map((route) => {
+                  const RouteComponent = route.Component;
+                  return (
+                    <Route
+                      key={route.path}
+                      path={route.path}
+                      element={<RouteComponent />}
+                    />
+                  );
+                })}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
+          </main>
+          <ShortcutHelpOverlay
+            isOpen={isShortcutHelpOpen}
+            onClose={() => setIsShortcutHelpOpen(false)}
+            triggerRef={openedFromSettingsLink ? settingsTriggerRef : undefined}
+          />
+          <KycDrawer
+            isOpen={isKycDrawerOpen}
+            onClose={() => setIsKycDrawerOpen(false)}
+            onResume={(stepId) => {
+              navigate(`/kyc?step=${encodeURIComponent(stepId)}`);
+            }}
+            triggerRef={kycTriggerRef}
+          />
+          <CommandPalette
+            isOpen={isPaletteOpen}
+            onClose={() => setIsPaletteOpen(false)}
+            triggerRef={paletteTriggerRef}
+          />
+          <ToastContainer />
+        </div>
+      </RouteHeadProvider>
+    </>
+  );
+}
+
+/**
+ * Application root.
+ *
+ * Provider composition order (outer → inner):
+ *
+ *   <ErrorBoundary>      — catches render errors in everything below
+ *     <ThemeProvider>    — colour-scheme (light/dark) preference
+ *       <ContrastProvider> — high-contrast override, [data-contrast="high"]
+ *         <WalletProvider> — wallet lifecycle visible to every route
+ *           <CreditDataProvider> — wallet-scoped credit line and transaction data
+ *             <BrowserRouter>
+ *             <header />   — persistent nav chrome
+ *             <main>
+ *               <Routes /> — current route
+ *             </main>
+ *             </BrowserRouter>
+ *           </CreditDataProvider>
+ *         </WalletProvider>
+ *       </ContrastProvider>
+ *     </ThemeProvider>
+ *   </ErrorBoundary>
+ *
+ * See docs/ARCHITECTURE.md for the full component topology.
+ */
+function App() {
+  return (
     <ErrorBoundary>
       <ThemeProvider>
         <ContrastProvider>
@@ -108,71 +178,7 @@ function App() {
                 <NotificationProvider>
                   <ReducedMotionProvider>
                     <BrowserRouter>
-                    <AuctionAlertWatcher />
-                    <RouteHeadProvider>
-                      <RouteAnnouncer />
-                      <div className="app">
-                        <Header
-                          settingsTriggerRef={settingsTriggerRef}
-                          kycTriggerRef={kycTriggerRef}
-                          onSettingsClick={() => {
-                            setOpenedFromSettingsLink(true);
-                            setIsShortcutHelpOpen(true);
-                          }}
-                          onKycClick={() => setIsKycDrawerOpen(true)}
-                        />
-
-                        {/* Wallet auto-reconnect timeout banner — self-dismissing,
-                            non-blocking; only visible when reconnect takes > 8 s. */}
-                        <WalletReconnectBanner />
-                        {/* Session-timeout warning banner — visible 60 s before
-                            the wallet extension silently disconnects (#227). */}
-                        <Suspense fallback={null}>
-                          <SessionTimeoutBanner />
-                        </Suspense>
-                        <main className="main">
-                          <BannerAlerts />
-                          <NetworkMismatchBanner />
-                          <Suspense fallback={<RouteLoadingFallback />}>
-                            <Routes>
-                              {ROUTE_MANIFEST.map((route) => {
-                                const RouteComponent = route.Component;
-                                return (
-                                  <Route
-                                    key={route.path}
-                                    path={route.path}
-                                    element={<RouteComponent />}
-                                  />
-                                );
-                              })}
-                              <Route path="*" element={<NotFound />} />
-                            </Routes>
-                          </Suspense>
-                        </main>
-                        <ShortcutHelpOverlay
-                          isOpen={isShortcutHelpOpen}
-                          onClose={() => setIsShortcutHelpOpen(false)}
-                          triggerRef={openedFromSettingsLink ? settingsTriggerRef : undefined}
-                        />
-                        <KycDrawer
-                          isOpen={isKycDrawerOpen}
-                          onClose={() => setIsKycDrawerOpen(false)}
-                          onResume={(stepId) => {
-                            // Navigate to the KYC page with the step pre-selected.
-                            // Replace with router.push('/kyc?step=' + stepId) when the
-                            // full KYC page exists.
-                            console.info('[KYC] Resume at step:', stepId);
-                          }}
-                          triggerRef={kycTriggerRef}
-                        />
-                        <CommandPalette
-                          isOpen={isPaletteOpen}
-                          onClose={() => setIsPaletteOpen(false)}
-                          triggerRef={paletteTriggerRef}
-                        />
-                        <ToastContainer />
-                      </div>
-                    </RouteHeadProvider>
+                      <AppShell />
                     </BrowserRouter>
                   </ReducedMotionProvider>
                 </NotificationProvider>
