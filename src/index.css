@@ -6,6 +6,7 @@
 @import "./styles/patterns.css";
 @import "./components/FormField.css";
 @import "./styles/themes/high-contrast.css"; /* High-contrast overrides */
+@import "./styles/print.css";
 
 /* Map the design-system CSS variables onto Tailwind colour utilities so classes
    such as bg-surface, text-muted, text-foreground and border-border (used by
