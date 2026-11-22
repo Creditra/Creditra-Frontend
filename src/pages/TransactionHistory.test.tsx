@@ -1300,4 +1300,63 @@ describe("TransactionHistory", () => {
       expect(screen.getByText("28 transactions shown")).toBeTruthy();
     });
   });
+
+  describe("Virtualization (large ledger)", () => {
+    it("bounds rendered DOM rows for a 2,000-row fixture and preserves ARIA row semantics", () => {
+      const baseMs = Date.parse("2025-02-20T12:00:00Z");
+      const largeTransactions = Array.from({ length: 2000 }, (_, i) => ({
+        id: `tx-large-${i}`,
+        type: (i % 2 === 0 ? "Draw" : "Repay") as "Draw" | "Repay",
+        amount: 100 + (i % 500),
+        date: new Date(baseMs - i * 60_000).toISOString(),
+        note: `Ledger entry ${i}`,
+        status: "Completed" as const,
+        txHash: `hash${String(i).padStart(12, "0")}`,
+      }));
+
+      const largeLine = {
+        id: "CL-LARGE",
+        name: "Large Ledger Line",
+        status: "Active" as const,
+        creditLimit: 500_000,
+        utilized: 120_000,
+        available: 380_000,
+        interestRate: 8.5,
+        riskTier: "Low" as const,
+        createdAt: "2024-01-01T00:00:00Z",
+        nextPaymentDue: "2025-03-01T00:00:00Z",
+        transactions: largeTransactions,
+      };
+
+      const { container } = renderWithCredit(
+        <NotificationProvider>
+          <MemoryRouter initialEntries={["/transactions"]}>
+            <TransactionHistory pageSize={2000} virtualizeThreshold={100} />
+            <LocationProbe />
+          </MemoryRouter>
+        </NotificationProvider>,
+        { withRouter: false, lines: [largeLine] },
+      );
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+
+      const table = screen.getByRole("table");
+      expect(table).toHaveAttribute("aria-rowcount", "2001");
+
+      const renderedRows = container.querySelectorAll("tbody tr.tx-row");
+      expect(renderedRows.length).toBeGreaterThan(0);
+      expect(renderedRows.length).toBeLessThan(40);
+      expect(renderedRows[0]).toHaveAttribute("aria-rowindex", "2");
+
+      // Spacer row is present and hidden from assistive tech
+      const spacers = container.querySelectorAll("tbody tr.virtual-list-spacer");
+      expect(spacers.length).toBeGreaterThanOrEqual(1);
+      spacers.forEach((s) => expect(s).toHaveAttribute("aria-hidden", "true"));
+
+      // Live region result count still announces total filtered transactions
+      expect(screen.getByText("2000 transactions shown")).toBeInTheDocument();
+    });
+  });
 });
