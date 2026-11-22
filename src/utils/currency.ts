@@ -1,3 +1,5 @@
+import { getAccruedInterest, type InterestBearingLine } from '../lib/interest';
+
 /**
  * Lightweight currency formatting helpers.
  *
@@ -16,7 +18,7 @@ export function roundToCents(amount: number): number {
 }
 
 /**
- * Monthly accrued interest on an outstanding principal balance.
+ * Estimated monthly interest for projection copy and payment estimates.
  *
  * Uses the same formula as the repay modal's payoff preview:
  * `(principal × APR) / 12`, rounded to cents.
@@ -32,17 +34,16 @@ export function computeMonthlyAccruedInterest(
 }
 
 /**
- * Full payoff for a credit line: outstanding principal plus accrued
- * monthly interest. Derived from line state only — not approximated.
+ * Full payoff for a credit line: principal plus day-count accrued interest.
  */
 export function computeFullPayoffAmount(
-  principal: number,
-  aprPercent: number,
+  line: InterestBearingLine,
+  now: Date,
 ): number {
-  if (principal <= 0) {
+  if (line.utilized <= 0) {
     return 0;
   }
-  return roundToCents(principal + computeMonthlyAccruedInterest(principal, aprPercent));
+  return roundToCents(line.utilized + getAccruedInterest(line, now));
 }
 
 /**

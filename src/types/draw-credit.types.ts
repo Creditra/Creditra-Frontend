@@ -14,11 +14,15 @@
  * normalize via `normalizeCreditLineAvailability`) so the two can never
  * drift out of sync.
  */
+import type { CreditLineStatus } from "./creditLine";
+
 export type DrawPricingRiskBand = "Prime" | "Standard" | "Watch";
 
 export interface CreditLine {
   id: string;
   name: string;
+  /** Lifecycle status mirrored from the canonical credit-line model. */
+  status: CreditLineStatus;
   limit: number;
   /**
    * Drawable balance, derived deterministically from `limit` and the

@@ -79,6 +79,13 @@
   transition: box-shadow 0.15s ease;
 }
 
+.risk-gauge-caption {
+  margin: 0 0 var(--space-2, 0.5rem);
+  color: var(--muted);
+  font-size: var(--text-xs, 0.75rem);
+  text-align: center;
+}
+
 /* ── Whole-gauge focus ring ──────────────────────────────────────────────── */
 
 /*

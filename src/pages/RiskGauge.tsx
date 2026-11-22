@@ -44,6 +44,7 @@ import React, {
   useEffect,
   useRef,
   useMemo,
+  useId,
   type KeyboardEvent,
 } from "react";
 import { Sparkline } from "../components/Sparkline";
@@ -61,9 +62,10 @@ import "../styles/patterns.css";
 export type RiskSector = "low" | "medium" | "high";
 
 export interface RiskGaugeProps {
-  score?: number;
+  score?: number | null;
   trend?: "improving" | "declining" | "stable";
   lastUpdated?: string;
+  caption?: string;
   history?: number[];
   /** When true, an empty-state illustration is shown instead of the gauge. */
   isEmpty?: boolean;
@@ -370,6 +372,7 @@ export function RiskGauge({
   score = 0,
   trend = "stable",
   lastUpdated = "",
+  caption,
   history,
   isEmpty = false,
   onRefresh,
@@ -377,7 +380,7 @@ export function RiskGauge({
   showSectors = true,
   showSRTable = true,
 }: RiskGaugeProps) {
-  const normalizedScore = Math.min(MAX_SCORE, Math.max(0, score));
+  const normalizedScore = Math.min(MAX_SCORE, Math.max(0, score ?? 0));
   const offset = CIRCUMFERENCE - (normalizedScore / MAX_SCORE) * CIRCUMFERENCE;
 
   const gaugeColor = RISK_COLOR(normalizedScore);
@@ -432,18 +435,14 @@ export function RiskGauge({
   );
 
   // ── Stable IDs for aria-labelledby ────────────────────────────────────────
-  const titleId = useRef(
-    `risk-gauge-title-${Math.random().toString(36).slice(2)}`,
-  ).current;
-
-  const sectorTitleIdBase = useRef(
-    `risk-gauge-sector-title-${Math.random().toString(36).slice(2)}`,
-  ).current;
+  const reactId = useId();
+  const titleId = `risk-gauge-title-${reactId}`;
+  const sectorTitleIdBase = `risk-gauge-sector-title-${reactId}`;
 
   // ── Active sector / live region ───────────────────────────────────────────
   const activeSector = activeSectorForScore(normalizedScore);
 
-  const srDescription = `Risk score ${normalizedScore} of ${MAX_SCORE}. Trend: ${trendLabel}.`;
+  const srDescription = `Risk score ${normalizedScore} of ${MAX_SCORE}. Trend: ${trendLabel}.${caption ? ` ${caption}.` : ""}`;
   const [liveMessage, setLiveMessage] = useState(srDescription);
 
   // Announce the score description whenever it meaningfully changes.
@@ -471,7 +470,7 @@ export function RiskGauge({
   }
 
   // ── Empty state ───────────────────────────────────────────────────────────
-  if (isEmpty) {
+  if (isEmpty || score === null) {
     return (
       <EmptyState
         illustration={<NoRiskGauge />}
@@ -614,6 +613,8 @@ export function RiskGauge({
           </span>
         </div>
       </div>
+
+      {caption && <p className="risk-gauge-caption">{caption}</p>}
 
       {/* Keyboard shortcut hint */}
       <div

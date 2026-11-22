@@ -30,7 +30,8 @@ import {
   getStoredWallet,
   type WalletType,
 } from '@/utils/wallet';
-import type { WalletInfo } from '@/types/wallet';
+import type { StoredWalletPreference } from '@/types/wallet';
+import { WalletConnectError } from '@/types/wallet';
 import './WalletConnectionModal.css';
 
 // Wallet provider definitions
@@ -116,13 +117,17 @@ interface WalletConnectionModalProps {
    * Callback when a wallet is selected.  Implementers should respect the
    * `options.remember` flag and persist it via the safe wrappers in
    * `src/utils/storage.ts`.
+   * 
+   * Returns a Promise so the modal can distinguish success from failure.
    */
-  onConnect: (provider: WalletProvider, options?: WalletConnectOptions) => void;
+  onConnect: (provider: WalletProvider, options?: WalletConnectOptions) => Promise<void>;
   /** Ref to the trigger button that opened the modal (for return focus) */
   triggerRef?: React.RefObject<HTMLElement | null>;
   /** Currently detected/available wallets */
   detectedWallets?: WalletProvider[];
 }
+
+const EMPTY_DETECTED_WALLETS: WalletProvider[] = [];
 
 /**
  * WalletConnectionModal
@@ -147,7 +152,7 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
   onClose,
   onConnect,
   triggerRef,
-  detectedWallets = [],
+  detectedWallets = EMPTY_DETECTED_WALLETS,
 }) => {
   const [connectingId, setConnectingId] = useState<WalletProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -164,28 +169,28 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
   //
   // Compute the display order once per render.  We honour any persisted
   // recency list (`getRecentWalletOrder`); if that is empty we fall back to
-  // the `wallet_info` legacy entry so users who already connected once
-  // are not served the default ordering on their first post-upgrade visit.
+  // the stored session preference (type only) so users who already connected
+  // once are not served the default ordering on their first post-upgrade visit.
 
   const { primaryWallet, orderedWallets } = useMemo(() => {
     const recent = getRecentWalletOrder();
-    const legacy: WalletInfo | null = recent.length === 0 ? getStoredWallet() : null;
+    const stored: StoredWalletPreference | null = recent.length === 0 ? getStoredWallet() : null;
 
     // We only treat a primary wallet as "most recently used" when we have an
-    // *actual* recency signal — either a non-empty MRU list or a legacy
-    // `wallet_info` entry from before the MRU feature shipped.  When neither
+    // *actual* recency signal — either a non-empty MRU list or a stored
+    // session preference from before the MRU feature shipped.  When neither
     // is present, fall through to the full catalogue so first-time visitors
     // see every option at a glance instead of an arbitrary "Continue with"
     // prompt.
-    const hasRecency = recent.length > 0 || legacy !== null;
+    const hasRecency = recent.length > 0 || stored !== null;
 
-    // Build a unified recency ordering.  Legacy entry is treated as if it
-    // were the only MRU entry (most recent by definition).
+    // Build a unified recency ordering.  A stored session preference is
+    // treated as if it were the only MRU entry (most recent by definition).
     const recencyOrder: WalletProvider[] =
       recent.length > 0
         ? recent
-        : legacy
-        ? [legacy.type]
+        : stored
+        ? [stored.type]
         : [];
 
     // Anything in the recency list that we don't ship metadata for
@@ -211,6 +216,19 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
     };
   }, [isOpen]); // Re-read ordering each time the modal opens.
 
+  // Sort detected wallets before undetected ones, preserving the existing
+  // MRU ordering within each group.
+  const sortedWallets = useMemo(() => {
+    const detectedSet = new Set(detectedWallets);
+    const detected: WalletOption[] = [];
+    const undetected: WalletOption[] = [];
+    for (const wallet of orderedWallets) {
+      if (detectedSet.has(wallet.id)) detected.push(wallet);
+      else undetected.push(wallet);
+    }
+    return [...detected, ...undetected];
+  }, [orderedWallets, detectedWallets]);
+
   // When the modal opens we want to start in the collapsed "Continue with
   // X" view if there is a primary wallet, or expanded if there is not.
   // We do this in a layout effect so we don't show stale state mid-render.
@@ -228,6 +246,7 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
   }, [onClose]);
 
   // Wallet selection handler — forwards the opt-in flag to the consumer.
+  // On failure, the error is displayed in an alert and the modal stays open.
   const handleWalletSelect = useCallback(
     async (provider: WalletProvider) => {
       setError(null);
@@ -235,14 +254,23 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
 
       try {
         await onConnect(provider, { remember: rememberChoice });
+        // Success: close the modal
         handleClose();
       } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : `Failed to connect to ${provider}. Please try again.`
-        );
-        setConnectingId(null);
+        // Connection failed: show error message and keep modal open
+        let errorMessage: string;
+        
+        if (err instanceof WalletConnectError) {
+          // Use the user-facing message from the classified error
+          errorMessage = err.message;
+        } else if (err instanceof Error) {
+          errorMessage = err.message;
+        } else {
+          errorMessage = `Failed to connect to ${provider}. Please try again.`;
+        }
+        
+        setError(errorMessage);
+        setConnectingId(null); // Re-enable buttons
       }
     },
     [onConnect, handleClose, rememberChoice],
@@ -425,7 +453,7 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
           hidden={primaryWallet !== null && !showFullList}
           data-testid="wallet-modal-list"
         >
-          {orderedWallets.map((wallet) => {
+          {sortedWallets.map((wallet) => {
             const isDetected = detectedWallets.includes(wallet.id);
             const isConnecting = connectingId === wallet.id;
             const isDisabled = connectingId !== null;

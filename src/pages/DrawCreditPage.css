@@ -143,3 +143,30 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* Submit-time eligibility failure (line changed status mid-flow) */
+.dc-eligibility-alert {
+  margin-bottom: 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--error-border);
+  border-radius: 10px;
+  background: var(--error-tint);
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.dc-eligibility-alert strong {
+  color: var(--danger);
+}
+
+/* Informational note shown when a restored wizard draft is discarded */
+.dc-draft-notice {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.875rem;
+}
