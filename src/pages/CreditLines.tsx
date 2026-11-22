@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback, lazy, Suspense } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { StatusBadge } from "../components/StatusBadge";
 import { CreditLineRowMenu } from "../components/CreditLineRowMenu";
@@ -61,6 +61,12 @@ import {
   loadComparisonSelection,
   saveComparisonSelection,
 } from "../utils/comparisonSelection";
+
+const CreditLineDetailDrawer = lazy(() =>
+  import("../components/CreditLineDetailDrawer").then((m) => ({
+    default: m.CreditLineDetailDrawer,
+  })),
+);
 
 const CREDIT_LINES_PAGE_SIZE = 6;
 const getCreditLineId = (line: CreditLine) => line.id;
@@ -147,13 +153,17 @@ function CreditLineCard({
   ) => void;
   onRepay?: () => void;
   onSchedule?: (lineId: string) => void;
-  onDetails?: (lineId: string) => void;
+  onDetails?: (
+    lineId: string,
+    triggerRef: React.RefObject<HTMLButtonElement | null>,
+  ) => void;
   onFreeze?: (lineId: string) => void;
   onUnfreeze?: (lineId: string) => void;
 }) {
   const pct = utilizationPct(line.utilized, line.limit);
   const level = getUtilizationLevel(line.utilized, line.limit);
   const swapTriggerRef = useRef<HTMLButtonElement>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
 
   const isDefaulted = line.status === "Defaulted";
   const transitionContext = { statusHistory: line.statusHistory };
@@ -194,11 +204,12 @@ function CreditLineCard({
             lineId={line.id}
             lineName={line.name}
             frozen={line.status === "Frozen"}
+            triggerRef={menuTriggerRef}
             onRepay={onRepay}
             onFreeze={canFreeze ? onFreeze : undefined}
             onUnfreeze={canUnfreeze ? onUnfreeze : undefined}
             onSchedule={onSchedule}
-            onDetails={onDetails}
+            onDetails={onDetails ? (id) => onDetails(id, menuTriggerRef) : undefined}
           />
         </div>
       </div>
@@ -649,17 +660,39 @@ export default function CreditLines({
     });
   };
 
+  const selectedLineId = searchParams.get("line");
+  const drawerTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const selectedLine = useMemo(
+    () =>
+      selectedLineId
+        ? (creditLines.find((cl) => cl.id === selectedLineId) ?? null)
+        : null,
+    [creditLines, selectedLineId],
+  );
+
   const handleRepay = (lineId: string) => {
     navigate(`/repay?line=${lineId}`);
   };
 
   const handleSchedule = (lineId: string) => {
-    console.log(`Schedule requested for ${lineId}`);
+    navigate(`/repay?line=${lineId}`);
   };
 
-  const handleDetails = (lineId: string) => {
-    console.log(`Details requested for ${lineId}`);
-  };
+  const handleDetails = useCallback(
+    (lineId: string, trigger?: React.RefObject<HTMLButtonElement | null>) => {
+      drawerTriggerRef.current = trigger?.current ?? null;
+      const next = new URLSearchParams(searchParams);
+      next.set("line", lineId);
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
+
+  const handleCloseDetails = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("line");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const filteredAndSorted = useMemo(() => {
     let filtered =
@@ -1162,7 +1195,7 @@ export default function CreditLines({
                     onFreeze={handleFreeze}
                     onUnfreeze={handleUnfreeze}
                     onSchedule={() => handleSchedule(line.id)}
-                    onDetails={() => handleDetails(line.id)}
+                    onDetails={handleDetails}
                   />
                 ))}
               </div>
@@ -1259,6 +1292,17 @@ export default function CreditLines({
           currentAsset={modalTarget.currentAsset}
           triggerRef={modalTarget.triggerRef}
         />
+      )}
+
+      {/* Lazy-loaded Credit Line Detail Drawer */}
+      {selectedLine && (
+        <Suspense fallback={null}>
+          <CreditLineDetailDrawer
+            line={selectedLine}
+            onClose={handleCloseDetails}
+            triggerRef={drawerTriggerRef}
+          />
+        </Suspense>
       )}
     </div>
   );
