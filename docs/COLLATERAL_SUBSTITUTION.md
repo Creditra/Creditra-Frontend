@@ -19,6 +19,7 @@ The collateral substitution flow lets a borrower replace the asset currently sec
 | `src/utils/collateral.ts` | Pure helpers: LTV math, fee calculation, asset catalogue, name-matching |
 | `src/utils/collateral.test.ts` | 28 unit tests for all utility functions |
 | `src/components/CollateralSubstitutionModal.tsx` | Three-step modal component |
+| `src/state/collateralSubstitution.ts` | Typed reducer and lifecycle transitions for the modal |
 | `src/components/CollateralSubstitutionModal.css` | Component-scoped styles using CSS custom properties |
 | `src/components/__tests__/CollateralSubstitutionModal.test.tsx` | 27 component integration tests |
 | `src/pages/CreditLines.tsx` | Wired the "⇄ Swap Collateral" button on active credit lines |
@@ -100,12 +101,37 @@ availableHeadroom = asset.value × asset.maxLtvRatio − loanBalance
 
 ## State machine
 
+The modal lifecycle is managed by the pure reducer in
+`src/state/collateralSubstitution.ts`. Its discriminated `State` union has
+seven phases:
+
+| Phase | Meaning |
+|---|---|
+| `selecting` | The user chooses an incoming asset |
+| `quoting` | The selected asset's LTV snapshot and timestamp are captured |
+| `reviewing` | The comparison or confirmation step is active; quote freshness is explicit |
+| `submitting` | The first submission attempt is in flight |
+| `retrying` | A subsequent submission attempt is in flight |
+| `success` | The substitution completed |
+| `error` | A classified submission error is available for recovery |
+
 ```
-idle → [user clicks Submit] → pending → success
-                                      ↘ error  (submission fails; user can retry)
+selecting → quoting → reviewing → submitting → success
+                         │             │
+                         │             └→ error → reviewing → retrying
+                         │                         (retry)       │
+                         └→ reviewing (stale quote)              └→ success / error
 ```
 
-All step/status state lives inside `CollateralSubstitutionModal`. The parent (`CreditLines`) only sees `onClose` and `onSuccess(incomingAsset)`.
+A stale quote remains in `reviewing` and cannot transition to either in-flight
+phase until refreshed. The reducer owns the retry counter, increments it only
+when a submission fails, and refuses retry transitions once
+`MAX_RETRY_ATTEMPTS` is reached. UI booleans such as `isPending` and
+`canRetry` are derived from the current phase and error data rather than stored
+independently.
+
+The parent (`CreditLines`) only sees `onClose` and
+`onSuccess(incomingAsset)`.
 
 ---
 
