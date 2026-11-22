@@ -534,6 +534,32 @@
     animation-delay: 0.3s;
 }
 
+.th-table-container--virtualized {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.th-table-container--virtualized .th-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+.virtual-list-spacer,
+.virtual-list-spacer td {
+    pointer-events: none;
+    border: none;
+    padding: 0;
+    background: transparent;
+}
+
+@media print {
+    .th-table-container--virtualized {
+        max-height: none;
+        overflow: visible;
+    }
+}
+
 .th-table {
     width: 100%;
     border-collapse: collapse;
@@ -565,6 +591,11 @@
 
 .tx-row:hover {
     background: rgba(88, 166, 255, 0.04);
+}
+
+.tx-row:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
 }
 
 .tx-row.expanded {

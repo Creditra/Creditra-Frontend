@@ -51,8 +51,10 @@ import { LiveRegion } from "../components/LiveRegion";
 import { KbdHint } from "../components/KbdHint";
 import {
   DEFAULT_HISTORY_PAGE_SIZE,
+  MAX_HISTORY_PAGE_SIZE,
   paginateByCursor,
 } from "../utils/cursorPagination";
+import { VirtualList, type VirtualListHandle } from "../components/VirtualList";
 
 /**
  * TransactionHistory Page Component
@@ -201,16 +203,35 @@ function TransactionRow({
   tx,
   expanded,
   onToggle,
+  ariaRowIndex,
+  tabIndex,
+  rowRef,
+  onFocus,
+  onKeyDown,
 }: {
   tx: TransactionWithLine;
   expanded: boolean;
   onToggle: () => void;
+  ariaRowIndex?: number;
+  tabIndex?: number;
+  rowRef?: (el: HTMLTableRowElement | null) => void;
+  onFocus?: () => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTableRowElement>) => void;
 }) {
   const isNegative = tx.type === "Repay" || tx.type === "Fee";
 
   return (
     <>
-      <tr className={`tx-row ${expanded ? "expanded" : ""}`} onClick={onToggle}>
+      <tr
+        ref={rowRef}
+        className={`tx-row ${expanded ? "expanded" : ""}`}
+        aria-rowindex={ariaRowIndex}
+        aria-expanded={expanded}
+        tabIndex={tabIndex}
+        onClick={onToggle}
+        onFocus={onFocus}
+        onKeyDown={onKeyDown}
+      >
         <td className="tx-date">
           <div className="tx-date-main">{relativeTime(tx.date)}</div>
           <div className="tx-date-sub">
@@ -378,8 +399,21 @@ const CSV_EXPORT_EMPTY_REASON_ID = "csv-export-empty-reason";
  * reveal and push the rest of the page down.
  */
 const ITEMS_PER_PAGE = DEFAULT_HISTORY_PAGE_SIZE;
+const DEFAULT_VIRTUALIZE_THRESHOLD = 100;
+const ESTIMATED_ROW_HEIGHT = 64;
+const ESTIMATED_EXPANDED_ROW_HEIGHT = 260;
 
-export function TransactionHistory() {
+export interface TransactionHistoryProps {
+  /** Override items per page (defaults to 15; values > 50 bypass cursor cap for large virtualized views). */
+  pageSize?: number;
+  /** Row count threshold at which VirtualList activates windowing (defaults to 100). */
+  virtualizeThreshold?: number;
+}
+
+export function TransactionHistory({
+  pageSize = ITEMS_PER_PAGE,
+  virtualizeThreshold = DEFAULT_VIRTUALIZE_THRESHOLD,
+}: TransactionHistoryProps = {}) {
   const location = useLocation();
   const navigate = useNavigate();
   const { addToast } = useNotifications();
@@ -433,11 +467,15 @@ export function TransactionHistory() {
   const SEARCH_INPUT_ID = "tx-search-input";
 
   const [expandedTx, setExpandedTx] = useState<string | null>(null);
+  const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
+  const virtualListRef = useRef<VirtualListHandle>(null);
+  const tableScrollContainerRef = useRef<HTMLDivElement>(null);
+  const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
   const [currentPage, setCurrentPage] = useState(1);
   const [pageCursors, setPageCursors] = useState<Array<string | undefined>>([
     undefined,
   ]);
-  const itemsPerPage = ITEMS_PER_PAGE;
+  const itemsPerPage = pageSize;
 
   const [liveAnnouncement, setLiveAnnouncement] = useState("");
   const isFirstRender = useRef(true);
@@ -648,16 +686,24 @@ export function TransactionHistory() {
     setExpandedTx(null);
   }, [filterKey]);
 
-  const currentPageResult = useMemo(
-    () =>
-      paginateByCursor(filteredTransactions, {
-        cursor: pageCursors[currentPage - 1],
-        pageSize: itemsPerPage,
-        getDate: (tx) => tx.date,
-        getId: (tx) => tx.id,
-      }),
-    [filteredTransactions, pageCursors, currentPage, itemsPerPage],
-  );
+  const currentPageResult = useMemo(() => {
+    if (itemsPerPage > MAX_HISTORY_PAGE_SIZE) {
+      const start = (currentPage - 1) * itemsPerPage;
+      const items = filteredTransactions.slice(start, start + itemsPerPage);
+      const hasNextPage = start + itemsPerPage < filteredTransactions.length;
+      return {
+        items,
+        nextCursor: hasNextPage ? String(start + itemsPerPage) : null,
+        hasNextPage,
+      };
+    }
+    return paginateByCursor(filteredTransactions, {
+      cursor: pageCursors[currentPage - 1],
+      pageSize: itemsPerPage,
+      getDate: (tx) => tx.date,
+      getId: (tx) => tx.id,
+    });
+  }, [filteredTransactions, pageCursors, currentPage, itemsPerPage]);
   const paginatedTransactions = currentPageResult.items;
 
   const paginatedGrouped = useMemo(() => {
@@ -670,6 +716,83 @@ export function TransactionHistory() {
     // Issue #1189: fixed display order — Upcoming first, Unknown date last.
     return groups;
   }, [paginatedTransactions]);
+
+  const flatPageTransactions = useMemo(
+    () => Object.values(paginatedGrouped).flat(),
+    [paginatedGrouped],
+  );
+
+  // Re-measure row heights whenever an expandable detail row opens or closes.
+  useEffect(() => {
+    virtualListRef.current?.remeasure();
+  }, [expandedTx]);
+
+  // Reset focused row index if the current page shrinks below it.
+  useEffect(() => {
+    if (
+      focusedRowIndex !== null &&
+      focusedRowIndex >= flatPageTransactions.length
+    ) {
+      setFocusedRowIndex(null);
+    }
+  }, [focusedRowIndex, flatPageTransactions.length]);
+
+  const focusRowAt = useCallback((nextIndex: number) => {
+    setFocusedRowIndex(nextIndex);
+    virtualListRef.current?.scrollToIndex(nextIndex, { align: "auto" });
+    const immediate = rowRefs.current.get(nextIndex);
+    if (immediate) {
+      immediate.focus();
+    } else if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => {
+        rowRefs.current.get(nextIndex)?.focus();
+      });
+    }
+  }, []);
+
+  const handleRowKeyDown = useCallback(
+    (index: number, txId: string, e: React.KeyboardEvent<HTMLTableRowElement>) => {
+      const count = flatPageTransactions.length;
+      if (count === 0) return;
+
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          focusRowAt(Math.min(count - 1, index + 1));
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          focusRowAt(Math.max(0, index - 1));
+          break;
+        case "Home":
+          e.preventDefault();
+          focusRowAt(0);
+          break;
+        case "End":
+          e.preventDefault();
+          focusRowAt(count - 1);
+          break;
+        case "PageDown":
+          e.preventDefault();
+          focusRowAt(Math.min(count - 1, index + 10));
+          break;
+        case "PageUp":
+          e.preventDefault();
+          focusRowAt(Math.max(0, index - 10));
+          break;
+        case "Enter":
+        case " ":
+          if (e.target === e.currentTarget) {
+            e.preventDefault();
+            setExpandedTx((prev) => (prev === txId ? null : txId));
+          }
+          break;
+        default:
+          break;
+      }
+    },
+    [flatPageTransactions.length, focusRowAt],
+  );
 
   const stats = useMemo(() => {
     // Outstanding balance: authoritative sum of utilized from non-Closed lines.
@@ -1732,7 +1855,14 @@ export function TransactionHistory() {
         </div>
       </div>
 
-      <div className="th-table-container">
+      <div
+        ref={tableScrollContainerRef}
+        className={`th-table-container${
+          flatPageTransactions.length >= virtualizeThreshold
+            ? " th-table-container--virtualized"
+            : ""
+        }`}
+      >
         {filteredTransactions.length === 0 ? (
           <div className="empty-state" role="status" aria-live="polite">
             <NoDataGraph className="empty-state-illustration--muted" />
@@ -1754,10 +1884,13 @@ export function TransactionHistory() {
           </div>
         ) : (
           <>
-            <table className="th-table">
+            <table
+              className="th-table"
+              aria-rowcount={flatPageTransactions.length + 1}
+            >
               <caption className="sr-only">{tableCaption}</caption>
               <thead>
-                <tr>
+                <tr aria-rowindex={1}>
                   <th>Date</th>
                   <th>Type</th>
                   <th>Amount</th>
@@ -1768,18 +1901,47 @@ export function TransactionHistory() {
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(paginatedGrouped).map(([_group, txs], idx) => (
-                  <React.Fragment key={`group-${idx}`}>
-                    {txs.map((tx) => (
-                      <TransactionRow
-                        key={tx.id}
-                        tx={tx}
-                        expanded={expandedTx === tx.id}
-                        onToggle={() => handleToggleExpand(tx.id)}
-                      />
-                    ))}
-                  </React.Fragment>
-                ))}
+                <VirtualList
+                  ref={virtualListRef}
+                  mode="table"
+                  columnCount={7}
+                  items={flatPageTransactions}
+                  estimateSize={(_idx, tx) =>
+                    expandedTx === tx.id
+                      ? ESTIMATED_EXPANDED_ROW_HEIGHT
+                      : ESTIMATED_ROW_HEIGHT
+                  }
+                  overscan={5}
+                  threshold={virtualizeThreshold}
+                  scrollContainerRef={tableScrollContainerRef}
+                  pinnedIndex={focusedRowIndex}
+                  ariaRowIndexOffset={2}
+                  getItemKey={(tx) => tx.id}
+                  renderItem={(tx, index, { measureRef, ariaRowIndex }) => (
+                    <TransactionRow
+                      tx={tx}
+                      expanded={expandedTx === tx.id}
+                      onToggle={() => handleToggleExpand(tx.id)}
+                      ariaRowIndex={ariaRowIndex}
+                      tabIndex={
+                        focusedRowIndex === index ||
+                        (focusedRowIndex === null && index === 0)
+                          ? 0
+                          : -1
+                      }
+                      rowRef={(el) => {
+                        if (el) {
+                          rowRefs.current.set(index, el);
+                        } else {
+                          rowRefs.current.delete(index);
+                        }
+                        measureRef(el);
+                      }}
+                      onFocus={() => setFocusedRowIndex(index)}
+                      onKeyDown={(e) => handleRowKeyDown(index, tx.id, e)}
+                    />
+                  )}
+                />
               </tbody>
             </table>
 
