@@ -18,7 +18,7 @@
  * - Activation of callback items (non-string action)
  */
 import React, { useRef } from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -413,6 +413,22 @@ describe('CommandPalette', () => {
     render(<Wrapper />);
     await user.click(screen.getByRole('button', { name: /linked accounts/i }));
     expect(mockNavigate).toHaveBeenCalledWith('/linked-accounts');
+  });
+
+  it('clears the pending focus timer on unmount', () => {
+    vi.useFakeTimers();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { unmount } = render(<Wrapper />);
+      unmount();
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   // ── Recent commands ─────────────────────────────────────────────────────────
