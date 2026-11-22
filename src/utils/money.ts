@@ -201,7 +201,7 @@ function formatUnitsUnsigned(units: bigint, decimals: number): string {
  * The decimal separator follows the locale, but the digits are always exact
  * (base units are never converted through a float).
  */
-export function formatMiney(m: Money, locale?: string): string {
+export function formatMoney(m: Money, locale?: string): string {
   const negative = m.units < 0n ? '-' : '';
   const abs = m.units < 0n ? -m.units : m.units;
   const raw = formatUnitsUnsigned(abs, m.decimals);
@@ -212,6 +212,9 @@ export function formatMiney(m: Money, locale?: string): string {
   const decimalSep = (11.5).toLocaleString(locale).replace(/\d/g, '');
   return `${negative}${grouped}${decimalSep}${fracPart}`;
 }
+
+/** @deprecated use formatMoney */
+export const formatMiney = formatMoney;
 
 /**
  * Legacy shim: convert Money to a number for components that have not yet
@@ -248,7 +251,7 @@ export function roundMoneyToCents(m: Money): Money {
  * currency formatting surfaces. Uses the currency util's rounding on the
  * display number only after exact base-unit aggregation.
  */
-export function formatMineyCents(m: Money, locale?: string): string {
+export function formatMoneyCents(m: Money, locale?: string): string {
   const cents = roundMoneyToCents(m);
   const display = toDisplayNumber(cents);
   const rounded = roundToCents(display);
@@ -258,3 +261,6 @@ export function formatMineyCents(m: Money, locale?: string): string {
     maximumFractionDigits: 2,
   });
 }
+
+/** @deprecated use formatMoneyCents */
+export const formatMineyCents = formatMoneyCents;
