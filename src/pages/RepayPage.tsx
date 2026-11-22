@@ -628,6 +628,86 @@ export default function RepayPage() {
   }, [step, amount, refreshBalance, walletStatus, wallet]);
 
   useEffect(() => {
+    if (walletStatus !== 'connected' || !wallet) {
+      setSrAnnouncement(
+        `Connect your wallet to check your ${SETTLEMENT_ASSET.code} balance.`,
+      );
+    } else if (repayableBalance.status === 'loading') {
+      setSrAnnouncement(
+        `Loading your ${SETTLEMENT_ASSET.code} wallet balance.`,
+      );
+    } else if (repayableBalance.status === 'no_trustline') {
+      setSrAnnouncement(
+        `Add a ${SETTLEMENT_ASSET.code} trustline to repay.`,
+      );
+    } else {
+      setSrAnnouncement(
+        `${SETTLEMENT_ASSET.code} wallet balance loaded.`,
+      );
+    }
+  }, [walletStatus, wallet, repayableBalance.status]);
+
+  useEffect(() => {
+    if (step !== 'review') return;
+    if (walletStatus !== 'connected' || !wallet) {
+      setIsReviewBalanceLoading(false);
+      setReviewBalance(null);
+      setReviewBalanceError('Connect your wallet to confirm this repayment.');
+      return;
+    }
+
+    let isCurrent = true;
+    setIsReviewBalanceLoading(true);
+    setReviewBalance(null);
+    setReviewBalanceError('');
+    setSrAnnouncement(
+      `Refreshing your ${SETTLEMENT_ASSET.code} wallet balance.`,
+    );
+
+    refreshBalance()
+      .then((freshBalances) => {
+        if (!isCurrent) return;
+        const fresh = getRepayableBalance(freshBalances, SETTLEMENT_ASSET);
+        if (fresh.status !== 'ok') {
+          setReviewBalanceError(
+            `Unable to verify your ${SETTLEMENT_ASSET.code} balance. Check your trustline and try again.`,
+          );
+          setSrAnnouncement(
+            `Unable to verify your ${SETTLEMENT_ASSET.code} balance.`,
+          );
+          return;
+        }
+
+        const freshAmount = moneyToNumber(fresh.amount);
+        setReviewBalance(freshAmount);
+        if (!moneyCoversAmount(fresh.amount, amount)) {
+          setReviewBalanceError(
+            `Your ${SETTLEMENT_ASSET.code} balance dropped below the repayment amount. Reduce the amount to ${formatMoney(freshAmount)} or less.`,
+          );
+          setSrAnnouncement(
+            `Your ${SETTLEMENT_ASSET.code} balance dropped below the repayment amount.`,
+          );
+        }
+      })
+      .catch(() => {
+        if (!isCurrent) return;
+        setReviewBalanceError(
+          `Unable to refresh your ${SETTLEMENT_ASSET.code} balance. Try again before confirming.`,
+        );
+        setSrAnnouncement(
+          `Unable to refresh your ${SETTLEMENT_ASSET.code} balance.`,
+        );
+      })
+      .finally(() => {
+        if (isCurrent) setIsReviewBalanceLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [step, amount, refreshBalance, walletStatus, wallet]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
 
@@ -1287,6 +1367,8 @@ export default function RepayPage() {
                   repayAmount={amount}
                   limit={selectedLine.limit}
                   nextPaymentAmount={selectedLine.nextPaymentAmount}
+                  accruedInterest={accruedInterest}
+                  accruedDays={accruedDays}
                 />
               </aside>
             </div>
@@ -1454,6 +1536,8 @@ export default function RepayPage() {
               repayAmount={amount}
               limit={selectedLine.limit}
               nextPaymentAmount={selectedLine.nextPaymentAmount}
+              accruedInterest={accruedInterest}
+              accruedDays={accruedDays}
             />
 
             {needsConfirm && (

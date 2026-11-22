@@ -1,6 +1,44 @@
 import { DutchAuction } from '../types/dutchAuction';
 import { EXPECTED_NETWORK } from '../utils/wallet';
+import { generateIdempotencyKey } from '../utils/idempotency';
 import type { WalletInfo } from '../types/wallet';
+
+/** A confirmed purchase returned by the auction purchase service. */
+export interface PurchaseReceipt {
+  auctionId: string;
+  priceStroops: bigint;
+  txId: string;
+  /** Unix timestamp (ms) at which the purchase settled. */
+  purchasedAt: number;
+  idempotencyKey: string;
+}
+
+/** Options accepted by `purchaseAuction`. */
+export interface PurchaseOptions {
+  /** Aborts an in-flight purchase. */
+  signal?: AbortSignal;
+  /**
+   * Stable key for this purchase attempt. Repeating a call with the same key
+   * returns the original receipt instead of buying twice.
+   */
+  idempotencyKey?: string;
+}
+
+/**
+ * Build the idempotency key for one purchase attempt. Call once per attempt
+ * and reuse it across retries of that same attempt.
+ */
+export function createPurchaseIdempotencyKey(
+  auctionId: string,
+  priceStroops: bigint,
+  initiatedAtMs: number = Date.now(),
+): string {
+  return generateIdempotencyKey({
+    creditLineId: `dutch-auction:${auctionId}`,
+    incomingAssetId: `stroops:${priceStroops.toString()}`,
+    initiatedAtMs,
+  });
+}
 
 export type PurchaseCheckResult =
   | { ok: true }

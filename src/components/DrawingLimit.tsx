@@ -13,6 +13,12 @@ interface DrawingLimitProps {
   availableLabel?: string;
   /** Optional className for custom styling */
   className?: string;
+  /**
+   * Whether the percentage should be announced through its own polite live
+   * region. Set to false when an adjacent live region already announces the
+   * same value to avoid double announcements.
+   */
+  announcePercentage?: boolean;
 }
 
 /**
@@ -36,6 +42,7 @@ export function DrawingLimit({
   drawnLabel = "Drawn",
   availableLabel = "Available",
   className = "",
+  announcePercentage = true,
 }: DrawingLimitProps) {
   const id = useId();
   const percentage = totalLimit > 0 ? (drawnAmount / totalLimit) * 100 : 0;
@@ -84,8 +91,8 @@ export function DrawingLimit({
         </div>
         <span
           className={`text-sm font-semibold ${textColor} tabular-nums`}
-          aria-live="polite"
-          aria-atomic="true"
+          aria-live={announcePercentage ? "polite" : undefined}
+          aria-atomic={announcePercentage ? "true" : undefined}
         >
           {isExceeded ? "Exceeded" : `${Math.round(clampedPercentage)}%`}
         </span>

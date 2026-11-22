@@ -61,7 +61,14 @@ export function AccessibleTooltip({
 }: AccessibleTooltipProps) {
   const tooltipId = useId();
   const hasInlineContent = Boolean(children);
-  const isInteractiveChild = isValidElement(children);
+  // Plain layout elements (<span>, <div>, etc.) aren't focusable controls.
+  // Only clone actual interactive elements (or custom components, which may
+  // provide their own focus behaviour); wrap plain content in our trigger.
+  const isInteractiveChild =
+    isValidElement(children) &&
+    (typeof children.type !== 'string' ||
+      ['button', 'a', 'input', 'select', 'textarea', 'summary'].includes(children.type) ||
+      'tabIndex' in (children.props as object));
   const [isVisible, setIsVisible] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

@@ -10,6 +10,7 @@ import { useReducedMotion } from "../context/ReducedMotionContext";
 import { useDebounceValue } from "../hooks/useDebounceValue";
 import { FAQ, HELP_ANCHORS } from "../content/faq";
 import { searchFaq } from "../lib/faq-search";
+import { downloadDiagnosticsBundle } from "../utils/diagnostics";
 import "./HelpCenter.css";
 
 export { HELP_ANCHORS };
@@ -50,6 +51,7 @@ export default function HelpCenter() {
   const debouncedQuery = useDebounceValue(searchQuery, 300);
   const activeSection = useActiveSection(SECTION_IDS);
   const navRef = useRef<HTMLElement>(null);
+  const [diagnosticsStatus, setDiagnosticsStatus] = useState("");
   const { isReducedMotionActive } = useReducedMotion();
 
   const filteredFaqs = useMemo(() => {
@@ -135,6 +137,17 @@ export default function HelpCenter() {
     },
     [isReducedMotionActive, navigate],
   );
+
+  const handleDownloadDiagnostics = useCallback(() => {
+    try {
+      downloadDiagnosticsBundle();
+      setDiagnosticsStatus("Diagnostics downloaded.");
+    } catch {
+      setDiagnosticsStatus(
+        "Could not create the diagnostics file. Please try again.",
+      );
+    }
+  }, []);
 
   const handleFaqToggle = useCallback(
     (faqId: string) => {
@@ -250,6 +263,37 @@ export default function HelpCenter() {
               maxAttachmentBytes={5 * 1024 * 1024}
               acceptedAttachmentTypes={[".png", ".jpg", ".jpeg", ".pdf"]}
             />
+
+            <div className="help-center__diagnostics">
+              <h3 className="help-center__diagnostics-title">
+                Troubleshooting diagnostics
+              </h3>
+              <p
+                id="help-diagnostics-note"
+                className="help-center__diagnostics-note"
+              >
+                Download a JSON file containing the app version, network, data
+                source, and recent error messages. Financial values, wallet
+                addresses, and Stellar keys are redacted. Nothing is sent
+                automatically.
+              </p>
+              <button
+                type="button"
+                className="help-center__diagnostics-btn"
+                onClick={handleDownloadDiagnostics}
+                aria-describedby="help-diagnostics-note"
+              >
+                Download diagnostics
+              </button>
+              <p
+                className="visually-hidden"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                {diagnosticsStatus}
+              </p>
+            </div>
           </div>
 
           <div id="faq" tabIndex={-1} className="help-center__faq">
