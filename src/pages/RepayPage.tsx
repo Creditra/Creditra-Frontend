@@ -36,7 +36,7 @@ import { KbdHint } from '@/components/KbdHint';
 import { RepayPreviewModal } from '@/components/RepayPreviewModal';
 import { CopyToClipboard } from '@/components/CopyToClipboard';
 import { Tooltip } from '@/components/Tooltip';
-import { saveMockRepaymentTransaction } from '@/services/creditDataSource';
+import { submitRepayment } from '@/services/repayService';
 import { motionClasses, useReducedMotion } from '@/context/ReducedMotionContext';
 import { useWallet, walletIdentityKey } from '@/context/WalletContext';
 import { useCreditLine, useCreditLines } from '@/hooks/useCreditLines';
@@ -413,10 +413,10 @@ export default function RepayPage() {
     const transactionId = `TXN-${Date.now()}`;
     const timestamp = new Date().toISOString();
     if (wallet?.publicKey) {
-      saveMockRepaymentTransaction({
-        id: transactionId,
-        owner: wallet.publicKey,
-        status: 'Completed',
+      await submitRepayment({
+        transactionId,
+        timestamp,
+        walletPublicKey: wallet.publicKey,
         creditLineId: selectedLine.id,
         creditLineName: selectedLine.name,
         amount,
@@ -424,7 +424,6 @@ export default function RepayPage() {
         limit: selectedLine.limit,
         apr: selectedLine.apr,
         nextPaymentAmount: selectedLine.nextPaymentAmount,
-        timestamp,
       });
     }
     navigate(`/repay/success?tx=${encodeURIComponent(transactionId)}`, {
