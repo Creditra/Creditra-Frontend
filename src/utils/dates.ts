@@ -9,6 +9,38 @@
 const DEFAULT_LOCALE = "en-US";
 
 /**
+ * Parse a date string into a `Date`, treating date-only `YYYY-MM-DD` strings
+ * as local calendar dates rather than UTC midnight (so western timezones do
+ * not shift to the previous day).
+ *
+ * Full ISO timestamps (with time/offset) are parsed normally via `new Date()`.
+ * Returns `null` for empty, malformed, or invalid calendar dates (e.g.
+ * `2025-02-29`).
+ */
+export function parseLocalDate(dateStr: string): Date | null {
+  if (!dateStr) return null;
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (dateOnly) {
+    const year = Number(dateOnly[1]);
+    const month = Number(dateOnly[2]) - 1;
+    const day = Number(dateOnly[3]);
+    const parsed = new Date(year, month, day);
+    if (
+      Number.isNaN(parsed.getTime()) ||
+      parsed.getFullYear() !== year ||
+      parsed.getMonth() !== month ||
+      parsed.getDate() !== day
+    ) {
+      return null;
+    }
+    return parsed;
+  }
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+/**
  * Return a human-friendly "time ago" string (e.g. `"3 minutes ago"`,
  * `"2 days ago"`). Uses the browser's `Intl.RelativeTimeFormat` where
  * available.

@@ -73,4 +73,28 @@ describe('RepayCalendar', () => {
     const labels = Array.from(chips).map((chip) => chip.textContent);
     expect(new Set(labels).size).toBe(labels.length);
   });
+
+  it('renders date-only string 2025-03-01 as March 1 regardless of timezone', () => {
+    render(
+      <RepayCalendar
+        events={[{ date: '2025-03-01', amount: 500, label: 'March payment' }]}
+      />,
+    );
+    const timeEl = document.querySelector('time');
+    expect(timeEl).not.toBeNull();
+    expect(timeEl!.textContent).toMatch(/Mar\s+1|1\s+Mar/i);
+    expect(timeEl!.textContent).not.toMatch(/Feb\s+28|28\s+Feb/i);
+  });
+
+  it('renders raw string fallback for invalid dates instead of Invalid Date', () => {
+    render(
+      <RepayCalendar
+        events={[{ date: 'TBD', amount: 500, label: 'Pending date' }]}
+      />,
+    );
+    const timeEl = document.querySelector('time');
+    expect(timeEl).not.toBeNull();
+    expect(timeEl!.textContent).toBe('TBD');
+    expect(timeEl!.textContent).not.toContain('Invalid Date');
+  });
 });
