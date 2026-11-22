@@ -1,5 +1,15 @@
 import type { ReactNode } from 'react';
 import { COLOR } from '../utils/tokens';
+import { parseLocalDate } from '../utils/dates';
+
+function formatEventDate(dateStr: string): string {
+  const parsed = parseLocalDate(dateStr);
+  if (!parsed) return dateStr;
+  return parsed.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+}
 
 /** Repayment status for a single calendar event. */
 export type RepayEventStatus = 'upcoming' | 'due-soon' | 'paid' | 'overdue';
@@ -92,10 +102,7 @@ export function RepayCalendar({
                 dateTime={event.date}
                 className="repay-calendar__date num-tabular"
               >
-                {new Date(event.date).toLocaleDateString(undefined, {
-                  month: 'short',
-                  day: 'numeric',
-                })}
+                {formatEventDate(event.date)}
               </time>
               <span className="repay-calendar__label">{event.label}</span>
               {event.status && (

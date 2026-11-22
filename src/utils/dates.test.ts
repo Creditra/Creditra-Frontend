@@ -1,10 +1,45 @@
 import { describe, it, expect } from "vitest";
 import {
+  parseLocalDate,
   timeAgo,
   isSameDay,
   formatCountdown,
   getCountdownAriaLabel,
 } from "./dates";
+
+describe("parseLocalDate", () => {
+  it("parses YYYY-MM-DD as a local calendar date (not UTC midnight)", () => {
+    const d = parseLocalDate("2025-03-01");
+    expect(d).not.toBeNull();
+    expect(d!.getFullYear()).toBe(2025);
+    expect(d!.getMonth()).toBe(2); // March (0-indexed)
+    expect(d!.getDate()).toBe(1);
+    expect(d!.getHours()).toBe(0);
+    expect(d!.getMinutes()).toBe(0);
+  });
+
+  it("handles valid leap day and rejects invalid calendar dates", () => {
+    const leap = parseLocalDate("2024-02-29");
+    expect(leap).not.toBeNull();
+    expect(leap!.getFullYear()).toBe(2024);
+    expect(leap!.getMonth()).toBe(1);
+    expect(leap!.getDate()).toBe(29);
+
+    expect(parseLocalDate("2025-02-29")).toBeNull();
+  });
+
+  it("preserves full ISO timestamps with Z or offset", () => {
+    const iso = "2025-03-01T14:30:00Z";
+    const d = parseLocalDate(iso);
+    expect(d).not.toBeNull();
+    expect(d!.getTime()).toBe(Date.parse(iso));
+  });
+
+  it("returns null for empty or invalid strings", () => {
+    expect(parseLocalDate("")).toBeNull();
+    expect(parseLocalDate("not-a-date")).toBeNull();
+  });
+});
 
 describe("timeAgo", () => {
   const NOW = new Date("2025-01-15T12:00:00Z");
