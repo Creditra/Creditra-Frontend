@@ -140,7 +140,10 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
       }).format(val);
     }
     if (format === "percent") {
-      return `${val}%`;
+      const formatted = new Intl.NumberFormat("en-US", {
+        maximumFractionDigits: 2,
+      }).format(val);
+      return `${formatted}%`;
     }
     return val.toString();
   };
@@ -190,6 +193,7 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
       touchTimer.current = null;
       setDismissed(false);
       setShowTooltip(true);
+      touchTimer.current = null;
     }, 500);
   };
 
