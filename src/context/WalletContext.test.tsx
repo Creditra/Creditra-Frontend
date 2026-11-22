@@ -36,9 +36,15 @@ import * as walletUtils from '../utils/wallet';
 
 const STORED_WALLET = {
   type: 'freighter' as const,
-  publicKey: 'GABC123...',
+  publicKey: 'GBBM6BKZPEHWYO3E3YKREDPQXMS4VK35YLNU7NFBRI26RAN7GI5POFBB',
   network: 'PUBLIC',
 };
+
+/**
+ * The minimal `{ v: 2, type }` record the wallet module persists — no public
+ * key, which is what `getStoredWallet()` returns.
+ */
+const STORED_PREFERENCE = { v: 2 as const, type: 'freighter' as const };
 
 /**
  * Test consumer that renders all relevant context values as data-testid
@@ -68,6 +74,7 @@ function WalletContextConsumer() {
       <span data-testid="wallet">{wallet?.publicKey ?? 'null'}</span>
       <span data-testid="wallet-network">{wallet?.network ?? 'null'}</span>
       <span data-testid="error">{error?.type ?? 'null'}</span>
+      <span data-testid="error-message">{error?.message ?? 'null'}</span>
       <span data-testid="reconnect-timed-out">{String(reconnectTimedOut)}</span>
       <span data-testid="is-remembered">{String(isRemembered)}</span>
       <span data-testid="balances">{balances ? balances.map((b) => `${b.asset}:${b.balance}`).join(',') : 'null'}</span>
@@ -148,9 +155,9 @@ afterEach(() => {
 
 describe('WalletContext — auto-reconnect gating with remember flag', () => {
   // Gating: when `creditra-wallet-remember` is missing/false we must NOT
-  // kick off a reconnect, even if `wallet_info` is present (legacy users).
+  // kick off a reconnect, even if a stored wallet type is present.
   it('does NOT auto-reconnect when remembered flag is false', async () => {
-    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_PREFERENCE);
     vi.spyOn(walletUtils, 'isWalletRemembered').mockReturnValue(false);
 
     renderProvider();
@@ -161,8 +168,8 @@ describe('WalletContext — auto-reconnect gating with remember flag', () => {
   });
 
   // When both flags are true we should reconnect normally.
-  it('auto-reconnects when both wallet_info AND remembered are present', async () => {
-    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+  it('auto-reconnects when both a stored type AND remembered are present', async () => {
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_PREFERENCE);
     vi.spyOn(walletUtils, 'isWalletRemembered').mockReturnValue(true);
     vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue(STORED_WALLET);
 
@@ -176,7 +183,7 @@ describe('WalletContext — auto-reconnect gating with remember flag', () => {
   // After auto-reconnect we consider the user to have opted-in (they did, last
   // session), so isRemembered mirrors the persisted truth.
   it('surfaces isRemembered=true after auto-reconnect', async () => {
-    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_PREFERENCE);
     vi.spyOn(walletUtils, 'isWalletRemembered').mockReturnValue(true);
     vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue(STORED_WALLET);
 
@@ -222,7 +229,7 @@ describe('WalletContext — opt-in connect', () => {
     vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue({
       ...STORED_WALLET,
       type: 'albedo',
-      publicKey: 'GDEF',
+      publicKey: 'GB7KKHHVYLDIZEKYJPAJUOTBE5E3NJAXPSDZK7O6O44WR3EBRO5HRPVT',
     });
 
     renderProvider();
@@ -252,11 +259,36 @@ describe('WalletContext — opt-in connect', () => {
     // setWalletRemembered must never be called on a failed connect
     expect(walletUtils.setWalletRemembered).not.toHaveBeenCalled();
   });
+
+  it('rejects a returned secret seed without logging or persisting it', async () => {
+    const secretSeed = 'SAB5556L5AN5KSR5WF7UOEFDCIODEWEO7H2UR4S5R62DFTQOGLKOVZDY';
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue({
+      ...STORED_WALLET,
+      publicKey: secretSeed,
+    });
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    renderProvider();
+    await act(async () => {
+      screen.getByTestId('connect-remember-btn').click();
+    });
+    await flushPromises();
+
+    expect(screen.getByTestId('status').textContent).toBe('error');
+    expect(screen.getByTestId('error').textContent).toBe('connection_failed');
+    expect(screen.getByTestId('error-message').textContent).toBe(
+      'Your wallet returned an invalid account address',
+    );
+    expect(walletUtils.saveWalletPreference).not.toHaveBeenCalled();
+    expect(walletUtils.setWalletRemembered).not.toHaveBeenCalled();
+    expect(window.localStorage.length).toBe(0);
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain(secretSeed);
+  });
 });
 
 describe('WalletContext — forgetRememberedChoice', () => {
   it('clears the remember flag without changing connection status', async () => {
-    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_PREFERENCE);
     vi.spyOn(walletUtils, 'isWalletRemembered').mockReturnValue(true);
     vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue(STORED_WALLET);
 
@@ -291,7 +323,7 @@ describe('WalletContext — forgetRememberedChoice', () => {
 
 describe('WalletContext — disconnect clears remember state', () => {
   it('clears the remember flag via disconnect', async () => {
-    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_PREFERENCE);
     vi.spyOn(walletUtils, 'isWalletRemembered').mockReturnValue(true);
     vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue(STORED_WALLET);
 
@@ -321,7 +353,7 @@ describe('WalletContext — auto-reconnect', () => {
 
   // 2
   it('transitions to "reconnecting" immediately when a stored wallet is found', async () => {
-    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_PREFERENCE);
     // connectWallet never resolves in this test (pending promise)
     vi.spyOn(walletUtils, 'connectWallet').mockReturnValue(new Promise(() => {}));
 
@@ -333,7 +365,7 @@ describe('WalletContext — auto-reconnect', () => {
 
   // 3
   it('transitions to "connected" when reconnect succeeds within the timeout', async () => {
-    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_PREFERENCE);
     vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue(STORED_WALLET);
 
     renderProvider(500); // 500 ms timeout
@@ -348,7 +380,7 @@ describe('WalletContext — auto-reconnect', () => {
 
   // 4
   it('sets reconnectTimedOut=true when timeout fires before reconnect resolves', async () => {
-    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_PREFERENCE);
     // Keep the connect pending
     vi.spyOn(walletUtils, 'connectWallet').mockReturnValue(new Promise(() => {}));
 
@@ -363,7 +395,7 @@ describe('WalletContext — auto-reconnect', () => {
 
   // 5
   it('resets reconnectTimedOut to false when reconnect eventually succeeds', async () => {
-    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_PREFERENCE);
 
     let resolveConnect!: (v: typeof STORED_WALLET) => void;
     vi.spyOn(walletUtils, 'connectWallet').mockReturnValue(
@@ -386,7 +418,7 @@ describe('WalletContext — auto-reconnect', () => {
 
   // 6
   it('transitions to "error" and resets reconnectTimedOut when reconnect fails', async () => {
-    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_PREFERENCE);
     vi.spyOn(walletUtils, 'connectWallet').mockRejectedValue({
       type: 'connection_failed',
       message: 'Extension unavailable',
@@ -402,7 +434,7 @@ describe('WalletContext — auto-reconnect', () => {
 
   // 7
   it('dismissReconnectBanner clears reconnectTimedOut without changing status', async () => {
-    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_PREFERENCE);
     vi.spyOn(walletUtils, 'connectWallet').mockReturnValue(new Promise(() => {}));
 
     renderProvider(200);
@@ -420,7 +452,7 @@ describe('WalletContext — auto-reconnect', () => {
 
   // 8
   it('retryReconnect re-runs reconnect with a fresh timeout window', async () => {
-    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_PREFERENCE);
 
     let callCount = 0;
     vi.spyOn(walletUtils, 'connectWallet').mockImplementation(
@@ -466,7 +498,7 @@ describe('WalletContext — auto-reconnect', () => {
 
   // 10
   it('disconnect clears wallet, resets status and reconnectTimedOut', async () => {
-    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_PREFERENCE);
     vi.spyOn(walletUtils, 'connectWallet').mockReturnValue(new Promise(() => {}));
 
     renderProvider(200);
@@ -498,7 +530,7 @@ describe('WalletContext — auto-reconnect', () => {
 
   // 12
   it('cleans up timeout timer on unmount (no setState-on-unmounted warning)', async () => {
-    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_PREFERENCE);
     vi.spyOn(walletUtils, 'connectWallet').mockReturnValue(new Promise(() => {}));
 
     const consoleSpy = vi.spyOn(console, 'error');
@@ -521,8 +553,16 @@ describe('WalletContext — auto-reconnect', () => {
 // ─── #961 — cache invalidation after account or network switching ───────────
 
 describe('WalletContext — cache invalidation on account/network switch (#961)', () => {
-  const ACCOUNT_A = { type: 'freighter' as const, publicKey: 'GAAA111', network: 'PUBLIC' };
-  const ACCOUNT_B = { type: 'freighter' as const, publicKey: 'GBBB222', network: 'PUBLIC' };
+  const ACCOUNT_A = {
+    type: 'freighter' as const,
+    publicKey: 'GBBM6BKZPEHWYO3E3YKREDPQXMS4VK35YLNU7NFBRI26RAN7GI5POFBB',
+    network: 'PUBLIC',
+  };
+  const ACCOUNT_B = {
+    type: 'freighter' as const,
+    publicKey: 'GB7KKHHVYLDIZEKYJPAJUOTBE5E3NJAXPSDZK7O6O44WR3EBRO5HRPVT',
+    network: 'PUBLIC',
+  };
 
   function mockBalancesFetch(asset: string, balance: string) {
     return vi.fn().mockResolvedValue({
@@ -640,6 +680,27 @@ describe('WalletContext — cache invalidation on account/network switch (#961)'
     expect(screen.getByTestId('status').textContent).toBe('connected');
     expect(screen.getByTestId('wallet').textContent).toBe(ACCOUNT_A.publicKey);
     expect(consoleErrorSpy).toHaveBeenCalled();
+  });
+
+  it('ignores an invalid account returned during identity refresh', async () => {
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_A);
+    renderProvider();
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+
+    const secretSeed = 'SAB5556L5AN5KSR5WF7UOEFDCIODEWEO7H2UR4S5R62DFTQOGLKOVZDY';
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce({
+      ...ACCOUNT_A,
+      publicKey: secretSeed,
+    });
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await act(async () => { screen.getByTestId('refresh-identity-btn').click(); });
+    await flushPromises();
+
+    expect(screen.getByTestId('wallet').textContent).toBe(ACCOUNT_A.publicKey);
+    expect(walletUtils.saveWalletPreference).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain(secretSeed);
   });
 
   it('discards a balance response that resolves after the wallet has already switched accounts', async () => {
@@ -841,5 +902,88 @@ describe('WalletContext — connect result object (#1231)', () => {
 
     expect(walletUtils.classifyWalletError).toHaveBeenCalledWith(rawError);
     expect(screen.getByTestId('error').textContent).toBe('user_rejected');
+  });
+});
+
+// ─── Wallet storage minimisation & session expiry ─────────────────────────────
+
+describe('WalletContext — wallet storage minimisation & session expiry', () => {
+  const STORAGE_KEY_INFO = 'creditra-wallet-info';
+  const STORAGE_KEY_INFO_LEGACY = 'wallet_info';
+  const STORAGE_KEY_PREFERENCE_LEGACY = 'wallet_preference';
+  const STORAGE_KEY_REMEMBER = 'creditra-wallet-remember';
+
+  beforeEach(() => {
+    // These cases exercise the real storage layer, so undo the module-level
+    // mocks installed by the outer `beforeEach`.
+    vi.restoreAllMocks();
+    window.localStorage.clear();
+  });
+
+  // 5. A remembered user reloading after the v1 → v2 migration must still
+  //    reconnect, using only the stored type.
+  it('reconnects with the stored type after a v1 record is migrated', async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY_INFO,
+      JSON.stringify({ type: 'freighter', publicKey: 'G'.padEnd(56, 'A'), network: 'PUBLIC' }),
+    );
+    window.localStorage.setItem(
+      STORAGE_KEY_INFO_LEGACY,
+      JSON.stringify({ type: 'freighter', publicKey: 'G'.padEnd(56, 'A'), network: 'PUBLIC' }),
+    );
+    window.localStorage.setItem(STORAGE_KEY_REMEMBER, 'true');
+    const connectSpy = vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue(STORED_WALLET);
+
+    renderProvider(500);
+    await act(async () => { vi.advanceTimersByTime(10); });
+
+    expect(screen.getByTestId('status').textContent).toBe('connected');
+    expect(connectSpy).toHaveBeenCalledWith('freighter');
+    // Storage now holds the minimal v2 record and no legacy keys.
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY_INFO) ?? 'null')).toEqual({
+      v: 2,
+      type: 'freighter',
+    });
+    expect(window.localStorage.getItem(STORAGE_KEY_INFO_LEGACY)).toBeNull();
+    expect(window.localStorage.getItem(STORAGE_KEY_PREFERENCE_LEGACY)).toBeNull();
+  });
+
+  // 6. Expiry must clear what reconnect relies on, not just in-memory state.
+  it('clears the stored session and remember flag when the session expires', async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY_INFO,
+      JSON.stringify({ v: 2, type: 'freighter' }),
+    );
+    window.localStorage.setItem(STORAGE_KEY_REMEMBER, 'true');
+    const connectSpy = vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue(STORED_WALLET);
+
+    const { unmount } = render(
+      <WalletProvider timeoutMs={50} sessionTimeoutMs={1_000}>
+        <WalletContextConsumer />
+      </WalletProvider>,
+    );
+
+    // Auto-reconnect succeeds, which starts the session clock.
+    await act(async () => { vi.advanceTimersByTime(10); });
+    expect(screen.getByTestId('status').textContent).toBe('connected');
+
+    // Let the session expire.
+    await act(async () => { vi.advanceTimersByTime(1_000); });
+    expect(screen.getByTestId('status').textContent).toBe('disconnected');
+    expect(window.localStorage.getItem(STORAGE_KEY_INFO)).toBeNull();
+    expect(window.localStorage.getItem(STORAGE_KEY_REMEMBER)).toBeNull();
+
+    // A fresh mount must NOT silently reconnect the expired session.
+    unmount();
+    connectSpy.mockClear();
+    render(
+      <WalletProvider timeoutMs={50} sessionTimeoutMs={1_000}>
+        <WalletContextConsumer />
+      </WalletProvider>,
+    );
+    await act(async () => { vi.runAllTimers(); });
+
+    expect(screen.getByTestId('status').textContent).toBe('disconnected');
+    expect(connectSpy).not.toHaveBeenCalled();
   });
 });

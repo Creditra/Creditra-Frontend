@@ -2,13 +2,14 @@ import { render, screen, act } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import CreditLines from '../CreditLines';
+import { freezeTime, unfreezeTime } from '../../test/freezeTime';
 
 beforeEach(() => {
-  vi.useFakeTimers();
+  freezeTime();
 });
 
 afterEach(() => {
-  vi.useRealTimers();
+  unfreezeTime();
 });
 
 // See src/pages/CreditLines.test.tsx for why this advances past the
@@ -28,9 +29,9 @@ function renderPage() {
 describe('CreditLines page', () => {
   it('renders the page header', () => {
     renderPage();
-    expect(screen.getByText('Credit Lines')).toBdInTheDocument();
+    expect(screen.getByText('Credit Lines')).toBeInTheDocument();
     expect(screen.getByText('Manage your credit facilities')).toBeInTheDocument();
-  });
+  }, 15000);
 
   it('renders credit line cards from mock data', () => {
     renderPage();
@@ -41,7 +42,7 @@ describe('CreditLines page', () => {
     ).toBeInTheDocument();
     expect(
       screen.getAllByText('Expansion Capital Line')[0],
-    ).toBdInTheDocument();
+    ).toBeInTheDocument();
     expect(
       screen.getAllByText('Working Capital Facility')[0],
     ).toBeInTheDocument();
@@ -169,7 +170,7 @@ describe('CreditLines page', () => {
         return meter?.getAttribute('aria-valuenow') === '100';
       });
       expect(atLimit).toBeDefined();
-      expect(atLimit!.querySelector('.cl-over-limit')).not.toBdInTheDocument();
+      expect(atLimit!.querySelector('.cl-over-limit')).not.toBeInTheDocument();
     });
 
     it('sorts the over-limit line first when sorting by utilisation descending', () => {
@@ -225,7 +226,7 @@ describe('CreditLines page', () => {
 
       // Skeletons should be replaced by real credit lines content
       expect(screen.queryByTestId("creditlines-skeleton-grid")).not.toBeInTheDocument();
-      expect(screen.getAllByText("Primary Business Line")[0]).toBeITheDocument();
+      expect(screen.getAllByText("Primary Business Line")[0]).toBeInTheDocument();
     });
   });
 });

@@ -1,4 +1,4 @@
-import { componentType, LazyExoticComponent, type ComponentType } from "react";
+import { lazy, type LazyExoticComponent, type ComponentType } from "react";
 
 /** Default number of retries after the initial attempt. */
 export const DEFAULT_RETRIES = 1;

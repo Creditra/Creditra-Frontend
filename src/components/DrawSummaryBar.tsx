@@ -24,6 +24,8 @@
  */
 
 import { CreditLine, DrawStep } from "@/types/draw-credit.types";
+import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
+import { projectDraw } from "@/lib/draw-projection";
 import {
   DrawPricingTierHint,
   getDrawPricingQuote,
@@ -63,15 +65,17 @@ function computeSummary(
   amount: number,
 ): {
   apr: number;
+  newUtilizationPct: number;
   amountText: string;
   announcement: string;
 } {
   const safeAmount = Math.max(amount, 0);
-  const { apr } = getDrawPricingQuote(line, safeAmount);
-  const nextTier = getNextAprTier(line, safeAmount);
+  const quote = getDrawPricingQuote(line, safeAmount);
+  const { apr } = quote;
+  const projection = projectDraw(line, safeAmount, quote);
   const amountText = formatMoney(safeAmount);
-  const announcement = buildAnnouncement(line.name, amountText, apr, nextTier);
-  return { apr, amountText, announcement };
+  const announcement = `${buildAnnouncement(line.name, amountText, apr)} New utilization ${projection.newUtilizationPct}%.`;
+  return { apr, newUtilizationPct: projection.newUtilizationPct, amountText, announcement };
 }
 
 export function DrawSummaryBar({
@@ -92,7 +96,7 @@ export function DrawSummaryBar({
     return null;
   }
 
-  const { apr, amountText } = summary;
+  const { apr, newUtilizationPct, amountText } = summary;
 
   return (
     <aside
@@ -167,6 +171,19 @@ export function DrawSummaryBar({
               data-testid="draw-summary-apr"
             >
               {apr}%
+            </dd>
+          </div>
+          <div
+            className="draw-summary-bar__tile"
+            data-tile="utilization"
+            data-testid="draw-summary-tile-utilization"
+          >
+            <dt className="draw-summary-bar__caption">After draw</dt>
+            <dd
+              className="draw-summary-bar__value num-tabular"
+              data-testid="draw-summary-utilization"
+            >
+              {newUtilizationPct}%
             </dd>
           </div>
         </dl>
