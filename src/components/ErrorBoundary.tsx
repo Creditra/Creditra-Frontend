@@ -32,7 +32,7 @@ interface State {
  * - errors thrown inside the boundary's own render
  */
 export class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
+  public override state: State = {
     hasError: false,
   };
 
@@ -40,7 +40,7 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  public override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
   }
 
@@ -48,7 +48,7 @@ export class ErrorBoundary extends Component<Props, State> {
     return isChunkLoadError(error);
   }
 
-  public render() {
+  public override render() {
     if (this.state.hasError) {
       return <ErrorPage error={this.state.error} />;
     }
