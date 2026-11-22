@@ -1,10 +1,47 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
+  parseLocalDate,
   timeAgo,
   isSameDay,
   formatCountdown,
   getCountdownAriaLabel,
+  formatRelative,
+  formatAbsolute,
 } from "./dates";
+
+describe("parseLocalDate", () => {
+  it("parses YYYY-MM-DD as a local calendar date (not UTC midnight)", () => {
+    const d = parseLocalDate("2025-03-01");
+    expect(d).not.toBeNull();
+    expect(d!.getFullYear()).toBe(2025);
+    expect(d!.getMonth()).toBe(2); // March (0-indexed)
+    expect(d!.getDate()).toBe(1);
+    expect(d!.getHours()).toBe(0);
+    expect(d!.getMinutes()).toBe(0);
+  });
+
+  it("handles valid leap day and rejects invalid calendar dates", () => {
+    const leap = parseLocalDate("2024-02-29");
+    expect(leap).not.toBeNull();
+    expect(leap!.getFullYear()).toBe(2024);
+    expect(leap!.getMonth()).toBe(1);
+    expect(leap!.getDate()).toBe(29);
+
+    expect(parseLocalDate("2025-02-29")).toBeNull();
+  });
+
+  it("preserves full ISO timestamps with Z or offset", () => {
+    const iso = "2025-03-01T14:30:00Z";
+    const d = parseLocalDate(iso);
+    expect(d).not.toBeNull();
+    expect(d!.getTime()).toBe(Date.parse(iso));
+  });
+
+  it("returns null for empty or invalid strings", () => {
+    expect(parseLocalDate("")).toBeNull();
+    expect(parseLocalDate("not-a-date")).toBeNull();
+  });
+});
 
 describe("timeAgo", () => {
   const NOW = new Date("2025-01-15T12:00:00Z");
@@ -165,5 +202,65 @@ describe("relativeTime (#1189)", () => {
     const now = new Date("2025-06-15T00:15:00");
     const tx = new Date("2025-06-14T23:30:00");
     expect(calendarRelativeTime(tx, now)).toBe("45m ago");
+  });
+});
+
+describe("locale and invalid-date fallbacks", () => {
+  const NOW = new Date("2025-02-20T12:00:00Z");
+  const FIVE_MIN_AGO = new Date(NOW.getTime() - 5 * 60_000);
+  const THREE_DAYS_AGO = new Date(NOW.getTime() - 3 * 24 * 60 * 60_000);
+  const TWO_HOURS_LATER = new Date(NOW.getTime() + 2 * 60 * 60_000);
+  const INVALID_DATE = new Date("not-a-valid-date");
+
+  it("never throws or logs on invalid locales across all locale-aware helpers", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const badLocales: unknown[] = [
+      "xx-INVALID",
+      "",
+      "en_US",
+      null,
+      undefined,
+    ];
+
+    try {
+      for (const locale of badLocales) {
+        const loc = locale as string;
+        expect(() => timeAgo(FIVE_MIN_AGO, NOW, loc)).not.toThrow();
+        expect(timeAgo(FIVE_MIN_AGO, NOW, loc)).toMatch(/minute/);
+
+        expect(() =>
+          getCountdownAriaLabel(TWO_HOURS_LATER, NOW, loc),
+        ).not.toThrow();
+        expect(getCountdownAriaLabel(TWO_HOURS_LATER, NOW, loc)).toBe(
+          "Next interest in 2 hours",
+        );
+
+        expect(() => formatRelative(FIVE_MIN_AGO, NOW, loc)).not.toThrow();
+        expect(formatRelative(FIVE_MIN_AGO, NOW, loc)).toMatch(/minute/);
+
+        expect(() => formatRelative(THREE_DAYS_AGO, NOW, loc)).not.toThrow();
+        expect(formatRelative(THREE_DAYS_AGO, NOW, loc)).toMatch(/Feb/);
+
+        expect(() => formatAbsolute(NOW, loc)).not.toThrow();
+        expect(formatAbsolute(NOW, loc)).toMatch(/2025/);
+      }
+
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("returns placeholder for invalid dates without throwing", () => {
+    expect(timeAgo(INVALID_DATE, NOW)).toBe("—");
+    expect(timeAgo("not-a-date", NOW)).toBe("—");
+    expect(formatCountdown(INVALID_DATE, NOW)).toBe("—");
+    expect(getCountdownAriaLabel(INVALID_DATE, NOW)).toBe("—");
+    expect(formatRelative(INVALID_DATE, NOW)).toBe("—");
+    expect(formatAbsolute(INVALID_DATE)).toBe("—");
   });
 });

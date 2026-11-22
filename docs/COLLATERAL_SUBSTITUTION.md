@@ -19,6 +19,7 @@ The collateral substitution flow lets a borrower replace the asset currently sec
 | `src/utils/collateral.ts` | Pure helpers: LTV math, fee calculation, asset catalogue, name-matching |
 | `src/utils/collateral.test.ts` | 28 unit tests for all utility functions |
 | `src/components/CollateralSubstitutionModal.tsx` | Three-step modal component |
+| `src/state/collateralSubstitution.ts` | Typed reducer and lifecycle transitions for the modal |
 | `src/components/CollateralSubstitutionModal.css` | Component-scoped styles using CSS custom properties |
 | `src/components/__tests__/CollateralSubstitutionModal.test.tsx` | 27 component integration tests |
 | `src/pages/CreditLines.tsx` | Wired the "⇄ Swap Collateral" button on active credit lines |
@@ -69,15 +70,25 @@ Success state
 ### Component props
 
 ```ts
+interface SubmitCollateralSwapPayload {
+  idempotencyKey: string;
+  creditLineName: string;
+  outgoingAssetId?: string;
+  incomingAssetId: string;
+  loanBalance: number;
+}
+
 interface CollateralSubstitutionModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (incomingAsset: CollateralAsset) => void;
+  onError?: (error: SubstitutionError) => void;
   creditLineName: string;
   loanBalance: number;              // outstanding balance in USD
   currentAsset?: CollateralAsset;  // undefined → no current collateral
   triggerRef?: React.RefObject<HTMLElement | null>;
-  _delayMs?: number;               // internal: override network delay for tests
+  submitCollateralSwap?: (payload: SubmitCollateralSwapPayload) => Promise<void>;
+  _delayMs?: number;               // internal: override default network delay for tests
 }
 ```
 
@@ -100,12 +111,37 @@ availableHeadroom = asset.value × asset.maxLtvRatio − loanBalance
 
 ## State machine
 
+The modal lifecycle is managed by the pure reducer in
+`src/state/collateralSubstitution.ts`. Its discriminated `State` union has
+seven phases:
+
+| Phase | Meaning |
+|---|---|
+| `selecting` | The user chooses an incoming asset |
+| `quoting` | The selected asset's LTV snapshot and timestamp are captured |
+| `reviewing` | The comparison or confirmation step is active; quote freshness is explicit |
+| `submitting` | The first submission attempt is in flight |
+| `retrying` | A subsequent submission attempt is in flight |
+| `success` | The substitution completed |
+| `error` | A classified submission error is available for recovery |
+
 ```
-idle → [user clicks Submit] → pending → success
-                                      ↘ error  (submission fails; user can retry)
+selecting → quoting → reviewing → submitting → success
+                         │             │
+                         │             └→ error → reviewing → retrying
+                         │                         (retry)       │
+                         └→ reviewing (stale quote)              └→ success / error
 ```
 
-All step/status state lives inside `CollateralSubstitutionModal`. The parent (`CreditLines`) only sees `onClose` and `onSuccess(incomingAsset)`.
+A stale quote remains in `reviewing` and cannot transition to either in-flight
+phase until refreshed. The reducer owns the retry counter, increments it only
+when a submission fails, and refuses retry transitions once
+`MAX_RETRY_ATTEMPTS` is reached. UI booleans such as `isPending` and
+`canRetry` are derived from the current phase and error data rather than stored
+independently.
+
+The parent (`CreditLines`) only sees `onClose` and
+`onSuccess(incomingAsset)`.
 
 ---
 
@@ -127,16 +163,28 @@ All step/status state lives inside `CollateralSubstitutionModal`. The parent (`C
 
 ## Connecting to a real API
 
-`handleSubmit` in `CollateralSubstitutionModal.tsx` contains a `TODO` comment showing where to replace the simulated delay with a real call:
+Pass the optional `submitCollateralSwap` prop to `CollateralSubstitutionModal` to wire up a real backend call. It receives a `SubmitCollateralSwapPayload` (including the deterministic `idempotencyKey`) and returns a `Promise<void>`:
 
-```ts
-// Replace this Promise with your API call:
-await apiClient.substituteCollateral({
-  creditLineId,
-  outgoingAssetId: currentAsset?.id,
-  incomingAssetId: selected.id,
-});
+```tsx
+<CollateralSubstitutionModal
+  isOpen={isOpen}
+  onClose={handleClose}
+  onSuccess={handleSuccess}
+  creditLineName={line.name}
+  loanBalance={line.utilized}
+  currentAsset={currentAsset}
+  submitCollateralSwap={async ({ idempotencyKey, outgoingAssetId, incomingAssetId }) => {
+    await apiClient.substituteCollateral({
+      idempotencyKey,
+      creditLineId: line.id,
+      outgoingAssetId,
+      incomingAssetId,
+    });
+  }}
+/>
 ```
+
+When `submitCollateralSwap` is omitted, the modal defaults to a simulated delay of `_delayMs` ms that always resolves (never fails randomly). In tests, pass a rejecting `submitCollateralSwap` mock to deterministically exercise error handling and retry flows.
 
 Pass the asset catalogue from your API via the `AVAILABLE_COLLATERAL_ASSETS` export in `src/utils/collateral.ts` (replace the static array with a fetched list).
 

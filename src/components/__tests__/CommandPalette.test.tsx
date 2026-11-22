@@ -18,11 +18,12 @@
  * - Activation of callback items (non-string action)
  */
 import React, { useRef } from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { CommandPalette } from '../CommandPalette';
+import { COMMAND_PALETTE_RECENTS_KEY } from '@/constants/storageKeys';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -65,6 +66,7 @@ function Wrapper({
 describe('CommandPalette', () => {
   beforeEach(() => {
     mockNavigate.mockReset();
+    window.localStorage.clear();
   });
 
   // ── Visibility ──────────────────────────────────────────────────────────────
@@ -411,5 +413,114 @@ describe('CommandPalette', () => {
     render(<Wrapper />);
     await user.click(screen.getByRole('button', { name: /linked accounts/i }));
     expect(mockNavigate).toHaveBeenCalledWith('/linked-accounts');
+  });
+
+  it('clears the pending focus timer on unmount', () => {
+    vi.useFakeTimers();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { unmount } = render(<Wrapper />);
+      unmount();
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  // ── Recent commands ─────────────────────────────────────────────────────────
+
+  it('orders recently activated items first in the empty-query view with a Recent label', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<Wrapper isOpen />);
+
+    await user.click(screen.getByRole('button', { name: /transactions/i }));
+    rerender(<Wrapper isOpen={false} />);
+    rerender(<Wrapper isOpen />);
+
+    await user.click(screen.getByRole('button', { name: /help center/i }));
+    rerender(<Wrapper isOpen={false} />);
+    rerender(<Wrapper isOpen />);
+
+    expect(screen.getByText('Recent')).toBeInTheDocument();
+    const options = screen.getAllByRole('option');
+    expect(options[0]).toHaveTextContent('Help Center');
+    expect(options[1]).toHaveTextContent('Transactions');
+  });
+
+  it('persists recent items across remounts', async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<Wrapper isOpen />);
+
+    await user.click(screen.getByRole('button', { name: /transactions/i }));
+    unmount();
+
+    render(<Wrapper isOpen />);
+    expect(screen.getByText('Recent')).toBeInTheDocument();
+    const options = screen.getAllByRole('option');
+    expect(options[0]).toHaveTextContent('Transactions');
+  });
+
+  it('tolerates corrupt localStorage data and ignores unknown ids', () => {
+    window.localStorage.setItem(COMMAND_PALETTE_RECENTS_KEY, '{corrupt');
+    const { unmount } = render(<Wrapper isOpen />);
+    expect(screen.queryByText('Recent')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('option')[0]).toHaveTextContent('Dashboard');
+    unmount();
+
+    window.localStorage.setItem(
+      COMMAND_PALETTE_RECENTS_KEY,
+      JSON.stringify(['nav-does-not-exist', 'nav-transactions']),
+    );
+    render(<Wrapper isOpen />);
+    const options = screen.getAllByRole('option');
+    expect(options[0]).toHaveTextContent('Transactions');
+    expect(screen.getByText('Recent')).toBeInTheDocument();
+  });
+
+  it('preserves keyboard navigation and aria-activedescendant with Recent grouping', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const { rerender } = render(<Wrapper isOpen onClose={onClose} />);
+
+    await user.click(screen.getByRole('button', { name: /transactions/i }));
+    rerender(<Wrapper isOpen={false} onClose={onClose} />);
+    rerender(<Wrapper isOpen onClose={onClose} />);
+
+    const dialog = screen.getByRole('dialog');
+    const input = screen.getByRole('textbox');
+    const options = screen.getAllByRole('option');
+
+    expect(options[0]).toHaveTextContent('Transactions');
+    expect(options[0]).toHaveAttribute('aria-selected', 'true');
+    expect(input).toHaveAttribute('aria-activedescendant', options[0].id);
+
+    fireEvent.keyDown(dialog, { key: 'ArrowDown' });
+    expect(options[1]).toHaveAttribute('aria-selected', 'true');
+    expect(input).toHaveAttribute('aria-activedescendant', options[1].id);
+
+    mockNavigate.mockReset();
+    onClose.mockReset();
+    fireEvent.keyDown(dialog, { key: 'Enter' });
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(mockNavigate).toHaveBeenCalledOnce();
+  });
+
+  it('keeps relevance order and hides Recent label when filtering', async () => {
+    window.localStorage.setItem(
+      COMMAND_PALETTE_RECENTS_KEY,
+      JSON.stringify(['nav-help']),
+    );
+    render(<Wrapper isOpen />);
+    expect(screen.getByText('Recent')).toBeInTheDocument();
+
+    await userEvent.type(screen.getByRole('textbox'), 'dash');
+    await waitFor(() => {
+      expect(screen.queryByText('Recent')).not.toBeInTheDocument();
+      expect(screen.getAllByRole('option')[0]).toHaveTextContent('Dashboard');
+    });
   });
 });

@@ -481,7 +481,7 @@ state changes. The landing hero in `src/components/LandingPage.tsx` and risk gau
 | `@testing-library/react` + `@testing-library/jest-dom` + `@testing-library/user-event` | Component and integration tests — query by role, simulate real keyboard events |
 | `vitest` | Test runner |
 | `jsdom` | DOM environment for tests (configured in `vitest.config.ts`) |
-| **axe-core / @axe-core/react** | Recommended addition for automated CI scanning |
+| **axe-core / @axe-core/react** | Optional recommended addition for automated CI scanning; install separately if adopted |
 | **Lighthouse** (browser DevTools or CI) | Per-route accessibility audit, drives the score reported in `PERFORMANCE.md` |
 | Manual screen-reader checks | VoiceOver (macOS), NVDA (Windows), TalkBack (Android) before any release that ships overlay or form changes |
 

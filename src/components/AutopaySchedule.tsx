@@ -1,11 +1,17 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { fmt, fmtDate } from '../utils/tokens';
+import {
+  buildSchedule,
+  toLocalDateString,
+  toLocalDateTimeString,
+  type AutopayFrequency,
+} from '../lib/autopay-schedule';
 import { PreviewCard } from './PreviewCard';
 import './AutopaySchedule.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type AutopayFrequency = 'weekly' | 'biweekly' | 'monthly' | 'quarterly';
+export type { AutopayFrequency } from '../lib/autopay-schedule';
 
 export interface AutopayScheduleProps {
   /** Payment amount per installment, in USD. */
@@ -20,16 +26,13 @@ export interface AutopayScheduleProps {
   maxRows?: number;
   /** Optional callback when a preview card row is hovered or focused */
   onPreviewRowChange?: (index: number | null) => void;
+  /** Credit line the schedule applies to, shown above the table. */
+  creditLineName?: string;
+  /** Repayable balance of the selected credit line, shown above the table. */
+  creditLineBalance?: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const FREQ_DAYS: Record<AutopayFrequency, number> = {
-  weekly: 7,
-  biweekly: 14,
-  monthly: 0, // special-cased below
-  quarterly: 0, // special-cased below
-};
 
 const FREQ_LABEL: Record<AutopayFrequency, string> = {
   weekly: 'Weekly',
@@ -37,43 +40,6 @@ const FREQ_LABEL: Record<AutopayFrequency, string> = {
   monthly: 'Monthly',
   quarterly: 'Quarterly',
 };
-
-/** Advance `date` by one frequency interval, returning a new Date. */
-function advanceByFrequency(date: Date, frequency: AutopayFrequency): Date {
-  const next = new Date(date);
-  if (frequency === 'monthly') {
-    next.setMonth(next.getMonth() + 1);
-  } else if (frequency === 'quarterly') {
-    next.setMonth(next.getMonth() + 3);
-  } else {
-    next.setDate(next.getDate() + FREQ_DAYS[frequency]);
-  }
-  return next;
-}
-
-/** Build an ordered list of upcoming payment dates. */
-function buildSchedule(
-  startDate: string,
-  frequency: AutopayFrequency,
-  endDate?: string,
-  maxRows = 8,
-): Date[] {
-  const start = new Date(startDate);
-  const end = endDate ? new Date(endDate) : null;
-
-  if (isNaN(start.getTime())) return [];
-
-  const dates: Date[] = [];
-  let cursor = start;
-
-  while (dates.length < maxRows) {
-    if (end && cursor > end) break;
-    dates.push(new Date(cursor));
-    cursor = advanceByFrequency(cursor, frequency);
-  }
-
-  return dates;
-}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -97,6 +63,8 @@ export function AutopaySchedule({
   endDate,
   maxRows = 8,
   onPreviewRowChange,
+  creditLineName,
+  creditLineBalance,
 }: AutopayScheduleProps) {
   const schedule = useMemo(
     () => buildSchedule(startDate, frequency, endDate, maxRows),
@@ -160,6 +128,15 @@ export function AutopaySchedule({
         </span>
       </div>
 
+      {creditLineName && (
+        <p className="autopay-schedule__credit-line">
+          {creditLineName}
+          {creditLineBalance !== undefined && (
+            <> · {fmt(creditLineBalance)} repayable</>
+          )}
+        </p>
+      )}
+
       {/* ── Summary strip ───────────────────────────────────────────────── */}
       <div className="autopay-schedule__summary" role="status" aria-live="polite">
         <div className="autopay-schedule__summary-item">
@@ -198,7 +175,13 @@ export function AutopaySchedule({
         >
           <caption className="sr-only">
             Upcoming autopay payments — {FREQ_LABEL[frequency]}, {fmt(amount)}{' '}
-            per payment, starting {fmtDate(startDate)}. Hover or focus rows for details.
+            per payment, starting{' '}
+            {fmtDate(
+              /^\d{4}-\d{2}-\d{2}$/.test(startDate)
+                ? `${startDate}T00:00:00`
+                : startDate,
+            )}
+            . Hover or focus rows for details.
           </caption>
           <thead>
             <tr>
@@ -234,7 +217,7 @@ export function AutopaySchedule({
 
               return (
                 <tr
-                  key={date.toISOString()}
+                  key={toLocalDateString(date)}
                   tabIndex={0}
                   role="row"
                   aria-haspopup="dialog"
@@ -255,8 +238,8 @@ export function AutopaySchedule({
                     {index + 1}
                   </td>
                   <td className="autopay-schedule__td">
-                    <time dateTime={date.toISOString().split('T')[0]}>
-                      {fmtDate(date.toISOString())}
+                    <time dateTime={toLocalDateString(date)}>
+                      {fmtDate(toLocalDateTimeString(date))}
                     </time>
                   </td>
                   <td className="autopay-schedule__td autopay-schedule__td--right autopay-schedule__td--amount">

@@ -1,9 +1,13 @@
 import React, { useMemo } from 'react';
-import { X, ExternalLink, Calendar, Activity } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { X, ExternalLink, Calendar, Activity, ArrowUpCircle, ArrowDownCircle, List } from 'lucide-react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useInertBackdrop } from '../hooks/useInertBackdrop';
 import { StatusBadge } from './StatusBadge';
+import ActivityTimeline, { type ActivityEntry } from './ActivityTimeline';
+import { AprHistoryChart } from './AprHistoryChart';
+import { HealthFactorChart, deriveHealthFactor } from './HealthFactorChart';
 import {
   COLOR,
   fmt,
@@ -20,9 +24,10 @@ import './CreditLineDetailDrawer.css';
 interface CreditLineDetailDrawerProps {
   line: CreditLine;
   onClose: () => void;
+  triggerRef?: React.RefObject<HTMLElement | null>;
 }
 
-export function CreditLineDetailDrawer({ line, onClose }: CreditLineDetailDrawerProps) {
+export function CreditLineDetailDrawer({ line, onClose, triggerRef }: CreditLineDetailDrawerProps) {
   // Lock body scroll when drawer is open
   useBodyScrollLock({ isLocked: true });
 
@@ -32,12 +37,38 @@ export function CreditLineDetailDrawer({ line, onClose }: CreditLineDetailDrawer
   // Trap focus inside the drawer
   const drawerRef = useFocusTrap({
     isActive: true,
+    triggerRef,
     onEscape: onClose,
   });
 
   const pct = utilizationPct(line.utilized, line.limit);
   const utilizationLevel = getUtilizationLevel(line.utilized, line.limit);
   const available = line.limit - line.utilized;
+  const currentHealthFactor = deriveHealthFactor(line.limit, line.utilized);
+
+  const timelineEntries = useMemo<ActivityEntry[]>(() => {
+    const txEntries: ActivityEntry[] = line.transactions.map((tx) => ({
+      id: `tx-${tx.id}`,
+      type: tx.type,
+      timestamp: tx.date,
+      description: tx.note
+        ? `${tx.type} ${fmt(tx.amount)} — ${tx.note}`
+        : `${tx.type} ${fmt(tx.amount)}`,
+    }));
+
+    const statusEntries: ActivityEntry[] = line.statusHistory.map((entry, idx) => ({
+      id: `status-${idx}-${entry.date}`,
+      type: 'StatusChange',
+      timestamp: entry.date,
+      description: entry.note
+        ? `Status: ${entry.status} — ${entry.note}`
+        : `Status changed to ${entry.status}`,
+    }));
+
+    return [...txEntries, ...statusEntries].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    );
+  }, [line.transactions, line.statusHistory]);
 
   // Reconstruct running balances for sparkline
   const runningBalances = useMemo(() => {
@@ -119,6 +150,34 @@ export function CreditLineDetailDrawer({ line, onClose }: CreditLineDetailDrawer
 
         {/* Drawer Content */}
         <div className="cl-drawer-content">
+          {/* Quick Action Links */}
+          <nav className="cl-drawer-actions" aria-label="Credit line actions">
+            <Link
+              to={`/repay?line=${line.id}`}
+              className="cl-drawer-action-link cl-drawer-action-primary"
+              onClick={onClose}
+            >
+              <ArrowUpCircle size={15} aria-hidden="true" />
+              Repay
+            </Link>
+            <Link
+              to={`/draw-credit?line=${line.id}`}
+              className="cl-drawer-action-link"
+              onClick={onClose}
+            >
+              <ArrowDownCircle size={15} aria-hidden="true" />
+              Draw Credit
+            </Link>
+            <Link
+              to={`/transactions?line=${line.id}`}
+              className="cl-drawer-action-link"
+              onClick={onClose}
+            >
+              <List size={15} aria-hidden="true" />
+              Transactions
+            </Link>
+          </nav>
+
           {/* Main metrics summary */}
           <section className="cl-drawer-section cl-metrics-grid">
             <div className="cl-drawer-metric">
@@ -244,6 +303,40 @@ export function CreditLineDetailDrawer({ line, onClose }: CreditLineDetailDrawer
                 </div>
               )}
             </div>
+          </section>
+
+          {/* APR History Chart */}
+          <section className="cl-drawer-section">
+            <h3 className="section-title">APR History</h3>
+            {line.aprHistory && line.aprHistory.length > 0 ? (
+              <AprHistoryChart history={line.aprHistory} lineId={line.id} />
+            ) : (
+              <p className="cl-drawer-empty-state">
+                No APR history available for this credit line.
+              </p>
+            )}
+          </section>
+
+          {/* Health Factor Chart */}
+          <section className="cl-drawer-section">
+            <h3 className="section-title">Health Factor</h3>
+            {line.healthHistory && line.healthHistory.length > 0 ? (
+              <HealthFactorChart
+                data={line.healthHistory}
+                current={currentHealthFactor}
+                lineName={line.name}
+              />
+            ) : (
+              <p className="cl-drawer-empty-state">
+                No health factor history available for this credit line.
+              </p>
+            )}
+          </section>
+
+          {/* Activity Timeline */}
+          <section className="cl-drawer-section">
+            <h3 className="section-title">Activity Timeline</h3>
+            <ActivityTimeline entries={timelineEntries} />
           </section>
 
           {/* Ledger / Transaction History */}

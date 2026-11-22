@@ -117,6 +117,7 @@ import {
   classifyWalletError,
 } from '../utils/wallet';
 import { getCreditNetworkConfig } from '../config/creditNetwork';
+import { isValidAccountId } from '../utils/strkey';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -595,6 +596,8 @@ export const WalletProvider = ({
   const [balances, setBalances] = useState<BalanceInfo[] | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const pollInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const balanceAbortControllerRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef(true);
 
   // Tracks the identity `balances`/`lastUpdated` currently belong to, so the
   // invalidation effect below can tell "the wallet changed" apart from
@@ -613,6 +616,10 @@ export const WalletProvider = ({
     const currentKey = walletIdentityKey(wallet);
     if (balancesIdentityRef.current === currentKey) return;
 
+    // Abort any in-flight balance request for the previous wallet identity.
+    balanceAbortControllerRef.current?.abort();
+    balanceAbortControllerRef.current = null;
+
     if (balancesIdentityRef.current !== null) {
       // Only warn when there was a previous identity — the very first mount
       // (previous = null) is not a "switch". Never log the key itself: it
@@ -625,8 +632,20 @@ export const WalletProvider = ({
     setLastUpdated(null);
   }, [wallet]);
 
+  const BALANCE_FETCH_TIMEOUT_MS = 10_000;
+
   const fetchBalances = useCallback(async (): Promise<BalanceInfo[] | null> => {
     if (!wallet?.publicKey) return null;
+
+    // Abort any previous in-flight balance request before starting a new one.
+    balanceAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    balanceAbortControllerRef.current = controller;
+
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, BALANCE_FETCH_TIMEOUT_MS);
+
     // Snapshot which identity this fetch is *for*. If the wallet changes
     // before the request resolves, the response belongs to an identity we've
     // already invalidated and must not be applied — see the module doc
@@ -634,11 +653,38 @@ export const WalletProvider = ({
     const fetchIdentity = walletIdentityKey(wallet);
     try {
       const { horizonUrl } = getCreditNetworkConfig();
-      const response = await fetch(`${horizonUrl}/accounts/${wallet.publicKey}`);
+      const response = await fetch(`${horizonUrl}/accounts/${wallet.publicKey}`, {
+        signal: controller.signal,
+      });
+
+      if (!isMountedRef.current || balancesIdentityRef.current !== fetchIdentity) {
+        console.warn('[WalletContext] Discarding balance response for a stale wallet identity.');
+        return null;
+      }
+
+      if (response.status === 404) {
+        const emptyBalances: BalanceInfo[] = [];
+        setBalances(emptyBalances);
+        setLastUpdated(new Date());
+        return emptyBalances;
+      }
+
+      if (!response.ok) {
+        console.error(
+          `[WalletContext] Failed to fetch balances: HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`,
+        );
+        return null;
+      }
+
       const data = await response.json();
 
-      if (balancesIdentityRef.current !== fetchIdentity) {
+      if (!isMountedRef.current || balancesIdentityRef.current !== fetchIdentity) {
         console.warn('[WalletContext] Discarding balance response for a stale wallet identity.');
+        return null;
+      }
+
+      if (!data || !Array.isArray(data.balances)) {
+        console.error('[WalletContext] Failed to fetch balances: invalid response payload.');
         return null;
       }
 
@@ -658,10 +704,19 @@ export const WalletProvider = ({
       setLastUpdated(new Date());
       return bal;
     } catch (e) {
+      if (
+        controller.signal.aborted ||
+        (e instanceof Error && e.name === 'AbortError')
+      ) {
+        return null;
+      }
       console.error('Failed to fetch balances', e);
-      if (balancesIdentityRef.current !== fetchIdentity) return null;
-      setBalances(null);
       return null;
+    } finally {
+      clearTimeout(timeoutId);
+      if (balanceAbortControllerRef.current === controller) {
+        balanceAbortControllerRef.current = null;
+      }
     }
   }, [wallet]);
 
@@ -701,9 +756,13 @@ export const WalletProvider = ({
     }
   };
 
-  // Clean up polling interval on unmount.
+  // Clean up polling interval and abort in-flight balance requests on unmount.
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
+      balanceAbortControllerRef.current?.abort();
+      balanceAbortControllerRef.current = null;
       if (pollInterval.current) clearInterval(pollInterval.current);
       clearSessionTimers();
     };

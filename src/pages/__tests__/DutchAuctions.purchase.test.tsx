@@ -18,7 +18,15 @@ import { useWallet } from '../../context/WalletContext';
 
 // Mock purchase service
 vi.mock('../../services/dutchAuctions', () => ({
-  purchaseAuction: vi.fn(() => Promise.resolve()),
+  purchaseAuction: vi.fn((auctionId: string, priceStroops: bigint, options: { idempotencyKey?: string }) =>
+    Promise.resolve({
+      auctionId,
+      priceStroops,
+      txId: 'tx_page_test',
+      purchasedAt: Date.now(),
+      idempotencyKey: options?.idempotencyKey ?? 'default-key',
+    }),
+  ),
 }));
 import { purchaseAuction } from '../../services/dutchAuctions';
 
@@ -90,11 +98,19 @@ describe('DutchAuctions purchase flow', () => {
     });
 
     expect(purchaseAuction).toHaveBeenCalledTimes(1);
-    expect(purchaseAuction).toHaveBeenCalledWith('AUCTION-1', expect.any(BigInt));
+    expect(purchaseAuction).toHaveBeenCalledWith(
+      'AUCTION-1',
+      expect.any(BigInt),
+      expect.objectContaining({
+        idempotencyKey: expect.any(String),
+        signal: expect.any(AbortSignal),
+      }),
+    );
 
     // Success message should be announced via LiveRegion
     const feedback = await screen.findByText(/Purchased auction AUCTION-1/i);
     expect(feedback).toBeInTheDocument();
+    expect(screen.getByTestId('purchase-receipt')).toHaveTextContent('tx_page_test');
   });
 
   it('ignores a second click while pending', async () => {

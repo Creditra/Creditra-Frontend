@@ -8,6 +8,7 @@
  */
 
 import type { CreditLine } from "../types/creditLine";
+import { parseLocalDate } from "../utils/dates";
 
 export type PaymentDueKind = "overdue" | "due_today" | "upcoming" | "none";
 
@@ -17,22 +18,6 @@ export interface PaymentDueState {
 }
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
-
-function parseLocalDate(dateStr: string): Date | null {
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
-  if (dateOnly) {
-    const d = new Date(
-      Number(dateOnly[1]),
-      Number(dateOnly[2]) - 1,
-      Number(dateOnly[3]),
-    );
-    if (Number.isNaN(d.getTime())) return null;
-    return d;
-  }
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
-}
 
 function getLocalMidnightUtc(d: Date): number {
   return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());

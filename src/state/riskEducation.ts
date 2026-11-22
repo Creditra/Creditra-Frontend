@@ -17,7 +17,14 @@ import {
   DEFAULT_RISK_ACK_KEY,
   GRANTFOX_RISK_EDUCATION_ACK_KEY,
   DEFAULT_RISK_BANNER_DISMISSED_KEY,
+  riskEducationStorageKey,
 } from '../constants/storageKeys';
+import {
+  hasKey,
+  readVersioned,
+  removeKey,
+  writeVersioned,
+} from '../utils/storage';
 
 /**
  * Version of the risk-education content borrowers acknowledge. Bump this
@@ -43,57 +50,45 @@ export interface RiskEducationState {
   dismissedAt?: string;
 }
 
-function storageKey(owner: string): string {
-  return `creditra.risk_education.${owner}.v1`;
+const RISK_EDUCATION_STORAGE_VERSION = 1;
+
+function parseRiskEducationObject(value: unknown): RiskEducationState | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+
+  const obj = value as Record<string, unknown>;
+  const state: RiskEducationState = {};
+
+  if (typeof obj.acknowledgedVersion === 'number') {
+    state.acknowledgedVersion = obj.acknowledgedVersion;
+  }
+
+  if (typeof obj.dismissedAt === 'string') {
+    state.dismissedAt = obj.dismissedAt;
+  }
+
+  return state;
 }
 
-function safeRead(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
+function isRiskEducationState(value: unknown): value is RiskEducationState {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const obj = value as Record<string, unknown>;
+  if (obj.acknowledgedVersion !== undefined && typeof obj.acknowledgedVersion !== 'number') {
+    return false;
   }
+  if (obj.dismissedAt !== undefined && typeof obj.dismissedAt !== 'string') {
+    return false;
+  }
+  return true;
 }
 
-function safeRemove(key: string): void {
-  try {
-    window.localStorage.removeItem(key);
-  } catch {
-    /* ignore - storage may be unavailable (SSR, private mode) */
+function migrateRiskEducationState(
+  raw: unknown,
+  fromVersion: number,
+): RiskEducationState | undefined {
+  if (fromVersion === 0) {
+    return parseRiskEducationObject(raw);
   }
-}
-
-function safeWrite(key: string, value: string): void {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    /* ignore - storage may be unavailable */
-  }
-}
-
-function parseState(raw: string | null): RiskEducationState | null {
-  if (!raw) return null;
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-
-    if (!parsed || typeof parsed !== 'object') return null;
-
-    const obj = parsed as Record<string, unknown>;
-    const state: RiskEducationState = {};
-
-    if (typeof obj.acknowledgedVersion === 'number') {
-      state.acknowledgedVersion = obj.acknowledgedVersion;
-    }
-
-    if (typeof obj.dismissedAt === 'string') {
-      state.dismissedAt = obj.dismissedAt;
-    }
-
-    return state;
-  } catch {
-    return null;
-  }
+  return undefined;
 }
 
 /**
@@ -114,7 +109,7 @@ function migrateLegacyKeys(owner: string): RiskEducationState | null {
   let legacyPresent = false;
 
   for (const key of legacyKeys) {
-    if (safeRead(key) !== null) {
+    if (hasKey(key)) {
       legacyPresent = true;
     }
   }
@@ -126,10 +121,12 @@ function migrateLegacyKeys(owner: string): RiskEducationState | null {
   };
 
   // Persist the migrated state for this wallet, then remove the global keys.
-  safeWrite(storageKey(owner), JSON.stringify(migrated));
+  writeVersioned(riskEducationStorageKey(owner), migrated, {
+    version: RISK_EDUCATION_STORAGE_VERSION,
+  });
 
   for (const key of legacyKeys) {
-    safeRemove(key);
+    removeKey(key);
   }
 
   return migrated;
@@ -144,8 +141,13 @@ function migrateLegacyKeys(owner: string): RiskEducationState | null {
 export function getRiskEducationState(owner: string): RiskEducationState {
   if (!owner) return {};
 
-  const key = storageKey(owner);
-  const existing = parseState(safeRead(key));
+  const key = riskEducationStorageKey(owner);
+  const existing = readVersioned<RiskEducationState | null>(key, {
+    version: RISK_EDUCATION_STORAGE_VERSION,
+    fallback: null,
+    migrate: migrateRiskEducationState,
+    validate: isRiskEducationState,
+  });
 
   if (existing) return existing;
 
@@ -161,7 +163,9 @@ export function setRiskEducationState(
 ): void {
   if (!owner) return;
 
-  safeWrite(storageKey(owner), JSON.stringify(state));
+  writeVersioned(riskEducationStorageKey(owner), state, {
+    version: RISK_EDUCATION_STORAGE_VERSION,
+  });
 }
 
 /** Record that the borrower acknowledged a specific content version. */

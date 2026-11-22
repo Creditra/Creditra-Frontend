@@ -1272,3 +1272,69 @@ describe("DrawCreditPage — unmount during processing (#1180)", () => {
     expect(true).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests — drawing limit indicator (issue #1422)
+// ---------------------------------------------------------------------------
+
+describe("DrawCreditPage — drawing limit indicator", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem("creditra.default_risk_ack", "true");
+    __setMockLocation("/draw-credit");
+  });
+
+  function exactText(text: string) {
+    return (_: string, node: Element | null) =>
+      node?.textContent?.replace(/\s+/g, " ").trim() === text;
+  }
+
+  function renderAmountStep() {
+    render(<DrawCreditPage />);
+    fireEvent.click(
+      screen.getByRole("button", { name: /select business line of credit/i }),
+    );
+    return screen.getByRole("spinbutton");
+  }
+
+  function getDrawingLimitBar() {
+    return screen.getByRole("progressbar", {
+      name: /credit utilization/i,
+    });
+  }
+
+  it("shows the current utilisation and available credit on the amount step", () => {
+    renderAmountStep();
+
+    expect(
+      screen.getByText(exactText("Utilised: $15,000.00")),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(exactText("Available after draw: $35,000.00")),
+    ).toBeInTheDocument();
+    expect(getDrawingLimitBar()).toHaveAttribute("aria-valuenow", "30");
+  });
+
+  it("updates as the entered amount grows", () => {
+    const input = renderAmountStep();
+
+    fireEvent.change(input, { target: { value: "1000" } });
+
+    expect(getDrawingLimitBar()).toHaveAttribute("aria-valuenow", "32");
+    expect(
+      screen.getByText(exactText("Utilised: $16,000.00")),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(exactText("Available after draw: $34,000.00")),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the exceeded state when the amount passes the limit", () => {
+    const input = renderAmountStep();
+
+    fireEvent.change(input, { target: { value: "99999" } });
+
+    expect(screen.getByText("Exceeded")).toBeInTheDocument();
+    expect(getDrawingLimitBar()).toHaveAttribute("aria-valuenow", "100");
+  });
+});
