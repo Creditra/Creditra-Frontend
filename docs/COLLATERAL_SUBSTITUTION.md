@@ -70,15 +70,25 @@ Success state
 ### Component props
 
 ```ts
+interface SubmitCollateralSwapPayload {
+  idempotencyKey: string;
+  creditLineName: string;
+  outgoingAssetId?: string;
+  incomingAssetId: string;
+  loanBalance: number;
+}
+
 interface CollateralSubstitutionModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (incomingAsset: CollateralAsset) => void;
+  onError?: (error: SubstitutionError) => void;
   creditLineName: string;
   loanBalance: number;              // outstanding balance in USD
   currentAsset?: CollateralAsset;  // undefined → no current collateral
   triggerRef?: React.RefObject<HTMLElement | null>;
-  _delayMs?: number;               // internal: override network delay for tests
+  submitCollateralSwap?: (payload: SubmitCollateralSwapPayload) => Promise<void>;
+  _delayMs?: number;               // internal: override default network delay for tests
 }
 ```
 
@@ -153,16 +163,28 @@ The parent (`CreditLines`) only sees `onClose` and
 
 ## Connecting to a real API
 
-`handleSubmit` in `CollateralSubstitutionModal.tsx` contains a `TODO` comment showing where to replace the simulated delay with a real call:
+Pass the optional `submitCollateralSwap` prop to `CollateralSubstitutionModal` to wire up a real backend call. It receives a `SubmitCollateralSwapPayload` (including the deterministic `idempotencyKey`) and returns a `Promise<void>`:
 
-```ts
-// Replace this Promise with your API call:
-await apiClient.substituteCollateral({
-  creditLineId,
-  outgoingAssetId: currentAsset?.id,
-  incomingAssetId: selected.id,
-});
+```tsx
+<CollateralSubstitutionModal
+  isOpen={isOpen}
+  onClose={handleClose}
+  onSuccess={handleSuccess}
+  creditLineName={line.name}
+  loanBalance={line.utilized}
+  currentAsset={currentAsset}
+  submitCollateralSwap={async ({ idempotencyKey, outgoingAssetId, incomingAssetId }) => {
+    await apiClient.substituteCollateral({
+      idempotencyKey,
+      creditLineId: line.id,
+      outgoingAssetId,
+      incomingAssetId,
+    });
+  }}
+/>
 ```
+
+When `submitCollateralSwap` is omitted, the modal defaults to a simulated delay of `_delayMs` ms that always resolves (never fails randomly). In tests, pass a rejecting `submitCollateralSwap` mock to deterministically exercise error handling and retry flows.
 
 Pass the asset catalogue from your API via the `AVAILABLE_COLLATERAL_ASSETS` export in `src/utils/collateral.ts` (replace the static array with a fetched list).
 

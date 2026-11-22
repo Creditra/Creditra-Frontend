@@ -70,6 +70,14 @@ import './CollateralSubstitutionModal.css';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
+export interface SubmitCollateralSwapPayload {
+  idempotencyKey: string;
+  creditLineName: string;
+  outgoingAssetId?: string;
+  incomingAssetId: string;
+  loanBalance: number;
+}
+
 interface CollateralSubstitutionModalProps {
   /** Whether the modal is rendered and visible. */
   isOpen: boolean;
@@ -101,7 +109,15 @@ interface CollateralSubstitutionModalProps {
   /** Ref to the trigger button so focus returns correctly on close. */
   triggerRef?: React.RefObject<HTMLElement | null>;
   /**
-   * Simulated network delay in ms for the submission Promise.
+   * Optional submission handler for performing the collateral swap.
+   * Receives the substitution payload including the deterministic `idempotencyKey`.
+   * Defaults to resolving after `_delayMs` ms (never fails by default).
+   * Pass a custom implementation in production to call the backend API, or in
+   * tests to deterministically simulate failures and verify retry behavior.
+   */
+  submitCollateralSwap?: (payload: SubmitCollateralSwapPayload) => Promise<void>;
+  /**
+   * Simulated network delay in ms for the default submission Promise.
    * Defaults to 1800. Override in tests to keep them fast.
    * @internal
    */
@@ -642,6 +658,7 @@ export function CollateralSubstitutionModal({
   loanBalance,
   currentAsset,
   triggerRef,
+  submitCollateralSwap,
   _delayMs = 1800,
 }: CollateralSubstitutionModalProps) {
   const modalId = 'collateral-substitution-modal';
@@ -798,15 +815,20 @@ export function CollateralSubstitutionModal({
         );
       }
 
-      await new Promise<void>((resolve, reject) =>
-        setTimeout(() => {
-          if (_delayMs > 0 && Math.random() < 0.05) {
-            reject(new Error('Network error — please try again.'));
-          } else {
-            resolve();
-          }
-        }, _delayMs)
-      );
+      // Pass the idempotency key to the server to enable duplicate detection.
+      const idempotencyKey = submissionAttemptRef.current?.idempotencyKey ?? 'unknown';
+      const payload: SubmitCollateralSwapPayload = {
+        idempotencyKey,
+        creditLineName,
+        outgoingAssetId: currentAsset?.id,
+        incomingAssetId: selected.id,
+        loanBalance,
+      };
+      if (submitCollateralSwap) {
+        await submitCollateralSwap(payload);
+      } else {
+        await new Promise<void>((resolve) => setTimeout(resolve, _delayMs));
+      }
 
       if (submissionAttemptRef.current) {
         submissionAttemptRef.current = recordServerResponse(
