@@ -18,7 +18,12 @@ import {
   requiresRepayConfirmation,
 } from '@/utils/amountValidation';
 import { useOnline } from '@/hooks/useOnline';
-import { suggestRepayAmount } from '@/utils/suggestRepay';
+import {
+  suggestRepayAmount,
+  type OptimisedRepaymentPlan,
+  type OptimiseRepaymentLine,
+} from '@/utils/suggestRepay';
+import { SmartPayCTA } from './SmartPayCTA';
 import { roundToCents } from '@/utils/currency';
 import {
   allocateBatchRepayment,
@@ -176,6 +181,7 @@ export default function RepayPage() {
   const [step, setStep] = useState<RepayStep>('input');
   const [selectedId, setSelectedId] = useState<string>(preselectedId ?? '');
   const [amountStr, setAmountStr] = useState('');
+  const [appliedPlan, setAppliedPlan] = useState<OptimisedRepaymentPlan | null>(null);
   const [confirmAmountStr, setConfirmAmountStr] = useState('');
   const [isAutoSchedule, setIsAutoSchedule] = useState(false);
   const [isMultiLineMode, setIsMultiLineMode] = useState(false);
@@ -335,6 +341,29 @@ export default function RepayPage() {
     setAmountStr(suggestion.amount.toFixed(2));
     setSrAnnouncement(`Smart Pay amount set: ${formatMoney(suggestion.amount)}. ${suggestionMessage}`);
   };
+
+  const optimiserLines = useMemo<OptimiseRepaymentLine[]>(() => {
+    const now = new Date();
+    return creditLines.map((cl) => ({
+      id: cl.id,
+      name: cl.name,
+      balance: roundToCents(cl.utilized + getAccruedInterest(cl, now)),
+      apr: cl.apr,
+      minimumPayment: cl.nextPaymentAmount,
+      status: cl.status,
+    }));
+  }, [creditLines]);
+
+  const handleApplyOptimisedPlan = useCallback((plan: OptimisedRepaymentPlan) => {
+    setAppliedPlan(plan);
+    const first = plan.allocations.find((a) => a.amount > 0);
+    if (!first) return;
+    setSelectedId(first.lineId);
+    setAmountStr(first.amount.toFixed(2));
+    setSrAnnouncement(
+      `Applied ${plan.strategy} plan. Prefilled ${formatMoney(first.amount)} for ${first.lineName}.`,
+    );
+  }, []);
 
   const handleReview = () => {
     if (hasRepayableBalance && !isInvalid && amount > 0) {
@@ -1164,38 +1193,83 @@ export default function RepayPage() {
                 <span>This line has no outstanding balance.</span>
               </div>
             )}
-
-            <div className="mt-4 flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3">
-              <div>
-                <label
-                  htmlFor="multi-line-repay-toggle"
-                  className="text-sm font-semibold text-foreground cursor-pointer"
-                  onClick={handleToggleMultiLineMode}
-                >
-                  Repay multiple lines
-                </label>
-                <p className="text-xs text-muted">
-                  Select several credit lines and split one payment across them
-                </p>
-              </div>
-              <button
-                id="multi-line-repay-toggle"
-                type="button"
-                role="switch"
-                aria-checked={isMultiLineMode}
-                onClick={handleToggleMultiLineMode}
-                data-testid="multi-line-repay-toggle"
-                className={`rp-toggle-switch relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
-                  isMultiLineMode ? 'bg-accent' : 'bg-border'
-                } ${motionClasses(isReducedMotionActive, 'transition-colors duration-200 ease-in-out')}`}
-              >
-                <span
-                  aria-hidden="true"
-                  className={`repay-page__toggle-thumb pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 ${
-                    isMultiLineMode ? 'translate-x-5' : 'translate-x-0'
-                  } ${motionClasses(isReducedMotionActive, 'transition duration-200 ease-in-out')}`}
+            {creditLines.length > 1 && hasRepayableBalance && (
+              <div className="mt-4">
+                <SmartPayCTA
+                  title="Smart Pay Multi-Line Optimiser"
+                  description="Compare avalanche (highest APR first) and snowball (smallest balance first) across your credit lines."
+                  cta={null}
+                  lines={optimiserLines}
+                  budget={walletBalance}
+                  onApplyPlan={handleApplyOptimisedPlan}
                 />
-              </button>
+              </div>
+            )}
+            <div className="mt-4 space-y-3">
+              {creditLines.map((cl) => {
+                const utilization = Math.round((cl.utilized / cl.limit) * 100);
+                // Task cb-v7: map utilization level to pattern class so the bar
+                // conveys severity via texture, not colour alone (WCAG 1.4.1).
+                const barClass =
+                  utilization > 80
+                    ? 'rp-progress--high'
+                    : utilization > 50
+                      ? 'rp-progress--medium'
+                      : 'rp-progress--low';
+                const delinquent = isDelinquentLine(cl);
+                return (
+                  <button
+                    key={cl.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedId(cl.id);
+                      const planned = appliedPlan?.allocations.find((a) => a.lineId === cl.id);
+                      if (planned && planned.amount > 0) {
+                        setAmountStr(planned.amount.toFixed(2));
+                        setSrAnnouncement(
+                          `Selected ${cl.name}. Prefilled ${formatMoney(planned.amount)} from your ${appliedPlan?.strategy} plan.`,
+                        );
+                      } else {
+                        setSrAnnouncement(`Selected ${cl.name}. Choose a repayment amount.`);
+                      }
+                    }}
+                    className={`rp-cl-card w-full rounded-lg border bg-surface p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${delinquent ? 'border-warning/60' : 'border-border'} ${motionClasses(isReducedMotionActive, 'transition-all hover:border-accent hover:bg-accent/5')}`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        {/* Issue #1185: status badge — text conveys state, not colour alone (WCAG 1.4.1) */}
+                        <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                          <StatusBadge status={cl.status} />
+                          {delinquent && (
+                            <span
+                              className="rp-overdue-label inline-flex items-center rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning"
+                              aria-label="Overdue — repayment needed"
+                            >
+                              Overdue
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-semibold text-foreground">{cl.name}</p>
+                        <p className="mt-0.5 text-sm text-muted">{cl.id}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-foreground num-tabular">
+                          {formatMoney(cl.utilized)}
+                        </p>
+                        <p className="text-sm text-muted"><span className="num-tabular">{utilization}%</span> utilized</p>
+                      </div>
+                    </div>
+                    {/* Task cb-v7: pattern fill on progress bar */}
+                    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-border">
+                      <div
+                        className={`h-full rounded-full transition-all ${barClass}`}
+                        style={{ width: `${utilization}%` }}
+                        aria-hidden="true"
+                      />
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
             {isMultiLineMode ? (
