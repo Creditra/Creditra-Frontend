@@ -14,7 +14,7 @@ repayments and when do I owe them?" inside the Creditra front-end.
 Start the dev server:
 
 ```sh
-pnpm dev
+npm run dev
 ```
 
 Then visit **http://localhost:5173/credit-lines** — the schedule sits below
@@ -177,7 +177,7 @@ introduce new tsc errors and all 32 focused tests for
 `RepaymentSchedule` pass.
 
 The repo does not currently ship an `.eslintrc*` or
-`eslint.config.*`, so `pnpm lint` runs an ESLint v10 downloaded via npx
+`eslint.config.*`, so `npm run lint` runs an ESLint v10 downloaded via npx
 that errors on legacy config. The Reviewer PR should mention this as a
 known gap to be addressed separately.
 
