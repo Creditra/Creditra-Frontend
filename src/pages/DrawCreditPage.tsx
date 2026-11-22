@@ -37,6 +37,8 @@ import {
   saveDraft,
   clearDraft,
 } from "@/state/wizardDraft";
+import { useDraftSaveStatus } from "@/hooks/useDraftSaveStatus";
+import { DraftSavedIndicator } from "@/components/DraftSavedIndicator";
 import {
   drawWizardReducer,
   createInitialDrawWizardState,
@@ -186,6 +188,7 @@ export default function DrawCreditPage() {
   // not immediately re-persisted under the new owner.
   const previousDraftOwner = useRef(draftOwner);
   const skipNextDraftSave = useRef(false);
+  const draftSave = useDraftSaveStatus();
 
   /**
    * Initialize reducer state from route transaction or persisted draft.
@@ -243,18 +246,20 @@ export default function DrawCreditPage() {
 
     previousDraftOwner.current = draftOwner;
     clearDraft();
+    draftSave.reset();
     skipNextDraftSave.current = true;
     dispatch({
       type: "SET_DRAFT_NOTICE",
       notice: draftOwner
         ? "Your saved draw draft was cleared because the wallet changed."
         : "Your saved draw draft was cleared because the wallet disconnected.",
-    });
-  }, [draftOwner]);
+    );
+  }, [draftOwner, draftSave.reset]);
 
   useEffect(() => {
     if (state.step === "status") {
       clearDraft();
+      draftSave.reset();
       return;
     }
 
@@ -263,7 +268,7 @@ export default function DrawCreditPage() {
       return;
     }
 
-    saveDraft(
+    const ok = saveDraft(
       {
         step: state.step === "confirm" ? "amount" : state.step,
         lineId: state.selectedCreditLine?.id ?? null,
@@ -271,7 +276,20 @@ export default function DrawCreditPage() {
       },
       draftOwner,
     );
-  }, [state.step, state.selectedCreditLine, state.amount, draftOwner]);
+    if (ok) {
+      draftSave.markSaved();
+    } else {
+      draftSave.markError();
+    }
+  }, [
+    step,
+    selectedCreditLine,
+    amount,
+    draftOwner,
+    draftSave.markSaved,
+    draftSave.markError,
+    draftSave.reset,
+  ]);
 
   /**
    * Concurrent submission guard (issue #932). The ref is flipped to `true`
@@ -460,8 +478,10 @@ export default function DrawCreditPage() {
   }, []);
 
   const handleCancel = useCallback(() => {
+    clearDraft();
+    draftSave.reset();
     navigate("/");
-  }, [navigate]);
+  }, [navigate, draftSave.reset]);
 
   // Issue #1180: warn on tab close while a submission is in flight.
   useEffect(() => {
@@ -645,6 +665,11 @@ export default function DrawCreditPage() {
                 onNext={handleAmountNext}
                 onBack={handleBack}
               />
+              <DraftSavedIndicator
+                status={draftSave.status}
+                savedAt={draftSave.savedAt}
+                className="text-right"
+              />
               <div className="dc-separator">
                 <PreviewSection
                   creditLine={state.selectedCreditLine}
@@ -708,6 +733,11 @@ export default function DrawCreditPage() {
                 isLoading={state.isLoading}
                 agreedToTerms={state.confirmationAcknowledged}
                 onAgreedToTermsChange={handleAgreedToTermsChange}
+              />
+              <DraftSavedIndicator
+                status={draftSave.status}
+                savedAt={draftSave.savedAt}
+                className="mt-2 text-right"
               />
               <div className="dc-kbd-bar" aria-label="Keyboard shortcuts">
                 <KbdHint

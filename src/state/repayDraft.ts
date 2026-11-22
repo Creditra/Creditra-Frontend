@@ -77,9 +77,10 @@ interface StoredRepayDraft {
 /**
  * Persist the current repayment flow state.
  *
- * Silently no-ops if localStorage is unavailable or full.
+ * Returns `true` when persisted successfully, or `false` if localStorage is
+ * unavailable or full.
  */
-export function saveRepayDraft(state: Omit<RepayDraftState, 'savedAt'>): void {
+export function saveRepayDraft(state: Omit<RepayDraftState, 'savedAt'>): boolean {
   const draft: StoredRepayDraft = {
     state: {
       ...state,
@@ -87,7 +88,7 @@ export function saveRepayDraft(state: Omit<RepayDraftState, 'savedAt'>): void {
     },
     timestamp: Date.now(),
   };
-  writeJson(STORAGE_KEY, draft);
+  return writeJson(STORAGE_KEY, draft);
 }
 
 /**

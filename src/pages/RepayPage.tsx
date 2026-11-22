@@ -58,6 +58,8 @@ import {
   clearRepayDraft,
   type RepayDraftState,
 } from '@/state/repayDraft';
+import { useDraftSaveStatus } from '@/hooks/useDraftSaveStatus';
+import { DraftSavedIndicator } from '@/components/DraftSavedIndicator';
 
 /**
  * Reason a saved draft was discarded instead of being offered for recovery.
@@ -168,6 +170,7 @@ export default function RepayPage() {
   // Tracks the previous wallet identity so a mid-session account/network
   // switch can clear another wallet's draft (issue #1188).
   const prevIdentityKeyRef = useRef<string | null>(null);
+  const draftSave = useDraftSaveStatus();
   const isSubmittingRef = useRef(false);
 
   const [step, setStep] = useState<RepayStep>('input');
@@ -406,6 +409,7 @@ export default function RepayPage() {
 
     draftClearedRef.current = true;
     clearRepayDraft();
+    draftSave.reset();
     const transactionId = `TXN-${Date.now()}`;
     const timestamp = new Date().toISOString();
     if (wallet?.publicKey) {
@@ -498,10 +502,11 @@ export default function RepayPage() {
 
   const handleDismissDraft = useCallback(() => {
     clearRepayDraft();
+    draftSave.reset();
     setShowRecoveryPrompt(false);
     setRecoveredDraft(null);
     setSrAnnouncement('Previous repayment draft discarded.');
-  }, []);
+  }, [draftSave.reset]);
 
   // ── Initial draft recovery check ──────────────────────────────────────
   useEffect(() => {
@@ -551,12 +556,13 @@ export default function RepayPage() {
     const draft = loadRepayDraft();
     if (draft && draft.owner !== identityKey) {
       clearRepayDraft();
+      draftSave.reset();
       setShowRecoveryPrompt(false);
       setRecoveredDraft(null);
       setDraftDiscardReason('owner-mismatch');
       setSrAnnouncement(DRAFT_DISCARD_MESSAGE['owner-mismatch']);
     }
-  }, [identityKey]);
+  }, [identityKey, draftSave.reset]);
 
   // ── Persist draft on state changes ────────────────────────────────────
   useEffect(() => {
@@ -570,7 +576,7 @@ export default function RepayPage() {
     // Don't save empty amounts on the input step.
     if (step === 'input' && !amountStr) return;
 
-    saveRepayDraft({
+    const ok = saveRepayDraft({
       step,
       creditLineId: selectedId,
       amountStr,
@@ -578,7 +584,22 @@ export default function RepayPage() {
       isAutoSchedule,
       owner: identityKey,
     });
-  }, [step, selectedId, amountStr, confirmAmountStr, isAutoSchedule, creditStatus, identityKey]);
+    if (ok) {
+      draftSave.markSaved();
+    } else {
+      draftSave.markError();
+    }
+  }, [
+    step,
+    selectedId,
+    amountStr,
+    confirmAmountStr,
+    isAutoSchedule,
+    creditStatus,
+    identityKey,
+    draftSave.markSaved,
+    draftSave.markError,
+  ]);
 
   useEffect(() => {
     if (walletStatus !== 'connected' || !wallet) {
@@ -2101,6 +2122,11 @@ export default function RepayPage() {
                     >
                       Preview Consequences Modal
                     </button>
+                    <DraftSavedIndicator
+                      status={draftSave.status}
+                      savedAt={draftSave.savedAt}
+                      className="text-center"
+                    />
                   </div>
                 </div>
               </div>
@@ -2143,7 +2169,12 @@ export default function RepayPage() {
               </button>
               <button
                 type="button"
-                onClick={() => navigate('/')}
+                onClick={() => {
+                  draftClearedRef.current = true;
+                  clearRepayDraft();
+                  draftSave.reset();
+                  navigate('/');
+                }}
                 className={`rp-cancel-btn rounded-md text-sm font-semibold text-foreground underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${motionClasses(isReducedMotionActive, 'hover:text-accent hover:underline')}`}
               >
                 Cancel
@@ -2318,6 +2349,11 @@ export default function RepayPage() {
                 </span>
               </button>
             </div>
+            <DraftSavedIndicator
+              status={draftSave.status}
+              savedAt={draftSave.savedAt}
+              className="text-right"
+            />
           </div>
         )}
 
