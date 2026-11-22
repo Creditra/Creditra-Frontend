@@ -1367,6 +1367,8 @@ export default function RepayPage() {
                   repayAmount={amount}
                   limit={selectedLine.limit}
                   nextPaymentAmount={selectedLine.nextPaymentAmount}
+                  accruedInterest={accruedInterest}
+                  accruedDays={accruedDays}
                 />
               </aside>
             </div>
@@ -1534,6 +1536,8 @@ export default function RepayPage() {
               repayAmount={amount}
               limit={selectedLine.limit}
               nextPaymentAmount={selectedLine.nextPaymentAmount}
+              accruedInterest={accruedInterest}
+              accruedDays={accruedDays}
             />
 
             {needsConfirm && (
