@@ -20,7 +20,13 @@ import {
 import { useOnline } from '@/hooks/useOnline';
 import { suggestRepayAmount } from '@/utils/suggestRepay';
 import { roundToCents } from '@/utils/currency';
-import { allocateRepayment } from '@/lib/repay-allocation';
+import {
+  allocateBatchRepayment,
+  allocateRepayment,
+  type BatchAllocationStrategy,
+  type BatchRepaymentAllocation,
+  type RepaymentAllocation,
+} from '@/lib/repay-allocation';
 import { getAccruedInterest, getAccruedInterestDays } from '@/lib/interest';
 import {
   isTypedAmountMatch,
@@ -69,6 +75,16 @@ const DRAFT_DISCARD_MESSAGE: Record<DraftDiscardReason, string> = {
 import './RepayPage.css';
 
 type RepayStep = 'input' | 'review';
+
+interface BatchRepayLineResult {
+  lineId: string;
+  lineName: string;
+  amount: number;
+  allocation: RepaymentAllocation;
+  status: 'success' | 'error';
+  transactionId?: string;
+  error?: string;
+}
 
 /**
  * SEVERITY_CONFIG — token-pinned colours for the inline feedback banner.
@@ -159,6 +175,23 @@ export default function RepayPage() {
   const [amountStr, setAmountStr] = useState('');
   const [confirmAmountStr, setConfirmAmountStr] = useState('');
   const [isAutoSchedule, setIsAutoSchedule] = useState(false);
+  const [isMultiLineMode, setIsMultiLineMode] = useState(false);
+  const [selectedLineIds, setSelectedLineIds] = useState<string[]>(() =>
+    preselectedId ? [preselectedId] : [],
+  );
+  const [batchStrategy, setBatchStrategy] =
+    useState<BatchAllocationStrategy>('highest-apr');
+  const [batchInputMode, setBatchInputMode] = useState<'total' | 'per-line'>(
+    'total',
+  );
+  const [batchTotalStr, setBatchTotalStr] = useState('');
+  const [perLineAmountStrs, setPerLineAmountStrs] = useState<
+    Record<string, string>
+  >({});
+  const [isBatchSubmitting, setIsBatchSubmitting] = useState(false);
+  const [batchResults, setBatchResults] = useState<
+    BatchRepayLineResult[] | null
+  >(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [isOfflineBlocked, setIsOfflineBlocked] = useState(false);
@@ -673,6 +706,220 @@ export default function RepayPage() {
     }
   }, [validation?.feedback.message, validation?.feedback.severity]);
 
+  // ── Multi-line batch repayment derived state ──────────────────────────
+  const accruedByLineId = useMemo(() => {
+    const now = new Date();
+    const map: Record<string, number> = {};
+    for (const cl of creditLines) {
+      map[cl.id] = getAccruedInterest(cl, now);
+    }
+    return map;
+  }, [creditLines]);
+
+  const selectedBatchLines = useMemo(
+    () => creditLines.filter((cl) => selectedLineIds.includes(cl.id)),
+    [creditLines, selectedLineIds],
+  );
+
+  const batchTotalOwed = useMemo(
+    () =>
+      roundToCents(
+        selectedBatchLines.reduce(
+          (sum, cl) => sum + cl.utilized + (accruedByLineId[cl.id] ?? 0),
+          0,
+        ),
+      ),
+    [selectedBatchLines, accruedByLineId],
+  );
+
+  const batchAllocation: BatchRepaymentAllocation = useMemo(() => {
+    if (batchInputMode === 'total') {
+      const parsed = parseFloat(batchTotalStr);
+      const totalAmt = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+      return allocateBatchRepayment(
+        selectedBatchLines,
+        totalAmt,
+        accruedByLineId,
+        batchStrategy,
+      );
+    }
+
+    const allocations: Record<string, RepaymentAllocation> = {};
+    const items: BatchRepaymentAllocation['items'] = [];
+    let totalAllocatedCents = 0;
+    let totalInterestCents = 0;
+    let totalPrincipalCents = 0;
+    let totalRemainingCents = 0;
+    let unallocatedCents = 0;
+
+    for (const cl of selectedBatchLines) {
+      const parsed = parseFloat(perLineAmountStrs[cl.id] ?? '');
+      const lineAmt = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+      const single = allocateBatchRepayment(
+        [cl],
+        lineAmt,
+        accruedByLineId,
+        'highest-apr',
+      );
+      const item = single.items[0];
+      allocations[cl.id] = item.allocation;
+      items.push(item);
+      totalAllocatedCents += Math.round(item.allocatedAmount * 100);
+      totalInterestCents += Math.round(item.allocation.interestPaid * 100);
+      totalPrincipalCents += Math.round(item.allocation.principalPaid * 100);
+      totalRemainingCents += Math.round(item.allocation.remainingTotal * 100);
+      unallocatedCents += Math.round(single.unallocatedRemainder * 100);
+    }
+
+    return {
+      allocations,
+      items,
+      totalAllocated: totalAllocatedCents / 100,
+      totalInterestPaid: totalInterestCents / 100,
+      totalPrincipalPaid: totalPrincipalCents / 100,
+      totalRemaining: totalRemainingCents / 100,
+      unallocatedRemainder: unallocatedCents / 100,
+    };
+  }, [
+    batchInputMode,
+    batchTotalStr,
+    perLineAmountStrs,
+    selectedBatchLines,
+    accruedByLineId,
+    batchStrategy,
+  ]);
+
+  const batchExceedsWallet =
+    hasRepayableBalance && batchAllocation.totalAllocated > walletBalance;
+
+  const isBatchSubmitDisabled =
+    isBatchSubmitting ||
+    !hasRepayableBalance ||
+    selectedBatchLines.length === 0 ||
+    batchAllocation.totalAllocated <= 0 ||
+    batchExceedsWallet;
+
+  useEffect(() => {
+    if (!isMultiLineMode || batchResults !== null) return;
+    if (selectedBatchLines.length === 0) {
+      setSrAnnouncement('No credit lines selected for multi-line repayment.');
+      return;
+    }
+    if (batchAllocation.totalAllocated > 0) {
+      const countLabel = `${selectedBatchLines.length} ${selectedBatchLines.length === 1 ? 'line' : 'lines'}`;
+      const remainderText =
+        batchAllocation.unallocatedRemainder > 0
+          ? ` Unallocated remainder: ${formatMoney(batchAllocation.unallocatedRemainder)}.`
+          : '';
+      setSrAnnouncement(
+        `Allocation preview updated for ${countLabel}: paying ${formatMoney(batchAllocation.totalAllocated)} (${formatMoney(batchAllocation.totalInterestPaid)} interest, ${formatMoney(batchAllocation.totalPrincipalPaid)} principal).${remainderText}`,
+      );
+    } else {
+      setSrAnnouncement(
+        `${selectedBatchLines.length} ${selectedBatchLines.length === 1 ? 'line' : 'lines'} selected. Enter a repayment amount to preview allocation.`,
+      );
+    }
+  }, [
+    isMultiLineMode,
+    batchResults,
+    selectedBatchLines.length,
+    batchAllocation.totalAllocated,
+    batchAllocation.totalInterestPaid,
+    batchAllocation.totalPrincipalPaid,
+    batchAllocation.unallocatedRemainder,
+  ]);
+
+  const handleToggleBatchLine = (lineId: string) => {
+    setSelectedLineIds((prev) =>
+      prev.includes(lineId)
+        ? prev.filter((id) => id !== lineId)
+        : [...prev, lineId],
+    );
+  };
+
+  const handleToggleMultiLineMode = () => {
+    setIsMultiLineMode((prev) => {
+      const next = !prev;
+      setBatchResults(null);
+      if (next) {
+        setSrAnnouncement(
+          'Multi-line repayment mode enabled. Select credit lines to repay.',
+        );
+      } else {
+        setSrAnnouncement('Single-line repayment mode enabled.');
+      }
+      return next;
+    });
+  };
+
+  const handleBatchSubmit = () => {
+    if (isBatchSubmitDisabled || !wallet?.publicKey) return;
+
+    setIsBatchSubmitting(true);
+    const timestamp = new Date().toISOString();
+    const results: BatchRepayLineResult[] = [];
+    const linesById = new Map(selectedBatchLines.map((cl) => [cl.id, cl]));
+
+    for (let idx = 0; idx < batchAllocation.items.length; idx += 1) {
+      const item = batchAllocation.items[idx];
+      if (item.allocatedAmount <= 0) continue;
+      const cl = linesById.get(item.lineId);
+      if (!cl) continue;
+
+      const transactionId = `TXN-${Date.now()}-${idx + 1}`;
+      try {
+        saveMockRepaymentTransaction({
+          id: transactionId,
+          owner: wallet.publicKey,
+          status: 'Completed',
+          creditLineId: cl.id,
+          creditLineName: cl.name,
+          amount: item.allocatedAmount,
+          remainingDebt: item.allocation.remainingTotal,
+          limit: cl.limit,
+          apr: cl.apr,
+          nextPaymentAmount: cl.nextPaymentAmount,
+          timestamp,
+        });
+        results.push({
+          lineId: cl.id,
+          lineName: cl.name,
+          amount: item.allocatedAmount,
+          allocation: item.allocation,
+          status: 'success',
+          transactionId,
+        });
+      } catch (err) {
+        results.push({
+          lineId: cl.id,
+          lineName: cl.name,
+          amount: item.allocatedAmount,
+          allocation: item.allocation,
+          status: 'error',
+          error:
+            err instanceof Error
+              ? err.message
+              : 'Repayment failed for this credit line.',
+        });
+      }
+    }
+
+    setBatchResults(results);
+    setIsBatchSubmitting(false);
+
+    const succeeded = results.filter((r) => r.status === 'success').length;
+    const failed = results.length - succeeded;
+    if (failed === 0) {
+      setSrAnnouncement(
+        `Batch repayment complete: ${succeeded} ${succeeded === 1 ? 'line' : 'lines'} repaid.`,
+      );
+    } else {
+      setSrAnnouncement(
+        `Batch repayment finished with partial results: ${succeeded} succeeded, ${failed} failed.`,
+      );
+    }
+  };
+
   if (!selectedLine) {
     return (
     <div className="repay-page mx-auto max-w-2xl space-y-6 px-4 py-8">
@@ -817,64 +1064,564 @@ export default function RepayPage() {
                 <span>This line has no outstanding balance.</span>
               </div>
             )}
-            <div className="mt-4 space-y-3">
-              {creditLines.map((cl) => {
-                const utilization = Math.round((cl.utilized / cl.limit) * 100);
-                // Task cb-v7: map utilization level to pattern class so the bar
-                // conveys severity via texture, not colour alone (WCAG 1.4.1).
-                const barClass =
-                  utilization > 80
-                    ? 'rp-progress--high'
-                    : utilization > 50
-                      ? 'rp-progress--medium'
-                      : 'rp-progress--low';
-                const delinquent = isDelinquentLine(cl);
-                return (
-                  <button
-                    key={cl.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedId(cl.id);
-                      setSrAnnouncement(`Selected ${cl.name}. Choose a repayment amount.`);
-                    }}
-                    className={`rp-cl-card w-full rounded-lg border bg-surface p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${delinquent ? 'border-warning/60' : 'border-border'} ${motionClasses(isReducedMotionActive, 'transition-all hover:border-accent hover:bg-accent/5')}`}
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        {/* Issue #1185: status badge — text conveys state, not colour alone (WCAG 1.4.1) */}
-                        <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                          <StatusBadge status={cl.status} />
-                          {delinquent && (
-                            <span
-                              className="rp-overdue-label inline-flex items-center rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning"
-                              aria-label="Overdue — repayment needed"
-                            >
-                              Overdue
-                            </span>
-                          )}
-                        </div>
-                        <p className="font-semibold text-foreground">{cl.name}</p>
-                        <p className="mt-0.5 text-sm text-muted">{cl.id}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-foreground num-tabular">
-                          {formatMoney(cl.utilized)}
-                        </p>
-                        <p className="text-sm text-muted"><span className="num-tabular">{utilization}%</span> utilized</p>
-                      </div>
-                    </div>
-                    {/* Task cb-v7: pattern fill on progress bar */}
-                    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-border">
-                      <div
-                        className={`h-full rounded-full transition-all ${barClass}`}
-                        style={{ width: `${utilization}%` }}
-                        aria-hidden="true"
-                      />
-                    </div>
-                  </button>
-                );
-              })}
+
+            <div className="mt-4 flex items-center justify-between rounded-lg border border-border bg-surface px-4 py-3">
+              <div>
+                <label
+                  htmlFor="multi-line-repay-toggle"
+                  className="text-sm font-semibold text-foreground cursor-pointer"
+                  onClick={handleToggleMultiLineMode}
+                >
+                  Repay multiple lines
+                </label>
+                <p className="text-xs text-muted">
+                  Select several credit lines and split one payment across them
+                </p>
+              </div>
+              <button
+                id="multi-line-repay-toggle"
+                type="button"
+                role="switch"
+                aria-checked={isMultiLineMode}
+                onClick={handleToggleMultiLineMode}
+                data-testid="multi-line-repay-toggle"
+                className={`rp-toggle-switch relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+                  isMultiLineMode ? 'bg-accent' : 'bg-border'
+                } ${motionClasses(isReducedMotionActive, 'transition-colors duration-200 ease-in-out')}`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`repay-page__toggle-thumb pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 ${
+                    isMultiLineMode ? 'translate-x-5' : 'translate-x-0'
+                  } ${motionClasses(isReducedMotionActive, 'transition duration-200 ease-in-out')}`}
+                />
+              </button>
             </div>
+
+            {isMultiLineMode ? (
+              walletStatus !== 'connected' || !wallet ? (
+                <div className="mt-4">
+                  <ConnectWalletPrompt assetCode={SETTLEMENT_ASSET.code} />
+                </div>
+              ) : batchResults !== null ? (
+                <div
+                  className="mt-4 space-y-4 rounded-lg border border-border bg-surface p-5"
+                  data-testid="batch-repay-results"
+                >
+                  {(() => {
+                    const succeeded = batchResults.filter(
+                      (r) => r.status === 'success',
+                    );
+                    const failed = batchResults.filter(
+                      (r) => r.status === 'error',
+                    );
+                    const totalPaid = roundToCents(
+                      succeeded.reduce((sum, r) => sum + r.amount, 0),
+                    );
+                    const allSucceeded = failed.length === 0;
+                    return (
+                      <>
+                        <div
+                          role="status"
+                          aria-live="polite"
+                          className={`flex items-start gap-3 rounded-lg border p-4 text-sm ${
+                            allSucceeded
+                              ? 'border-success/40 bg-success/10 text-success'
+                              : 'border-warning/40 bg-warning/10 text-warning'
+                          }`}
+                        >
+                          {allSucceeded ? (
+                            <CheckCircle
+                              className="mt-0.5 h-5 w-5 shrink-0"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <AlertTriangle
+                              className="mt-0.5 h-5 w-5 shrink-0"
+                              aria-hidden="true"
+                            />
+                          )}
+                          <div>
+                            <p className="font-semibold">
+                              {allSucceeded
+                                ? `Batch repayment complete (${succeeded.length} ${succeeded.length === 1 ? 'line' : 'lines'})`
+                                : `${succeeded.length} of ${batchResults.length} repayments completed`}
+                            </p>
+                            <p className="mt-0.5 text-xs opacity-90">
+                              Total repaid:{' '}
+                              <span className="font-semibold num-tabular">
+                                {formatMoney(totalPaid)}
+                              </span>
+                              {failed.length > 0 &&
+                                ` · ${failed.length} ${failed.length === 1 ? 'line' : 'lines'} failed`}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="rp-batch-table-wrap overflow-x-auto">
+                          <table className="rp-batch-table w-full text-left text-sm">
+                            <thead>
+                              <tr className="border-b border-border text-xs uppercase text-muted">
+                                <th className="py-2 pr-3 font-semibold">Credit Line</th>
+                                <th className="py-2 px-3 font-semibold">Status</th>
+                                <th className="py-2 px-3 text-right font-semibold">Paid</th>
+                                <th className="py-2 pl-3 text-right font-semibold">Remaining</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                              {batchResults.map((res) => (
+                                <tr
+                                  key={res.lineId}
+                                  data-testid={`batch-result-row-${res.lineId}`}
+                                >
+                                  <td className="py-2.5 pr-3">
+                                    <p className="font-medium text-foreground">
+                                      {res.lineName}
+                                    </p>
+                                    <p className="text-xs text-muted">
+                                      {res.transactionId ?? res.lineId}
+                                    </p>
+                                    {res.error && (
+                                      <p
+                                        role="alert"
+                                        className="mt-0.5 text-xs text-error"
+                                      >
+                                        {res.error}
+                                      </p>
+                                    )}
+                                  </td>
+                                  <td className="py-2.5 px-3">
+                                    {res.status === 'success' ? (
+                                      <span className="inline-flex items-center gap-1 rounded-full border border-success/40 bg-success/10 px-2 py-0.5 text-xs font-semibold text-success">
+                                        Completed
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 rounded-full border border-error/40 bg-error/10 px-2 py-0.5 text-xs font-semibold text-error">
+                                        Failed
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-right font-medium num-tabular text-foreground">
+                                    {formatMoney(res.amount)}
+                                  </td>
+                                  <td className="py-2.5 pl-3 text-right font-medium num-tabular text-foreground">
+                                    {formatMoney(res.allocation.remainingTotal)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        <div className="flex flex-wrap gap-3 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBatchResults(null);
+                              setBatchTotalStr('');
+                              setPerLineAmountStrs({});
+                            }}
+                            className="flex-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-background hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                          >
+                            Make another repayment
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => navigate('/')}
+                            className="flex-1 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                          >
+                            Back to dashboard
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="mt-4 space-y-4" data-testid="multi-line-repay-panel">
+                  <fieldset className="space-y-2">
+                    <legend className="text-xs font-semibold uppercase text-muted">
+                      Select repayable credit lines ({selectedBatchLines.length} selected)
+                    </legend>
+                    <div className="mt-2 space-y-2">
+                      {creditLines.map((cl) => {
+                        const checked = selectedLineIds.includes(cl.id);
+                        const accrued = accruedByLineId[cl.id] ?? 0;
+                        const lineOwed = roundToCents(cl.utilized + accrued);
+                        const delinquent = isDelinquentLine(cl);
+                        return (
+                          <div
+                            key={cl.id}
+                            className={`rp-batch-line-row rounded-lg border bg-surface p-3.5 ${
+                              checked
+                                ? 'border-accent bg-accent/5'
+                                : delinquent
+                                  ? 'border-warning/60'
+                                  : 'border-border'
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <input
+                                id={`batch-line-${cl.id}`}
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => handleToggleBatchLine(cl.id)}
+                                className="mt-1 h-4 w-4 rounded border-border accent-accent"
+                              />
+                              <label
+                                htmlFor={`batch-line-${cl.id}`}
+                                className="flex flex-1 cursor-pointer flex-wrap items-start justify-between gap-2"
+                              >
+                                <div className="min-w-0">
+                                  <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                                    <StatusBadge status={cl.status} />
+                                    <span className="text-xs text-muted num-tabular">
+                                      {cl.apr}% APR
+                                    </span>
+                                  </div>
+                                  <p className="font-semibold text-foreground">
+                                    {cl.name}
+                                  </p>
+                                  <p className="text-xs text-muted">{cl.id}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-semibold text-foreground num-tabular">
+                                    {formatMoney(lineOwed)}
+                                  </p>
+                                  <p className="text-xs text-muted">
+                                    Total owed
+                                  </p>
+                                </div>
+                              </label>
+                            </div>
+                            {checked && batchInputMode === 'per-line' && (
+                              <div className="mt-3 pl-7">
+                                <label
+                                  htmlFor={`batch-per-line-amount-${cl.id}`}
+                                  className="block text-xs font-medium text-muted"
+                                >
+                                  Amount for {cl.name}
+                                </label>
+                                <input
+                                  id={`batch-per-line-amount-${cl.id}`}
+                                  type="number"
+                                  min={0}
+                                  step={0.01}
+                                  placeholder="0.00"
+                                  value={perLineAmountStrs[cl.id] ?? ''}
+                                  onChange={(e) =>
+                                    setPerLineAmountStrs((prev) => ({
+                                      ...prev,
+                                      [cl.id]: e.target.value,
+                                    }))
+                                  }
+                                  className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground num-tabular focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+
+                  <div className="rounded-lg border border-border bg-surface p-4 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex gap-2" role="group" aria-label="Repayment amount mode">
+                        <button
+                          type="button"
+                          onClick={() => setBatchInputMode('total')}
+                          aria-pressed={batchInputMode === 'total'}
+                          className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${
+                            batchInputMode === 'total'
+                              ? 'border-accent bg-accent/10 text-accent'
+                              : 'border-border text-muted hover:text-foreground'
+                          }`}
+                        >
+                          Single total
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBatchInputMode('per-line')}
+                          aria-pressed={batchInputMode === 'per-line'}
+                          className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${
+                            batchInputMode === 'per-line'
+                              ? 'border-accent bg-accent/10 text-accent'
+                              : 'border-border text-muted hover:text-foreground'
+                          }`}
+                        >
+                          Per-line amounts
+                        </button>
+                      </div>
+                      <span className="text-xs text-muted">
+                        Wallet:{' '}
+                        <span className="num-tabular font-medium text-foreground">
+                          {hasRepayableBalance
+                            ? formatMoney(walletBalance)
+                            : 'Unavailable'}
+                        </span>
+                      </span>
+                    </div>
+
+                    {batchInputMode === 'total' && (
+                      <>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <label
+                            htmlFor="batch-strategy"
+                            className="text-xs font-semibold uppercase text-muted"
+                          >
+                            Allocation strategy
+                          </label>
+                          <select
+                            id="batch-strategy"
+                            value={batchStrategy}
+                            onChange={(e) =>
+                              setBatchStrategy(
+                                e.target.value as BatchAllocationStrategy,
+                              )
+                            }
+                            className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                          >
+                            <option value="highest-apr">Highest APR first</option>
+                            <option value="pro-rata">Pro-rata by balance</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <label
+                              htmlFor="batch-total-amount"
+                              className="text-sm font-semibold text-foreground"
+                            >
+                              Total amount to repay
+                            </label>
+                            <button
+                              type="button"
+                              disabled={
+                                !hasRepayableBalance ||
+                                selectedBatchLines.length === 0
+                              }
+                              onClick={() => {
+                                const cap = Math.min(batchTotalOwed, walletBalance);
+                                setBatchTotalStr(cap.toFixed(2));
+                              }}
+                              className="rounded border border-accent/30 px-2 py-0.5 text-xs font-medium text-accent hover:bg-accent/10 disabled:opacity-50"
+                            >
+                              MAX ({formatMoney(Math.min(batchTotalOwed, walletBalance))})
+                            </button>
+                          </div>
+                          <div className="relative mt-2">
+                            <span
+                              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lg text-muted"
+                              aria-hidden="true"
+                            >
+                              $
+                            </span>
+                            <input
+                              id="batch-total-amount"
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              placeholder="0.00"
+                              value={batchTotalStr}
+                              onChange={(e) => setBatchTotalStr(e.target.value)}
+                              disabled={!hasRepayableBalance}
+                              className="rp-amount-input num-tabular w-full rounded-lg border border-border bg-background px-3 py-3 pl-8 text-lg font-semibold text-foreground outline-none focus:ring-2 focus:ring-accent"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {batchAllocation.unallocatedRemainder > 0 && (
+                      <div
+                        role="status"
+                        data-testid="batch-unallocated-remainder"
+                        className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-xs text-warning"
+                      >
+                        <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                        <span>
+                          Amount exceeds total owed across selected lines. Payment
+                          is capped at{' '}
+                          <strong className="num-tabular">
+                            {formatMoney(batchAllocation.totalAllocated)}
+                          </strong>
+                          ; unallocated remainder:{' '}
+                          <strong className="num-tabular">
+                            {formatMoney(batchAllocation.unallocatedRemainder)}
+                          </strong>
+                          .
+                        </span>
+                      </div>
+                    )}
+
+                    {batchExceedsWallet && (
+                      <div
+                        role="alert"
+                        className="flex items-start gap-2 rounded-lg border border-error/40 bg-error/10 p-3 text-xs text-error"
+                      >
+                        <AlertCircle
+                          className="mt-0.5 h-4 w-4 shrink-0"
+                          aria-hidden="true"
+                        />
+                        <span>
+                          Total repayment ({formatMoney(batchAllocation.totalAllocated)})
+                          exceeds your wallet balance ({formatMoney(walletBalance)}).
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Per-line allocation preview table */}
+                  <div
+                    className="rounded-lg border border-border bg-surface p-4"
+                    data-testid="batch-allocation-preview"
+                  >
+                    <p className="text-xs font-semibold uppercase text-muted">
+                      Allocation Preview
+                    </p>
+                    {selectedBatchLines.length === 0 ? (
+                      <p className="mt-2 text-sm text-muted">
+                        Select at least one credit line to preview the allocation.
+                      </p>
+                    ) : (
+                      <div className="rp-batch-table-wrap mt-3 overflow-x-auto">
+                        <table className="rp-batch-table w-full text-left text-sm">
+                          <thead>
+                            <tr className="border-b border-border text-xs uppercase text-muted">
+                              <th className="py-2 pr-3 font-semibold">Credit Line</th>
+                              <th className="py-2 px-3 text-right font-semibold">
+                                Interest Paid
+                              </th>
+                              <th className="py-2 px-3 text-right font-semibold">
+                                Principal Paid
+                              </th>
+                              <th className="py-2 pl-3 text-right font-semibold">
+                                Remaining
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border">
+                            {selectedBatchLines.map((cl) => {
+                              const lineAlloc = batchAllocation.allocations[cl.id];
+                              return (
+                                <tr
+                                  key={cl.id}
+                                  data-testid={`batch-preview-row-${cl.id}`}
+                                >
+                                  <td className="py-2.5 pr-3">
+                                    <p className="font-medium text-foreground">
+                                      {cl.name}
+                                    </p>
+                                    <p className="text-xs text-muted num-tabular">
+                                      {cl.apr}% APR
+                                    </p>
+                                  </td>
+                                  <td className="py-2.5 px-3 text-right num-tabular text-foreground">
+                                    {formatMoney(lineAlloc?.interestPaid ?? 0)}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-right num-tabular text-foreground">
+                                    {formatMoney(lineAlloc?.principalPaid ?? 0)}
+                                  </td>
+                                  <td className="py-2.5 pl-3 text-right font-semibold num-tabular text-foreground">
+                                    {formatMoney(lineAlloc?.remainingTotal ?? 0)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t-2 border-border font-semibold text-foreground">
+                              <td className="py-2.5 pr-3">Total</td>
+                              <td className="py-2.5 px-3 text-right num-tabular">
+                                {formatMoney(batchAllocation.totalInterestPaid)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right num-tabular">
+                                {formatMoney(batchAllocation.totalPrincipalPaid)}
+                              </td>
+                              <td className="py-2.5 pl-3 text-right num-tabular">
+                                {formatMoney(batchAllocation.totalRemaining)}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleBatchSubmit}
+                    disabled={isBatchSubmitDisabled}
+                    data-testid="batch-repay-submit"
+                    className={`w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${motionClasses(isReducedMotionActive, 'transition-all hover:brightness-110')}`}
+                  >
+                    {isBatchSubmitting
+                      ? 'Submitting batch repayment…'
+                      : `Submit Batch Repayment (${formatMoney(batchAllocation.totalAllocated)})`}
+                  </button>
+                </div>
+              )
+            ) : (
+              <div className="mt-4 space-y-3">
+                {creditLines.map((cl) => {
+                  const utilization = Math.round((cl.utilized / cl.limit) * 100);
+                  // Task cb-v7: map utilization level to pattern class so the bar
+                  // conveys severity via texture, not colour alone (WCAG 1.4.1).
+                  const barClass =
+                    utilization > 80
+                      ? 'rp-progress--high'
+                      : utilization > 50
+                        ? 'rp-progress--medium'
+                        : 'rp-progress--low';
+                  const delinquent = isDelinquentLine(cl);
+                  return (
+                    <button
+                      key={cl.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedId(cl.id);
+                        setSrAnnouncement(`Selected ${cl.name}. Choose a repayment amount.`);
+                      }}
+                      className={`rp-cl-card w-full rounded-lg border bg-surface p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${delinquent ? 'border-warning/60' : 'border-border'} ${motionClasses(isReducedMotionActive, 'transition-all hover:border-accent hover:bg-accent/5')}`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          {/* Issue #1185: status badge — text conveys state, not colour alone (WCAG 1.4.1) */}
+                          <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                            <StatusBadge status={cl.status} />
+                            {delinquent && (
+                              <span
+                                className="rp-overdue-label inline-flex items-center rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-xs font-semibold text-warning"
+                                aria-label="Overdue — repayment needed"
+                              >
+                                Overdue
+                              </span>
+                            )}
+                          </div>
+                          <p className="font-semibold text-foreground">{cl.name}</p>
+                          <p className="mt-0.5 text-sm text-muted">{cl.id}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold text-foreground num-tabular">
+                            {formatMoney(cl.utilized)}
+                          </p>
+                          <p className="text-sm text-muted"><span className="num-tabular">{utilization}%</span> utilized</p>
+                        </div>
+                      </div>
+                      {/* Task cb-v7: pattern fill on progress bar */}
+                      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-border">
+                        <div
+                          className={`h-full rounded-full transition-all ${barClass}`}
+                          style={{ width: `${utilization}%` }}
+                          aria-hidden="true"
+                        />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </>
         )}
       </div>
