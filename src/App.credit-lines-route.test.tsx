@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import App from "./App";
 import { compareCreditLines } from "./App.credit-lines-route";
 
@@ -46,9 +46,9 @@ describe("credit lines route", () => {
 
     expect(
       screen.getByRole("heading", { level: 1, name: "Credit Lines" }),
-    ).toBeInhDocument();
+    ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /page not found/i }))
-      .not.toBeInDocument();
+      .not.toBeInTheDocument();
     const creditLinesLinks = screen.getAllByRole("link", {
       name: "Credit Lines",
     });
@@ -63,7 +63,7 @@ describe("credit lines route", () => {
 
     expect(
       screen.getByRole("heading", { name: /page not found/i }),
-    ).toBeInDocument();
+    ).toBeInTheDocument();
   });
 });
 

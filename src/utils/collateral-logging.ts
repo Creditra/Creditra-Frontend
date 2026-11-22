@@ -10,6 +10,7 @@
  */
 
 import type { SubmissionAttempt } from './idempotency';
+export type { SubmissionAttempt };
 import type { SubstitutionError, SubstitutionFailureReason } from '../types/collateral';
 
 /**
