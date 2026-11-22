@@ -214,7 +214,7 @@ const DisconnectedWalletButton = () => {
   const { connect } = useWallet();
   const [showModal, setShowModal] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const { detectedWallets } = useDetectedWallets();
+  const { detectedWallets, refresh } = useDetectedWallets();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
   const handleConnect = () => {
@@ -252,6 +252,7 @@ const DisconnectedWalletButton = () => {
         onClose={() => setShowModal(false)}
         onConnect={handleWalletConnect}
         detectedWallets={detectedWallets}
+        onRefreshWallets={refresh}
         triggerRef={triggerRef}
       />
       <OnboardingFlow
