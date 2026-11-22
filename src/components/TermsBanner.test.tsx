@@ -16,11 +16,25 @@ describe('TermsBanner', () => {
     expect(screen.getByText(/We've updated our Terms of Service/i)).toBeInTheDocument();
   });
 
-  it('does not render if terms were already accepted', () => {
+  it('does not render if terms were already accepted (legacy raw value migrates to versioned envelope)', () => {
     localStorage.setItem('creditra_terms_accepted_version', '2026-07');
     
     const { container } = render(<TermsBanner />);
     expect(container).toBeEmptyDOMElement();
+    expect(JSON.parse(localStorage.getItem('creditra_terms_accepted_version')!)).toEqual({
+      v: 1,
+      data: '2026-07',
+    });
+  });
+
+  it('renders the banner if stored terms version is from an unknown future schema', () => {
+    localStorage.setItem(
+      'creditra_terms_accepted_version',
+      JSON.stringify({ v: 99, data: '2026-07' }),
+    );
+
+    render(<TermsBanner />);
+    expect(screen.getByTestId('terms-banner')).toBeInTheDocument();
   });
 
   it('does not render if terms were dismissed in the current session', () => {
@@ -36,7 +50,10 @@ describe('TermsBanner', () => {
     const acceptBtn = screen.getByTestId('tb-accept-btn');
     fireEvent.click(acceptBtn);
     
-    expect(localStorage.getItem('creditra_terms_accepted_version')).toBe('2026-07');
+    expect(JSON.parse(localStorage.getItem('creditra_terms_accepted_version')!)).toEqual({
+      v: 1,
+      data: '2026-07',
+    });
     expect(screen.queryByTestId('terms-banner')).not.toBeInTheDocument();
   });
 
@@ -96,7 +113,10 @@ describe('TermsBanner', () => {
     const modalAcceptBtn = screen.getByTestId('tb-modal-accept-btn');
     fireEvent.click(modalAcceptBtn);
     
-    expect(localStorage.getItem('creditra_terms_accepted_version')).toBe('2026-07');
+    expect(JSON.parse(localStorage.getItem('creditra_terms_accepted_version')!)).toEqual({
+      v: 1,
+      data: '2026-07',
+    });
     expect(screen.queryByTestId('tb-modal')).not.toBeInTheDocument();
     expect(screen.queryByTestId('terms-banner')).not.toBeInTheDocument();
   });

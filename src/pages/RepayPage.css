@@ -43,3 +43,19 @@
 [data-motion="reduced"] .repay-page .repay-page__toggle-thumb {
   transition: none !important;
 }
+
+/* ── Multi-line batch repayment preview table ─────────────────────────────── */
+
+.repay-page .rp-batch-table {
+  border-collapse: collapse;
+}
+
+.repay-page .rp-batch-table th,
+.repay-page .rp-batch-table td {
+  white-space: nowrap;
+}
+
+.repay-page .rp-batch-table th:first-child,
+.repay-page .rp-batch-table td:first-child {
+  white-space: normal;
+}

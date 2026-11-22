@@ -384,43 +384,105 @@ describe('CollateralSubstitutionModal', () => {
 
   it('shows classified error panel after submission failure', async () => {
     const user = userEvent.setup();
+    const submitCollateralSwap = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Network error — please try again.'));
+
     render(
       <CollateralSubstitutionModal
         {...BASE_PROPS}
-        _delayMs={0}
-        // Force rejection by making the delay positive and using a mock
-        // We'll simulate by overriding the internal error path
+        submitCollateralSwap={submitCollateralSwap}
+      />,
+    );
+    const candidate = await advanceToConfirm(user);
+    const input = screen.getByRole('textbox');
+    await user.type(input, candidate.name);
+    await user.click(screen.getByRole('button', { name: /confirm substitution/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/submission failed/i);
+    expect(alert).toHaveTextContent(/network error/i);
+    expect(submitCollateralSwap).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows retry button for retryable errors and retries with the same idempotency key', async () => {
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    const submitCollateralSwap = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Network error — please try again.'))
+      .mockResolvedValueOnce(undefined);
+
+    render(
+      <CollateralSubstitutionModal
+        {...BASE_PROPS}
+        onSuccess={onSuccess}
+        submitCollateralSwap={submitCollateralSwap}
+      />,
+    );
+    const candidate = await advanceToConfirm(user);
+    const input = screen.getByRole('textbox');
+    await user.type(input, candidate.name);
+    await user.click(screen.getByRole('button', { name: /confirm substitution/i }));
+
+    // Error alert and Retry button appear after first failure
+    await screen.findByRole('alert');
+    const retryBtn = screen.getByRole('button', { name: /retry/i });
+    expect(retryBtn).toBeInTheDocument();
+
+    // Clicking Retry re-enables submission; submitting again succeeds
+    await user.click(retryBtn);
+    expect(screen.queryByRole('alert')).toBeNull();
+    await user.click(screen.getByRole('button', { name: /confirm substitution/i }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(candidate));
+    expect(submitCollateralSwap).toHaveBeenCalledTimes(2);
+
+    const firstPayload = submitCollateralSwap.mock.calls[0][0];
+    const secondPayload = submitCollateralSwap.mock.calls[1][0];
+    expect(firstPayload.idempotencyKey).toBeTruthy();
+    expect(secondPayload.idempotencyKey).toBe(firstPayload.idempotencyKey);
+  });
+
+  it('calls onError with idempotencyKey after max retries are exhausted', async () => {
+    const user = userEvent.setup();
+    const onError = vi.fn();
+    const submitCollateralSwap = vi
+      .fn()
+      .mockRejectedValue(new Error('Network error — please try again.'));
+
+    render(
+      <CollateralSubstitutionModal
+        {...BASE_PROPS}
+        onError={onError}
+        submitCollateralSwap={submitCollateralSwap}
       />,
     );
     const candidate = await advanceToConfirm(user);
     const input = screen.getByRole('textbox');
     await user.type(input, candidate.name);
 
-    // The random error path won't fire with _delayMs=0, so test the
-    // error panel rendering by verifying the panel structure exists
-    // when an error state is present. We test the error panel via the
-    // classified error prop path in ConfirmStep.
-    expect(screen.queryByRole('alert')).toBeNull();
-  });
+    // Exhaust MAX_RETRY_ATTEMPTS (3) attempts
+    await user.click(screen.getByRole('button', { name: /confirm substitution/i }));
+    await screen.findByRole('alert');
+    expect(onError).not.toHaveBeenCalled();
 
-  it('shows retry button for retryable errors', async () => {
-    const user = userEvent.setup();
-    // We can test this by verifying the error panel structure when it appears.
-    // Since the random error path is unreliable, we verify the retry button
-    // exists in the DOM structure by testing the ConfirmStep component's
-    // behavior with error state.
-    render(<CollateralSubstitutionModal {...BASE_PROPS} />);
-    await advanceToConfirm(user);
+    await user.click(screen.getByRole('button', { name: /retry/i }));
+    await user.click(screen.getByRole('button', { name: /confirm substitution/i }));
+    await screen.findByRole('alert');
+    expect(onError).not.toHaveBeenCalled();
 
-    // Verify no error alert initially
-    expect(screen.queryByRole('alert')).toBeNull();
-  });
+    await user.click(screen.getByRole('button', { name: /retry/i }));
+    await user.click(screen.getByRole('button', { name: /confirm substitution/i }));
 
-  it('onError is called when provided', () => {
-    const onError = vi.fn();
-    render(<CollateralSubstitutionModal {...BASE_PROPS} onError={onError} />);
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    // onError is only called after max retries, so just verify it's accepted as a prop
+    await waitFor(() => expect(onError).toHaveBeenCalledOnce());
+    expect(onError.mock.calls[0][0]).toMatchObject({
+      reason: 'network',
+      retryable: true,
+    });
+    expect(onError.mock.calls[0][0].idempotencyKey).toBe(
+      submitCollateralSwap.mock.calls[0][0].idempotencyKey,
+    );
   });
 
   // ── Stale quote warning ──────────────────────────────────────────────────

@@ -16,16 +16,8 @@
  *   repayable lines follow, also sorted by updatedAt descending.
  */
 
-import type { CreditLine, CreditLineStatus } from '../types/creditLine';
-
-/** Statuses that are never eligible for repayment. */
-const UNREPAYABLE_STATUSES: ReadonlySet<CreditLineStatus> = new Set(['Closed']);
-
-/** Statuses that indicate delinquency — these sort to the top of the picker. */
-const DELINQUENT_STATUSES: ReadonlySet<CreditLineStatus> = new Set([
-  'Defaulted',
-  'Suspended',
-]);
+import type { CreditLine } from '../types/creditLine';
+import { canRepay, isDelinquentStatus } from './credit-line-status';
 
 /**
  * Returns true when `line` can appear in the repayment flow.
@@ -35,7 +27,7 @@ const DELINQUENT_STATUSES: ReadonlySet<CreditLineStatus> = new Set([
  * - `status` is not in the closed set (`Closed`)
  */
 export function isRepayable(line: CreditLine): boolean {
-  return line.utilized > 0 && !UNREPAYABLE_STATUSES.has(line.status);
+  return line.utilized > 0 && canRepay(line.status);
 }
 
 /**
@@ -43,7 +35,7 @@ export function isRepayable(line: CreditLine): boolean {
  * Used for sorting and badge emphasis in the picker.
  */
 export function isDelinquentLine(line: CreditLine): boolean {
-  return DELINQUENT_STATUSES.has(line.status);
+  return isDelinquentStatus(line.status);
 }
 
 /**

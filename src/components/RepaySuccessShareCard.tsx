@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import './RepaySuccessShareCard.css';
 import { Share2, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
@@ -21,7 +21,15 @@ export const RepaySuccessShareCard: React.FC<RepaySuccessShareCardProps> = ({
 }) => {
   const [isMasked, setIsMasked] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { theme } = useTheme();
+
+  useEffect(
+    () => () => {
+      if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
+    },
+    [],
+  );
 
   const maskText = (text: string, visibleStart = 4, visibleEnd = 4) => {
     if (!isMasked) return text;
@@ -62,7 +70,11 @@ export const RepaySuccessShareCard: React.FC<RepaySuccessShareCardProps> = ({
     try {
       await navigator.clipboard.writeText(shareText);
       setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000);
+      if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
+      copiedTimeoutRef.current = setTimeout(() => {
+        setIsCopied(false);
+        copiedTimeoutRef.current = null;
+      }, 2000);
     } catch {
       // Ignore errors
     }
