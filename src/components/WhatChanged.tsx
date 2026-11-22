@@ -1,6 +1,27 @@
 import { useState, useEffect, useRef } from "react";
 import { COLOR } from "../utils/tokens";
+import { DASHBOARD_VALUES_STABLE_KEY } from "../constants/storageKeys";
+import { readVersioned, writeVersioned } from "../utils/storage";
 import "./WhatChanged.css";
+
+const DASHBOARD_VALUES_SCHEMA_VERSION = 1;
+
+function isMetricRecord(data: unknown): data is Record<string, number> {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+  return Object.values(data as Record<string, unknown>).every(
+    (v) => typeof v === "number" && Number.isFinite(v),
+  );
+}
+
+function migrateDashboardValues(
+  raw: unknown,
+  fromVersion: number,
+): Record<string, number> | undefined {
+  if (fromVersion === 0 && isMetricRecord(raw)) {
+    return raw;
+  }
+  return undefined;
+}
 
 interface WhatChangedProps {
   metricId: string;
@@ -22,15 +43,15 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
     // Check if the session is already active
     const sessionActive = sessionStorage.getItem("creditra_dashboard_session_active");
     
-    let lastVisitData: Record<string, number> = {};
-    const localSaved = localStorage.getItem("creditra_dashboard_values_stable");
-    if (localSaved) {
-      try {
-        lastVisitData = JSON.parse(localSaved);
-      } catch (e) {
-        console.error("Failed to parse stable dashboard values", e);
-      }
-    }
+    const lastVisitData = readVersioned<Record<string, number>>(
+      DASHBOARD_VALUES_STABLE_KEY,
+      {
+        version: DASHBOARD_VALUES_SCHEMA_VERSION,
+        fallback: {},
+        migrate: migrateDashboardValues,
+        validate: isMetricRecord,
+      },
+    );
 
     if (!sessionActive) {
       // First render of this session:
@@ -39,7 +60,9 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
       
       // Save current values to localStorage for the next visit
       const newStableData = { ...lastVisitData, [metricId]: currentValue };
-      localStorage.setItem("creditra_dashboard_values_stable", JSON.stringify(newStableData));
+      writeVersioned(DASHBOARD_VALUES_STABLE_KEY, newStableData, {
+        version: DASHBOARD_VALUES_SCHEMA_VERSION,
+      });
       
       sessionStorage.setItem("creditra_dashboard_session_active", "true");
       
@@ -62,7 +85,9 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
       
       // Update the localStorage stable value so that the latest value is saved for the next visit
       const newStableData = { ...lastVisitData, [metricId]: currentValue };
-      localStorage.setItem("creditra_dashboard_values_stable", JSON.stringify(newStableData));
+      writeVersioned(DASHBOARD_VALUES_STABLE_KEY, newStableData, {
+        version: DASHBOARD_VALUES_SCHEMA_VERSION,
+      });
     }
   }, [metricId, currentValue]);
 
