@@ -7,6 +7,7 @@ import {
 } from '../types/wallet';
 import { readJson, writeJson, removeKey } from './storage';
 import { isValidAccountId } from './strkey';
+import { getCreditNetworkConfig } from '../config/creditNetwork';
 
 // Re-export types for convenience
 export {
@@ -445,4 +446,14 @@ export const getExplorerBaseUrl = (network: string): string => {
     return 'https://stellar.expert/explorer/testnet/tx';
   }
   return 'https://stellar.expert/explorer/public/tx';
+};
+
+export const getExplorerTxUrl = (hash: string): string => {
+  let network = 'PUBLIC';
+  try {
+    network = getCreditNetworkConfig().network;
+  } catch {
+    network = 'PUBLIC';
+  }
+  return `${getExplorerBaseUrl(network)}/${encodeURIComponent(hash)}`;
 };

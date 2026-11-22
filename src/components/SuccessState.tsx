@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import './SuccessState.css';
 import { RepaySuccessShareCard } from './RepaySuccessShareCard';
+import { getExplorerTxUrl } from '../utils/wallet';
 
 interface SuccessStateProps {
   /**
@@ -134,7 +135,7 @@ const SuccessState: React.FC<SuccessStateProps> = ({
       
       {transactionId && (
         <a 
-          href={`https://stellar.expert/explorer/public/tx/${transactionId}`} 
+          href={getExplorerTxUrl(transactionId)} 
           target="_blank" 
           rel="noopener noreferrer"
           className="explorer-link"
