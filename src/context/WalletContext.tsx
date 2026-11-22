@@ -118,6 +118,12 @@ import {
 } from '../utils/wallet';
 import { getCreditNetworkConfig } from '../config/creditNetwork';
 import { isValidAccountId } from '../utils/strkey';
+import { useOnline } from '../hooks/useOnline';
+import {
+  subscribeToAccount,
+  type HorizonAccountBalance,
+  type HorizonStreamStatus,
+} from '../services/horizonStream';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -280,6 +286,8 @@ interface WalletContextType {
   setDropdownOpen: (open: boolean) => void;
   balances: BalanceInfo[] | null;
   lastUpdated: Date | null;
+  /** Live Horizon SSE stream state: `'live' | 'reconnecting' | 'polling'`. */
+  streamStatus: HorizonStreamStatus;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -595,7 +603,8 @@ export const WalletProvider = ({
 
   const [balances, setBalances] = useState<BalanceInfo[] | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const pollInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [streamStatus, setStreamStatus] = useState<HorizonStreamStatus>('live');
+  const { isOnline } = useOnline();
   const balanceAbortControllerRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(true);
 
@@ -746,24 +755,53 @@ export const WalletProvider = ({
     }
   }, [wallet]);
 
-  const setDropdownOpen = (open: boolean) => {
-    if (open) {
-      fetchBalances();
-      pollInterval.current = setInterval(fetchBalances, 30_000);
-    } else if (pollInterval.current) {
-      clearInterval(pollInterval.current);
-      pollInterval.current = null;
-    }
+  const setDropdownOpen = (_open: boolean) => {
+    // Balance updates are now driven by the Horizon SSE stream (with polling fallback).
   };
 
-  // Clean up polling interval and abort in-flight balance requests on unmount.
+  // Subscribe to the Horizon SSE account stream while connected and online.
+  // Automatically tears down on disconnect, account/network switch, offline, or unmount.
+  useEffect(() => {
+    if (status !== 'connected' || !wallet?.publicKey || !isOnline) {
+      return;
+    }
+
+    const subscribedIdentity = walletIdentityKey(wallet);
+    const unsubscribe = subscribeToAccount(wallet.publicKey, {
+      onUpdate: (account) => {
+        if (!isMountedRef.current || balancesIdentityRef.current !== subscribedIdentity) {
+          return;
+        }
+        if (!Array.isArray(account.balances)) {
+          return;
+        }
+        const bal: BalanceInfo[] = account.balances.map((b: HorizonAccountBalance) => ({
+          asset: b.asset_type === 'native' ? 'XLM' : b.asset_code ?? '',
+          balance: b.balance,
+          ...(b.asset_issuer ? { issuer: b.asset_issuer } : {}),
+        }));
+        setBalances(bal);
+        setLastUpdated(new Date());
+      },
+      onStatus: (nextStatus) => {
+        if (!isMountedRef.current) return;
+        setStreamStatus(nextStatus);
+      },
+      onPoll: fetchBalances,
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [status, wallet, isOnline, fetchBalances]);
+
+  // Clean up abort controller and session timers on unmount.
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
       balanceAbortControllerRef.current?.abort();
       balanceAbortControllerRef.current = null;
-      if (pollInterval.current) clearInterval(pollInterval.current);
       clearSessionTimers();
     };
   }, [clearSessionTimers]);
@@ -786,6 +824,7 @@ export const WalletProvider = ({
         stayConnected,
         balances,
         lastUpdated,
+        streamStatus,
         refreshBalance,
         refreshWalletIdentity,
         setDropdownOpen,

@@ -1299,3 +1299,100 @@ describe('WalletContext — fetchBalances hardening', () => {
     expect(capturedSignal?.aborted).toBe(true);
   });
 });
+
+describe('WalletContext — Horizon SSE balance stream', () => {
+  class MockEventSource {
+    static instances: MockEventSource[] = [];
+    readonly url: string;
+    onopen: ((ev: Event) => void) | null = null;
+    onmessage: ((ev: MessageEvent) => void) | null = null;
+    onerror: ((ev: Event) => void) | null = null;
+    closed = false;
+
+    constructor(url: string) {
+      this.url = url;
+      MockEventSource.instances.push(this);
+    }
+
+    close() {
+      this.closed = true;
+    }
+
+    emitOpen() {
+      this.onopen?.(new Event('open'));
+    }
+
+    emitMessage(data: unknown) {
+      this.onmessage?.(new MessageEvent('message', { data: JSON.stringify(data) }));
+    }
+  }
+
+  const originalEventSource = globalThis.EventSource;
+
+  beforeEach(() => {
+    MockEventSource.instances = [];
+    globalThis.EventSource = MockEventSource as unknown as typeof EventSource;
+  });
+
+  afterEach(() => {
+    globalThis.EventSource = originalEventSource;
+  });
+
+  it('updates balances from a Horizon SSE event without polling and tears down on disconnect', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    function StreamInspector() {
+      const { connect, disconnect, balances, streamStatus } = useWallet();
+      return (
+        <div>
+          <span data-testid="stream-status">{streamStatus}</span>
+          <span data-testid="stream-balances">
+            {balances ? balances.map((b) => `${b.asset}:${b.balance}`).join(',') : 'null'}
+          </span>
+          <button data-testid="stream-connect" onClick={() => { connect('freighter'); }}>
+            Connect
+          </button>
+          <button data-testid="stream-disconnect" onClick={disconnect}>
+            Disconnect
+          </button>
+        </div>
+      );
+    }
+
+    render(
+      <WalletProvider timeoutMs={200}>
+        <StreamInspector />
+      </WalletProvider>,
+    );
+
+    await act(async () => {
+      screen.getByTestId('stream-connect').click();
+    });
+    await flushPromises();
+
+    expect(MockEventSource.instances).toHaveLength(1);
+    const es = MockEventSource.instances[0];
+    expect(es.url).toContain(`/accounts/${STORED_WALLET.publicKey}`);
+
+    act(() => {
+      es.emitOpen();
+      es.emitMessage({
+        id: STORED_WALLET.publicKey,
+        balances: [
+          { asset_type: 'native', balance: '420.50' },
+          { asset_type: 'credit_alphanum4', asset_code: 'USDC', asset_issuer: 'GISSUER', balance: '10.00' },
+        ],
+      });
+    });
+
+    expect(screen.getByTestId('stream-status').textContent).toBe('live');
+    expect(screen.getByTestId('stream-balances').textContent).toBe('XLM:420.50,USDC:10.00');
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    // Disconnect tears down the stream
+    await act(async () => {
+      screen.getByTestId('stream-disconnect').click();
+    });
+    expect(es.closed).toBe(true);
+  });
+});

@@ -23,6 +23,7 @@ describe('WalletBalance', () => {
       status: 'disconnected',
       wallet: null,
       balances: null,
+      streamStatus: 'live',
       refreshBalance: vi.fn(),
     } as any);
 
@@ -30,65 +31,77 @@ describe('WalletBalance', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders balance when connected', () => {
+  it('renders balance and live indicator when connected', () => {
     vi.mocked(useWallet).mockReturnValue({
       status: 'connected',
       wallet: { publicKey: 'G123' },
       balances: [{ asset: 'XLM', balance: '100.50' }],
+      streamStatus: 'live',
       refreshBalance: vi.fn(),
     } as any);
 
     render(<WalletBalance />);
     expect(screen.getByText('100.50 XLM')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveAttribute('aria-label', 'Balance stream: Live');
   });
 
-  it('polls balance periodically', async () => {
+  it('does not poll on a 15s interval (relies on WalletContext stream)', () => {
     const refreshBalanceMock = vi.fn();
     vi.mocked(useWallet).mockReturnValue({
       status: 'connected',
       wallet: { publicKey: 'G123' },
       balances: [{ asset: 'XLM', balance: '100.50' }],
+      streamStatus: 'live',
       refreshBalance: refreshBalanceMock,
     } as any);
 
     render(<WalletBalance />);
-    
-    expect(refreshBalanceMock).not.toHaveBeenCalled();
 
-    // Advance timer by 15s
     act(() => {
-      vi.advanceTimersByTime(15000);
+      vi.advanceTimersByTime(60_000);
     });
 
+    expect(refreshBalanceMock).not.toHaveBeenCalled();
+  });
+
+  it('triggers a one-time initial fetch when connected without balances', () => {
+    const refreshBalanceMock = vi.fn();
+    vi.mocked(useWallet).mockReturnValue({
+      status: 'connected',
+      wallet: { publicKey: 'G123' },
+      balances: null,
+      streamStatus: 'live',
+      refreshBalance: refreshBalanceMock,
+    } as any);
+
+    render(<WalletBalance />);
     expect(refreshBalanceMock).toHaveBeenCalledTimes(1);
   });
 
-  it('clears the polling indicator timer on unmount', async () => {
-    const refreshBalanceMock = vi.fn().mockResolvedValue(undefined);
+  it('reflects reconnecting and polling stream statuses', () => {
     vi.mocked(useWallet).mockReturnValue({
       status: 'connected',
       wallet: { publicKey: 'G123' },
       balances: [{ asset: 'XLM', balance: '100.50' }],
-      refreshBalance: refreshBalanceMock,
+      streamStatus: 'reconnecting',
+      refreshBalance: vi.fn(),
     } as any);
 
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    try {
-      const { unmount } = render(<WalletBalance />);
+    const { rerender } = render(<WalletBalance />);
+    expect(screen.getByRole('status')).toHaveAttribute(
+      'aria-label',
+      'Balance stream: Reconnecting…',
+    );
 
-      await act(async () => {
-        vi.advanceTimersByTime(15000);
-        await Promise.resolve();
-      });
-      expect(refreshBalanceMock).toHaveBeenCalledTimes(1);
+    vi.mocked(useWallet).mockReturnValue({
+      status: 'connected',
+      wallet: { publicKey: 'G123' },
+      balances: [{ asset: 'XLM', balance: '100.50' }],
+      streamStatus: 'polling',
+      refreshBalance: vi.fn(),
+    } as any);
 
-      unmount();
-      act(() => {
-        vi.advanceTimersByTime(1000);
-      });
-      expect(errorSpy).not.toHaveBeenCalled();
-    } finally {
-      errorSpy.mockRestore();
-    }
+    rerender(<WalletBalance />);
+    expect(screen.getByRole('status')).toHaveAttribute('aria-label', 'Balance stream: Polling');
   });
 });
