@@ -41,6 +41,28 @@ export interface DrawPricingTierHint {
   aboveAmount: number;
 }
 
+/** The result of pricing a draw: the amount drawn plus the state it produces. */
+export interface DrawProjection {
+  /** Amount the user asked to draw, clamped to zero. */
+  amount: number;
+  /** Balance already drawn on the line before this draw. */
+  utilized: number;
+  /** One-time fee charged on the drawn amount. */
+  fee: number;
+  /** Balance drawn on the line once the draw and its fee land. */
+  utilizedAfter: number;
+  /** Utilisation percentage (0–100) the line reaches after the draw. */
+  utilizationAfter: number;
+}
+
+/** A forward-looking hint that drawing above `aboveAmount` raises the APR. */
+export interface DrawPricingTierHint {
+  /** APR that applies once the draw amount exceeds `aboveAmount`. */
+  apr: number;
+  /** The largest whole-dollar draw amount still priced at the current APR. */
+  aboveAmount: number;
+}
+
 
 const BASE_APR_BY_RISK_BAND: Record<DrawPricingRiskBand, number> = {
   Prime: 7.5,

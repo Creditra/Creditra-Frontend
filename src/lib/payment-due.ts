@@ -1,3 +1,12 @@
+/**
+ * Payment-due classification for a credit line.
+ *
+ * Compares a line's `nextPaymentDate` against a reference "now" using whole
+ * calendar days, so a date-only string (e.g. "2025-03-01") is read in the
+ * user's local timezone rather than as UTC midnight. This mirrors the
+ * day-bucketing used by `src/lib/delinquency.ts`.
+ */
+
 import type { CreditLine } from "../types/creditLine";
 import { parseLocalDate } from "../utils/dates";
 

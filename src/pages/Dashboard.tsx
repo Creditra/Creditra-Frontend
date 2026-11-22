@@ -187,6 +187,13 @@ function DashboardContent() {
       </div>
 
       <DashboardSummary />
+      {/*
+        Next Steps card — tells the borrower what to do next. Self-hides when
+        every step is complete or the borrower dismisses it, so it never
+        competes with the summary cards once the account is fully set up.
+      */}
+      <NextSteps totalAvailable={totalAvailable} totalUtilized={totalUtilized} />
+
 
       <div className="dashboard-grid">
         <div>

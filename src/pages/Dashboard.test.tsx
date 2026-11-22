@@ -44,6 +44,14 @@ vi.mock('../context/WalletContext', async () => {
   };
 });
 
+// Resolve the linked-accounts lookup immediately so the Next Steps card is
+// not stuck on its loading skeleton inside these tests. A plain function (not
+// a vi.fn) is used because the `RiskGauge` suite calls `vi.restoreAllMocks()`,
+// which would otherwise wipe this implementation for every later test.
+vi.mock('../services/linkedAccounts', () => ({
+  fetchLinkedAccounts: async () => [],
+}));
+
 const { mockCreditLinesArray } = vi.hoisted(() => {
   return { mockCreditLinesArray: [] as unknown[] };
 });
