@@ -30,6 +30,7 @@ import {
   getStoredWallet,
   type WalletType,
 } from '@/utils/wallet';
+import { getWalletBrowserSupport } from '@/utils/walletSupport';
 import type { StoredWalletPreference } from '@/types/wallet';
 import { WalletConnectError } from '@/types/wallet';
 import './WalletConnectionModal.css';
@@ -125,6 +126,8 @@ interface WalletConnectionModalProps {
   triggerRef?: React.RefObject<HTMLElement | null>;
   /** Currently detected/available wallets */
   detectedWallets?: WalletProvider[];
+  /** Callback to re-run wallet extension detection without closing the modal */
+  onRefreshWallets?: () => void;
 }
 
 const EMPTY_DETECTED_WALLETS: WalletProvider[] = [];
@@ -153,6 +156,7 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
   onConnect,
   triggerRef,
   detectedWallets = EMPTY_DETECTED_WALLETS,
+  onRefreshWallets,
 }) => {
   const [connectingId, setConnectingId] = useState<WalletProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -164,6 +168,14 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
   const [showFullList, setShowFullList] = useState<boolean>(false);
   const modalId = 'wallet-connection-modal';
   const rememberCheckboxId = useId();
+  const helpPanelTitleId = useId();
+
+  const browserSupport = useMemo(() => {
+    if (!isOpen) {
+      return { browserSupported: true, reason: null, browserFamily: 'unknown' as const };
+    }
+    return getWalletBrowserSupport();
+  }, [isOpen]);
 
   // ── MRU-aware ordering ─────────────────────────────────────────────────────
   //
@@ -281,6 +293,11 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
     window.open(wallet.installUrl, '_blank', 'noopener,noreferrer');
   }, []);
 
+  // Re-check wallet extensions without closing the modal
+  const handleRefreshWallets = useCallback(() => {
+    onRefreshWallets?.();
+  }, [onRefreshWallets]);
+
   // Handlers dedicated to the "Continue with recent" affordance so the
   // primary wallet can be picked up with a single click — no toggling,
   // no checkbox drama.
@@ -363,6 +380,58 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
             aria-live="polite"
           >
             {error}
+          </div>
+        )}
+
+        {/* Help panel when no wallet extension is detected */}
+        {detectedWallets.length === 0 && (
+          <div
+            role="region"
+            aria-labelledby={helpPanelTitleId}
+            className={`wallet-help-panel${!browserSupport.browserSupported ? ' wallet-help-panel--unsupported' : ''}`}
+            data-testid="wallet-help-panel"
+          >
+            <h3 id={helpPanelTitleId} className="wallet-help-title">
+              {browserSupport.browserSupported
+                ? 'No wallet extension detected'
+                : 'This browser may not support wallet extensions'}
+            </h3>
+            {!browserSupport.browserSupported && browserSupport.reason && (
+              <p className="wallet-help-reason">{browserSupport.reason}</p>
+            )}
+            <ul className="wallet-help-list" aria-label="Wallet detection results">
+              {DEFAULT_WALLET_ORDER.map((wallet) => {
+                const isDetected = detectedWallets.includes(wallet.id);
+                return (
+                  <li key={wallet.id} className="wallet-help-item">
+                    <span className="wallet-help-wallet">
+                      <span className="wallet-help-name">{wallet.name}</span>
+                      <span className="wallet-help-status">
+                        {isDetected ? 'detected: yes' : 'detected: no'}
+                      </span>
+                    </span>
+                    <a
+                      href={wallet.installUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="wallet-help-install-link"
+                    >
+                      Install {wallet.name}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="wallet-help-albedo-note">
+              Albedo works without a browser extension.
+            </p>
+            <button
+              type="button"
+              className="wallet-help-recheck-btn"
+              onClick={handleRefreshWallets}
+            >
+              Re-check
+            </button>
           </div>
         )}
 
