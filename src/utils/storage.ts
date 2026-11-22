@@ -25,15 +25,19 @@ export function readJson<T>(key: string, fallback: T): T {
 }
 
 /**
- * JSON-serialize a value and write it to localStorage. Silently no-ops
- * on failure.
+ * JSON-serialize a value and write it to localStorage.
+ *
+ * Returns `true` when the write succeeds and `false` if storage is
+ * unavailable or throws (e.g. quota exceeded, private browsing).
  */
-export function writeJson<T>(key: string, value: T): void {
+export function writeJson<T>(key: string, value: T): boolean {
   try {
-    if (typeof window === 'undefined' || !window.localStorage) return;
+    if (typeof window === 'undefined' || !window.localStorage) return false;
     window.localStorage.setItem(key, JSON.stringify(value));
+    return true;
   } catch {
     /* swallow — quota or private-mode write failure */
+    return false;
   }
 }
 
