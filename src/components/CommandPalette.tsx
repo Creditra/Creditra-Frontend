@@ -211,6 +211,7 @@ export function CommandPalette({
    */
   const debouncedQuery = useDebounceValue(query, 80);
   const inputRef = useRef<HTMLInputElement>(null);
+  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Merge built-in defaults with any context-sensitive extras.
   const allItems = [...DEFAULT_ITEMS, ...extraItems];
@@ -262,8 +263,18 @@ export function CommandPalette({
   useEffect(() => {
     if (isOpen) {
       // Small delay aligns with useFocusTrap's 50 ms initialisation timeout.
-      setTimeout(() => inputRef.current?.focus(), 10);
+      if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
+      focusTimeoutRef.current = setTimeout(() => {
+        inputRef.current?.focus();
+        focusTimeoutRef.current = null;
+      }, 10);
     }
+    return () => {
+      if (focusTimeoutRef.current) {
+        clearTimeout(focusTimeoutRef.current);
+        focusTimeoutRef.current = null;
+      }
+    };
   }, [isOpen]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
