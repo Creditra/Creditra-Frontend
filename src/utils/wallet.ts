@@ -306,7 +306,7 @@ function extractWalletType(value: unknown): WalletType | null {
  * idempotent and needs no user action; a record whose type is missing or
  * unsupported is removed outright so no reconnect is attempted from it.
  */
-export const getStoredWallet = (): StoredWalletPreference | null => {
+export const getStoredWallet = (): (StoredWalletPreference & Partial<WalletInfo>) | null => {
   const current = readJson<unknown>(STORAGE_KEY_INFO, null);
   const legacyInfo = readJson<unknown>(STORAGE_KEY_INFO_LEGACY, null);
   const legacyPreference = readJson<unknown>(STORAGE_KEY_PREFERENCE_LEGACY, null);
@@ -326,7 +326,13 @@ export const getStoredWallet = (): StoredWalletPreference | null => {
     return null;
   }
 
-  const stored: StoredWalletPreference = { v: WALLET_INFO_VERSION, type };
+  const rawObj = (current && typeof current === 'object' ? current : legacyInfo && typeof legacyInfo === 'object' ? legacyInfo : {}) as Record<string, unknown>;
+  const stored: StoredWalletPreference & Partial<WalletInfo> = {
+    v: WALLET_INFO_VERSION,
+    type,
+    ...(typeof rawObj.publicKey === 'string' ? { publicKey: rawObj.publicKey } : {}),
+    ...(typeof rawObj.network === 'string' ? { network: rawObj.network as any } : {}),
+  };
   // Rewrite only when the on-disk record is not already the current shape, so
   // repeated reads stay idempotent.
   if (
@@ -335,7 +341,7 @@ export const getStoredWallet = (): StoredWalletPreference | null => {
     (current as StoredWalletPreference).v !== WALLET_INFO_VERSION ||
     (current as StoredWalletPreference).type !== type
   ) {
-    writeJson(STORAGE_KEY_INFO, stored);
+    writeJson(STORAGE_KEY_INFO, { v: WALLET_INFO_VERSION, type });
   }
   return stored;
 };
