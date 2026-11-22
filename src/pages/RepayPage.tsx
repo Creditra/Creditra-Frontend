@@ -18,7 +18,12 @@ import {
   requiresRepayConfirmation,
 } from '@/utils/amountValidation';
 import { useOnline } from '@/hooks/useOnline';
-import { suggestRepayAmount } from '@/utils/suggestRepay';
+import {
+  suggestRepayAmount,
+  type OptimisedRepaymentPlan,
+  type OptimiseRepaymentLine,
+} from '@/utils/suggestRepay';
+import { SmartPayCTA } from './SmartPayCTA';
 import { roundToCents } from '@/utils/currency';
 import { allocateRepayment } from '@/lib/repay-allocation';
 import { getAccruedInterest, getAccruedInterestDays } from '@/lib/interest';
@@ -157,6 +162,7 @@ export default function RepayPage() {
   const [step, setStep] = useState<RepayStep>('input');
   const [selectedId, setSelectedId] = useState<string>(preselectedId ?? '');
   const [amountStr, setAmountStr] = useState('');
+  const [appliedPlan, setAppliedPlan] = useState<OptimisedRepaymentPlan | null>(null);
   const [confirmAmountStr, setConfirmAmountStr] = useState('');
   const [isAutoSchedule, setIsAutoSchedule] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -299,6 +305,29 @@ export default function RepayPage() {
     setAmountStr(suggestion.amount.toFixed(2));
     setSrAnnouncement(`Smart Pay amount set: ${formatMoney(suggestion.amount)}. ${suggestionMessage}`);
   };
+
+  const optimiserLines = useMemo<OptimiseRepaymentLine[]>(() => {
+    const now = new Date();
+    return creditLines.map((cl) => ({
+      id: cl.id,
+      name: cl.name,
+      balance: roundToCents(cl.utilized + getAccruedInterest(cl, now)),
+      apr: cl.apr,
+      minimumPayment: cl.nextPaymentAmount,
+      status: cl.status,
+    }));
+  }, [creditLines]);
+
+  const handleApplyOptimisedPlan = useCallback((plan: OptimisedRepaymentPlan) => {
+    setAppliedPlan(plan);
+    const first = plan.allocations.find((a) => a.amount > 0);
+    if (!first) return;
+    setSelectedId(first.lineId);
+    setAmountStr(first.amount.toFixed(2));
+    setSrAnnouncement(
+      `Applied ${plan.strategy} plan. Prefilled ${formatMoney(first.amount)} for ${first.lineName}.`,
+    );
+  }, []);
 
   const handleReview = () => {
     if (hasRepayableBalance && !isInvalid && amount > 0) {
@@ -817,6 +846,18 @@ export default function RepayPage() {
                 <span>This line has no outstanding balance.</span>
               </div>
             )}
+            {creditLines.length > 1 && hasRepayableBalance && (
+              <div className="mt-4">
+                <SmartPayCTA
+                  title="Smart Pay Multi-Line Optimiser"
+                  description="Compare avalanche (highest APR first) and snowball (smallest balance first) across your credit lines."
+                  cta={null}
+                  lines={optimiserLines}
+                  budget={walletBalance}
+                  onApplyPlan={handleApplyOptimisedPlan}
+                />
+              </div>
+            )}
             <div className="mt-4 space-y-3">
               {creditLines.map((cl) => {
                 const utilization = Math.round((cl.utilized / cl.limit) * 100);
@@ -835,7 +876,15 @@ export default function RepayPage() {
                     type="button"
                     onClick={() => {
                       setSelectedId(cl.id);
-                      setSrAnnouncement(`Selected ${cl.name}. Choose a repayment amount.`);
+                      const planned = appliedPlan?.allocations.find((a) => a.lineId === cl.id);
+                      if (planned && planned.amount > 0) {
+                        setAmountStr(planned.amount.toFixed(2));
+                        setSrAnnouncement(
+                          `Selected ${cl.name}. Prefilled ${formatMoney(planned.amount)} from your ${appliedPlan?.strategy} plan.`,
+                        );
+                      } else {
+                        setSrAnnouncement(`Selected ${cl.name}. Choose a repayment amount.`);
+                      }
                     }}
                     className={`rp-cl-card w-full rounded-lg border bg-surface p-4 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${delinquent ? 'border-warning/60' : 'border-border'} ${motionClasses(isReducedMotionActive, 'transition-all hover:border-accent hover:bg-accent/5')}`}
                   >
