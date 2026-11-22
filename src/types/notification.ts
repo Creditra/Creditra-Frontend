@@ -18,6 +18,14 @@ export type NotificationCategory =
   | 'auction'
   | 'system';
 
+export const NOTIFICATION_COMMAND_IDS = [
+  'open-wallet',
+  'open-kyc',
+  'retry-sync',
+] as const;
+
+export type NotificationCommandId = (typeof NOTIFICATION_COMMAND_IDS)[number];
+
 /**
  * Action descriptor for persisted notifications.
  * Either a client‑side route navigation or a registered command.
@@ -26,7 +34,7 @@ export type NotificationActionDescriptor = {
   label: string;
 } & (
   | { kind: 'route'; to: string }
-  | { kind: 'command'; id: 'open-wallet' | 'open-kyc' | 'retry-sync' }
+  | { kind: 'command'; id: NotificationCommandId }
 );
 
 /** Inline action for transient notifications (non‑persisted). */

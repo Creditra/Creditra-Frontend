@@ -6,15 +6,17 @@ import {
   useRef,
   useState,
 } from 'react';
-import type {
-  BannerAlert,
-  Notification,
-  NotificationCategory,
-  NotificationPreferences,
-  NotificationType,
-  Toast,
-  NotificationAction,
-  NotificationActionDescriptor,
+import {
+  NOTIFICATION_COMMAND_IDS,
+  type BannerAlert,
+  type Notification,
+  type NotificationCategory,
+  type NotificationCommandId,
+  type NotificationPreferences,
+  type NotificationType,
+  type Toast,
+  type NotificationAction,
+  type NotificationActionDescriptor,
 } from '../types/notification';
 import { mergeNotifications } from './notificationMerge';
 import {
@@ -117,18 +119,24 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [banners, setBanners] = useState<BannerAlert[]>([]);
 
+  const isCommandId = (value: unknown): value is NotificationCommandId => {
+    const validIds: readonly string[] = NOTIFICATION_COMMAND_IDS;
+    return typeof value === 'string' && validIds.includes(value);
+  };
+
   // Validate deserialized action descriptors.
-  const validateAction = (action: any): NotificationActionDescriptor | undefined => {
-    if (!action || typeof action !== 'object' || typeof action.label !== 'string') return undefined;
+  const validateAction = (action: unknown): NotificationActionDescriptor | undefined => {
+    if (!action || typeof action !== 'object') return undefined;
+    if (!('label' in action) || typeof action.label !== 'string') return undefined;
+    if (!('kind' in action)) return undefined;
     if (action.kind === 'route') {
-      if (typeof action.to !== 'string') return undefined;
+      if (!('to' in action) || typeof action.to !== 'string') return undefined;
       if (!action.to.startsWith('/') || action.to.includes('://')) return undefined;
-      return { label: action.label, kind: 'route', to: action.to } as NotificationActionDescriptor;
+      return { label: action.label, kind: 'route', to: action.to };
     }
     if (action.kind === 'command') {
-      const valid = ['open-wallet', 'open-kyc', 'retry-sync'];
-      if (valid.includes(action.id)) {
-        return { label: action.label, kind: 'command', id: action.id } as NotificationActionDescriptor;
+      if ('id' in action && isCommandId(action.id)) {
+        return { label: action.label, kind: 'command', id: action.id };
       }
     }
     return undefined;
