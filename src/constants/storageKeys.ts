@@ -21,3 +21,13 @@ export const DEFAULT_RISK_BANNER_DISMISSED_KEY = 'creditra.default_risk_banner_d
  * Persisted list of most recently activated command palette item IDs.
  */
 export const COMMAND_PALETTE_RECENTS_KEY = 'creditra.command_palette_recents';
+
+/** Build wallet-scoped keys for WhatChanged dashboard visit values. */
+export const dashboardValuesStableKey = (owner: string): string =>
+  `creditra_dashboard_values_stable.${owner}`;
+
+export const dashboardValuesLastVisitKey = (owner: string): string =>
+  `creditra_dashboard_values_last_visit.${owner}`;
+
+export const dashboardSessionActiveKey = (owner: string): string =>
+  `creditra_dashboard_session_active.${owner}`;

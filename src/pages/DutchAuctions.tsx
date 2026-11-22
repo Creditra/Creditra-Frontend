@@ -29,7 +29,7 @@ class WalletFallbackBoundary extends React.Component<
   { children: React.ReactNode },
   WalletFallbackBoundaryState
 > {
-  state: WalletFallbackBoundaryState = { needsFallback: false };
+  override state: WalletFallbackBoundaryState = { needsFallback: false };
 
   static getDerivedStateFromError(error: unknown): WalletFallbackBoundaryState | null {
     if (error instanceof Error && error.message.includes('WalletProvider')) {
@@ -38,14 +38,14 @@ class WalletFallbackBoundary extends React.Component<
     return null;
   }
 
-  componentDidCatch(error: unknown) {
+  override componentDidCatch(error: unknown) {
     if (error instanceof Error && error.message.includes('WalletProvider')) {
       return;
     }
     throw error;
   }
 
-  render() {
+  override render() {
     if (this.state.needsFallback) {
       return <WalletProvider>{this.props.children}</WalletProvider>;
     }
