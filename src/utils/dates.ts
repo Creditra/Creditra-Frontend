@@ -7,11 +7,101 @@
  */
 
 const DEFAULT_LOCALE = "en-US";
+const INVALID_DATE_PLACEHOLDER = "—";
+
+function isValidDate(date: Date): boolean {
+  return date instanceof Date && !Number.isNaN(date.getTime());
+}
+
+function resolveLocale(
+  locale: unknown,
+  supportedLocalesOf: (locales: string) => string[],
+): string {
+  if (typeof locale !== "string") {
+    return DEFAULT_LOCALE;
+  }
+  const normalized = locale.trim().replace(/_/g, "-");
+  if (!normalized) {
+    return DEFAULT_LOCALE;
+  }
+  try {
+    const supported = supportedLocalesOf(normalized);
+    return supported.length > 0 ? supported[0] : DEFAULT_LOCALE;
+  } catch {
+    return DEFAULT_LOCALE;
+  }
+}
+
+function createRelativeTimeFormat(
+  locale: unknown,
+  options: Intl.RelativeTimeFormatOptions,
+): Intl.RelativeTimeFormat {
+  const safeLocale = resolveLocale(locale, (loc) =>
+    Intl.RelativeTimeFormat.supportedLocalesOf(loc),
+  );
+  try {
+    return new Intl.RelativeTimeFormat(safeLocale, options);
+  } catch {
+    return new Intl.RelativeTimeFormat(DEFAULT_LOCALE, options);
+  }
+}
+
+function createDateTimeFormat(
+  locale: unknown,
+  options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
+  const safeLocale = resolveLocale(locale, (loc) =>
+    Intl.DateTimeFormat.supportedLocalesOf(loc),
+  );
+  try {
+    return new Intl.DateTimeFormat(safeLocale, options);
+  } catch {
+    return new Intl.DateTimeFormat(DEFAULT_LOCALE, options);
+  }
+}
+
+/**
+ * Parse a date string into a `Date`, treating date-only `YYYY-MM-DD` strings
+ * as local calendar dates rather than UTC midnight (so western timezones do
+ * not shift to the previous day).
+ *
+ * Full ISO timestamps (with time/offset) are parsed normally via `new Date()`.
+ * Returns `null` for empty, malformed, or invalid calendar dates (e.g.
+ * `2025-02-29`).
+ */
+export function parseLocalDate(dateStr: string): Date | null {
+  if (!dateStr) return null;
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (dateOnly) {
+    const year = Number(dateOnly[1]);
+    const month = Number(dateOnly[2]) - 1;
+    const day = Number(dateOnly[3]);
+    const parsed = new Date(year, month, day);
+    if (
+      Number.isNaN(parsed.getTime()) ||
+      parsed.getFullYear() !== year ||
+      parsed.getMonth() !== month ||
+      parsed.getDate() !== day
+    ) {
+      return null;
+    }
+    return parsed;
+  }
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
 
 /**
  * Return a human-friendly "time ago" string (e.g. `"3 minutes ago"`,
  * `"2 days ago"`). Uses the browser's `Intl.RelativeTimeFormat` where
  * available.
+ *
+ * Fallback behaviour:
+ * - Returns `'—'` when `iso` or `now` cannot be parsed into a valid `Date`.
+ * - Invalid, empty, or unsupported `locale` values (including `null`/`undefined`)
+ *   fall back to `'en-US'`. Underscore locales (e.g. `'en_US'`) are normalized.
+ * - Never throws `RangeError`.
  */
 export function timeAgo(
   iso: string | Date,
@@ -19,6 +109,10 @@ export function timeAgo(
   locale: string = DEFAULT_LOCALE,
 ): string {
   const then = iso instanceof Date ? iso : new Date(iso);
+  if (!isValidDate(then) || !isValidDate(now)) {
+    return INVALID_DATE_PLACEHOLDER;
+  }
+
   const diffSeconds = Math.round((then.getTime() - now.getTime()) / 1000);
   const absSeconds = Math.abs(diffSeconds);
 
@@ -31,7 +125,7 @@ export function timeAgo(
     ["second", 1],
   ];
 
-  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  const rtf = createRelativeTimeFormat(locale, { numeric: "auto" });
 
   for (const [unit, secondsPerUnit] of units) {
     if (absSeconds >= secondsPerUnit || unit === "second") {
@@ -65,12 +159,17 @@ export function isSameDay(
  * Format a future ISO timestamp as a compact countdown string for inline
  * chips (e.g. "2h 14m", "3d", "45m"). Omits zero-valued units so the
  * label stays short. Falls back to "now" when the target is in the past.
+ *
+ * Fallback behaviour: returns `'—'` when `targetIso` or `now` is not a valid `Date`.
  */
 export function formatCountdown(
   targetIso: string | Date,
   now: Date = new Date(),
 ): string {
   const target = targetIso instanceof Date ? targetIso : new Date(targetIso);
+  if (!isValidDate(target) || !isValidDate(now)) {
+    return INVALID_DATE_PLACEHOLDER;
+  }
   const diffMs = target.getTime() - now.getTime();
   if (diffMs <= 0) return "now";
 
@@ -92,6 +191,12 @@ export function formatCountdown(
  * when the next interest accrual will occur, e.g.
  * "Next interest in 2 hours 14 minutes". Falls back to
  * "Interest is accruing now" for past dates.
+ *
+ * Fallback behaviour:
+ * - Returns `'—'` when `targetIso` or `now` cannot be parsed into a valid `Date`.
+ * - Invalid, empty, or unsupported `locale` values (including `null`/`undefined`)
+ *   fall back to `'en-US'`. Underscore locales (e.g. `'en_US'`) are normalized.
+ * - Never throws `RangeError`.
  */
 export function getCountdownAriaLabel(
   targetIso: string | Date,
@@ -99,13 +204,16 @@ export function getCountdownAriaLabel(
   locale: string = DEFAULT_LOCALE,
 ): string {
   const target = targetIso instanceof Date ? targetIso : new Date(targetIso);
+  if (!isValidDate(target) || !isValidDate(now)) {
+    return INVALID_DATE_PLACEHOLDER;
+  }
   const diffMs = target.getTime() - now.getTime();
 
   if (diffMs <= 0) {
     return "Interest is accruing now";
   }
 
-  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  const rtf = createRelativeTimeFormat(locale, { numeric: "auto" });
 
   const totalSeconds = Math.ceil(diffMs / 1000);
   const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
@@ -141,6 +249,12 @@ export function getCountdownAriaLabel(
  * `Intl.DateTimeFormat` for anything older than 24 h, so the string
  * is always locale-correct without a third-party library.
  *
+ * Fallback behaviour:
+ * - Returns `'—'` when `ts` or `now` cannot be parsed into a valid `Date`.
+ * - Invalid, empty, or unsupported `locale` values (including `null`/`undefined`)
+ *   fall back to `'en-US'`. Underscore locales (e.g. `'en_US'`) are normalized.
+ * - Never throws `RangeError`.
+ *
  * @public Exported for use in `LastActivityStamp` and any future component
  *         that needs a human-readable "time ago" label.
  */
@@ -150,13 +264,17 @@ export function formatRelative(
   locale: string = DEFAULT_LOCALE,
 ): string {
   const then = ts instanceof Date ? ts : new Date(ts);
+  if (!isValidDate(then) || !isValidDate(now)) {
+    return INVALID_DATE_PLACEHOLDER;
+  }
+
   const diffMs = now.getTime() - then.getTime();
   const diffSec = Math.round(diffMs / 1000);
 
   if (diffSec < 10) return "just now";
 
   if (diffSec < 60) {
-    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
+    return createRelativeTimeFormat(locale, { numeric: "auto" }).format(
       -diffSec,
       "second",
     );
@@ -164,7 +282,7 @@ export function formatRelative(
 
   const diffMin = Math.round(diffSec / 60);
   if (diffMin < 60) {
-    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
+    return createRelativeTimeFormat(locale, { numeric: "auto" }).format(
       -diffMin,
       "minute",
     );
@@ -172,14 +290,14 @@ export function formatRelative(
 
   const diffHr = Math.round(diffMin / 60);
   if (diffHr < 24) {
-    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
+    return createRelativeTimeFormat(locale, { numeric: "auto" }).format(
       -diffHr,
       "hour",
     );
   }
 
   if (diffHr < 48) {
-    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
+    return createRelativeTimeFormat(locale, { numeric: "auto" }).format(
       -1,
       "day",
     );
@@ -187,7 +305,7 @@ export function formatRelative(
 
   // Older than 48 h → absolute date
   const sameYear = then.getFullYear() === now.getFullYear();
-  return new Intl.DateTimeFormat(locale, {
+  return createDateTimeFormat(locale, {
     month: "short",
     day: "numeric",
     ...(sameYear ? {} : { year: "numeric" }),
@@ -226,13 +344,22 @@ export function startOfMonth(date: Date): Date {
  *
  * Renders month/day/year + 12-hour clock with AM/PM.
  * No seconds are shown — the precision isn't needed in tooltips.
+ *
+ * Fallback behaviour:
+ * - Returns `'—'` when `ts` cannot be parsed into a valid `Date`.
+ * - Invalid, empty, or unsupported `locale` values (including `null`/`undefined`)
+ *   fall back to `'en-US'`. Underscore locales (e.g. `'en_US'`) are normalized.
+ * - Never throws `RangeError`.
  */
 export function formatAbsolute(
   ts: Date | string | number,
   locale: string = DEFAULT_LOCALE,
 ): string {
   const date = ts instanceof Date ? ts : new Date(ts);
-  return new Intl.DateTimeFormat(locale, {
+  if (!isValidDate(date)) {
+    return INVALID_DATE_PLACEHOLDER;
+  }
+  return createDateTimeFormat(locale, {
     month: "short",
     day: "numeric",
     year: "numeric",

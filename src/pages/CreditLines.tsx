@@ -11,6 +11,11 @@ import { useInertBackdrop } from "../hooks/useInertBackdrop";
 import { useBodyScrollLock } from "../hooks/useBodyScrollLock";
 import { useCreditLines } from "../hooks/useCreditLines";
 import { setLineFrozen } from "../services/creditLine";
+import {
+  applyTransition,
+  canTransition,
+  getUnfrozenStatus,
+} from "../lib/credit-line-status";
 import { compareCreditLines } from "../data/mockData";
 import type {
   CreditLine,
@@ -151,7 +156,11 @@ function CreditLineCard({
   const swapTriggerRef = useRef<HTMLButtonElement>(null);
 
   const isDefaulted = line.status === "Defaulted";
-  const canFreeze = line.status === "Active" || line.status === "Suspended" || line.status === "Frozen";
+  const transitionContext = { statusHistory: line.statusHistory };
+  const canFreeze = canTransition(line.status, "Frozen", transitionContext);
+  const canUnfreeze =
+    line.status === "Frozen" &&
+    canTransition(line.status, getUnfrozenStatus(line), transitionContext);
 
   return (
     <div
@@ -187,7 +196,7 @@ function CreditLineCard({
             frozen={line.status === "Frozen"}
             onRepay={onRepay}
             onFreeze={canFreeze ? onFreeze : undefined}
-            onUnfreeze={canFreeze ? onUnfreeze : undefined}
+            onUnfreeze={canUnfreeze ? onUnfreeze : undefined}
             onSchedule={onSchedule}
             onDetails={onDetails}
           />
@@ -516,23 +525,34 @@ export default function CreditLines({
       // check `inFlightRef` and see it no longer holds the latest intent,
       // so it won't roll back.
       const previousLine = { ...currentLine, statusHistory: [...currentLine.statusHistory] };
+      const targetStatus = frozen ? "Frozen" : getUnfrozenStatus(currentLine);
+      let transition: ReturnType<typeof applyTransition>;
+      try {
+        transition = applyTransition(currentLine, targetStatus, {
+          reason: frozen ? "Freezing…" : "Unfreezing…",
+          now: clockNow(),
+        });
+      } catch (transitionError) {
+        setFreezeError(
+          transitionError instanceof Error
+            ? transitionError.message
+            : "This credit-line status change is not allowed.",
+        );
+        return;
+      }
+
       inFlightRef.current.set(lineId, { frozen, previousLine });
 
       // Optimistic update: apply the target status immediately
-      const optimisticStatus: CreditLineStatus = frozen ? "Frozen" : "Active";
       const optimisticLines: CreditLine[] = lines.map((cl) =>
           cl.id === lineId
             ? {
                 ...cl,
-                status: optimisticStatus,
-                updatedAt: clockNow().toISOString(),
+                status: transition.status,
+                updatedAt: transition.historyEntry.date,
                 statusHistory: [
                   ...cl.statusHistory,
-                  {
-                    status: optimisticStatus,
-                    date: clockNow().toISOString(),
-                    note: frozen ? "Freezing…" : "Unfreezing…",
-                  },
+                  transition.historyEntry,
                 ],
               }
             : cl,
@@ -543,7 +563,7 @@ export default function CreditLines({
       setRetryLineId(null);
 
       try {
-        const serverLine = await setLineFrozen(lineId, frozen, optimisticLines);
+        const serverLine = await setLineFrozen(lineId, frozen, lines);
 
         // Check if we're still the latest intent for this line.
         // If a newer toggle has started, don't overwrite — the newer one wins.

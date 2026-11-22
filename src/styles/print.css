@@ -8,6 +8,11 @@
    3. Format for paper: dark text on white background, no box shadows/gradients, prevent awkward page breaks.
 */
 
+@page {
+  size: A4;
+  margin: 15mm;
+}
+
 @media print {
   /* ==========================================================================
      1. Hide UI Chrome & Interactive Controls
@@ -256,5 +261,43 @@
     border-bottom: 1px solid #e0e0e0 !important;
     padding: 6pt 0 !important;
     color: #000000 !important;
+  }
+
+  /* ==========================================================================
+     5. Credit Report Print Layout
+     ========================================================================== */
+
+  .credit-report,
+  .credit-report * {
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+  }
+
+  .credit-report {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .credit-report__actions,
+  .credit-report__print-btn {
+    display: none !important;
+  }
+
+  .credit-report__section {
+    border: 1px solid #cccccc !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 12pt !important;
+  }
+
+  .credit-report__table thead {
+    display: table-header-group;
+  }
+
+  .credit-report__table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 }

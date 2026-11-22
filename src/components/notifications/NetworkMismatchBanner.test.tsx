@@ -2,17 +2,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { NetworkMismatchBanner } from './NetworkMismatchBanner';
 import { useWallet } from '../../context/WalletContext';
-import { isSwitchSupported, switchNetwork } from '../../utils/wallet';
+import { isSwitchSupported, switchNetwork, WalletConnectError } from '../../utils/wallet';
 
 vi.mock('../../context/WalletContext', () => ({
   useWallet: vi.fn(),
 }));
 
-vi.mock('../../utils/wallet', () => ({
-  EXPECTED_NETWORK: 'TESTNET',
-  isSwitchSupported: vi.fn(),
-  switchNetwork: vi.fn(),
-}));
+vi.mock('../../utils/wallet', async () => {
+  const { WalletConnectError } = await import('../../types/wallet');
+  return {
+    EXPECTED_NETWORK: 'TESTNET',
+    isSwitchSupported: vi.fn(),
+    switchNetwork: vi.fn(),
+    WalletConnectError,
+  };
+});
 
 describe('NetworkMismatchBanner', () => {
   beforeEach(() => {
@@ -86,7 +90,7 @@ describe('NetworkMismatchBanner', () => {
     expect(btn).toBeDisabled();
   });
 
-  it('can be dismissed for the session', () => {
+  it('can be dismissed for the session for the current network', () => {
     vi.mocked(useWallet).mockReturnValue({
       wallet: { type: 'freighter', network: 'PUBLIC', publicKey: 'GXXX' },
       status: 'connected',
@@ -102,7 +106,32 @@ describe('NetworkMismatchBanner', () => {
     fireEvent.click(dismissBtn);
     
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    expect(sessionStorage.getItem('networkMismatchDismissed')).toBe('true');
+    expect(sessionStorage.getItem('networkMismatchDismissed:PUBLIC')).toBe('true');
+  });
+
+  it('reappears when wallet switches to a different mismatching network after dismissal', () => {
+    vi.mocked(useWallet).mockReturnValue({
+      wallet: { type: 'freighter', network: 'PUBLIC', publicKey: 'GXXX' },
+      status: 'connected',
+      refreshWalletIdentity: vi.fn(),
+    } as any);
+    vi.mocked(isSwitchSupported).mockReturnValue(true);
+
+    const { rerender } = render(<NetworkMismatchBanner />);
+
+    fireEvent.click(screen.getByLabelText(/dismiss alert/i));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    vi.mocked(useWallet).mockReturnValue({
+      wallet: { type: 'freighter', network: 'FUTURENET', publicKey: 'GXXX' },
+      status: 'connected',
+      refreshWalletIdentity: vi.fn(),
+    } as any);
+
+    rerender(<NetworkMismatchBanner />);
+
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByText(/your wallet is on FUTURENET/)).toBeInTheDocument();
   });
 
   it('calls switchNetwork when switch button is clicked', async () => {
@@ -168,5 +197,65 @@ describe('NetworkMismatchBanner', () => {
     });
 
     expect(refreshWalletIdentity).not.toHaveBeenCalled();
+  });
+
+  it('shows inline WalletConnectError message, re-enables button, avoids console.error, and clears on retry', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const refreshWalletIdentity = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(useWallet).mockReturnValue({
+      wallet: { type: 'freighter', network: 'PUBLIC', publicKey: 'GXXX' },
+      status: 'connected',
+      refreshWalletIdentity,
+    } as any);
+    vi.mocked(isSwitchSupported).mockReturnValue(true);
+    vi.mocked(switchNetwork)
+      .mockRejectedValueOnce(new WalletConnectError('user_rejected', 'Request cancelled in wallet.'))
+      .mockResolvedValueOnce(undefined);
+
+    render(<NetworkMismatchBanner />);
+
+    const btn = screen.getByRole('button', { name: /switch network/i });
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+
+    const errorEl = screen.getByText('Request cancelled in wallet.');
+    expect(errorEl).toBeInTheDocument();
+    expect(errorEl).toHaveAttribute('role', 'alert');
+    expect(btn).not.toBeDisabled();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+
+    expect(screen.queryByText('Request cancelled in wallet.')).not.toBeInTheDocument();
+    expect(refreshWalletIdentity).toHaveBeenCalledTimes(1);
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('shows generic inline error when switchNetwork rejects with a non-WalletConnectError', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(useWallet).mockReturnValue({
+      wallet: { type: 'freighter', network: 'PUBLIC', publicKey: 'GXXX' },
+      status: 'connected',
+      refreshWalletIdentity: vi.fn(),
+    } as any);
+    vi.mocked(isSwitchSupported).mockReturnValue(true);
+    vi.mocked(switchNetwork).mockRejectedValue(new Error('Unexpected failure'));
+
+    render(<NetworkMismatchBanner />);
+
+    const btn = screen.getByRole('button', { name: /switch network/i });
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+
+    const errorEl = screen.getByText(/failed to switch network/i);
+    expect(errorEl).toBeInTheDocument();
+    expect(errorEl).toHaveAttribute('role', 'alert');
+    expect(btn).not.toBeDisabled();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
   });
 });

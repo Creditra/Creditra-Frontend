@@ -5,7 +5,10 @@ import {
   nativeToScVal,
 } from '@stellar/stellar-sdk';
 import { CreditDataError } from '../CreditDataSource';
-import { SorobanCreditDataSource } from '../sorobanCreditDataSource';
+import {
+  SorobanCreditDataSource,
+  type SorobanCreditDataSourceOptions,
+} from '../sorobanCreditDataSource';
 
 const BORROWER = 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H';
 
@@ -34,22 +37,32 @@ function createErrorSimulation(error: string): rpc.Api.SimulateTransactionErrorR
   };
 }
 
+function createAdapter(
+  server: rpc.Server,
+  options: Pick<SorobanCreditDataSourceOptions, 'defaultTimeoutMs' | 'retry'> = {},
+): SorobanCreditDataSource {
+  return new SorobanCreditDataSource({
+    server,
+    networkPassphrase: 'Test SDF Network ; September 2015',
+    contractId: 'CA3D5KRYM6CB7OWQ6TWYRR3Z4T7GNZLKERYNZGGA5SOAOPIFY6YQGAXE',
+    ...options,
+  });
+}
+
 describe('SorobanCreditDataSource', () => {
   let mockSimulateTransaction: ReturnType<typeof vi.fn>;
+  let mockSleep: ReturnType<typeof vi.fn>;
   let mockServer: rpc.Server;
   let adapter: SorobanCreditDataSource;
 
   beforeEach(() => {
     mockSimulateTransaction = vi.fn();
+    mockSleep = vi.fn().mockResolvedValue(undefined);
     mockServer = {
       simulateTransaction: mockSimulateTransaction,
     } as unknown as rpc.Server;
 
-    adapter = new SorobanCreditDataSource({
-      server: mockServer,
-      networkPassphrase: 'Test SDF Network ; September 2015',
-      contractId: 'CA3D5KRYM6CB7OWQ6TWYRR3Z4T7GNZLKERYNZGGA5SOAOPIFY6YQGAXE',
-    });
+    adapter = createAdapter(mockServer, { retry: { sleep: mockSleep } });
   });
 
   afterEach(() => {
@@ -136,16 +149,20 @@ describe('SorobanCreditDataSource', () => {
   // ── Scenario 4 ──────────────────────────────────────────────────────────────
   it('4. RPC transport error maps to network', async () => {
     const networkError = new Error('fetch failed: connection refused');
-    mockSimulateTransaction.mockRejectedValueOnce(networkError);
+    mockSimulateTransaction.mockRejectedValue(networkError);
 
     const err = await adapter.listCreditLines(BORROWER).catch((e) => e);
     expect(err).toBeInstanceOf(CreditDataError);
     expect(err.code).toBe('network');
     expect(err.cause).toBe(networkError);
+    expect(mockSimulateTransaction).toHaveBeenCalledTimes(3);
   });
 
   it('4b. 15 s timeout under fake timers maps to network', async () => {
     vi.useFakeTimers();
+    adapter = createAdapter(mockServer, {
+      retry: { attempts: 0, sleep: mockSleep },
+    });
 
     // Never resolves
     mockSimulateTransaction.mockImplementationOnce(() => new Promise(() => {}));
@@ -160,6 +177,109 @@ describe('SorobanCreditDataSource', () => {
     expect(err.code).toBe('network');
 
     vi.useRealTimers();
+  });
+
+  it('4c. retries a timeout and succeeds on the next attempt', async () => {
+    vi.useFakeTimers();
+    adapter = createAdapter(mockServer, {
+      defaultTimeoutMs: 10,
+      retry: { sleep: mockSleep },
+    });
+    mockSimulateTransaction
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockResolvedValueOnce(createSuccessSimulation(xdr.ScVal.scvVec([])));
+
+    const promise = adapter.listCreditLines(BORROWER);
+    await vi.advanceTimersByTimeAsync(10);
+
+    await expect(promise).resolves.toEqual([]);
+    expect(mockSimulateTransaction).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it('retries a network failure and returns the successful response', async () => {
+    mockSimulateTransaction
+      .mockRejectedValueOnce(new Error('temporary transport failure'))
+      .mockResolvedValueOnce(createSuccessSimulation(xdr.ScVal.scvVec([])));
+
+    await expect(adapter.listCreditLines(BORROWER)).resolves.toEqual([]);
+    expect(mockSimulateTransaction).toHaveBeenCalledTimes(2);
+    expect(mockSleep).toHaveBeenCalledWith(250);
+  });
+
+  it('does not retry an invalid simulation response', async () => {
+    mockSimulateTransaction.mockResolvedValueOnce(null);
+
+    await expect(adapter.listCreditLines(BORROWER)).rejects.toMatchObject({
+      code: 'invalid_response',
+    });
+    expect(mockSimulateTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('doubles retry delays up to the configured cap', async () => {
+    adapter = createAdapter(mockServer, {
+      retry: {
+        attempts: 4,
+        baseDelayMs: 100,
+        maxDelayMs: 250,
+        sleep: mockSleep,
+      },
+    });
+    mockSimulateTransaction
+      .mockRejectedValueOnce(new Error('network error 1'))
+      .mockRejectedValueOnce(new Error('network error 2'))
+      .mockRejectedValueOnce(new Error('network error 3'))
+      .mockRejectedValueOnce(new Error('network error 4'))
+      .mockResolvedValueOnce(createSuccessSimulation(xdr.ScVal.scvVec([])));
+
+    await expect(adapter.listCreditLines(BORROWER)).resolves.toEqual([]);
+    expect(mockSleep.mock.calls.map(([delay]) => delay)).toEqual([
+      100, 200, 250, 250,
+    ]);
+    expect(mockSimulateTransaction).toHaveBeenCalledTimes(5);
+  });
+
+  it('surfaces the last network error after exhausting retries', async () => {
+    const lastError = new Error('last network failure');
+    mockSimulateTransaction
+      .mockRejectedValueOnce(new Error('first network failure'))
+      .mockRejectedValueOnce(new Error('second network failure'))
+      .mockRejectedValueOnce(lastError);
+
+    const err = await adapter.listCreditLines(BORROWER).catch((error) => error);
+    expect(err).toMatchObject({ code: 'network', cause: lastError });
+    expect(mockSimulateTransaction).toHaveBeenCalledTimes(3);
+  });
+
+  it('attempts only once when retries are disabled', async () => {
+    adapter = createAdapter(mockServer, {
+      retry: { attempts: 0, sleep: mockSleep },
+    });
+    mockSimulateTransaction.mockRejectedValueOnce(new Error('network failure'));
+
+    await expect(adapter.listCreditLines(BORROWER)).rejects.toMatchObject({
+      code: 'network',
+    });
+    expect(mockSimulateTransaction).toHaveBeenCalledTimes(1);
+    expect(mockSleep).not.toHaveBeenCalled();
+  });
+
+  it('aborting during retry delay stops the next RPC attempt', async () => {
+    const sleep = vi.fn(() => new Promise<void>(() => {}));
+    adapter = createAdapter(mockServer, {
+      retry: {
+        sleep,
+      },
+    });
+    mockSimulateTransaction.mockRejectedValueOnce(new Error('temporary failure'));
+    const controller = new AbortController();
+    const promise = adapter.listCreditLines(BORROWER, { signal: controller.signal });
+
+    await vi.waitFor(() => expect(sleep).toHaveBeenCalledTimes(1));
+    controller.abort();
+
+    await expect(promise).rejects.toMatchObject({ code: 'aborted' });
+    expect(mockSimulateTransaction).toHaveBeenCalledTimes(1);
   });
 
   // ── Scenario 5 ──────────────────────────────────────────────────────────────

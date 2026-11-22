@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { Calendar, TrendingDown, Clock, DollarSign, Pencil } from 'lucide-react';
+import { useId, useState, useMemo } from 'react';
+import { Calendar, TrendingDown, Clock, DollarSign, Info, Pencil } from 'lucide-react';
 import {
   computePayoffProjection,
   computeDefaultMonthlyPayment,
@@ -7,9 +7,15 @@ import {
   formatPayoffDate,
 } from '@/utils/payoffProjection';
 import { formatMoney } from '@/utils/amountValidation';
+import type { DayCountConvention } from '@/lib/interest';
 import { ProgressBar } from './ProgressBar';
 import type { ProgressBarVariant } from './ProgressBar';
+import { Tooltip } from './Tooltip';
 
+const DAY_COUNT_HELP_TEXT: Record<DayCountConvention, string> = {
+  'ACT/365': 'Simple interest calculated using actual elapsed days divided by a 365-day year.',
+  'ACT/360': 'Simple interest calculated using actual elapsed days divided by a 360-day year.',
+};
 
 interface PayoffProjectionProps {
   currentDebt: number;
@@ -17,6 +23,9 @@ interface PayoffProjectionProps {
   repayAmount: number;
   limit: number;
   nextPaymentAmount?: number;
+  accruedInterest?: number;
+  accruedDays?: number | null;
+  dayCount?: DayCountConvention;
 }
 
 export function PayoffProjection({
@@ -25,7 +34,11 @@ export function PayoffProjection({
   repayAmount,
   limit,
   nextPaymentAmount,
+  accruedInterest,
+  accruedDays,
+  dayCount = 'ACT/365',
 }: PayoffProjectionProps) {
+  const accruedLabelId = useId();
   const [isEditingPayment, setIsEditingPayment] = useState(false);
   const [customMonthlyPayment, setCustomMonthlyPayment] = useState<number | null>(null);
 
@@ -42,6 +55,12 @@ export function PayoffProjection({
   );
 
   const hasAmount = repayAmount > 0;
+  const showAccruedInterest =
+    accruedInterest !== undefined &&
+    Math.round(accruedInterest * 100) > 0 &&
+    accruedDays !== undefined &&
+    accruedDays !== null;
+  const daysLabel = accruedDays === 1 ? '1 day' : `${accruedDays} days`;
 
   const currentDate = formatPayoffDate(projection.currentMonths, false);
   const newDate = formatPayoffDate(projection.newMonths, projection.isFullPayoff);
@@ -180,6 +199,40 @@ export function PayoffProjection({
             />
           </div>
         </div>
+      )}
+
+      {showAccruedInterest && (
+        <dl
+          className="rounded-lg border border-border bg-background/40 p-3"
+          data-testid="payoff-accrued-interest"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <dt
+              id={accruedLabelId}
+              className="inline-flex items-center gap-1 font-medium text-muted"
+            >
+              <span>Interest accrued to date</span>
+              <Tooltip label={DAY_COUNT_HELP_TEXT[dayCount]}>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-full text-muted transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  aria-label={`About ${dayCount} day-count convention`}
+                >
+                  <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </Tooltip>
+            </dt>
+            <dd
+              aria-labelledby={accruedLabelId}
+              className="font-semibold text-foreground"
+            >
+              <span className="num-tabular">{formatMoney(accruedInterest)}</span>{' '}
+              <span className="font-normal text-muted">
+                ({daysLabel}, {dayCount})
+              </span>
+            </dd>
+          </div>
+        </dl>
       )}
 
       <div className="rounded-lg border border-border bg-background/40 p-3">

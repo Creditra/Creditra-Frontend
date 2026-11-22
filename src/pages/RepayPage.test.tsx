@@ -72,6 +72,41 @@ vi.mock('../data/mockData', async () => {
   return { MOCK_CREDIT_LINES: REPAY_TEST_CREDIT_LINES };
 });
 
+vi.mock('@/hooks/useCreditLines', async () => {
+  const { REPAY_TEST_CREDIT_LINES } = await import('@/test/fixtures/repayCreditLines');
+  const lineWithAccrual = {
+    ...REPAY_TEST_CREDIT_LINES[0],
+    id: 'CL-2024-ACCRUED',
+    name: 'Accrued Interest Line',
+    utilized: 10_000,
+    apr: 9.125,
+    transactions: [
+      {
+        id: 'TX-INT-1',
+        type: 'Interest' as const,
+        amount: 25,
+        date: '2025-03-01',
+        status: 'Completed' as const,
+      },
+    ],
+  };
+  const allLines = [...REPAY_TEST_CREDIT_LINES, lineWithAccrual];
+  return {
+    useCreditLines: () => ({
+      lines: allLines,
+      status: 'success',
+      error: null,
+      refetch: vi.fn(),
+    }),
+    useCreditLine: (id: string) => ({
+      line: allLines.find((cl) => cl.id === id) ?? null,
+      status: 'success',
+      error: null,
+      refetch: vi.fn(),
+    }),
+  };
+});
+
 // ── Helpers ────────────────────────────────────────────────────────────
 
 /**
@@ -318,6 +353,29 @@ describe('RepayPage — tabular-nums on numeric displays (FWC26)', () => {
         expect(el).toBeInstanceOf(Element);
         expect(el.classList.contains('num-tabular')).toBe(true);
       });
+    });
+  });
+
+  describe('PayoffProjection accrued interest integration', () => {
+    it('hides accrued interest row when the selected line has no accrual date', () => {
+      renderWithLine(['/?line=CL-2024-001']);
+      expect(screen.queryByTestId('payoff-accrued-interest')).not.toBeInTheDocument();
+    });
+
+    it('shows accrued interest to date with ACT/365 basis on input and review steps', () => {
+      vi.setSystemTime(new Date('2025-03-16T00:00:00Z'));
+      renderWithLine(['/?line=CL-2024-ACCRUED']);
+
+      const inputRow = screen.getByTestId('payoff-accrued-interest');
+      expect(inputRow).toHaveTextContent('Interest accrued to date');
+      expect(inputRow).toHaveTextContent('$37.50 (15 days, ACT/365)');
+
+      fireEvent.change(screen.getByLabelText(/amount to repay/i), { target: { value: '100' } });
+      fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
+
+      const reviewRow = screen.getByTestId('payoff-accrued-interest');
+      expect(reviewRow).toHaveTextContent('Interest accrued to date');
+      expect(reviewRow).toHaveTextContent('$37.50 (15 days, ACT/365)');
     });
   });
 });

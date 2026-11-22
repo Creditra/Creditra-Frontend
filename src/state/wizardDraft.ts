@@ -65,11 +65,12 @@ function discard(): null {
  *
  * Storage failures are swallowed by the safe wrapper in `utils/storage`, so a
  * private-mode or quota failure never interrupts the draw flow.
+ * Returns `true` when persisted successfully, or `false` on failure.
  */
 export function saveDraft(
   state: WizardDraftInput,
   owner: string | null = null,
-): void {
+): boolean {
   const draft: WizardDraftState = {
     v: DRAFT_VERSION,
     owner: owner ?? null,
@@ -79,7 +80,7 @@ export function saveDraft(
     amountCents: state.amountCents,
   };
 
-  writeJson(DRAFT_KEY, draft);
+  return writeJson(DRAFT_KEY, draft);
 }
 
 /**

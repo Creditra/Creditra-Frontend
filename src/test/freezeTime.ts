@@ -16,7 +16,7 @@ export const DEFAULT_FROZEN_TIME = '2025-02-25T12:00:00.000Z';
  */
 export function freezeTime(date: string | number | Date = DEFAULT_FROZEN_TIME): Date {
   const target = new Date(date);
-  vi.useFakeTimers();
+  vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.setSystemTime(target);
   setClockForTests(() => new Date());
   return target;

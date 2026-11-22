@@ -426,3 +426,52 @@
   color: var(--muted);
   padding: 1rem 0;
 }
+
+/* ── Diagnostics download ────────────────────────────────────────────── */
+
+.help-center__diagnostics {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.help-center__diagnostics-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--text);
+}
+
+.help-center__diagnostics-note {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  line-height: var(--lh-body);
+  max-width: 56rem;
+}
+
+.help-center__diagnostics-btn {
+  min-height: 44px;
+  padding: 0.625rem 1rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.help-center__diagnostics-btn:hover {
+  border-color: var(--accent);
+}
+
+.help-center__diagnostics-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .help-center__diagnostics-btn {
+    transition: none;
+  }
+}

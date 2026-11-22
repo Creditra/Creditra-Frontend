@@ -25,6 +25,12 @@ One sentence per band, derived from `RISK_COLOR(score)`:
 
 `Dismiss risk score explainer`
 
+## On-chain draw settlement
+
+When a draw has a transaction hash, say it is confirmed on the Stellar ledger
+and that funds are available once the transaction settles; avoid guaranteeing
+a settlement time. Without a transaction hash, use `Waiting for ledger confirmation.`
+
 ---
 
 ## Glossary

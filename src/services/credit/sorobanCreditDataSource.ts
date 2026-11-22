@@ -23,16 +23,30 @@ export interface SorobanCreditDataSourceOptions {
   contractId?: string;
   server?: rpc.Server;
   defaultTimeoutMs?: number;
+  retry?: {
+    /** Number of retries after the initial RPC attempt. */
+    attempts?: number;
+    baseDelayMs?: number;
+    maxDelayMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+  };
 }
 
 const THROWAWAY_ACCOUNT = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
 const DEFAULT_TIMEOUT_MS = 15_000;
+const DEFAULT_RETRY_ATTEMPTS = 2;
+const DEFAULT_RETRY_BASE_DELAY_MS = 250;
+const DEFAULT_RETRY_MAX_DELAY_MS = 2_000;
 
 export class SorobanCreditDataSource implements CreditDataSource {
   private readonly server: rpc.Server;
   private readonly networkPassphrase: string;
   private readonly contractId: string;
   private readonly defaultTimeoutMs: number;
+  private readonly retryAttempts: number;
+  private readonly retryBaseDelayMs: number;
+  private readonly retryMaxDelayMs: number;
+  private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(options: SorobanCreditDataSourceOptions = {}) {
     const config: SorobanCreditConfig = getSorobanConfig();
@@ -41,11 +55,34 @@ export class SorobanCreditDataSource implements CreditDataSource {
     this.contractId = options.contractId || config.contractId;
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS;
 
+    const retry = options.retry ?? {};
+    this.retryAttempts = retry.attempts ?? DEFAULT_RETRY_ATTEMPTS;
+    this.retryBaseDelayMs = retry.baseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
+    this.retryMaxDelayMs = retry.maxDelayMs ?? DEFAULT_RETRY_MAX_DELAY_MS;
+    this.sleep =
+      retry.sleep ??
+      ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+
+    if (!Number.isInteger(this.retryAttempts) || this.retryAttempts < 0) {
+      throw new RangeError('Retry attempts must be a non-negative integer');
+    }
+    if (
+      !Number.isFinite(this.retryBaseDelayMs) ||
+      this.retryBaseDelayMs < 0 ||
+      !Number.isFinite(this.retryMaxDelayMs) ||
+      this.retryMaxDelayMs < 0
+    ) {
+      throw new RangeError('Retry delays must be finite non-negative numbers');
+    }
+
     this.server = options.server || new rpc.Server(rpcUrl, { allowHttp: rpcUrl.startsWith('http://') });
   }
 
   /**
-   * Helper that runs a read-only transaction simulation with timeout and abort handling.
+   * Simulates a read-only transaction with a per-attempt timeout and abort
+   * handling. Only network failures are retried, up to the configured count,
+   * with exponential backoff capped by maxDelayMs. Invalid responses,
+   * simulation errors, and aborts are never retried.
    */
   private async simulateCall(
     functionName: string,
@@ -71,6 +108,36 @@ export class SorobanCreditDataSource implements CreditDataSource {
       .setTimeout(30)
       .build();
 
+    for (let retryIndex = 0; ; retryIndex += 1) {
+      if (callerSignal?.aborted) {
+        throw new CreditDataError('aborted', 'The operation was aborted');
+      }
+
+      try {
+        return await this.simulateAttempt(tx, timeoutMs, callerSignal);
+      } catch (err) {
+        if (
+          !(err instanceof CreditDataError) ||
+          err.code !== 'network' ||
+          retryIndex >= this.retryAttempts
+        ) {
+          throw err;
+        }
+
+        const delayMs = Math.min(
+          this.retryBaseDelayMs * 2 ** retryIndex,
+          this.retryMaxDelayMs,
+        );
+        await this.waitForRetry(delayMs, callerSignal);
+      }
+    }
+  }
+
+  private async simulateAttempt(
+    tx: ReturnType<TransactionBuilder['build']>,
+    timeoutMs: number,
+    callerSignal?: AbortSignal,
+  ): Promise<xdr.ScVal> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let abortListener: (() => void) | undefined;
 
@@ -137,6 +204,38 @@ export class SorobanCreditDataSource implements CreditDataSource {
       if (timer) {
         clearTimeout(timer);
       }
+      if (callerSignal && abortListener) {
+        callerSignal.removeEventListener('abort', abortListener);
+      }
+    }
+  }
+
+  private async waitForRetry(delayMs: number, callerSignal?: AbortSignal): Promise<void> {
+    if (callerSignal?.aborted) {
+      throw new CreditDataError('aborted', 'The operation was aborted');
+    }
+
+    let abortListener: (() => void) | undefined;
+    const abortPromise = callerSignal
+      ? new Promise<never>((_, reject) => {
+          abortListener = () => {
+            reject(new CreditDataError('aborted', 'The operation was aborted'));
+          };
+          callerSignal.addEventListener('abort', abortListener, { once: true });
+          if (callerSignal.aborted) {
+            abortListener();
+          }
+        })
+      : undefined;
+
+    try {
+      const sleepPromise = this.sleep(delayMs);
+      if (abortPromise) {
+        await Promise.race([sleepPromise, abortPromise]);
+      } else {
+        await sleepPromise;
+      }
+    } finally {
       if (callerSignal && abortListener) {
         callerSignal.removeEventListener('abort', abortListener);
       }
