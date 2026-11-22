@@ -164,6 +164,23 @@
   font-size: 0.9rem;
 }
 
+/** Section label separating recent commands from the remaining commands. */
+.cp-group-label {
+  padding: 0.4rem 1rem 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted, #8b949e);
+  user-select: none;
+}
+
+.cp-group-label:not(:first-child) {
+  margin-top: 0.25rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
 /**
  * Individual command item button.
  *
