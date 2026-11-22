@@ -20,10 +20,12 @@
  */
 
 import { CreditLine } from "@/types/draw-credit.types";
+import { projectDraw } from "@/lib/draw-projection";
 import {
   getDrawPricingQuote,
   getNextAprTier,
 } from "@/lib/draw-credit-pricing";
+import { projectDraw } from "@/lib/draw-projection";
 import { formatMoney } from "@/utils/amountValidation";
 import { DollarSign, Percent, TrendingUp } from "lucide-react";
 

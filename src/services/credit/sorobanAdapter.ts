@@ -25,7 +25,7 @@ export interface SorobanCreditLineRaw {
   // Raw i128 base units as decimal strings (Soroban JSON representation).
   limitI128: string;
   utilizedI128: string;
-  nextPaymentAmountI28?: string;
+  nextPaymentAmountI128?: string;
   feeI128?: string;
   interestI128?: string;
   collateralI128?: string;
@@ -124,14 +124,14 @@ export function sumLimits(lines: ReadonlyArray<SorobanCreditLine>): Money {
   if (lines.length === 0) {
     throw new Error('sumLimits: no credit lines to aggregate');
   }
-  return lines.reduce((acc, line) => add(acc, line.limit), lines[0].limit);
+  return lines.slice(1).reduce((acc, line) => add(acc, line.limit), lines[0].limit);
 }
 
 export function sumUtilized(lines: ReadonlyArray<SorobanCreditLine>): Money {
   if (lines.length === 0) {
     throw new Error('sumUtilized: no credit lines to aggregate');
   }
-  return lines.reduce((acc, line) => add(acc, line.utilized), lines[0].utilized);
+  return lines.slice(1).reduce((acc, line) => add(acc, line.utilized), lines[0].utilized);
 }
 
 export function totalAvailable(lines: ReadonlyArray<SorobanCreditLine>): Money {

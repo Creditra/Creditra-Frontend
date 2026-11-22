@@ -39,6 +39,7 @@ import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useInertBackdrop } from '../hooks/useInertBackdrop';
 import { useDebounceValue } from '../hooks/useDebounceValue';
 import { ROUTE_MANIFEST } from '../routes/manifest';
+import { getRecentIds, recordRecent } from '../utils/commandRecents';
 import './CommandPalette.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -203,6 +204,7 @@ export function CommandPalette({
   // ── Local state ────────────────────────────────────────────────────────────
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
+  const [recentIds, setRecentIds] = useState<string[]>(() => getRecentIds());
 
   /**
    * Debounce user input by 80 ms to avoid re-filtering on every keystroke.
@@ -211,18 +213,43 @@ export function CommandPalette({
    */
   const debouncedQuery = useDebounceValue(query, 80);
   const inputRef = useRef<HTMLInputElement>(null);
+  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Merge built-in defaults with any context-sensitive extras.
   const allItems = [...DEFAULT_ITEMS, ...extraItems];
-  const results = filterItems(allItems, debouncedQuery);
+  const isEmptyQuery = normalize(debouncedQuery).length === 0;
+
+  let recentItems: CommandItem[] = [];
+  let otherItems: CommandItem[] = [];
+  let results: CommandItem[];
+
+  if (isEmptyQuery) {
+    const itemById = new Map(allItems.map((item) => [item.id, item]));
+    const recentIdSet = new Set<string>();
+    recentItems = [];
+
+    for (const id of recentIds) {
+      const found = itemById.get(id);
+      if (found && !recentIdSet.has(id)) {
+        recentItems.push(found);
+        recentIdSet.add(id);
+      }
+    }
+
+    otherItems = allItems.filter((item) => !recentIdSet.has(item.id));
+    results = [...recentItems, ...otherItems];
+  } else {
+    results = filterItems(allItems, debouncedQuery);
+  }
 
   // ── Side-effects ───────────────────────────────────────────────────────────
 
-  /** Reset search query and selection whenever the palette opens. */
+  /** Reset search query, refresh recents, and reset selection whenever the palette opens. */
   useEffect(() => {
     if (isOpen) {
       setQuery('');
       setActiveIndex(0);
+      setRecentIds(getRecentIds());
     }
   }, [isOpen]);
 
@@ -262,8 +289,18 @@ export function CommandPalette({
   useEffect(() => {
     if (isOpen) {
       // Small delay aligns with useFocusTrap's 50 ms initialisation timeout.
-      setTimeout(() => inputRef.current?.focus(), 10);
+      if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
+      focusTimeoutRef.current = setTimeout(() => {
+        inputRef.current?.focus();
+        focusTimeoutRef.current = null;
+      }, 10);
     }
+    return () => {
+      if (focusTimeoutRef.current) {
+        clearTimeout(focusTimeoutRef.current);
+        focusTimeoutRef.current = null;
+      }
+    };
   }, [isOpen]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
@@ -277,6 +314,7 @@ export function CommandPalette({
    * page are both visible simultaneously.
    */
   function activate(item: CommandItem) {
+    setRecentIds(recordRecent(item.id));
     onClose();
     if (typeof item.action === 'string') {
       navigate(item.action);
@@ -322,6 +360,41 @@ export function CommandPalette({
   const activeItemId = results[activeIndex]
     ? `cp-item-${results[activeIndex].id}`
     : undefined;
+
+  function renderOption(item: CommandItem, index: number) {
+    return (
+      <li
+        key={item.id}
+        id={`cp-item-${item.id}`}
+        role="option"
+        aria-selected={index === activeIndex}
+      >
+        <button
+          type="button"
+          className={`cp-item${index === activeIndex ? ' cp-item--active' : ''}`}
+          onClick={() => activate(item)}
+          onMouseEnter={() => setActiveIndex(index)}
+          tabIndex={-1}
+        >
+          {item.icon && (
+            <span className="cp-item-icon" aria-hidden="true">{item.icon}</span>
+          )}
+          <span className="cp-item-text">
+            <span className="cp-item-label">{item.label}</span>
+            {item.description && (
+              <span className="cp-item-desc">{item.description}</span>
+            )}
+          </span>
+          {/* ↵ hint is only meaningful for navigation routes. */}
+          {typeof item.action === 'string' && (
+            <span className="cp-item-hint" aria-hidden="true">
+              <kbd>↵</kbd>
+            </span>
+          )}
+        </button>
+      </li>
+    );
+  }
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -407,56 +480,26 @@ export function CommandPalette({
             </li>
           )}
 
-          {results.map((item, index) => (
-            <li
-              key={item.id}
-              id={`cp-item-${item.id}`}
-              role="option"
-              aria-selected={index === activeIndex}
-            >
-              {/*
-               * The `id` above sits on the `role="option"` element so
-               * `aria-activedescendant` references a real option, as required
-               * by the listbox pattern documented at the top of this file.
-               *
-               * Each item is a `<button>` (not an `<a>`) because:
-               * - Navigation items call `navigate()` imperatively.
-               * - Callback items don't have a URL.
-               * - Both need click + keyboard activation, which `<button>` provides.
-               *
-               * `tabIndex={-1}` keeps the buttons out of the Tab order;
-               * keyboard navigation is handled entirely via arrow keys on the
-               * dialog container, with `aria-activedescendant` tracking focus
-               * for AT rather than real DOM focus.
-               *
-               * `onMouseEnter` syncs visual hover with keyboard selection so
-               * the two never conflict.
-               */}
-              <button
-                type="button"
-                className={`cp-item${index === activeIndex ? ' cp-item--active' : ''}`}
-                onClick={() => activate(item)}
-                onMouseEnter={() => setActiveIndex(index)}
-                tabIndex={-1}
-              >
-                {item.icon && (
-                  <span className="cp-item-icon" aria-hidden="true">{item.icon}</span>
-                )}
-                <span className="cp-item-text">
-                  <span className="cp-item-label">{item.label}</span>
-                  {item.description && (
-                    <span className="cp-item-desc">{item.description}</span>
+          {isEmptyQuery && recentItems.length > 0 ? (
+            <>
+              <li className="cp-group-label" role="presentation">
+                Recent
+              </li>
+              {recentItems.map((item, index) => renderOption(item, index))}
+              {otherItems.length > 0 && (
+                <>
+                  <li className="cp-group-label" role="presentation">
+                    All commands
+                  </li>
+                  {otherItems.map((item, offset) =>
+                    renderOption(item, recentItems.length + offset),
                   )}
-                </span>
-                {/* ↵ hint is only meaningful for navigation routes. */}
-                {typeof item.action === 'string' && (
-                  <span className="cp-item-hint" aria-hidden="true">
-                    <kbd>↵</kbd>
-                  </span>
-                )}
-              </button>
-            </li>
-          ))}
+                </>
+              )}
+            </>
+          ) : (
+            results.map((item, index) => renderOption(item, index))
+          )}
         </ul>
 
         {/*

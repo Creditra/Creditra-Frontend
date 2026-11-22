@@ -229,6 +229,13 @@ export const ROUTE_MANIFEST: RouteManifestEntry[] = [
     },
   },
   {
+    path: '/kyc',
+    pageName: 'KYC Verification',
+    description: 'Complete your Creditra identity and compliance verification steps.',
+    load: () => import('../pages/KycPage').then((m) => ({ default: m.KycPage })),
+    Component: lazy(() => import('../pages/KycPage').then((m) => ({ default: m.KycPage }))),
+  },
+  {
     path: '/docs',
     pageName: 'Documentation',
     description: 'Access Creditra protocol documentation, guides, and developer resources.',

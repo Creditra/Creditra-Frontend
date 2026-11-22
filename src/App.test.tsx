@@ -237,4 +237,37 @@ describe("App Styling and Accessibility", () => {
     fireEvent.keyDown(document, { key: "k", ctrlKey: true });
     expect(screen.queryByTestId("command-palette")).not.toBeInTheDocument();
   });
+
+  it("navigates to /kyc?step=<id>, closes the KYC drawer, and focuses the page heading on Resume", async () => {
+    window.history.pushState({}, "", "/");
+    localStorage.clear();
+    render(<App />);
+
+    const [kycTrigger] = screen.getAllByRole("button", {
+      name: /kyc verification/i,
+    });
+    fireEvent.click(kycTrigger);
+
+    const dialog = screen.getByRole("dialog", { name: /kyc progress/i });
+    expect(dialog).toBeInTheDocument();
+
+    const resumeBtn = within(dialog).getByRole("button", {
+      name: /start verification|resume verification/i,
+    });
+    fireEvent.click(resumeBtn);
+
+    expect(
+      screen.queryByRole("dialog", { name: /kyc progress/i }),
+    ).not.toBeInTheDocument();
+
+    const heading = await screen.findByRole("heading", {
+      level: 1,
+      name: "Identity Verification",
+    });
+    expect(heading).toBeInTheDocument();
+    expect(heading).toHaveFocus();
+    expect(
+      screen.getByText("Confirm your legal name and date of birth."),
+    ).toBeInTheDocument();
+  });
 });

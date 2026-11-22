@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useWallet } from '../context/WalletContext';
 import './WalletBalance.css';
 
 export function WalletBalance() {
   const { wallet, status, balances, refreshBalance } = useWallet();
   const [isPolling, setIsPolling] = useState(false);
+  const pollingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (status !== 'connected' || !wallet) return;
@@ -18,10 +19,20 @@ export function WalletBalance() {
       setIsPolling(true);
       await refreshBalance();
       // Keep the indicator visible for a moment so the user sees it happened
-      setTimeout(() => setIsPolling(false), 1000);
+      if (pollingTimeoutRef.current) clearTimeout(pollingTimeoutRef.current);
+      pollingTimeoutRef.current = setTimeout(() => {
+        setIsPolling(false);
+        pollingTimeoutRef.current = null;
+      }, 1000);
     }, 15000); // 15s polling
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (pollingTimeoutRef.current) {
+        clearTimeout(pollingTimeoutRef.current);
+        pollingTimeoutRef.current = null;
+      }
+    };
   }, [status, wallet, refreshBalance, balances]);
 
   if (status !== 'connected' || !balances) return null;
