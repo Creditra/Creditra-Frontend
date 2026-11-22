@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, lazy, Suspense } from "react";
+import { useRef, useState, lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { CommandPalette } from "./components/CommandPalette";
 import { RouteAnnouncer, RouteHeadProvider } from "./components/RouteAnnouncer";
@@ -19,7 +19,7 @@ import { ToastContainer } from "./components/notifications/ToastContainer";
 import { BannerAlerts } from "./components/notifications/BannerAlert";
 import { Header } from "./layouts/Header";
 import { Skeleton } from "./components/Skeleton";
-import { isEditableTarget } from "./utils/isEditableTarget";
+import { useHotkey } from "./lib/hotkeys";
 
 import { ROUTE_MANIFEST } from "./routes/manifest";
 
@@ -73,30 +73,28 @@ function App() {
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const paletteTriggerRef = useRef<HTMLElement | null>(null);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // Cmd+K / Ctrl+K → toggle command palette
-      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
-        event.preventDefault();
-        paletteTriggerRef.current = document.activeElement as HTMLElement;
-        setIsPaletteOpen((open) => !open);
-        return;
-      }
+  useHotkey({
+    combo: "Mod+K",
+    scope: "global",
+    description: "Toggle command palette",
+    allowInEditable: true,
+    handler: (event) => {
+      event.preventDefault();
+      paletteTriggerRef.current = document.activeElement as HTMLElement;
+      setIsPaletteOpen((open) => !open);
+    },
+  });
 
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
-        return;
-      }
-      if (event.key !== "?") return;
-      if (isEditableTarget(event.target)) return;
-
+  useHotkey({
+    combo: "?",
+    scope: "global",
+    description: "Open this keyboard shortcut guide",
+    handler: (event) => {
       event.preventDefault();
       setOpenedFromSettingsLink(false);
       setIsShortcutHelpOpen(true);
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+    },
+  });
 
   return (
     <ErrorBoundary>

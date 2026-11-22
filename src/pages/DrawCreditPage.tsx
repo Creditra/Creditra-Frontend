@@ -73,6 +73,7 @@ import { useOnline } from "@/hooks/useOnline";
 import { WhyApr } from "@/components/WhyApr";
 import { DrawSummaryBar } from "@/components/DrawSummaryBar";
 import { useDrawWizardMicroProgress } from "@/hooks/useDrawWizardMicroProgress";
+import { useHotkey } from "@/lib/hotkeys";
 import "@/components/DrawWizardMicroProgress.css";
 import "@/styles/focus.css";
 import "./DrawCreditPage.css";
@@ -97,15 +98,6 @@ const EMPTY_RESTORED_DRAFT: RestoredDraft = {
   line: null,
   notice: "",
 };
-
-/** Returns true if the currently focused element can receive text input. */
-function isFocusedOnInput(): boolean {
-  const el = document.activeElement;
-  if (!el) return false;
-  const tag = (el as HTMLElement).tagName.toLowerCase();
-  if (tag === "input" || tag === "textarea" || tag === "select") return true;
-  return (el as HTMLElement).isContentEditable;
-}
 
 export default function DrawCreditPage() {
   const navigate = useNavigate();
@@ -536,80 +528,85 @@ export default function DrawCreditPage() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [isLoading]);
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented) return;
-      if (isFocusedOnInput()) return;
+  const hasOpenDialog = () =>
+    isRiskModalOpen ||
+    document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
 
-      // Any open dialog — the inline help overlay, WhyApr, or the risk modal —
-      // owns the keyboard, so wizard shortcuts stay inert (#1173). Scoped to
-      // aria-modal="true" so always-mounted panels (e.g. the closed
-      // notification center) don't permanently block the shortcuts.
-      const hasOpenDialog =
-        isRiskModalOpen ||
-        document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
+  // Capture phase so this runs before App's bubble-phase `?` handler (#1173).
+  useHotkey({
+    combo: "?",
+    scope: "page",
+    description: "Open draw wizard help",
+    capture: true,
+    handler: (e) => {
+      // Capture phase + swallow: on this route the page-level `?` runs before
+      // App's document-level bubble listener, which skips prevented events.
+      // The key is always consumed so the global ShortcutHelpOverlay can
+      // never open alongside a wizard dialog; only a clean page opens the
+      // contextual help.
+      e.preventDefault();
+      e.stopPropagation();
+      if (!hasOpenDialog()) setIsHelpOpen(true);
+    },
+  });
 
-      if (e.key === "?") {
-        // Capture phase + swallow: on this route the page-level `?` runs before
-        // App's document-level bubble listener, which skips prevented events.
-        // The key is always consumed so the global ShortcutHelpOverlay can
-        // never open alongside a wizard dialog; only a clean page opens the
-        // contextual help.
+  useHotkey({
+    combo: "Escape",
+    scope: "page",
+    description: "Go back or cancel draw wizard",
+    capture: true,
+    handler: (e) => {
+      if (hasOpenDialog()) return;
+      if (step === "select") {
         e.preventDefault();
-        e.stopPropagation();
-        if (!hasOpenDialog) setIsHelpOpen(true);
-        return;
+        handleCancel();
+      } else if (step === "amount" || step === "confirm") {
+        e.preventDefault();
+        handleBack();
       }
+    },
+  });
 
-      if (hasOpenDialog) return;
-
-      switch (e.key) {
-        case "Escape":
-          if (step === "select") {
-            e.preventDefault();
-            handleCancel();
-          } else if (step === "amount" || step === "confirm") {
-            e.preventDefault();
-            handleBack();
-          }
-          break;
-
-        case "ArrowLeft":
-          if (step === "amount" || step === "confirm") {
-            e.preventDefault();
-            handleBack();
-          }
-          break;
-
-        case "ArrowRight":
-          if (step === "amount" && selectedCreditLine) {
-            e.preventDefault();
-            const validation = getDrawAmountValidation(
-              String(amount),
-              selectedCreditLine,
-            );
-            if (validation.isValid) {
-              handleAmountNext(amount);
-            } else {
-              amountInputRef.current?.focus();
-              setSubmitError(validation.message);
-            }
-          }
-          if (step === "confirm" && confirmationAcknowledged) {
-            e.preventDefault();
-            void handleConfirm();
-          }
-          break;
-
-        default:
-          break;
+  useHotkey({
+    combo: "ArrowLeft",
+    scope: "page",
+    description: "Go to the previous step",
+    capture: true,
+    handler: (e) => {
+      if (hasOpenDialog()) return;
+      if (step === "amount" || step === "confirm") {
+        e.preventDefault();
+        handleBack();
       }
-    };
+    },
+  });
 
-    // Capture phase so this runs before App's bubble-phase `?` handler (#1173).
-    document.addEventListener("keydown", onKeyDown, true);
-    return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [step, amount, selectedCreditLine, confirmationAcknowledged, handleBack, handleCancel, isRiskModalOpen]);
+  useHotkey({
+    combo: "ArrowRight",
+    scope: "page",
+    description: "Advance to the next step",
+    capture: true,
+    handler: (e) => {
+      if (hasOpenDialog()) return;
+      if (step === "amount" && selectedCreditLine) {
+        e.preventDefault();
+        const validation = getDrawAmountValidation(
+          String(amount),
+          selectedCreditLine,
+        );
+        if (validation.isValid) {
+          handleAmountNext(amount);
+        } else {
+          amountInputRef.current?.focus();
+          setSubmitError(validation.message);
+        }
+      }
+      if (step === "confirm" && confirmationAcknowledged) {
+        e.preventDefault();
+        void handleConfirm();
+      }
+    },
+  });
 
   return (
     <main className="dc-page" aria-label="Draw credit">
