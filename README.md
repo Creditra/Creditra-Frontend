@@ -93,8 +93,9 @@ data-flow diagrams.
 ```bash
 npm install
 npm run dev        # vite dev server on http://localhost:5173
-npm test           # vitest in watch mode
-npm test -- --run  # one-shot test run
+npm test              # vitest in watch mode
+npm run test:run      # one-shot test run
+npm run test:coverage # one-shot test run with v8 coverage report
 npm run build      # tsc -b && vite build (writes ./dist)
 npm run preview    # serve ./dist locally
 npm run lint       # eslint .
