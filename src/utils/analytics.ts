@@ -24,7 +24,7 @@ export function hasConsent(category: AnalyticsCategory): boolean {
  */
 export function redactFinancialData(payload: unknown, depth = 0): unknown {
   // Enforce invariant: bounded depth
-  if (depth > 10) return REDACTED;
+  if (depth >= 10) return REDACTED;
 
   if (payload === null || payload === undefined) {
     return payload;

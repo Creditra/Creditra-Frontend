@@ -1,5 +1,7 @@
 # Creditra Frontend
 
+> **Live demo: https://creditra-frontend-smoky.vercel.app**  (runs fully on built-in sample data, no wallet or backend needed)
+
 > Decentralized, risk-priced credit on Stellar — **without overcollateralization**.
 
 Creditra evaluates on-chain behavior to underwrite credit lines and price them dynamically.
@@ -33,6 +35,15 @@ talks to Stellar wallets via injected provider APIs.
   validation, currency/date formatters, error boundaries, copy-to-clipboard.
 
 ---
+
+## Live demo and deployment
+
+- **Live:** https://creditra-frontend-smoky.vercel.app
+- The app is a static Vite SPA deployed on Vercel. `vercel.json` rewrites all paths to `index.html` so client-side routes work on refresh.
+- **Demo mode:** with no backend configured, every page renders from the mock data in `src/data/mockData.ts`, so no screen is ever empty or broken.
+- Routes: `/` dashboard, `/credit-lines`, `/draw-credit`, `/repay`, `/repay/success`, `/transactions`, `/open-credit`, `/dutch-auctions`, `/linked-accounts`, `/notification-preferences`, `/settings`, `/settings/notifications`, `/profile`, `/help`, `/docs`.
+- Deploy your own: `npm i -g vercel && vercel --prod` (build command `npm run build`, output `dist`).
+- Additional design and implementation notes live in [`docs/`](docs/) and [`docs/notes/`](docs/notes/).
 
 ## Architecture at a glance
 
@@ -93,13 +104,26 @@ npm run lint       # eslint .
 
 ```env
 VITE_API_URL=http://localhost:3000          # backend base URL, read via import.meta.env
+VITE_IPFS_GATEWAY=https://ipfs.io/ipfs/     # HTTPS gateway for IPFS NFT images (must end in /)
 VITE_REPAY_CONFIRM_THRESHOLD=5000           # USD amount above which repayments require typed confirmation (default: 5000)
+VITE_SETTLEMENT_ASSET_CODE=USDC              # repayable wallet asset code (default: USDC)
+VITE_SETTLEMENT_ASSET_ISSUER=GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5 # default: testnet USDC issuer
 ```
+
+`VITE_IPFS_GATEWAY` configures the HTTPS gateway used to resolve `ipfs://` NFT image
+URIs. It must be a valid HTTPS URL ending in `/`; otherwise the resolver uses the default
+`https://ipfs.io/ipfs/` gateway. NFT image sources are restricted to HTTPS, root-relative
+local assets, IPFS URIs, and base64 PNG/JPEG/WebP/GIF images up to 256 KiB. Inline SVG
+data URIs are rejected.
 
 `VITE_REPAY_CONFIRM_THRESHOLD` controls the typed-amount guard in the repayment flow.
 When a repayment amount meets or exceeds this value, the review step shows a confirmation
 input where the user must type the exact amount before the "Confirm Repayment" button
 enables. Set to `0` to disable the guard entirely (not recommended for production).
+
+The repay form and Quick Repay use only the wallet balance matching both the configured
+settlement-asset code and issuer. Configure the issuer for the settlement asset on the
+target network; the default issuer is Circle USDC on Stellar testnet.
 
 ---
 

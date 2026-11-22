@@ -5,7 +5,7 @@ import { TYPE_COLOR, TYPE_ICON } from "./notificationIcons";
 import "./BannerAlert.css";
 
 export function NetworkMismatchBanner() {
-  const { wallet, status } = useWallet();
+  const { wallet, status, refreshWalletIdentity } = useWallet();
   const [dismissed, setDismissed] = useState(() => {
     return sessionStorage.getItem("networkMismatchDismissed") === "true";
   });
@@ -28,8 +28,12 @@ export function NetworkMismatchBanner() {
     setIsSwitching(true);
     try {
       await switchNetwork(wallet.type, EXPECTED_NETWORK);
-      // Wait for wallet context to refresh or instruct user.
-      // Usually, wallet state might need a manual refresh if not auto-polled.
+      // Pull the wallet's new network into context so `wallet.network` (and
+      // any data cached against the old network, e.g. balances) reflects
+      // the switch immediately — see WalletContext's cache-invalidation
+      // notes (#961). This also re-renders the banner away once
+      // `wallet.network === EXPECTED_NETWORK`.
+      await refreshWalletIdentity();
     } catch (err: any) {
       // In a real app we'd show a toast error, but here we can just swallow or show.
       console.error(err);

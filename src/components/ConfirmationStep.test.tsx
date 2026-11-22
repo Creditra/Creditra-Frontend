@@ -15,11 +15,18 @@ vi.mock("@/lib/draw-credit-pricing", () => ({
   getDrawPricingQuote: vi.fn(() => ({
     fee: 100,
     apr: 12.5,
+    baseApr: 10.5,
+    adjustments: [
+      { kind: "utilization", label: "Low utilization adjustment", points: 0.5 },
+      {
+        kind: "term",
+        label: "Standard-term pricing adjustment",
+        points: 1.5,
+      },
+    ],
     estimatedMonthlyInterest: 104.17,
     riskBand: "Standard",
     termMonths: 24,
-    utilizationAdjustmentLabel: "Low utilization adjustment",
-    termAdjustmentLabel: "Standard-term pricing adjustment",
   })),
 }));
 
@@ -30,6 +37,7 @@ const mockUseWallet = vi.mocked(useWallet);
 const creditLine = {
   id: "cl-001",
   name: "Business Line of Credit",
+  status: "Active",
   limit: 50000,
   available: 35000,
   utilization: 30,
@@ -261,12 +269,19 @@ describe("ConfirmationStep — Watch-band risk fee notice", () => {
     // Return Watch risk band from pricing
     mockGetDrawPricingQuote.mockReturnValue({
       fee: 50,
-      apr: 14.5,
+      apr: 14,
+      baseApr: 11.5,
+      adjustments: [
+        {
+          kind: "utilization",
+          label: "High utilization adjustment",
+          points: 2,
+        },
+        { kind: "term", label: "Short-term pricing adjustment", points: 0.5 },
+      ],
       estimatedMonthlyInterest: 60.42,
       riskBand: "Watch",
       termMonths: 12,
-      utilizationAdjustmentLabel: "High utilization adjustment",
-      termAdjustmentLabel: "Short-term pricing adjustment",
     });
   });
 
@@ -292,11 +307,22 @@ describe("ConfirmationStep — Watch-band risk fee notice", () => {
     mockGetDrawPricingQuote.mockReturnValue({
       fee: 100,
       apr: 12.5,
+      baseApr: 10.5,
+      adjustments: [
+        {
+          kind: "utilization",
+          label: "Low utilization adjustment",
+          points: 0.5,
+        },
+        {
+          kind: "term",
+          label: "Standard-term pricing adjustment",
+          points: 1.5,
+        },
+      ],
       estimatedMonthlyInterest: 104.17,
       riskBand: "Standard",
       termMonths: 24,
-      utilizationAdjustmentLabel: "Low utilization adjustment",
-      termAdjustmentLabel: "Standard-term pricing adjustment",
     });
 
     render(
@@ -400,6 +426,24 @@ describe("ConfirmationStep — APR disclosure collapsible", () => {
     const mainApr = screen.getByTestId("apr-display");
     expect(total).toHaveTextContent("12.5%");
     expect(mainApr).toHaveTextContent("12.5%");
+  });
+
+  it("base rate plus adjustments sum exactly to the total APR", async () => {
+    const user = userEvent.setup();
+    renderStep();
+
+    await user.click(screen.getByTestId("apr-disclosure-toggle"));
+
+    const pointsOf = (testId: string) =>
+      Number.parseFloat(screen.getByTestId(testId).textContent ?? "");
+
+    const baseApr = pointsOf("apr-base-rate");
+    const utilizationAdj = pointsOf("apr-utilization-adj");
+    const termAdj = pointsOf("apr-term-adj");
+    const total = pointsOf("apr-total");
+
+    expect(baseApr + utilizationAdj + termAdj).toBe(total);
+    expect(total).toBe(pointsOf("apr-display"));
   });
 
   it("shows utilization adjustment label from pricing quote", async () => {

@@ -8,12 +8,13 @@ interface CompareLinesPanelProps {
 }
 
 export default function CompareLinesPanel({ lines, onClose }: CompareLinesPanelProps) {
-  const [line1, line2] = lines;
+  const [line1, line2] = [...lines].sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
-  const renderValue = (label: string, value1: any, value2: any, formatter?: (v: any) => string) => {
-    const v1 = formatter ? formatter(value1) : value1;
-    const v2 = formatter ? formatter(value2) : value2;
+  const renderValue = (label: string, value1: unknown, value2: unknown, formatter?: (v: unknown) => string) => {
+    const v1 = formatter ? formatter(value1) : String(value1);
+    const v2 = formatter ? formatter(value2) : String(value2);
     const diff = v1 !== v2;
+
     return (
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', padding: '0.75rem 0', borderBottom: '1px solid var(--border)' }}>
         <div>

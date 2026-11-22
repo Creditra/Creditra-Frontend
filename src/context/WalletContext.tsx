@@ -5,10 +5,12 @@
  *
  * Auto-reconnect on load
  * ─────────────────────────────────────────────────────────────────────────────
- * When a `wallet_info` entry is found in `localStorage`, the provider
- * immediately kicks off a reconnect attempt instead of blindly restoring the
- * stored object.  This confirms the extension is still present and accessible
- * before marking the wallet as "connected".
+ * When a stored wallet **type** is found in `localStorage` and the user opted
+ * in via the "remember" flag, the provider immediately kicks off a reconnect
+ * attempt instead of blindly restoring the stored object.  This confirms the
+ * extension is still present and accessible before marking the wallet as
+ * "connected".  No address is ever read from storage — `connectWallet()` asks
+ * the extension for the current public key.
  *
  * Timeout banner
  * ─────────────────────────────────────────────────────────────────────────────
@@ -58,6 +60,39 @@
  *     Re-pings the wallet to verify liveness and resets the session clock.
  *     On success: sessionTimeoutWarning → false, full session timer restarts.
  *     On failure: transitions to 'error' state (same as a failed connect).
+ *
+ * Cache invalidation on account / network switch (#961)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * `balances` / `lastUpdated` are derived data keyed to a specific
+ * `(type, publicKey, network)` identity, not to "whichever wallet happens to
+ * be connected right now." Three things enforce that invariant:
+ *
+ *   1. A `walletIdentityKey(wallet)` comparison in a `useEffect` that fires on
+ *      every `wallet` change (from *any* code path — connect, auto-reconnect,
+ *      retryReconnect, stayConnected, refreshWalletIdentity, or disconnecting
+ *      to `null`). Whenever the identity actually changes, `balances` and
+ *      `lastUpdated` are cleared synchronously, in the same render as the new
+ *      wallet — there is no frame where stale numbers are shown next to a new
+ *      identity. This is centralized in one effect instead of duplicated in
+ *      every setter, so no future code path that changes `wallet` can forget
+ *      to invalidate the cache.
+ *
+ *   2. `fetchBalances()` snapshots the identity it was fetching *for* and
+ *      discards the response if the identity has since changed by the time
+ *      the network request resolves. Without this, switching accounts while
+ *      a balance fetch for the *previous* account is still in flight could
+ *      let that stale response land after the switch and overwrite the new
+ *      account's (correct, possibly still-empty) balances with the old
+ *      account's numbers.
+ *
+ *   3. `refreshWalletIdentity()` re-derives the wallet's current
+ *      `publicKey`/`network` from the extension without going through the
+ *      `connecting`/`reconnecting` UI states. This exists because some wallet
+ *      actions (e.g. `switchNetwork()` in `NetworkMismatchBanner`) change the
+ *      extension's state out from under the app — nothing else in this file
+ *      would otherwise notice the identity changed, and (1) never fires.
+ *
+ * exported for tests: `walletIdentityKey`
  */
 
 import {
@@ -70,6 +105,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import type { WalletInfo, ConnectionStatus, WalletError, WalletType } from '../types/wallet';
+import { WalletConnectError } from '../types/wallet';
 import {
   connectWallet,
   disconnectWallet,
@@ -78,7 +114,9 @@ import {
   recordRecentWallet,
   isWalletRemembered,
   setWalletRemembered,
+  classifyWalletError,
 } from '../utils/wallet';
+import { getCreditNetworkConfig } from '../config/creditNetwork';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -106,10 +144,33 @@ export const SESSION_WARN_BEFORE_MS = 60_000;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface BalanceInfo {
+export interface BalanceInfo {
   asset: string; // e.g., 'XLM' or asset_code
   balance: string;
+  issuer?: string;
 }
+
+/**
+ * Stable identity string for a `WalletInfo`, used to detect account or
+ * network switches. `null` wallet → `null` key (disconnected has no identity
+ * to compare against). Two different wallet *types* connected to the same
+ * public key are treated as different identities on purpose — different
+ * extensions could report the same address in different network contexts.
+ */
+export function walletIdentityKey(wallet: WalletInfo | null): string | null {
+  if (!wallet) return null;
+  return `${wallet.type}:${wallet.publicKey}:${wallet.network}`;
+}
+
+const requireValidWalletInfo = (wallet: WalletInfo): WalletInfo => {
+  if (!isValidAccountId(wallet.publicKey)) {
+    throw {
+      type: 'connection_failed',
+      message: 'Your wallet returned an invalid account address',
+    } as WalletError;
+  }
+  return wallet;
+};
 
 /** Optional second-arg bag for `connect()`. */
 export interface ConnectOptions {
@@ -123,6 +184,11 @@ export interface ConnectOptions {
    */
   remember?: boolean;
 }
+
+/** Result of a connect attempt. */
+export type ConnectResult =
+  | { ok: true; wallet: WalletInfo }
+  | { ok: false; error: WalletConnectError };
 
 interface WalletContextType {
   /** The currently connected wallet, or `null` when disconnected. */
@@ -156,13 +222,19 @@ interface WalletContextType {
    * Open a connection to the given wallet. Updates `status` to
    * `connecting`, then either `connected` (on success) or `error`.
    *
+   * Returns a result object that lets callers distinguish success from
+   * failure without checking context state. On success, `{ ok: true, wallet }`
+   * is returned. On failure, `{ ok: false, error }` is returned and the
+   * context's `error` and `status` fields are also updated for backward
+   * compatibility with existing consumers like WalletReconnectBanner.
+   *
    * Successful connections are added to the MRU list so the modal can
    * order wallets by recency.  Passing `{ remember: true }` additionally
    * persists an opt-in flag that drives next-visit auto-reconnect.  The
    * flag defaults to `false` because acceptance criteria require the
    * preference to be opt-in, not pre-checked.
    */
-  connect: (type: WalletType, options?: ConnectOptions) => Promise<void>;
+  connect: (type: WalletType, options?: ConnectOptions) => Promise<ConnectResult>;
   /** Forget the current wallet, clear preference, return to disconnected state. */
   disconnect: () => void;
   /**
@@ -192,7 +264,18 @@ interface WalletContextType {
    * On failure: status transitions to `'error'`.
    */
   stayConnected: () => Promise<void>;
-  refreshBalance: () => Promise<void>;
+  refreshBalance: () => Promise<BalanceInfo[] | null>;
+  /**
+   * Re-derive the wallet's current `publicKey`/`network` from the extension
+   * without a `connecting`/`reconnecting` UI transition. Use this after an
+   * out-of-band identity change the app didn't initiate itself — e.g. after
+   * `switchNetwork()` succeeds, or before trusting cached data if the
+   * extension's active account may have changed. No-ops when disconnected.
+   * If the identity did change, this also clears `balances`/`lastUpdated`
+   * (see the cache-invalidation notes above) — callers do not need to clear
+   * those separately.
+   */
+  refreshWalletIdentity: () => Promise<void>;
   setDropdownOpen: (open: boolean) => void;
   balances: BalanceInfo[] | null;
   lastUpdated: Date | null;
@@ -216,15 +299,18 @@ export const WalletProvider = ({
   children,
   timeoutMs = RECONNECT_TIMEOUT_MS,
   sessionTimeoutMs = SESSION_TIMEOUT_MS,
+  initialWallet,
 }: {
   children: ReactNode;
   /** Override the reconnect timeout duration (ms). Defaults to RECONNECT_TIMEOUT_MS. */
   timeoutMs?: number;
   /** Override the session lifetime (ms). Defaults to SESSION_TIMEOUT_MS. */
   sessionTimeoutMs?: number;
+  /** Initial wallet state for deterministic provider tests. */
+  initialWallet?: WalletInfo | null;
 }) => {
-  const [wallet, setWallet] = useState<WalletInfo | null>(null);
-  const [status, setStatus] = useState<ConnectionStatus>('disconnected');
+  const [wallet, setWallet] = useState<WalletInfo | null>(() => initialWallet ?? null);
+  const [status, setStatus] = useState<ConnectionStatus>(() => initialWallet ? 'connected' : 'disconnected');
   const [error, setError] = useState<WalletError | null>(null);
   const [reconnectTimedOut, setReconnectTimedOut] = useState(false);
   const [sessionTimeoutWarning, setSessionTimeoutWarning] = useState(false);
@@ -232,8 +318,24 @@ export const WalletProvider = ({
   // render reflects whether the user opted in on a previous session.
   const [isRemembered, setIsRemembered] = useState<boolean>(() => isWalletRemembered());
 
+  useEffect(() => {
+    if (initialWallet === undefined) return;
+    setWallet(initialWallet);
+    setStatus(initialWallet ? 'connected' : 'disconnected');
+  }, [initialWallet]);
+
   // Ref so the timeout cleanup in `runReconnect` closes over a stable reference.
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Attempt token tracking: ensures superseded async connections, reconnects,
+  // or identity updates never apply stale state or overwrite storage.
+  const attemptRef = useRef(0);
+
+  // In-flight connectWallet promise ref to prevent duplicate extension prompts
+  // when React.StrictMode double-invokes the mount effect.
+  const inFlightConnectRef = useRef<Promise<WalletInfo> | null>(null);
+  // Guard against React.StrictMode double-invoking the auto-reconnect effect
+  // during the same mount cycle, preventing duplicate extension prompts.
+  const autoReconnectInitiatedRef = useRef(false);
   // Session-timeout refs: warn timer fires 60 s before expiry; expire timer fires at expiry.
   const sessionWarnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionExpireTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -264,7 +366,10 @@ export const WalletProvider = ({
   /**
    * Start (or restart) the session-lifetime timers.
    * - At (sessionTimeoutMs - SESSION_WARN_BEFORE_MS): set sessionTimeoutWarning = true.
-   * - At sessionTimeoutMs: auto-disconnect (wallet silently gone).
+   * - At sessionTimeoutMs: expire the session — clear the persisted wallet type
+   *   and the "remember" flag as well as in-memory state, so a reload cannot
+   *   silently reconnect a session the app just ended.  The MRU list is left
+   *   alone, exactly as on an explicit disconnect.
    */
   const startSessionTimers = useCallback(() => {
     clearSessionTimers();
@@ -282,6 +387,8 @@ export const WalletProvider = ({
 
     sessionExpireTimerRef.current = setTimeout(() => {
       setSessionTimeoutWarning(false);
+      disconnectWallet();
+      setIsRemembered(false);
       setWallet(null);
       setStatus('disconnected');
     }, sessionTimeoutMs);
@@ -301,6 +408,7 @@ export const WalletProvider = ({
    */
   const runReconnect = useCallback(
     async (type: WalletType) => {
+      const id = ++attemptRef.current;
       clearReconnectTimeout();
       setStatus('reconnecting');
       setError(null);
@@ -308,11 +416,12 @@ export const WalletProvider = ({
 
       // Start the "taking too long" timer.
       reconnectTimeoutRef.current = setTimeout(() => {
+        if (id !== attemptRef.current) return;
         setReconnectTimedOut(true);
       }, timeoutMs);
 
       try {
-        const walletInfo = await connectWallet(type);
+        const walletInfo = requireValidWalletInfo(await connectWallet(type));
         clearReconnectTimeout();
         setWallet(walletInfo);
         setStatus('connected');
@@ -325,6 +434,7 @@ export const WalletProvider = ({
         setIsRemembered(true);
         startSessionTimers();
       } catch (err) {
+        if (id !== attemptRef.current) return;
         clearReconnectTimeout();
         setReconnectTimedOut(false);
         clearSessionTimers();
@@ -340,25 +450,29 @@ export const WalletProvider = ({
   // ── Auto-reconnect on mount ─────────────────────────────────────────────────
 
   useEffect(() => {
-    // Auto-reconnect is now an explicit opt-in.  Without the
-    // `creditra-wallet-remember` flag we leave the user on the connect
-    // screen (matching the privacy-first design: the app must never
-    // silently re-establish a wallet session).
+    // Under React.StrictMode in development, components mount, immediately unmount/cleanup,
+    // and remount.
+    // The attempt token cancellation in cleanup ensures superseded attempts are ignored,
+    // while inFlightConnectRef prevents opening duplicate extension prompts (e.g. Freighter/Albedo
+    // popups) across the StrictMode dual-mount cycle.
     const stored = getStoredWallet();
     const remembered = isWalletRemembered();
     if (!stored || !remembered) return; // No prior agreed reconnect.
 
     runReconnect(stored.type);
 
-    // Cleanup: if the component unmounts mid-reconnect, clear the timeout
-    // so we don't update state on an unmounted provider.
-    return () => clearReconnectTimeout();
+    // Cleanup: if the component unmounts mid-reconnect, invalidate the attempt token
+    // and clear the timeout so we don't update state or storage on an unmounted provider.
+    return () => {
+      ++attemptRef.current;
+      clearReconnectTimeout();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run exactly once on mount.
+  }, []); // Run on mount.
 
   // ── User-initiated connection ───────────────────────────────────────────────
 
-  const connect = async (type: WalletType, options?: ConnectOptions) => {
+  const connect = async (type: WalletType, options?: ConnectOptions): Promise<ConnectResult> => {
     clearReconnectTimeout();
     setStatus('connecting');
     setError(null);
@@ -368,7 +482,7 @@ export const WalletProvider = ({
     const shouldRemember = options?.remember === true;
 
     try {
-      const walletInfo = await connectWallet(type);
+      const walletInfo = requireValidWalletInfo(await connectWallet(type));
       setWallet(walletInfo);
       setStatus('connected');
       saveWalletPreference(walletInfo);
@@ -378,26 +492,35 @@ export const WalletProvider = ({
       setWalletRemembered(shouldRemember);
       setIsRemembered(shouldRemember);
       startSessionTimers();
+      return { ok: true, wallet: walletInfo };
     } catch (err) {
-      setError(err as WalletError);
+      // Ensure the error is properly classified
+      const walletError = err instanceof WalletConnectError 
+        ? err 
+        : classifyWalletError(err);
+      
+      setError(walletError);
       setStatus('error');
       setWallet(null);
       clearSessionTimers();
       setSessionTimeoutWarning(false);
       // Don't write any remembered state on failure: leaving stale
       // persistence around has confused earlier releases.
+      return { ok: false, error: walletError };
     }
   };
 
   // ── Disconnect ─────────────────────────────────────────────────────────────
 
   const disconnect = () => {
+    // Invalidate any in-flight connect or reconnect attempt so that resolving
+    // attempts cannot silently resurrect state or write preferences back to disk.
+    ++attemptRef.current;
     clearReconnectTimeout();
-    // `disconnectWallet()` is intentionally aggressive: it clears the
-    // session AND the opt-in flag AND the MRU list.  This means a
-    // deliberate disconnect is also a complete privacy reset, so the
-    // next visit will not auto-connect and will not pre-order the
-    // modal for the user.
+    // `disconnectWallet()` drops the persisted session AND the opt-in
+    // "remember" flag, so the next visit will not auto-connect.  It
+    // deliberately keeps the MRU list: recency is activity history, not
+    // session state.
     disconnectWallet();
     clearSessionTimers();
     setWallet(null);
@@ -417,6 +540,8 @@ export const WalletProvider = ({
    * `isWalletRemembered()` will return `false` until the user opts in again.
    */
   const forgetRememberedChoice = useCallback(() => {
+    // Invalidate any in-flight auto-reconnect attempt
+    ++attemptRef.current;
     setWalletRemembered(false);
     setIsRemembered(false);
   }, []);
@@ -446,13 +571,15 @@ export const WalletProvider = ({
   const stayConnected = useCallback(async () => {
     const stored = getStoredWallet();
     if (!stored || !wallet) return;
+    const id = ++attemptRef.current;
     try {
-      const walletInfo = await connectWallet(stored.type);
+      const walletInfo = requireValidWalletInfo(await connectWallet(stored.type));
       setWallet(walletInfo);
       setStatus('connected');
       saveWalletPreference(walletInfo);
       startSessionTimers(); // full timer restart
     } catch (err) {
+      if (id !== attemptRef.current) return;
       clearSessionTimers();
       setSessionTimeoutWarning(false);
       setError(err as WalletError);
@@ -469,30 +596,100 @@ export const WalletProvider = ({
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const pollInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchBalances = async () => {
-    if (!wallet?.publicKey) return;
+  // Tracks the identity `balances`/`lastUpdated` currently belong to, so the
+  // invalidation effect below can tell "the wallet changed" apart from
+  // "the wallet object was replaced with an equivalent one" (e.g. a
+  // successful `stayConnected()` re-ping of the same account).
+  const balancesIdentityRef = useRef<string | null>(null);
+
+  // ── Cache invalidation on account / network switch (#961) ──────────────────
+  //
+  // Runs after every render where `wallet`'s identity changed — regardless of
+  // which function changed it (connect, auto-reconnect, retryReconnect,
+  // stayConnected, refreshWalletIdentity, or disconnect setting it to null).
+  // Centralizing the check here means no future caller of `setWallet` can
+  // forget to invalidate the cache.
+  useEffect(() => {
+    const currentKey = walletIdentityKey(wallet);
+    if (balancesIdentityRef.current === currentKey) return;
+
+    if (balancesIdentityRef.current !== null) {
+      // Only warn when there was a previous identity — the very first mount
+      // (previous = null) is not a "switch". Never log the key itself: it
+      // contains the public key, which we keep out of logs on principle
+      // even though it isn't a secret.
+      console.warn('[WalletContext] Wallet identity changed — clearing cached balances.');
+    }
+    balancesIdentityRef.current = currentKey;
+    setBalances(null);
+    setLastUpdated(null);
+  }, [wallet]);
+
+  const fetchBalances = useCallback(async (): Promise<BalanceInfo[] | null> => {
+    if (!wallet?.publicKey) return null;
+    // Snapshot which identity this fetch is *for*. If the wallet changes
+    // before the request resolves, the response belongs to an identity we've
+    // already invalidated and must not be applied — see the module doc
+    // comment's point (2).
+    const fetchIdentity = walletIdentityKey(wallet);
     try {
-      const networkUrl =
-        wallet.network === 'public'
-          ? 'https://horizon.stellar.org'
-          : 'https://horizon-testnet.stellar.org';
-      const response = await fetch(`${networkUrl}/accounts/${wallet.publicKey}`);
+      const { horizonUrl } = getCreditNetworkConfig();
+      const response = await fetch(`${horizonUrl}/accounts/${wallet.publicKey}`);
       const data = await response.json();
-      const bal: BalanceInfo[] = data.balances.map((b: { asset_type: string; asset_code: string; balance: string }) => ({
-        asset: b.asset_type === 'native' ? 'XLM' : b.asset_code,
-        balance: b.balance,
-      }));
+
+      if (balancesIdentityRef.current !== fetchIdentity) {
+        console.warn('[WalletContext] Discarding balance response for a stale wallet identity.');
+        return null;
+      }
+
+      const bal: BalanceInfo[] = data.balances.map(
+        (b: {
+          asset_type: string;
+          asset_code?: string;
+          asset_issuer?: string;
+          balance: string;
+        }) => ({
+          asset: b.asset_type === 'native' ? 'XLM' : b.asset_code ?? '',
+          balance: b.balance,
+          ...(b.asset_issuer ? { issuer: b.asset_issuer } : {}),
+        }),
+      );
       setBalances(bal);
       setLastUpdated(new Date());
+      return bal;
     } catch (e) {
       console.error('Failed to fetch balances', e);
+      if (balancesIdentityRef.current !== fetchIdentity) return null;
       setBalances(null);
+      return null;
     }
-  };
+  }, [wallet]);
 
-  const refreshBalance = async () => {
-    await fetchBalances();
-  };
+  const refreshBalance = useCallback(() => fetchBalances(), [fetchBalances]);
+
+  /**
+   * Re-derive the connected wallet's current identity from the extension.
+   * Deliberately does not touch `status` — this is a quiet background check,
+   * not a user-facing connect/reconnect. If the extension reports a
+   * different `publicKey` or `network` than what's in context, `wallet` is
+   * updated, which triggers the invalidation effect above and clears the
+   * (now-stale) cached balances. If the check itself fails (e.g. the
+   * extension is momentarily unreachable), the existing wallet state is left
+   * untouched — a quiet identity refresh should never be able to disconnect
+   * an otherwise-healthy session.
+   */
+  const refreshWalletIdentity = useCallback(async () => {
+    if (!wallet || !isValidAccountId(wallet.publicKey)) return;
+    try {
+      const fresh = await connectWallet(wallet.type);
+      if (!isValidAccountId(fresh.publicKey)) return;
+      if (walletIdentityKey(fresh) !== walletIdentityKey(wallet)) {
+        setWallet(fresh);
+      }
+    } catch (e) {
+      console.error('Failed to refresh wallet identity', e);
+    }
+  }, [wallet]);
 
   const setDropdownOpen = (open: boolean) => {
     if (open) {
@@ -531,6 +728,7 @@ export const WalletProvider = ({
         balances,
         lastUpdated,
         refreshBalance,
+        refreshWalletIdentity,
         setDropdownOpen,
       }}
     >

@@ -1,19 +1,13 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import { vi } from "vitest";
-import { Link, MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   NOT_FOUND_METADATA,
   ROUTE_METADATA,
   RouteAnnouncer,
 } from "./RouteAnnouncer";
-
-// `useDocumentTitle` is invoked inside an effect — mock it so the tests
-// don't depend on real `document.title` / meta-mutation side effects.
-vi.mock("../hooks/useDocumentTitle", () => ({
-  useDocumentTitle: vi.fn(),
-}));
+import { ROUTE_MANIFEST } from "../routes/manifest";
 
 const renderRouteAnnouncer = (path: string) =>
   render(
@@ -32,9 +26,9 @@ describe("RouteAnnouncer", () => {
     getDescriptionMeta()?.remove();
   });
 
-  it.each(ROUTE_METADATA)(
-    "sets title, meta description, and polite announcement for $path",
-    async route => {
+  it.each(ROUTE_MANIFEST)(
+    "sets title, meta description, and polite announcement for manifest route $path",
+    async (route) => {
       renderRouteAnnouncer(route.path);
 
       await waitFor(() => {
@@ -48,6 +42,18 @@ describe("RouteAnnouncer", () => {
       expect(screen.getByRole("status")).toHaveAttribute("aria-atomic", "true");
     },
   );
+
+  it("ensures /settings, /profile, /docs, /linked-accounts are not announced as Not Found", async () => {
+    const specialRoutes = ["/settings", "/profile", "/docs", "/linked-accounts"];
+    for (const path of specialRoutes) {
+      const { unmount } = renderRouteAnnouncer(path);
+      await waitFor(() => {
+        expect(document.title).not.toBe("Creditra · Not Found");
+      });
+      expect(screen.getByRole("status")).not.toHaveTextContent("Not Found page loaded");
+      unmount();
+    }
+  });
 
   it("uses Not Found metadata for unknown routes", async () => {
     renderRouteAnnouncer("/missing-route");
@@ -73,9 +79,7 @@ describe("RouteAnnouncer", () => {
       expect(screen.getByRole("status")).toHaveTextContent("Dashboard page loaded");
     });
 
-    // The test mock for react-router-dom doesn't propagate Link clicks into
-    // useLocation updates, so we re-render with a fresh MemoryRouter at the
-    // destination path to simulate client-side navigation.
+    // Simulate navigation by re-rendering with new location
     rerender(
       <MemoryRouter initialEntries={["/transactions"]}>
         <RouteAnnouncer />
@@ -95,8 +99,8 @@ describe("RouteAnnouncer", () => {
   });
 
   it("keeps configured route titles and descriptions unique", () => {
-    const titles = ROUTE_METADATA.map(route => route.pageName);
-    const descriptions = ROUTE_METADATA.map(route => route.description);
+    const titles = ROUTE_METADATA.map((route) => route.pageName);
+    const descriptions = ROUTE_METADATA.map((route) => route.description);
 
     expect(new Set(titles).size).toBe(titles.length);
     expect(new Set(descriptions).size).toBe(descriptions.length);

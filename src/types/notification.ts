@@ -15,10 +15,27 @@ export type NotificationCategory =
   | 'credit_line'
   | 'risk_score'
   | 'rate_change'
+  | 'auction'
   | 'system';
 
 /**
- * Persistent inbox entry. Stored in `localStorage` capped at 100 by
+ * Action descriptor for persisted notifications.
+ * Either a client‑side route navigation or a registered command.
+ */
+export type NotificationActionDescriptor = {
+  label: string;
+} & (
+  | { kind: 'route'; to: string }
+  | { kind: 'command'; id: 'open-wallet' | 'open-kyc' | 'retry-sync' }
+);
+
+/** Inline action for transient notifications (non‑persisted). */
+export type NotificationAction = {
+  label: string;
+  onClick: () => void;
+};
+
+/** Persistent inbox entry. Stored in `localStorage` capped at 100 by
  * `NotificationContext` so the inbox does not grow without bound.
  */
 export interface Notification {
@@ -34,22 +51,22 @@ export interface Notification {
   timestamp: string;
   /** Read receipt; flipped by `markAsRead` / `markAllAsRead`. */
   read: boolean;
-  /** Optional inline action — e.g. "View transaction". */
-  action?: { label: string; onClick: () => void };
+  /** Optional inline action — for persisted notifications must be a descriptor. */
+  action?: NotificationActionDescriptor;
 }
 
-/**
- * A transient toast notification. Unlike a regular Notification, a Toast
+/** A transient toast notification. Unlike a regular Notification, a Toast
  * is not tracked in the read/unread inbox — it lives only for the
  * duration of its display.
  */
 export interface Toast extends Omit<Notification, 'read'> {
   duration?: number; // ms, default 5500
   persistent?: boolean;
+  /** Inline action for toasts (non‑persisted). */
+  action?: NotificationAction;
 }
 
-/**
- * Page-level banner alert. Unlike toasts, banners persist until the
+/** Page-level banner alert. Unlike toasts, banners persist until the
  * user dismisses them or the underlying condition clears.
  */
 export interface BannerAlert {
@@ -58,33 +75,33 @@ export interface BannerAlert {
   message: string;
   /** When true, the close button is rendered. Defaults to false for blocking errors. */
   dismissible?: boolean;
-  /** Optional inline action — e.g. "Retry". */
-  action?: { label: string; onClick: () => void };
+  /** Optional inline action for banners (non‑persisted). */
+  action?: NotificationAction;
 }
 
-/**
- * Per-category mute switches. `true` means notifications of that
+/** Per‑category mute switches. `true` means notifications of that
  * category are delivered; `false` suppresses them silently — the
  * `addToast` dispatcher returns the empty string when a category is
- * muted, so callers can no-op without special-casing.
+ * muted, so callers can no‑op without special‑casing.
  */
 export interface NotificationPreferences {
   transaction: boolean;
   credit_line: boolean;
   risk_score: boolean;
   rate_change: boolean;
+  auction: boolean;
   system: boolean;
 }
 
 /**
- * Delivery channel.  Each category group can independently enable or
+ * Delivery channel.  Each category group can independently enable and
  * disable email, SMS, and push delivery.
  */
 export type NotificationChannel = 'email' | 'sms' | 'push';
 
 /**
- * Category group key for the notification-preferences page.
- * These map to user-facing notification scenarios rather than internal
+ * Category group key for the notification‑preferences page.
+ * These map to user‑facing notification scenarios rather than internal
  * event classifications.
  */
 export type NotificationPreferenceCategory =
@@ -92,7 +109,7 @@ export type NotificationPreferenceCategory =
   | 'default_risk'
   | 'attestation';
 
-/** Per-channel booleans for a single category group. */
+/** Per‑channel booleans for a single category group. */
 export interface NotificationChannelSettings {
   email: boolean;
   sms: boolean;
@@ -100,8 +117,8 @@ export interface NotificationChannelSettings {
 }
 
 /**
- * Channel-level notification preferences persisted independently of
- * the existing `NotificationPreferences` (which govern in-app toast
+ * Channel‑level notification preferences persisted independently of
+ * the existing `NotificationPreferences` (which govern in‑app toast
  * delivery).  Stored in localStorage under `creditra_channel_prefs`.
  */
 export type NotificationChannelPreferences = Record<

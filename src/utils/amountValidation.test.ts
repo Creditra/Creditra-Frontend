@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   getDrawAmountValidation,
   getRepayAmountValidation,
+  getRepayConfirmThreshold,
   REPAY_CONFIRM_THRESHOLD,
   requiresRepayConfirmation,
 } from './amountValidation';
@@ -24,6 +25,16 @@ describe('getDrawAmountValidation', () => {
     expect(result.feedback.severity).toBe('danger');
     expect(result.feedback.title).toBe('Exceeds available credit');
   });
+
+  it('reserves the 1% fee when calculating the maximum draw', () => {
+    const result = getDrawAmountValidation('35000', creditLine);
+    const maximum = getDrawAmountValidation('34653.47', creditLine);
+
+    expect(result.isValid).toBe(false);
+    expect(result.maxAmount).toBe(34653.47);
+    expect(result.feedback.message).toContain('$34,653.47');
+    expect(maximum.isValid).toBe(true);
+  });
 });
 
 describe('getRepayAmountValidation', () => {
@@ -41,6 +52,40 @@ describe('getRepayAmountValidation', () => {
     expect(result.isValid).toBe(true);
     expect(result.feedback.severity).toBe('warning');
     expect(result.feedback.title).toBe('Low wallet reserve');
+  });
+
+  it('computes the remaining debt exactly to the cent (decimal-safe)', () => {
+    // 10 - 9.99 in raw floats is 0.010000000000000016; the cents-based
+    // validation must surface a clean 0.01.
+    const result = getRepayAmountValidation('9.99', 10, 100);
+
+    expect(result.isValid).toBe(true);
+    expect(result.remainingDebt).toBe(0.01);
+    expect(result.remainingWalletBalance).toBe(90.01);
+  });
+
+  it('flags a repayment that fully clears the debt as exact full repayment', () => {
+    const result = getRepayAmountValidation('999.99', 999.99, 5000);
+
+    expect(result.isValid).toBe(true);
+    expect(result.remainingDebt).toBe(0);
+    expect(result.feedback.severity).toBe('success');
+    expect(result.feedback.title).toBe('Full repayment');
+  });
+
+  it('still flags an amount over the wallet as invalid (decimal-safe)', () => {
+    const result = getRepayAmountValidation('9.99', 5000, 9.98);
+
+    expect(result.isValid).toBe(false);
+    expect(result.feedback.severity).toBe('danger');
+    expect(result.feedback.title).toBe('Exceeds wallet balance');
+  });
+
+  it('treats an amount exactly equal to the wallet balance as valid', () => {
+    const result = getRepayAmountValidation('10.00', 10, 10.0);
+
+    expect(result.isValid).toBe(true);
+    expect(result.remainingWalletBalance).toBe(0);
   });
 });
 
@@ -77,6 +122,33 @@ describe('REPAY_CONFIRM_THRESHOLD', () => {
     expect(requires(10000)).toBe(false);
     vi.unstubAllEnvs();
     vi.resetModules();
+  });
+});
+
+describe('getRepayConfirmThreshold', () => {
+  it('defaults to 5000 when env variable is unset', () => {
+    expect(getRepayConfirmThreshold({})).toBe(5000);
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: undefined })).toBe(5000);
+  });
+
+  it('accepts 0 to disable the guard', () => {
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: '0' })).toBe(0);
+  });
+
+  it('falls back to 5000 for negative values', () => {
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: '-1' })).toBe(5000);
+  });
+
+  it('falls back to 5000 for non-numeric strings', () => {
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: 'abc' })).toBe(5000);
+  });
+
+  it('parses valid positive thresholds', () => {
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: '2500' })).toBe(2500);
+  });
+
+  it('uses default import.meta.env when called without arguments', () => {
+    expect(getRepayConfirmThreshold()).toBe(5000);
   });
 });
 

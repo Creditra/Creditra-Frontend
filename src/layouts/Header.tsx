@@ -1,10 +1,11 @@
-import { Link, NavLink } from "react-router-dom";
-import type { RefObject } from "react";
+import { Link, NavLink, useLocation } from "react-router-dom";
+import { useEffect, useRef, type RefObject } from "react";
 import { NetworkStatus } from "../components/NetworkStatus";
 import { KycTriggerButton } from "../components/KycDrawer";
 import { QuickRepayTrigger } from "../components/QuickRepayTrigger";
 import { WalletButton } from "../components/WalletButton";
 import { NotificationWidget } from "../components/notifications/NotificationWidget";
+import { ROUTE_MANIFEST } from "../routes/manifest";
 
 export interface HeaderProps {
   settingsTriggerRef: RefObject<HTMLButtonElement | null>;
@@ -22,12 +23,24 @@ export function Header({
   onSettingsClick,
   onKycClick,
 }: HeaderProps) {
+  const navRef = useRef<HTMLElement>(null);
+  const { pathname } = useLocation();
+
+  // On narrow screens the nav is a horizontally scrolling row; keep the
+  // active link in view (adjust scrollLeft only, never the page scroll).
+  useEffect(() => {
+    const nav = navRef.current;
+    const active = nav?.querySelector<HTMLElement>(".header-nav-link.active");
+    if (!nav || !active || nav.scrollWidth <= nav.clientWidth) return;
+    nav.scrollLeft = active.offsetLeft - nav.offsetLeft - (nav.clientWidth - active.offsetWidth) / 2;
+  }, [pathname]);
+
   return (
     <header className="header">
       <Link to="/" className="logo">
         Creditra
       </Link>
-      <nav className="header-nav">
+      <nav className="header-nav" ref={navRef} aria-label="Primary">
         {/*
           NavLink with render function allows us to:
           1. Apply active class for styling (accent + underline + weight)
@@ -38,47 +51,18 @@ export function Header({
           - 2.4.7: Focus Visible - outline differs from active underline
           - 2.4.8: Location - aria-current="page" indicates current page
         */}
-        <NavLink
-          to="/"
-          end
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Dashboard
-        </NavLink>
-        <NavLink
-          to="/transactions"
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Transactions
-        </NavLink>
-        <NavLink
-          to="/credit-lines"
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Credit Lines
-        </NavLink>
-        <NavLink
-          to="/open-credit"
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Open Credit Line
-        </NavLink>
-        <NavLink
-          to="/dutch-auctions"
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Dutch Auctions
-        </NavLink>
+        {ROUTE_MANIFEST.filter((route) => Boolean(route.nav?.header)).map((route) => (
+          <NavLink
+            key={route.path}
+            to={route.path}
+            end={route.path === "/"}
+            className={({ isActive }) =>
+              isActive ? "header-nav-link active" : "header-nav-link"
+            }
+          >
+            {route.nav?.headerLabel ?? route.pageName}
+          </NavLink>
+        ))}
       </nav>
       <button
         ref={settingsTriggerRef}

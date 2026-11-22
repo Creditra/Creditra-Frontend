@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="Cyber Punk #890">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1e0533"/><stop offset="1" stop-color="#db2777"/></linearGradient>
+<radialGradient id="r" cx=".5" cy=".42" r=".5"><stop offset="0" stop-color="#fff" stop-opacity=".35"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>
+<rect width="400" height="400" fill="url(#g)"/><rect width="400" height="400" fill="url(#r)"/>
+<g fill="#0f172a" fill-opacity=".85"><rect x="40" y="170" width="60" height="160"/><rect x="110" y="120" width="70" height="210"/><rect x="190" y="150" width="55" height="180"/><rect x="255" y="90" width="65" height="240"/><rect x="330" y="190" width="40" height="140"/></g><g fill="#f0abfc"><rect x="125" y="140" width="10" height="10"/><rect x="150" y="170" width="10" height="10"/><rect x="270" y="110" width="10" height="10"/><rect x="295" y="150" width="10" height="10"/><rect x="205" y="180" width="10" height="10"/><rect x="55" y="200" width="10" height="10"/></g><line x1="20" y1="330" x2="380" y2="330" stroke="#22d3ee" stroke-width="4"/>
+<text x="200" y="370" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,sans-serif" font-size="22" font-weight="700" fill="#fff" fill-opacity=".9">Cyber Punk #890</text>
+</svg>

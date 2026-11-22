@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useEffect, useRef, useState } from 'react';
 import type { Attestation, AttestationStatus } from '../types/attestation';
 import { ATTESTATION_STATUS_COLOR, fmtDate } from '../utils/tokens';
 import { LiveRegion } from './LiveRegion';

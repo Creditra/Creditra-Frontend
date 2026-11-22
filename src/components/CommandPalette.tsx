@@ -38,6 +38,7 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useInertBackdrop } from '../hooks/useInertBackdrop';
 import { useDebounceValue } from '../hooks/useDebounceValue';
+import { ROUTE_MANIFEST } from '../routes/manifest';
 import './CommandPalette.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -75,16 +76,22 @@ export interface CommandItem {
  * commands appear first in the default (empty-query) view.
  */
 const DEFAULT_ITEMS: CommandItem[] = [
-  { id: 'nav-dashboard',    label: 'Dashboard',           icon: '🏠',  action: '/',                          description: 'Go to Dashboard' },
-  { id: 'nav-transactions', label: 'Transactions',         icon: '📋',  action: '/transactions',              description: 'View transaction history' },
-  { id: 'nav-credit-lines', label: 'Credit Lines',         icon: '💳',  action: '/credit-lines',              description: 'Manage your credit lines' },
-  { id: 'nav-repay',        label: 'Repay',                icon: '💰',  action: '/repay',                     description: 'Make a repayment' },
-  { id: 'nav-draw-credit',  label: 'Draw',                 icon: '⬇️',  action: '/draw-credit',               description: 'Draw from a credit line' },
-  { id: 'nav-open-credit',  label: 'Request Evaluation',   icon: '📝',  action: '/open-credit',               description: 'Apply for a new credit line' },
-  { id: 'nav-auctions',     label: 'Dutch Auctions',       icon: '🔨',  action: '/dutch-auctions',            description: 'View active auctions' },
-  { id: 'nav-linked',       label: 'Linked Accounts',      icon: '🔗',  action: '/linked-accounts',           description: 'Manage linked external accounts' },
-  { id: 'nav-help',         label: 'Help Center',          icon: '❓',  action: '/help',                      description: 'Browse help articles' },
-  { id: 'nav-notif-prefs',  label: 'Notification Settings',icon: '🔔',  action: '/notification-preferences',  description: 'Manage notification preferences' },
+  ...ROUTE_MANIFEST.filter((r) => Boolean(r.nav?.palette)).map((r) => ({
+    id: `nav-${r.path.replace(/^\//, '').replace(/\//g, '-') || 'dashboard'}`,
+    label: r.nav!.palette!.label,
+    icon: r.nav!.palette!.icon,
+    action: r.path,
+    description: r.nav!.palette!.description,
+  })),
+  // The manifest is keyed by route path, so query-parameter deep links such as
+  // the URL-driven Activity tab need an explicit entry.
+  {
+    id: 'nav-profile-activity',
+    label: 'Profile activity',
+    icon: '📈',
+    action: '/profile?tab=activity',
+    description: 'View your activity feed',
+  },
 ];
 
 /** Exported for tests and documentation of the default registry. */
@@ -401,8 +408,17 @@ export function CommandPalette({
           )}
 
           {results.map((item, index) => (
-            <li key={item.id} role="option" aria-selected={index === activeIndex}>
+            <li
+              key={item.id}
+              id={`cp-item-${item.id}`}
+              role="option"
+              aria-selected={index === activeIndex}
+            >
               {/*
+               * The `id` above sits on the `role="option"` element so
+               * `aria-activedescendant` references a real option, as required
+               * by the listbox pattern documented at the top of this file.
+               *
                * Each item is a `<button>` (not an `<a>`) because:
                * - Navigation items call `navigate()` imperatively.
                * - Callback items don't have a URL.
@@ -417,7 +433,6 @@ export function CommandPalette({
                * the two never conflict.
                */}
               <button
-                id={`cp-item-${item.id}`}
                 type="button"
                 className={`cp-item${index === activeIndex ? ' cp-item--active' : ''}`}
                 onClick={() => activate(item)}

@@ -1,4 +1,5 @@
 // src/hooks/useDocumentTitle.ts
+import { useEffect } from 'react';
 
 /**
  * Hook to set the document title and optionally a meta description.
@@ -10,9 +11,6 @@
 export const useDocumentTitle = (title: string, description?: string): void => {
   // Using React's useEffect ensures the side‑effects run after render and are
   // cleaned up/rerun when the dependencies change.
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const { useEffect } = require('react');
-
   useEffect(() => {
     // Update the document title.
     document.title = title;

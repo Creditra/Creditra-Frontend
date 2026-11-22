@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { CSSProperties } from 'react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
@@ -43,7 +44,6 @@ export function DashboardTour() {
   const [stepIndex, setStepIndex] = useState(0);
   const [highlightRect, setHighlightRect] = useState<DOMRect | null>(null);
   const [tourActive, setTourActive] = useState(false);
-  const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
 
   // Mutable cache that always reads the current value without relying on
   // a stale closure (useCallback deps are stable setter fn refs).
@@ -88,7 +88,6 @@ export function DashboardTour() {
       /* quota or private mode — swallow */
     }
     setTourActive(false);
-    setTargetRect(null);
     setHighlightRect(null);
   }, []);
 
@@ -113,7 +112,6 @@ export function DashboardTour() {
       ?? lastKnownRectsRef.current.notificationBell
       ?? null;
     if (firstRect) {
-      setTargetRect(firstRect);
       setHighlightRect(firstRect);
     }
     setTourActive(true);
@@ -130,7 +128,6 @@ export function DashboardTour() {
     // Synchronous DOM read — no rAF needed
     const rect = snapshot(currentStep.id);
     if (rect) {
-      setTargetRect(rect);
       setHighlightRect(rect);
     }
   }, [tourActive, stepIndex, currentStep.id, snapshot]);
@@ -148,7 +145,6 @@ export function DashboardTour() {
         if (dismissedRef.current) return;
         const rect = snapshot(currentStep.id);
         if (rect) {
-          setTargetRect(rect);
           lastKnownRectsRef.current[currentStep.id] = rect;
           setHighlightRect(rect);
         }
@@ -161,7 +157,6 @@ export function DashboardTour() {
       if (dismissedRef.current) return;
       const rect = snapshot(currentStep.id);
       if (rect) {
-        setTargetRect(rect);
         lastKnownRectsRef.current[currentStep.id] = rect;
         setHighlightRect(rect);
       }
@@ -297,7 +292,6 @@ export function DashboardTour() {
                       /* swallow */
                     }
                     setTourActive(false);
-                    setTargetRect(null);
                     setHighlightRect(null);
                   }
                 }}

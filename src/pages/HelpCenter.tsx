@@ -1,17 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, ChevronDown } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { CopyToClipboard } from "../components/CopyToClipboard";
 import SupportForm from "../components/SupportForm";
 import { Tooltip } from "../components/Tooltip";
 import { VideoThumbnail } from "../components/VideoThumbnail";
 import { useActiveSection } from "../hooks/useActiveSection";
 import { useReducedMotion } from "../context/ReducedMotionContext";
+import { useDebounceValue } from "../hooks/useDebounceValue";
+import { FAQ, HELP_ANCHORS } from "../content/faq";
+import { searchFaq } from "../lib/faq-search";
 import "./HelpCenter.css";
+
+export { HELP_ANCHORS };
 
 const NAV_ITEMS = [
   { id: "getting-started", label: "Getting Started" },
   { id: "wallet", label: "Wallet" },
+  { id: "kyc", label: "KYC Verification" },
   { id: "credit-lines", label: "Credit Lines" },
   { id: "transactions", label: "Transactions" },
   { id: "notifications", label: "Notifications" },
@@ -22,99 +28,59 @@ const NAV_ITEMS = [
 const categories = [
   { id: "getting-started", title: "Getting Started", desc: "Learn the basics of your account and credit setup." },
   { id: "wallet", title: "Wallet", desc: "Connect, verify, and troubleshoot supported Stellar wallets." },
+  { id: "kyc", title: "KYC Verification", desc: "Complete identity verification steps and track your approval status." },
   { id: "credit-lines", title: "Credit Lines", desc: "Understand draws, repayments, and account status changes." },
   { id: "transactions", title: "Transactions", desc: "Filter history, inspect hashes, and export records." },
   { id: "notifications", title: "Notifications", desc: "Manage alerts, preferences, and follow-up actions." },
   { id: "shortcuts", title: "Shortcuts", desc: "Learn the keyboard shortcuts available across the app." },
 ] as const;
 
-interface FaqItem {
-  id: string;
-  sectionId: string;
-  q: string;
-  a: string;
-  videoId?: string;
-  transcriptUrl?: string;
-}
-
-const faqs: FaqItem[] = [
-  {
-    id: "what-is-creditra",
-    sectionId: "getting-started",
-    q: "What is Creditra?",
-    a: "Creditra is a Stellar-based credit experience that helps you request, manage, and repay flexible credit lines from one dashboard.",
-  },
-  {
-    id: "connect-wallet",
-    sectionId: "wallet",
-    q: "How do I connect a wallet?",
-    a: "Open the wallet modal, choose a detected wallet, and approve the request in your extension. If a wallet is missing, the Help Center wallet section walks through supported options and troubleshooting.",
-    videoId: "dQw4w9WgXcQ",
-    transcriptUrl: "https://support.creditra.app/transcripts/connect-wallet",
-  },
-  {
-    id: "repayments",
-    sectionId: "credit-lines",
-    q: "How do repayments work?",
-    a: "Repayments reduce your current debt and are recorded in transaction history with their status, amount, and on-chain hash when available.",
-    videoId: "9bZkp7q19f0",
-  },
-  {
-    id: "transaction-filters",
-    sectionId: "transactions",
-    q: "Can I filter my transaction history by date?",
-    a: "Yes. Use the preset chips for Today, 7d, 30d, or 90d, or switch to Custom to choose a specific date range.",
-  },
-  {
-    id: "notifications-settings",
-    sectionId: "notifications",
-    q: "Where can I manage alerts and notifications?",
-    a: "Open the notification center to review unread items, then use preferences to choose which categories should interrupt you.",
-  },
-  {
-    id: "keyboard-shortcuts",
-    sectionId: "shortcuts",
-    q: "Which keyboard shortcuts are supported?",
-    a: "Press ? outside text fields to open the shortcut overlay. Esc closes dialogs, and other shortcuts are grouped by surface inside the overlay.",
-    transcriptUrl: "https://support.creditra.app/transcripts/keyboard-shortcuts",
-  },
-];
-
 const SECTION_IDS = [...NAV_ITEMS.map((item) => item.id)];
 
 export default function HelpCenter() {
   const location = useLocation();
+  const navigate = useNavigate();
   const rawHash = location.hash || (typeof window !== "undefined" ? window.location.hash : "");
-  const hashId = rawHash.replace("#", "");
-  const [openFaqId, setOpenFaqId] = useState<string | null>(null);
+  const hashId = rawHash.replace(/^#/, "");
+  const isUnknownHash = Boolean(hashId) && !HELP_ANCHORS.has(hashId);
+  const [openFaqId, setOpenFaqId] = useState<string | null>(() => {
+    return hashId && FAQ.some((f) => f.id === hashId) ? hashId : null;
+  });
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedQuery = useDebounceValue(searchQuery, 300);
   const activeSection = useActiveSection(SECTION_IDS);
   const navRef = useRef<HTMLElement>(null);
   const { isReducedMotionActive } = useReducedMotion();
 
   const filteredFaqs = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return faqs;
-
-    return faqs.filter((item) =>
-      [item.q, item.a, item.sectionId].some((value) =>
-        value.toLowerCase().includes(query),
-      ),
-    );
+    return searchFaq(FAQ, searchQuery);
   }, [searchQuery]);
 
-  const activeFaqId = useMemo(() => {
-    if (hashId && faqs.some((f) => f.id === hashId)) {
-      return hashId;
-    }
-    return openFaqId;
-  }, [hashId, openFaqId]);
+  const visibleCategories = useMemo(() => {
+    const isSearching = searchQuery.trim().length > 0;
+    if (!isSearching) return categories;
+    return categories.filter((cat) =>
+      filteredFaqs.some((faq) => faq.sectionId === cat.id),
+    );
+  }, [searchQuery, filteredFaqs]);
+
+  const announcement = useMemo(() => {
+    const trimmed = debouncedQuery.trim();
+    if (!trimmed) return "";
+    const count = filteredFaqs.length;
+    return count === 0 ? "No results" : `${count} result${count === 1 ? "" : "s"}`;
+  }, [debouncedQuery, filteredFaqs.length]);
+
+  const activeFaqId = openFaqId;
 
   useEffect(() => {
-    if (!location.hash) return;
+    const currentRawHash = location.hash || (typeof window !== "undefined" ? window.location.hash : "");
+    if (!currentRawHash) return;
 
-    const targetId = location.hash.replace("#", "");
-    const targetFaq = faqs.find((item) => item.id === targetId);
+    const targetId = currentRawHash.replace(/^#/, "");
+    if (!HELP_ANCHORS.has(targetId)) return;
+
+    const targetFaq = FAQ.find((item) => item.id === targetId);
     if (targetFaq) {
       setOpenFaqId(targetFaq.id);
     }
@@ -122,17 +88,24 @@ export default function HelpCenter() {
     const target = document.getElementById(targetId);
     if (!target) return;
 
-    window.requestAnimationFrame(() => {
+    const rafId = window.requestAnimationFrame(() => {
       target.scrollIntoView({
         behavior: isReducedMotionActive ? "instant" : "smooth",
         block: "start",
       });
+      target.focus({ preventScroll: true });
     });
+
+    return () => window.cancelAnimationFrame(rafId);
   }, [location.hash, isReducedMotionActive]);
 
   const handleNavClick = useCallback(
     (e: React.MouseEvent<HTMLAnchorElement>, sectionId: string) => {
       e.preventDefault();
+      if (!HELP_ANCHORS.has(sectionId)) return;
+
+      navigate({ hash: sectionId }, { replace: false });
+
       const target = document.getElementById(sectionId);
       if (!target) return;
 
@@ -141,12 +114,17 @@ export default function HelpCenter() {
         block: "start",
       });
     },
-    [isReducedMotionActive],
+    [isReducedMotionActive, navigate],
   );
 
   const handleFaqAnchorClick = useCallback(
-    (_e: React.MouseEvent<HTMLAnchorElement>, faqId: string) => {
+    (e: React.MouseEvent<HTMLAnchorElement>, faqId: string) => {
+      e.preventDefault();
+      if (!HELP_ANCHORS.has(faqId)) return;
+
       setOpenFaqId(faqId);
+      navigate({ hash: faqId }, { replace: false });
+
       const target = document.getElementById(faqId);
       if (target) {
         target.scrollIntoView({
@@ -155,17 +133,30 @@ export default function HelpCenter() {
         });
       }
     },
-    [isReducedMotionActive],
+    [isReducedMotionActive, navigate],
   );
 
-  const handleFaqToggle = useCallback((faqId: string) => {
-    setOpenFaqId((prev) => (prev === faqId ? null : faqId));
-  }, []);
+  const handleFaqToggle = useCallback(
+    (faqId: string) => {
+      const isClosing = openFaqId === faqId;
+      setOpenFaqId(isClosing ? null : faqId);
+      if (isClosing && hashId === faqId) {
+        navigate({ hash: "" }, { replace: true });
+      }
+    },
+    [openFaqId, hashId, navigate],
+  );
 
   return (
     <div className="help-center">
       <div className="help-center__layout">
-        <nav ref={navRef} className="help-center__nav" aria-label="Help topics">
+        <nav
+          id="help-topics"
+          ref={navRef}
+          className="help-center__nav"
+          aria-label="Help topics"
+          tabIndex={-1}
+        >
           {NAV_ITEMS.map((item) => (
             <a
               key={item.id}
@@ -186,19 +177,60 @@ export default function HelpCenter() {
             loading third-party media until you ask for it.
           </p>
 
-          <div className="help-center__search">
-            <Search className="help-center__search-icon" />
+          {isUnknownHash && (
+            <div className="help-center__notice" role="status">
+              <span>That help topic was not found. </span>
+              <a
+                href="#getting-started"
+                className="help-center__notice-link"
+                onClick={(e) => handleNavClick(e, "getting-started")}
+              >
+                Browse the topic list
+              </a>
+            </div>
+          )}
+
+          <form
+            role="search"
+            className="help-center__search"
+            onSubmit={(event) => event.preventDefault()}
+          >
+            <label htmlFor="help-center-search" className="visually-hidden">
+              Search help
+            </label>
+            <Search className="help-center__search-icon" aria-hidden="true" />
             <input
+              id="help-center-search"
+              type="search"
               className="help-center__search-input"
               placeholder="Search for help..."
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setSearchQuery("");
+                }
+              }}
             />
+          </form>
+
+          <div
+            className="visually-hidden"
+            aria-live="polite"
+            role="status"
+            aria-atomic="true"
+          >
+            {announcement}
           </div>
 
           <div className="help-center__grid">
-            {categories.map((cat) => (
-              <div key={cat.id} id={cat.id} className="help-center__card">
+            {visibleCategories.map((cat) => (
+              <div
+                key={cat.id}
+                id={cat.id}
+                tabIndex={-1}
+                className="help-center__card"
+              >
                 <h3 className="help-center__card-title">{cat.title}</h3>
                 <p className="help-center__card-desc">{cat.desc}</p>
               </div>
@@ -220,7 +252,7 @@ export default function HelpCenter() {
             />
           </div>
 
-          <div id="faq" className="help-center__faq">
+          <div id="faq" tabIndex={-1} className="help-center__faq">
             <h2 className="help-center__faq-title">FAQ</h2>
 
             {filteredFaqs.map((item) => {
@@ -228,13 +260,18 @@ export default function HelpCenter() {
               const isCurrent = activeFaqId === item.id;
 
               return (
-                <div key={item.id} id={item.id} className="help-center__faq-item">
+                <div
+                  key={item.id}
+                  id={item.id}
+                  tabIndex={-1}
+                  className="help-center__faq-item"
+                >
                   <div className="help-center__faq-header">
                     <Tooltip label="Copy link"><a
                       href={`#${item.id}`}
                       className="help-center__faq-anchor"
                       aria-current={isCurrent ? "true" : undefined}
-                      aria-label={`Direct link to FAQ: ${item.q}`}
+                      aria-label={`Direct link to FAQ: ${item.question}`}
                       onClick={(e) => handleFaqAnchorClick(e, item.id)}
                     >
                       #
@@ -248,7 +285,7 @@ export default function HelpCenter() {
                       aria-current={isCurrent ? "true" : undefined}
                     >
                       <span>
-                        <span className="help-center__faq-q">{item.q}</span>
+                        <span className="help-center__faq-q">{item.question}</span>
                         <span className="help-center__faq-category">
                           {categories.find((category) => category.id === item.sectionId)?.title}
                         </span>
@@ -260,10 +297,10 @@ export default function HelpCenter() {
                   </div>
                   {isOpen && (
                     <div id={`faq-answer-${item.id}`} className="help-center__faq-answer">
-                      <p>{item.a}</p>
+                      <p>{item.answer}</p>
                       <CopyToClipboard
-                        value={item.a}
-                        ariaLabel={`Copy answer for ${item.q}`}
+                        value={item.answer}
+                        ariaLabel={`Copy answer for ${item.question}`}
                         copyLabel="Copy answer"
                         copiedLabel="Answer copied"
                         errorLabel="Copy failed"
@@ -271,7 +308,7 @@ export default function HelpCenter() {
                       />
                       {item.videoId && (
                         <VideoThumbnail
-                          title={item.q}
+                          title={item.question}
                           videoId={item.videoId}
                           transcriptUrl={item.transcriptUrl}
                         />
