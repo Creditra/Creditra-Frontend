@@ -49,6 +49,7 @@ import {
 import { DefaultRiskModal } from "@/components/DefaultRiskModal";
 import { CreditLineSelector } from "@/components/CreditLineSelector";
 import { AmountInput } from "@/components/AmountInput";
+import { DrawingLimit } from "@/components/DrawingLimit";
 import { PreviewSection } from "@/components/PreviewSection";
 import { ConfirmationStep } from "@/components/ConfirmationStep";
 import { TransactionStatus } from "@/components/TransactionStatus";
@@ -338,6 +339,13 @@ export default function DrawCreditPage() {
     });
 
   const { isReducedMotionActive } = useReducedMotion();
+
+  const amountStepValidation = selectedCreditLine
+    ? getDrawAmountValidation(String(amount), selectedCreditLine)
+    : null;
+  const utilizedCredit = selectedCreditLine
+    ? Math.max(0, selectedCreditLine.limit - selectedCreditLine.available)
+    : 0;
 
   const handleSelectCreditLine = (creditLine: CreditLine) => {
     // Derive draw availability from the authoritative utilization at the
@@ -688,6 +696,16 @@ export default function DrawCreditPage() {
 
           {step === "amount" && selectedCreditLine && (
             <div className="dc-step">
+              <DrawingLimit
+                className="dc-drawing-limit"
+                drawnAmount={
+                  utilizedCredit + (amountStepValidation?.amount ?? 0)
+                }
+                totalLimit={selectedCreditLine.limit}
+                drawnLabel="Utilised"
+                availableLabel="Available after draw"
+                announcePercentage={false}
+              />
               <AmountInput
                 ref={amountInputRef}
                 creditLine={selectedCreditLine}
