@@ -16,3 +16,8 @@ export const GRANTFOX_RISK_EDUCATION_ACK_KEY = 'grantfox_risk_education_acknowle
  * risk primer banner on /draw-credit. Read once for migration and then deleted.
  */
 export const DEFAULT_RISK_BANNER_DISMISSED_KEY = 'creditra.default_risk_banner_dismissed';
+
+/**
+ * Persisted list of most recently activated command palette item IDs.
+ */
+export const COMMAND_PALETTE_RECENTS_KEY = 'creditra.command_palette_recents';
