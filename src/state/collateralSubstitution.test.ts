@@ -96,6 +96,20 @@ describe('collateral substitution reducer', () => {
     expect(canRetry(state)).toBe(false);
     expect(reducer(state, { type: 'RETRY', nowMs: 9_000 })).toBe(state);
   });
+  it('moves an in-flight submission to a non-retryable error when slippage changes', () => {
+    let state = reducer(atConfirm(), { type: 'SUBMIT_STARTED', nowMs: 2_001 });
+    state = reducer(state, { type: 'SLIPPAGE_BLOCKED', error: fatalError });
+    expect(state).toMatchObject({ phase: 'error', error: fatalError, retryCount: 0 });
+    expect(canRetry(state)).toBe(false);
+  });
+  it('rechecks quote freshness when recovering from a retryable error', () => {
+    let state = reducer(atConfirm(), { type: 'SUBMIT_STARTED', nowMs: 2_001 });
+    state = reducer(state, { type: 'SUBMIT_FAILED', error: retryableError });
+    const staleAt = quote.timestampMs + STALE_QUOTE_THRESHOLD_MS + 1;
+    state = reducer(state, { type: 'RETRY', nowMs: staleAt });
+    expect(state).toMatchObject({ phase: 'reviewing', step: 'confirm', staleQuote: true });
+    expect(isSubmitting(state)).toBe(false);
+  });
   it('does not offer a retry for non-retryable errors', () => {
     const state = reducer(atConfirm(), { type: 'SLIPPAGE_BLOCKED', error: fatalError });
     expect(state.phase).toBe('error');
