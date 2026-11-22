@@ -120,6 +120,11 @@ describe('collateral substitution reducer', () => {
     expect(reducer(atConfirm(), { type: 'SET_CONFIRM_TEXT', value: asset.name }))
       .toMatchObject({ phase: 'reviewing', confirmText: asset.name });
   });
+  it('clears confirmation text when backing out of confirmation', () => {
+    let state = reducer(atConfirm(), { type: 'SET_CONFIRM_TEXT', value: asset.name });
+    state = reducer(state, { type: 'BACK' });
+    expect(state).toMatchObject({ phase: 'reviewing', step: 'review', confirmText: '' });
+  });
   it('navigates back through review and selection without losing the selection', () => {
     let state = reducer(atConfirm(), { type: 'BACK' });
     expect(state).toMatchObject({ phase: 'reviewing', step: 'review' });
