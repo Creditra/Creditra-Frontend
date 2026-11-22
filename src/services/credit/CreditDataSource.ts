@@ -9,7 +9,7 @@ export type CreditDataErrorCode =
 
 export class CreditDataError extends Error {
   readonly code: CreditDataErrorCode;
-  readonly cause?: unknown;
+  override readonly cause?: unknown;
 
   constructor(code: CreditDataErrorCode, message: string, options?: { cause?: unknown }) {
     super(message);
