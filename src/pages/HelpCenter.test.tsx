@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import * as routerDom from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ReducedMotionProvider } from "../context/ReducedMotionContext";
+import { recordDiagnosticError } from "../utils/diagnostics";
 import HelpCenter from "./HelpCenter";
 
 class IntersectionObserverMock {
@@ -467,5 +468,56 @@ describe("HelpCenter", { timeout: 15000 }, () => {
     });
 
     localStorage.removeItem("creditra-motion-override");
+  });
+
+  it("downloads a redacted diagnostics bundle from the Help Center", async () => {
+    const accountKey = "G" + "A".repeat(55);
+    const createObjectURL = vi.fn(() => "blob:diagnostics");
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: createObjectURL,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: revokeObjectURL,
+    });
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    recordDiagnosticError(`failed for wallet ${accountKey}`);
+
+    render(
+      <MemoryRouter>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /download diagnostics/i }),
+    );
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:diagnostics");
+    expect(clickSpy).toHaveBeenCalled();
+
+    const blob = createObjectURL.mock.calls[0][0] as Blob;
+    const text = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(blob);
+    });
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+
+    expect(parsed.appVersion).toBeTruthy();
+    expect(parsed.network).toBeTruthy();
+    expect(parsed.dataSource).toBeTruthy();
+    expect(Array.isArray(parsed.recentErrors)).toBe(true);
+    expect(JSON.stringify(parsed)).not.toContain(accountKey);
+    expect(
+      screen.getByRole("button", { name: /download diagnostics/i }),
+    ).toHaveAccessibleDescription(/financial values/i);
   });
 });

@@ -141,6 +141,7 @@ export function AmountInput({
   );
   const [pasteAnnouncement, setPasteAnnouncement] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const pasteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputId = "draw-amount-input";
   const helperId = "draw-amount-helper";
   const errorId = "draw-amount-error";
@@ -153,6 +154,13 @@ export function AmountInput({
     const numAmount = parseFloat(amount) || 0;
     onAmountChange?.(numAmount);
   }, [amount, onAmountChange, isLoading, creditLine]);
+
+  useEffect(
+    () => () => {
+      if (pasteTimeoutRef.current) clearTimeout(pasteTimeoutRef.current);
+    },
+    [],
+  );
 
   const handleStep = useCallback(
     (direction: "up" | "down") => {
@@ -186,12 +194,14 @@ export function AmountInput({
     setAmount(sanitized);
     setPasteAnnouncement(`Pasted value sanitized to ${formatMoney(numValue)}`);
 
-    setTimeout(() => {
+    if (pasteTimeoutRef.current) clearTimeout(pasteTimeoutRef.current);
+    pasteTimeoutRef.current = setTimeout(() => {
       if (inputRef.current) {
         const start = e.target.selectionStart || 0;
         const end = e.target.selectionEnd || 0;
         inputRef.current.setSelectionRange(start, end);
       }
+      pasteTimeoutRef.current = null;
     }, 0);
   };
 
@@ -421,7 +431,7 @@ export function AmountInput({
               key={percent}
               onClick={() =>
                   setAmount(
-                    Math.floor((validation.maxAmount * percent) / 100).toString(),
+                    Math.floor((creditLine.available * percent) / 100).toString(),
                   )
               }
               className="py-2 px-1.5 sm:px-3 border-2 border-border rounded-lg hover:border-accent hover:bg-surface transition-all text-foreground font-medium text-xs sm:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background min-h-[44px] flex items-center justify-center"

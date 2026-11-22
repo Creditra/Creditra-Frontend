@@ -170,3 +170,9 @@
   color: var(--text);
   font-size: 0.875rem;
 }
+
+/* ── Drawing limit indicator (amount step) ──────────────────────────────── */
+
+.dc-drawing-limit {
+  margin-bottom: 1rem;
+}

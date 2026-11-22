@@ -5,6 +5,10 @@
 @import "./styles/safe-area.css";
 @import "./styles/patterns.css";
 @import "./components/FormField.css";
+@import "./styles/tokens.css";
+@import "./styles/base.css";
+@import "./styles/layout.css";
+@import "./styles/components/draw-credit.css";
 @import "./styles/themes/high-contrast.css"; /* High-contrast overrides */
 @import "./styles/print.css";
 

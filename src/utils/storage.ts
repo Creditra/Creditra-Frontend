@@ -140,6 +140,29 @@ export function writeJson<T>(key: string, value: T): void {
   }
 }
 
+/** Read and JSON-parse a value from sessionStorage, falling back on failure.
+*/
+export function readSessionJson<T>(key: string, fallback: T): T {
+  try {
+    if (typeof window === 'undefined' || !window.sessionStorage) return fallback;
+    const raw = window.sessionStorage.getItem(key);
+    if (raw === null) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+/** JSON-serialize a value and write it to sessionStorage, silently no-oping on failure. */
+export function writeSessionJson<T>(key: string, value: T): void {
+  try {
+    if (typeof window === 'undefined' || !window.sessionStorage) return;
+    window.sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* swallow — storage may be unavailable */
+  }
+}
+
 /** Remove a key from localStorage. Silently no-ops on failure. */
 export function removeKey(key: string): void {
   try {

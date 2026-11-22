@@ -57,3 +57,18 @@ export const NOTIFICATION_PREFS_KEY = 'creditra_notification_prefs';
 
 /** Cached repayment transactions (`creditDataSource`). */
 export const CREDIT_TRANSACTIONS_STORAGE_KEY = 'creditra.repayment-transactions';
+
+/**
+ * Persisted list of most recently activated command palette item IDs.
+ */
+export const COMMAND_PALETTE_RECENTS_KEY = 'creditra.command_palette_recents';
+
+/** Build wallet-scoped keys for WhatChanged dashboard visit values. */
+export const dashboardValuesStableKey = (owner: string): string =>
+  `creditra_dashboard_values_stable.${owner}`;
+
+export const dashboardValuesLastVisitKey = (owner: string): string =>
+  `creditra_dashboard_values_last_visit.${owner}`;
+
+export const dashboardSessionActiveKey = (owner: string): string =>
+  `creditra_dashboard_session_active.${owner}`;
