@@ -53,6 +53,7 @@ import {
 import { DefaultRiskModal } from "@/components/DefaultRiskModal";
 import { CreditLineSelector } from "@/components/CreditLineSelector";
 import { AmountInput } from "@/components/AmountInput";
+import { DrawingLimit } from "@/components/DrawingLimit";
 import { PreviewSection } from "@/components/PreviewSection";
 import { ConfirmationStep } from "@/components/ConfirmationStep";
 import { TransactionStatus } from "@/components/TransactionStatus";
@@ -296,9 +297,23 @@ export default function DrawCreditPage() {
 
   const { isReducedMotionActive } = useReducedMotion();
 
-  const handleSelectCreditLine = useCallback((creditLine: CreditLine) => {
-    dispatch({ type: "SELECT_LINE", line: creditLine });
-  }, []);
+  const amountStepValidation = selectedCreditLine
+    ? getDrawAmountValidation(String(amount), selectedCreditLine)
+    : null;
+  const utilizedCredit = selectedCreditLine
+    ? Math.max(0, selectedCreditLine.limit - selectedCreditLine.available)
+    : 0;
+
+  const handleSelectCreditLine = (creditLine: CreditLine) => {
+    // Derive draw availability from the authoritative utilization at the
+    // wizard boundary (issue #931) so stale or inconsistent `available`
+    // values can never leak into the amount step.
+    setSelectedCreditLine(normalizeCreditLineAvailability(creditLine));
+    setAmount(0);
+    setConfirmationAcknowledged(false);
+    setEligibilityAlert(null);
+    setStep("amount");
+  };
 
   const handleAmountChange = useCallback((amount: number) => {
     dispatch({ type: "SET_AMOUNT", amount });
@@ -612,6 +627,16 @@ export default function DrawCreditPage() {
 
           {state.step === "amount" && state.selectedCreditLine && (
             <div className="dc-step">
+              <DrawingLimit
+                className="dc-drawing-limit"
+                drawnAmount={
+                  utilizedCredit + (amountStepValidation?.amount ?? 0)
+                }
+                totalLimit={selectedCreditLine.limit}
+                drawnLabel="Utilised"
+                availableLabel="Available after draw"
+                announcePercentage={false}
+              />
               <AmountInput
                 ref={amountInputRef}
                 creditLine={state.selectedCreditLine}
