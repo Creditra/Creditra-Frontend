@@ -11,60 +11,77 @@ import type { CreditLine } from "../types/creditLine";
 
 export type PaymentDueKind = "overdue" | "due_today" | "upcoming" | "none";
 
+export interface PaymentDueState {
+  kind: PaymentDueKind;
+  days: number;
+}
+
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
-/**
- * Convert a date or ISO timestamp to a whole-day number (UTC epoch days),
- * anchored to the local calendar day. Returns `null` for unparseable input.
- *
- * A bare `YYYY-MM-DD` string is split into its numeric parts so it is not
- * shifted by the timezone when parsed as UTC midnight.
- */
-function toLocalDayNumber(value: string): number | null {
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+function parseLocalDate(dateStr: string): Date | null {
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
   if (dateOnly) {
-    return (
-      Date.UTC(
-        Number(dateOnly[1]),
-        Number(dateOnly[2]) - 1,
-        Number(dateOnly[3]),
-      ) / DAY_IN_MS
+    const d = new Date(
+      Number(dateOnly[1]),
+      Number(dateOnly[2]) - 1,
+      Number(dateOnly[3]),
     );
+    if (Number.isNaN(d.getTime())) return null;
+    return d;
   }
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
 
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return (
-    Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()) /
-    DAY_IN_MS
-  );
+function getLocalMidnightUtc(d: Date): number {
+  return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
 /**
- * Classify how a credit line's next payment relates to `now`:
+ * Computes the payment due state for a credit line relative to `now`
+ * using calendar days in local time.
  *
- *   - `overdue`   — the due day is before today
- *   - `due_today` — the due day is today
- *   - `upcoming`  — the due day is after today
- *   - `none`      — no scheduled payment (or an unparseable date)
+ * Rules:
+ *  - Overdue: due date is in the past (calendar days diff < 0).
+ *             returns { kind: 'overdue', days: positive number of days overdue }.
+ *  - Due today: due date falls on the same calendar day (diff === 0).
+ *             returns { kind: 'due_today', days: 0 }.
+ *  - Upcoming: due date is within 1 to 7 calendar days in the future.
+ *             returns { kind: 'upcoming', days: positive number of days until due }.
+ *  - None: due date is > 7 calendar days in the future, missing, or line is neither Active nor Suspended.
+ *             returns { kind: 'none', days: diff (or 0 if missing) }.
  */
 export function getPaymentDueState(
-  line: Pick<CreditLine, "nextPaymentDate">,
+  line: { nextPaymentDate?: string; status?: string } | CreditLine,
   now: Date = new Date(),
-): PaymentDueKind {
-  if (!line.nextPaymentDate) return "none";
-  if (Number.isNaN(now.getTime())) return "none";
+): PaymentDueState {
+  if (!line || !line.nextPaymentDate) {
+    return { kind: "none", days: 0 };
+  }
 
-  const dueDay = toLocalDayNumber(line.nextPaymentDate);
-  if (dueDay === null) return "none";
+  // If status is specified and is neither Active nor Suspended, payments are not active
+  if (line.status && line.status !== "Active" && line.status !== "Suspended") {
+    return { kind: "none", days: 0 };
+  }
 
-  const today = Date.UTC(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-  ) / DAY_IN_MS;
+  const dueDate = parseLocalDate(line.nextPaymentDate);
+  if (!dueDate || Number.isNaN(dueDate.getTime()) || Number.isNaN(now.getTime())) {
+    return { kind: "none", days: 0 };
+  }
 
-  if (dueDay < today) return "overdue";
-  if (dueDay === today) return "due_today";
-  return "upcoming";
+  const dueMidnight = getLocalMidnightUtc(dueDate);
+  const nowMidnight = getLocalMidnightUtc(now);
+  const diffDays = Math.round((dueMidnight - nowMidnight) / DAY_IN_MS);
+
+  if (diffDays < 0) {
+    return { kind: "overdue", days: Math.abs(diffDays) };
+  }
+  if (diffDays === 0) {
+    return { kind: "due_today", days: 0 };
+  }
+  if (diffDays <= 7) {
+    return { kind: "upcoming", days: diffDays };
+  }
+  return { kind: "none", days: diffDays };
 }

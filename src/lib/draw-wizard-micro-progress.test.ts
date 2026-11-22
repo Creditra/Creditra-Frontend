@@ -8,6 +8,7 @@ import type { CreditLine } from "@/types/draw-credit.types";
 const standardLine: CreditLine = {
   id: "cl-001",
   name: "Business Line of Credit",
+  status: "Active",
   limit: 50000,
   available: 35000,
   utilization: 30,

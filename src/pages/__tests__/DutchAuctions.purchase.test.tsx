@@ -1,22 +1,28 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { DutchAuctions } from '../DutchAuctions';
 import type { DutchAuction } from '../../types/dutchAuction';
 
-// Mock the mock data source
+// Mock the mock data source using hoisted mock
+const auctionData = vi.hoisted(() => ({ value: [] as DutchAuction[] }));
 vi.mock('../../data/mockDutchAuctions', () => ({
-  MOCK_DUTCH_AUCTIONS: [] as DutchAuction[],
+  get MOCK_DUTCH_AUCTIONS() {
+    return auctionData.value;
+  },
 }));
 
 // Mock wallet context
 vi.mock('../../context/WalletContext', () => ({
   useWallet: vi.fn(),
 }));
+import { useWallet } from '../../context/WalletContext';
 
 // Mock purchase service
 vi.mock('../../services/dutchAuctions', () => ({
   purchaseAuction: vi.fn(() => Promise.resolve()),
 }));
+import { purchaseAuction } from '../../services/dutchAuctions';
+
+import { DutchAuctions } from '../DutchAuctions';
 
 describe('DutchAuctions purchase flow', () => {
   const mockConnect = vi.fn();
@@ -54,23 +60,24 @@ describe('DutchAuctions purchase flow', () => {
     startTime: new Date(Date.now() - 60_000).toISOString(), // started 1 min ago
     endTime: new Date(Date.now() + 600_000).toISOString(), // ends in 10 min
     nft: {
+      id: 'NFT-1',
       image: 'https://example.com/nft.png',
       name: 'Test NFT',
       collection: 'Test Collection',
       tokenId: '1',
+      description: 'Test description',
     },
+    duration: 660,
     status: 'Active',
-  } as any;
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Provide the auction data for this test suite
-    const mockData = require('../../data/mockDutchAuctions');
-    mockData.MOCK_DUTCH_AUCTIONS = [activeAuction];
+    auctionData.value = [activeAuction];
   });
 
   it('purchases successfully and shows success feedback', async () => {
-    (require('../../context/WalletContext').useWallet as any).mockReturnValue(mockWallet());
+    vi.mocked(useWallet).mockReturnValue(mockWallet() as any);
 
     render(<DutchAuctions />);
 
@@ -82,9 +89,8 @@ describe('DutchAuctions purchase flow', () => {
       fireEvent.click(button);
     });
 
-    const { purchaseAuction } = require('../../services/dutchAuctions');
     expect(purchaseAuction).toHaveBeenCalledTimes(1);
-    expect(purchaseAuction).toHaveBeenCalledWith('AUCTION-1', expect.any(Number));
+    expect(purchaseAuction).toHaveBeenCalledWith('AUCTION-1', expect.any(BigInt));
 
     // Success message should be announced via LiveRegion
     const feedback = await screen.findByText(/Purchased auction AUCTION-1/i);
@@ -92,7 +98,7 @@ describe('DutchAuctions purchase flow', () => {
   });
 
   it('ignores a second click while pending', async () => {
-    (require('../../context/WalletContext').useWallet as any).mockReturnValue(mockWallet());
+    vi.mocked(useWallet).mockReturnValue(mockWallet() as any);
 
     render(<DutchAuctions />);
 
@@ -103,16 +109,15 @@ describe('DutchAuctions purchase flow', () => {
       fireEvent.click(button);
     });
 
-    const { purchaseAuction } = require('../../services/dutchAuctions');
     // Should still be called only once due to pending guard
     expect(purchaseAuction).toHaveBeenCalledTimes(1);
   });
 
   it('does not call purchase when no wallet is connected', () => {
-    (require('../../context/WalletContext').useWallet as any).mockReturnValue({
+    vi.mocked(useWallet).mockReturnValue({
       wallet: null,
       status: 'disconnected',
-    });
+    } as any);
 
     render(<DutchAuctions />);
 
@@ -120,16 +125,17 @@ describe('DutchAuctions purchase flow', () => {
     expect(button).toBeInTheDocument();
     fireEvent.click(button);
 
-    const { purchaseAuction } = require('../../services/dutchAuctions');
     expect(purchaseAuction).not.toHaveBeenCalled();
   });
 
-  it('never shows window.alert', () => {
+  it('never shows window.alert', async () => {
     const alertSpy = vi.spyOn(window, 'alert');
-    (require('../../context/WalletContext').useWallet as any).mockReturnValue(mockWallet());
+    vi.mocked(useWallet).mockReturnValue(mockWallet() as any);
     render(<DutchAuctions />);
     const button = screen.getByRole('button', { name: /Purchase Now/i });
-    fireEvent.click(button);
+    await act(async () => {
+      fireEvent.click(button);
+    });
     expect(alertSpy).not.toHaveBeenCalled();
     alertSpy.mockRestore();
   });

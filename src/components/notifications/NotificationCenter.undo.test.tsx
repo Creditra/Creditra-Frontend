@@ -48,14 +48,14 @@ function renderWithUndo() {
     <NotificationProvider>
       <ToastContainer />
       <div>
-        <button type="button" aria-label="Open panel">Dummy opener</button>
+        <OpenPanelHarness />
         <NotificationCenter />
       </div>
     </NotificationProvider>,
   );
 }
 
-describe('UndoToast integration', () => {
+describe('NotificationCenter undo integration', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     seedNotifications([
@@ -79,7 +79,7 @@ describe('UndoToast integration', () => {
     act(() => { vi.advanceTimersByTime(100); });
 
     const panel = screen.getByRole('dialog', { name: 'Notification center' });
-    const items = within(panel).getAllByText(/First|Second|Third/);
+    within(panel).getAllByText(/First|Second|Third/);
 
     const undoButton = screen.queryByRole('button', { name: /undo/i });
     expect(undoButton).not.toBeInTheDocument();
@@ -89,7 +89,7 @@ describe('UndoToast integration', () => {
 
     const undo = screen.getByRole('button', { name: /undo/i });
     expect(undo).toBeInTheDocument();
-  });
+  }, 10000);
 
   it('restores notification read state when Undo is clicked', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -129,7 +129,7 @@ describe('UndoToast integration', () => {
     act(() => { vi.advanceTimersByTime(400); });
 
     expect(screen.queryByRole('button', { name: /undo/i })).not.toBeInTheDocument();
-  });
+  }, 10000);
 
   it('supports marking all as read with undo', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });

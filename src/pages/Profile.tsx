@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Tabs, { TabItem } from '../components/Tabs';
 import { Skeleton } from '../components/Skeleton';
-import { MOCK_CREDIT_LINES } from '../data/mockData';
+import { useCreditLines } from '../hooks/useCreditLines';
 import { fmt } from '../utils/tokens';
 import './Profile.css';
 
@@ -25,14 +25,15 @@ function isTabId(value: string | null): value is TabId {
  * the source of truth: reloads, links, and browser history all agree with it.
  */
 function ProfileOverview() {
-  const active = MOCK_CREDIT_LINES.filter((l) => l.status === 'Active');
-  const totalLimit = MOCK_CREDIT_LINES.reduce((sum, l) => sum + l.limit, 0);
-  const totalUtilized = MOCK_CREDIT_LINES.reduce((sum, l) => sum + l.utilized, 0);
-  const avgRisk = MOCK_CREDIT_LINES.length
-    ? Math.round(MOCK_CREDIT_LINES.reduce((sum, l) => sum + l.riskScore, 0) / MOCK_CREDIT_LINES.length)
+  const { lines } = useCreditLines();
+  const active = lines.filter((l) => l.status === 'Active');
+  const totalLimit = lines.reduce((sum, l) => sum + l.limit, 0);
+  const totalUtilized = lines.reduce((sum, l) => sum + l.utilized, 0);
+  const avgRisk = lines.length
+    ? Math.round(lines.reduce((sum, l) => sum + l.riskScore, 0) / lines.length)
     : 0;
   const stats = [
-    { label: 'Credit lines', value: `${MOCK_CREDIT_LINES.length} (${active.length} active)` },
+    { label: 'Credit lines', value: `${lines.length} (${active.length} active)` },
     { label: 'Total limit', value: fmt(totalLimit) },
     { label: 'Outstanding', value: fmt(totalUtilized) },
     { label: 'Avg. risk score', value: String(avgRisk) },

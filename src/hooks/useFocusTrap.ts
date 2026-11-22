@@ -36,6 +36,8 @@ const FOCUSABLE_SELECTOR = [
 export function useFocusTrap({ isActive, triggerRef, onEscape }: UseFocusTrapOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
+  const onEscapeRef = useRef(onEscape);
+  onEscapeRef.current = onEscape;
 
   // Store the element that had focus before the modal opened
   useEffect(() => {
@@ -57,10 +59,11 @@ export function useFocusTrap({ isActive, triggerRef, onEscape }: UseFocusTrapOpt
     };
 
     // Focus the first focusable element when opened
+    let focusTimer: ReturnType<typeof setTimeout> | null = null;
     const focusableElements = getFocusableElements();
     if (focusableElements.length > 0) {
       // Small delay to ensure DOM is ready
-      setTimeout(() => {
+      focusTimer = setTimeout(() => {
         focusableElements[0].focus();
       }, 50);
     }
@@ -92,9 +95,9 @@ export function useFocusTrap({ isActive, triggerRef, onEscape }: UseFocusTrapOpt
 
     // Handle Escape key
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && onEscape) {
+      if (event.key === 'Escape' && onEscapeRef.current) {
         event.preventDefault();
-        onEscape();
+        onEscapeRef.current();
       }
     };
 
@@ -102,10 +105,13 @@ export function useFocusTrap({ isActive, triggerRef, onEscape }: UseFocusTrapOpt
     document.addEventListener('keydown', handleEscape);
 
     return () => {
+      if (focusTimer !== null) {
+        clearTimeout(focusTimer);
+      }
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('keydown', handleEscape);
     };
-  }, [isActive, onEscape]);
+  }, [isActive]);
 
   // Return focus to trigger or previous element on close or unmount
   useEffect(() => {

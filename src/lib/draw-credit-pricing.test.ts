@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createCreditLine, mockCreditLines } from "@/lib/draw-credit-mock-data";
 import {
+  getDrawFee,
   getDrawPricingQuote,
   getNextAprTier,
   projectDraw,
@@ -203,5 +204,114 @@ describe("draw pricing regression", () => {
       80,
     );
     expect(utilizationPoints(getDrawPricingQuote(cl001, 25000))).toBe(2);
+  });
+});
+
+// ── Base risk bands ───────────────────────────────────────────────────────────
+
+describe("getDrawPricingQuote — base risk bands", () => {
+  it("uses the correct base APR for Prime, Standard, and Watch bands", () => {
+    const primeLine = createCreditLine({
+      id: "prime",
+      name: "Prime",
+      limit: 10000,
+      utilization: 0,
+      riskBand: "Prime",
+      termMonths: 12,
+    });
+    const standardLine = createCreditLine({
+      id: "standard",
+      name: "Standard",
+      limit: 10000,
+      utilization: 0,
+      riskBand: "Standard",
+      termMonths: 12,
+    });
+    const watchLine = createCreditLine({
+      id: "watch",
+      name: "Watch",
+      limit: 10000,
+      utilization: 0,
+      riskBand: "Watch",
+      termMonths: 12,
+    });
+
+    expect(getDrawPricingQuote(primeLine, 0).baseApr).toBe(7.5);
+    expect(getDrawPricingQuote(standardLine, 0).baseApr).toBe(9.5);
+    expect(getDrawPricingQuote(watchLine, 0).baseApr).toBe(11.5);
+  });
+});
+
+// ── Term adjustments ──────────────────────────────────────────────────────────
+
+describe("getDrawPricingQuote — term adjustments", () => {
+  it("prices short, standard, and long terms with the corresponding adjustments", () => {
+    const term12 = createCreditLine({
+      id: "t12",
+      name: "T12",
+      limit: 10000,
+      utilization: 0,
+      riskBand: "Standard",
+      termMonths: 12,
+    });
+    const term13 = createCreditLine({
+      id: "t13",
+      name: "T13",
+      limit: 10000,
+      utilization: 0,
+      riskBand: "Standard",
+      termMonths: 13,
+    });
+    const term24 = createCreditLine({
+      id: "t24",
+      name: "T24",
+      limit: 10000,
+      utilization: 0,
+      riskBand: "Standard",
+      termMonths: 24,
+    });
+    const term25 = createCreditLine({
+      id: "t25",
+      name: "T25",
+      limit: 10000,
+      utilization: 0,
+      riskBand: "Standard",
+      termMonths: 25,
+    });
+
+    const getTermPoints = (quote: ReturnType<typeof getDrawPricingQuote>) =>
+      quote.adjustments.find((a) => a.kind === "term")?.points;
+
+    expect(getTermPoints(getDrawPricingQuote(term12, 0))).toBe(0.5);
+    expect(getTermPoints(getDrawPricingQuote(term13, 0))).toBe(1.5);
+    expect(getTermPoints(getDrawPricingQuote(term24, 0))).toBe(1.5);
+    expect(getTermPoints(getDrawPricingQuote(term25, 0))).toBe(2.5);
+  });
+});
+
+// ── Fee rounding and negative/zero handling ────────────────────────────────────
+
+describe("getDrawFee and projectDraw rounding", () => {
+  it("handles zero, negative, and fractional amounts correctly", () => {
+    expect(getDrawFee(0)).toBe(0);
+    expect(getDrawFee(-5)).toBe(0);
+    expect(getDrawFee(0.005)).toBe(0);
+    expect(getDrawFee(100)).toBe(1);
+
+    const line = createCreditLine({
+      id: "zero-neg",
+      name: "ZeroNeg",
+      limit: 10000,
+      utilization: 0,
+      riskBand: "Standard",
+      termMonths: 12,
+    });
+    const zeroProj = projectDraw(line, 0);
+    expect(zeroProj.amount).toBe(0);
+    expect(zeroProj.fee).toBe(0);
+
+    const negProj = projectDraw(line, -5);
+    expect(negProj.amount).toBe(0);
+    expect(negProj.fee).toBe(0);
   });
 });
