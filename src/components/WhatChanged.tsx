@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, type KeyboardEvent } from "react";
 import { COLOR } from "../utils/tokens";
+import { DASHBOARD_VALUES_STABLE_KEY } from "../constants/storageKeys";
+import { readVersioned, writeVersioned } from "../utils/storage";
 import {
   dashboardSessionActiveKey,
   dashboardValuesLastVisitKey,
@@ -8,6 +10,25 @@ import {
 import { useWalletIdentityKey } from "../hooks/useWalletIdentityKey";
 import { readJson, readSessionJson, writeJson, writeSessionJson } from "../utils/storage";
 import "./WhatChanged.css";
+
+const DASHBOARD_VALUES_SCHEMA_VERSION = 1;
+
+function isMetricRecord(data: unknown): data is Record<string, number> {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+  return Object.values(data as Record<string, unknown>).every(
+    (v) => typeof v === "number" && Number.isFinite(v),
+  );
+}
+
+function migrateDashboardValues(
+  raw: unknown,
+  fromVersion: number,
+): Record<string, number> | undefined {
+  if (fromVersion === 0 && isMetricRecord(raw)) {
+    return raw;
+  }
+  return undefined;
+}
 
 interface WhatChangedProps {
   metricId: string;
@@ -55,9 +76,17 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
     const sessionActiveKey = dashboardSessionActiveKey(owner);
 
     // Check if the session is already active
-    const sessionActive = readSessionJson<boolean>(sessionActiveKey, false);
-    const storedData = readJson<unknown>(stableKey, {});
-    const lastVisitData = isDashboardValues(storedData) ? storedData : {};
+    const sessionActive = sessionStorage.getItem("creditra_dashboard_session_active");
+    
+    const lastVisitData = readVersioned<Record<string, number>>(
+      DASHBOARD_VALUES_STABLE_KEY,
+      {
+        version: DASHBOARD_VALUES_SCHEMA_VERSION,
+        fallback: {},
+        migrate: migrateDashboardValues,
+        validate: isMetricRecord,
+      },
+    );
 
     if (!sessionActive) {
       // First render of this session:
@@ -66,7 +95,9 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
       
       // Save current values to localStorage for the next visit
       const newStableData = { ...lastVisitData, [metricId]: currentValue };
-      writeJson(stableKey, newStableData);
+      writeVersioned(DASHBOARD_VALUES_STABLE_KEY, newStableData, {
+        version: DASHBOARD_VALUES_SCHEMA_VERSION,
+      });
       
       writeSessionJson(sessionActiveKey, true);
       
@@ -83,7 +114,9 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
       
       // Update the localStorage stable value so that the latest value is saved for the next visit
       const newStableData = { ...lastVisitData, [metricId]: currentValue };
-      writeJson(stableKey, newStableData);
+      writeVersioned(DASHBOARD_VALUES_STABLE_KEY, newStableData, {
+        version: DASHBOARD_VALUES_SCHEMA_VERSION,
+      });
     }
   }, [owner, metricId, currentValue]);
 
