@@ -109,6 +109,7 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
     .map(word => word[0]?.toUpperCase() ?? '')
     .join('') || 'NFT';
 
+  // Update price and timer
   useEffect(() => {
     setImageFailed(false);
   }, [imageSrc]);
