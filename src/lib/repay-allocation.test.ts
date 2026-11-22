@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { allocateRepayment } from './repay-allocation';
+import {
+  allocateBatchRepayment,
+  allocateRepayment,
+} from './repay-allocation';
 
 const line = { utilized: 10_000 };
 
@@ -85,5 +88,121 @@ describe('allocateRepayment', () => {
 
     expect(partial.isFullPayoff).toBe(false);
     expect(full.isFullPayoff).toBe(true);
+  });
+});
+
+describe('allocateBatchRepayment', () => {
+  it('handles zero selected lines with full unallocated remainder', () => {
+    const result = allocateBatchRepayment([], 500, {}, 'highest-apr');
+
+    expect(result.items).toEqual([]);
+    expect(result.allocations).toEqual({});
+    expect(result.totalAllocated).toBe(0);
+    expect(result.totalInterestPaid).toBe(0);
+    expect(result.totalPrincipalPaid).toBe(0);
+    expect(result.totalRemaining).toBe(0);
+    expect(result.unallocatedRemainder).toBe(500);
+  });
+
+  it('matches allocateRepayment exactly when one line is selected', () => {
+    const singleLine = { id: 'CL-1', utilized: 10_000, apr: 9 };
+    const single = allocateRepayment(singleLine, 4_500.25, 75);
+    const batch = allocateBatchRepayment(
+      [singleLine],
+      4_500.25,
+      { 'CL-1': 75 },
+      'highest-apr',
+    );
+
+    expect(batch.allocations['CL-1']).toEqual(single);
+    expect(batch.unallocatedRemainder).toBe(0);
+    expect(
+      cents(batch.totalInterestPaid) + cents(batch.totalPrincipalPaid),
+    ).toBe(cents(4_500.25));
+  });
+
+  it('allocates highest-apr first in integer cents', () => {
+    const lines = [
+      { id: 'CL-low', utilized: 1_000, apr: 6 },
+      { id: 'CL-high', utilized: 1_000, apr: 18 },
+      { id: 'CL-mid', utilized: 1_000, apr: 12 },
+    ];
+    const accrued = { 'CL-low': 10, 'CL-high': 20, 'CL-mid': 15 };
+
+    const result = allocateBatchRepayment(lines, 1_500, accrued, 'highest-apr');
+
+    // CL-high owes 1,020 -> paid in full; remaining 480 goes to CL-mid
+    expect(result.allocations['CL-high'].interestPaid).toBe(20);
+    expect(result.allocations['CL-high'].principalPaid).toBe(1_000);
+    expect(result.allocations['CL-high'].isFullPayoff).toBe(true);
+
+    expect(result.allocations['CL-mid'].interestPaid).toBe(15);
+    expect(result.allocations['CL-mid'].principalPaid).toBe(465);
+    expect(result.allocations['CL-mid'].remainingTotal).toBe(535);
+
+    expect(result.allocations['CL-low'].interestPaid).toBe(0);
+    expect(result.allocations['CL-low'].principalPaid).toBe(0);
+    expect(result.allocations['CL-low'].remainingTotal).toBe(1_010);
+
+    expect(result.unallocatedRemainder).toBe(0);
+    expect(
+      cents(result.totalInterestPaid) + cents(result.totalPrincipalPaid),
+    ).toBe(cents(1_500));
+  });
+
+  it('handles cent rounding with three equal lines under pro-rata without losing a cent', () => {
+    const lines = [
+      { id: 'CL-1', utilized: 1_000, apr: 10 },
+      { id: 'CL-2', utilized: 1_000, apr: 10 },
+      { id: 'CL-3', utilized: 1_000, apr: 10 },
+    ];
+
+    const result = allocateBatchRepayment(lines, 100, {}, 'pro-rata');
+
+    const allocatedAmounts = result.items.map((i) => i.allocatedAmount);
+    expect(allocatedAmounts).toEqual([33.34, 33.33, 33.33]);
+    expect(
+      cents(result.totalInterestPaid) + cents(result.totalPrincipalPaid),
+    ).toBe(cents(100));
+    expect(result.unallocatedRemainder).toBe(0);
+  });
+
+  it('caps overpayment at total owed and reports unallocated remainder', () => {
+    const lines = [
+      { id: 'CL-1', utilized: 500, apr: 12 },
+      { id: 'CL-2', utilized: 300, apr: 8 },
+    ];
+    const accrued = { 'CL-1': 10, 'CL-2': 5 }; // total owed = 815
+
+    const result = allocateBatchRepayment(lines, 1_000, accrued, 'pro-rata');
+
+    expect(result.totalAllocated).toBe(815);
+    expect(result.totalRemaining).toBe(0);
+    expect(result.unallocatedRemainder).toBe(185);
+    expect(result.allocations['CL-1'].isFullPayoff).toBe(true);
+    expect(result.allocations['CL-2'].isFullPayoff).toBe(true);
+  });
+
+  it('handles a line with zero balance alongside non-zero lines', () => {
+    const lines = [
+      { id: 'CL-zero', utilized: 0, apr: 25 },
+      { id: 'CL-owed', utilized: 200, apr: 10 },
+    ];
+
+    const result = allocateBatchRepayment(
+      lines,
+      100,
+      { 'CL-zero': 0, 'CL-owed': 5 },
+      'highest-apr',
+    );
+
+    expect(result.allocations['CL-zero'].interestPaid).toBe(0);
+    expect(result.allocations['CL-zero'].principalPaid).toBe(0);
+    expect(result.allocations['CL-zero'].isFullPayoff).toBe(true);
+
+    expect(result.allocations['CL-owed'].interestPaid).toBe(5);
+    expect(result.allocations['CL-owed'].principalPaid).toBe(95);
+    expect(result.allocations['CL-owed'].remainingTotal).toBe(105);
+    expect(result.unallocatedRemainder).toBe(0);
   });
 });
