@@ -512,8 +512,9 @@ export function ConfirmationStep({
           data-testid="terms-checkbox"
         />
         <span className="dc-terms-label__text">
-          I agree to the terms and conditions and authorize this draw. The funds
-          will be deposited within 1–2 business days.
+          I agree to the terms and conditions and authorize this draw. Funds
+          become available in your wallet once the transaction settles on the
+          Stellar ledger.
         </span>
       </label>
 

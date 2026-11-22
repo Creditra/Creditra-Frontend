@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useCreditLines } from '../hooks/useCreditLines';
 import { QuickRepayModal } from './QuickRepayModal';
@@ -9,7 +9,7 @@ export const QuickRepayTrigger = () => {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const { balances, status, wallet } = useWallet();
-  const { lines } = useCreditLines();
+  const { lines, refetch } = useCreditLines();
   const repayableBalance = getRepayableBalance(balances, SETTLEMENT_ASSET);
   const walletBalance =
     repayableBalance.status === 'ok' ? moneyToNumber(repayableBalance.amount) : null;
@@ -56,9 +56,11 @@ export const QuickRepayTrigger = () => {
           walletBalance={walletBalance}
           balanceStatus={repayableBalance.status}
           walletConnected={status === 'connected' && wallet !== null}
+          walletPublicKey={wallet?.publicKey ?? null}
           initialAmount={mostRecentLine.utilized.toString()}
           onClose={() => setIsOpen(false)}
           onSuccess={() => setIsOpen(false)}
+          refetch={refetch}
           triggerRef={triggerRef}
         />
       )}

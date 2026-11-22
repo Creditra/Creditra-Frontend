@@ -185,6 +185,31 @@ describe("TransactionStatus — pattern fills (WCAG 1.4.1)", () => {
       expect(screen.getByRole("heading", { name: /draw successful/i })).toBeInTheDocument();
     });
 
+    it("shows ledger confirmation copy when a transaction hash is available", () => {
+      render(
+        <TransactionStatus
+          transaction={{ ...success, txHash: "stellar-tx-hash" }}
+          onNewDraw={() => {}}
+        />,
+      );
+      expect(
+        screen.getByText(/your draw is confirmed on the stellar ledger/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/waiting for ledger confirmation/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it("waits for ledger confirmation when no transaction hash is available", () => {
+      render(<TransactionStatus transaction={success} onNewDraw={() => {}} />);
+      expect(
+        screen.getByText("Waiting for ledger confirmation."),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/your draw is confirmed on the stellar ledger/i),
+      ).not.toBeInTheDocument();
+    });
+
     it("6c. error renders 'Draw Failed' heading", () => {
       render(<TransactionStatus transaction={error} onNewDraw={() => {}} />);
       expect(screen.getByRole("heading", { name: /draw failed/i })).toBeInTheDocument();

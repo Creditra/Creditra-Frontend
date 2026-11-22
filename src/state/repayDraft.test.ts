@@ -64,11 +64,36 @@ describe('repayDraft', () => {
     });
 
     it('should overwrite an existing draft', () => {
-      saveRepayDraft(makeDraft({ amountStr: '100' }));
-      saveRepayDraft(makeDraft({ amountStr: '200' }));
+      expect(saveRepayDraft(makeDraft({ amountStr: '100' }))).toBe(true);
+      expect(saveRepayDraft(makeDraft({ amountStr: '200' }))).toBe(true);
 
       const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
       expect(parsed.state.amountStr).toBe('200');
+    });
+
+    it('should return false when localStorage.setItem throws (quota exceeded)', () => {
+      const spy = vi
+        .spyOn(window.localStorage, 'setItem')
+        .mockImplementation(() => {
+          throw new DOMException('QuotaExceededError', 'QuotaExceededError');
+        });
+
+      expect(saveRepayDraft(makeDraft())).toBe(false);
+      spy.mockRestore();
+    });
+
+    it('should return false when window.localStorage is undefined', () => {
+      const desc = Object.getOwnPropertyDescriptor(window, 'localStorage');
+      Object.defineProperty(window, 'localStorage', {
+        value: undefined,
+        configurable: true,
+      });
+
+      expect(saveRepayDraft(makeDraft())).toBe(false);
+
+      if (desc) {
+        Object.defineProperty(window, 'localStorage', desc);
+      }
     });
   });
 
