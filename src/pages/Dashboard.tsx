@@ -42,6 +42,7 @@ import { LiveRegion } from "../components/LiveRegion";
 import { useReducedMotion } from "../context/ReducedMotionContext";
 import { HealthTipsPanel } from "../components/HealthTipsPanel";
 import { SyncIndicator } from "@/components/SyncIndicator";
+import { NextSteps } from "../components/NextSteps";
 import {
   loadComparisonSelection,
   saveComparisonSelection,
@@ -476,6 +477,13 @@ export function Dashboard() {
           </div>
         )}
       </div>
+
+      {/*
+        Next Steps card — tells the borrower what to do next. Self-hides when
+        every step is complete or the borrower dismisses it, so it never
+        competes with the summary cards once the account is fully set up.
+      */}
+      <NextSteps totalAvailable={totalAvailable} totalUtilized={totalUtilized} />
 
       {/* Summary Cards */}
       <div

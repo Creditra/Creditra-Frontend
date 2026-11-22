@@ -21,15 +21,47 @@ const patternsCssSource = readFileSync(
   'utf8',
 );
 
-// Mock modules before imports
+const { mockWalletState } = vi.hoisted(() => ({
+  mockWalletState: {
+    wallet: null as null | { type: string; publicKey: string; network: string },
+    status: 'idle' as 'idle' | 'connected',
+  },
+}));
+
+// Mock modules before imports. The connected-wallet state is mutable per test:
+// most Dashboard tests run without a wallet, while the mounted Next Steps test
+// opts into a connected wallet so the wallet-scoped risk-education step (and
+// its per-wallet storage key) can surface.
 vi.mock('../context/WalletContext', () => ({
   useWallet: () => ({
-    wallet: {
-      publicKey: '0x1234567890abcdef1234567890abcdef12345678',
-      network: 'TESTNET',
-    },
-    status: 'connected',
+    wallet: mockWalletState.wallet,
+    status: mockWalletState.status,
   }),
+  // <NextSteps/> (mounted on Dashboard) derives its per-wallet storage key
+  // from the connected wallet via this helper.
+  walletIdentityKey: (
+    wallet: { type?: string; publicKey?: string; network?: string } | null,
+  ) => (wallet ? `${wallet.type}:${wallet.publicKey}:${wallet.network}` : null),
+}));
+
+// <NextSteps/> reads KYC progress from the app-wide KycContext.
+vi.mock('../context/KycContext', () => ({
+  useKyc: () => ({
+    steps: [],
+    overallStatus: 'not_started',
+    resumeStepId: 'identity',
+    completedCount: 0,
+    setStepStatus: vi.fn(),
+    resetAll: vi.fn(),
+  }),
+}));
+
+// Resolve the linked-accounts lookup immediately so the Next Steps card is
+// not stuck on its loading skeleton inside these tests. A plain function (not
+// a vi.fn) is used because the `RiskGauge` suite calls `vi.restoreAllMocks()`,
+// which would otherwise wipe this implementation for every later test.
+vi.mock('../services/linkedAccounts', () => ({
+  fetchLinkedAccounts: async () => [],
 }));
 
 const { mockCreditLinesArray } = vi.hoisted(() => {
@@ -644,12 +676,7 @@ describe('Dashboard color-blind pattern classes (v7)', () => {
 
 describe('Dashboard KbdHint', () => {
   it('renders Command Palette shortcut hint in the header', () => {
-    // Minimal mock for useWallet to prevent errors
-    vi.mock('../context/WalletContext', () => ({
-      useWallet: () => ({ wallet: null, status: 'idle' }),
-    }));
-    // Note: If this fails due to missing contexts, this is just a best effort placeholder test.
-    // Real testing of Dashboard usually involves mocking many contexts.
+    // Note: Real testing of Dashboard usually involves mocking many contexts.
     // The component KbdHint handles the UI rendering.
   });
 });
@@ -1008,4 +1035,66 @@ describe('Dashboard credit summary real refresh (#1201)', () => {
       expect(screen.getAllByText('$347,500').length).toBeGreaterThan(0);
     });
   }, 15000);
+});
+
+// The Next Steps card is mounted near the top of the Dashboard. It self-hides
+// when every step is complete or the borrower dismisses it, so these tests
+// cover the visible (incomplete-setup) case and step ordering.
+describe('Dashboard next steps card (mounted)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete mockStorageStore[WALLET_KEY];
+    window.localStorage.clear();
+    // The risk-education step is wallet-scoped, so this test needs a connected
+    // wallet to exercise it.
+    mockWalletState.wallet = {
+      type: 'freighter',
+      publicKey: '0x1234567890abcdef1234567890abcdef12345678',
+      network: 'TESTNET',
+    };
+    mockWalletState.status = 'connected';
+  });
+
+  afterEach(() => {
+    mockWalletState.wallet = null;
+    mockWalletState.status = 'idle';
+  });
+
+  it('renders the Next Steps card with steps matching KYC, risk and payment state', async () => {
+    vi.useFakeTimers();
+
+    render(
+      <BrowserRouter>
+        <Dashboard />
+      </BrowserRouter>,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    expect(
+      screen.getByRole('heading', { name: /next steps/i }),
+    ).toBeInTheDocument();
+
+    // The real mock credit lines carry a past `nextPaymentDate`, so the overdue
+    // payment step is pinned first and the KYC step is pushed to step 2.
+    expect(
+      screen.getByRole('listitem', {
+        name: /Step 1: Payment Overdue\. Status: Action Required/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('listitem', {
+        name: /Step 2: Verify KYC\. Status: Action Required/i,
+      }),
+    ).toBeInTheDocument();
+
+    // This wallet has not acknowledged the current risk-education version.
+    expect(
+      screen.getByRole('listitem', { name: /Review Risk Education/i }),
+    ).toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
 });

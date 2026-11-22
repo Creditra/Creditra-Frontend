@@ -7,11 +7,37 @@ import { Dashboard } from '../Dashboard';
 vi.mock('../../context/WalletContext', () => ({
   useWallet: () => ({
     wallet: {
+      type: 'freighter',
       publicKey: '0x1234567890abcdef1234567890abcdef12345678',
       network: 'TESTNET',
     },
     status: 'connected',
   }),
+  // <NextSteps/> (mounted on Dashboard) derives its per-wallet storage key
+  // from the connected wallet via this helper.
+  walletIdentityKey: (
+    wallet: { type?: string; publicKey?: string; network?: string } | null,
+  ) => (wallet ? `${wallet.type}:${wallet.publicKey}:${wallet.network}` : null),
+}));
+
+// <NextSteps/> reads KYC progress from the app-wide KycContext. The app wraps
+// every route in <KycProvider> (see App.tsx), so tests that render <Dashboard/>
+// must provide the same context.
+vi.mock('../../context/KycContext', () => ({
+  useKyc: () => ({
+    steps: [],
+    overallStatus: 'not_started',
+    resumeStepId: 'identity',
+    completedCount: 0,
+    setStepStatus: vi.fn(),
+    resetAll: vi.fn(),
+  }),
+}));
+
+// Resolve the linked-accounts lookup immediately so <NextSteps/> is not stuck
+// on its loading skeleton.
+vi.mock('../../services/linkedAccounts', () => ({
+  fetchLinkedAccounts: vi.fn().mockResolvedValue([]),
 }));
 
 // Mock storage utilities
