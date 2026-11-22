@@ -1,21 +1,21 @@
 /**
  * LinkedAccounts Page
- * 
+ *
  * Manage external account connections (Google, GitHub, Twitter, Facebook).
  * Users can link new accounts, disconnect existing ones, and reconnect
  * accounts with expired tokens.
- * 
+ *
  * Accessibility features:
  * - Keyboard navigation for all actions
  * - ARIA live regions for status announcements
  * - Focus management during async operations
  * - High contrast mode support
- * 
+ *
  * Route: /linked-accounts
  */
 
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { Link as LinkIcon, Unlink, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Link as LinkIcon, Unlink, RefreshCw, AlertCircle, CheckCircle, ChevronDown } from 'lucide-react';
 import {
   fetchLinkedAccounts,
   initiateLinkAccount,
@@ -29,6 +29,7 @@ import { Skeleton } from '../components/Skeleton';
 import { PendingButton } from '../components/PendingButton';
 import { LiveRegion } from '../components/LiveRegion';
 import { Tooltip } from '../components/Tooltip';
+import { useConfirm } from '../components/ConfirmDialog';
 import { accountStripeStyle, colorFromId } from '../utils/colorFromId';
 import './LinkedAccounts.css';
 
@@ -43,6 +44,8 @@ interface ProviderCardProps {
   onReconnect: (accountId: string) => void;
   isLoading: boolean;
   loadingAccountId: string | null;
+  /** IDs currently being batch-disconnected — drives per-card busy state */
+  pendingDisconnectIds: Set<string>;
 }
 
 function ProviderCard({
@@ -53,11 +56,13 @@ function ProviderCard({
   onReconnect,
   isLoading,
   loadingAccountId,
+  pendingDisconnectIds,
 }: ProviderCardProps) {
   const info = PROVIDER_INFO[provider];
   const isConnected = account?.status === 'connected';
   const hasError = account?.status === 'error';
   const isPending = loadingAccountId === account?.id;
+  const isBatchPending = account ? pendingDisconnectIds.has(account.id) : false;
   // Stable per-account identity stripe (falls back to provider key when unlinked).
   const stripeId = account?.id ?? `provider:${provider}`;
   const stripeColor = colorFromId(stripeId);
@@ -108,6 +113,7 @@ function ProviderCard({
             onClick={() => onConnect(provider)}
             disabled={isLoading}
             pending={false}
+            pendingLabel="Connecting…"
             className="btn-secondary btn-sm"
             aria-label={`Connect ${info.name} account`}
           >
@@ -119,11 +125,16 @@ function ProviderCard({
         {isConnected && account && (
           <button
             onClick={() => onDisconnect(account.id)}
-            disabled={isLoading}
+            disabled={isLoading || isBatchPending}
             className="btn-danger btn-sm"
             aria-label={`Disconnect ${info.name} account`}
+            aria-busy={isBatchPending || undefined}
           >
-            <Unlink className="icon-sm" aria-hidden="true" />
+            {isBatchPending ? (
+              <RefreshCw className="icon-sm" style={{ animation: 'spin 1s linear infinite' }} aria-hidden="true" />
+            ) : (
+              <Unlink className="icon-sm" aria-hidden="true" />
+            )}
             Disconnect
           </button>
         )}
@@ -133,6 +144,7 @@ function ProviderCard({
             onClick={() => onReconnect(account.id)}
             disabled={isLoading}
             pending={isPending}
+            pendingLabel="Reconnecting…"
             className="btn-secondary btn-sm"
             aria-label={`Reconnect ${info.name} account`}
           >
@@ -151,12 +163,199 @@ function ProviderCard({
   );
 }
 
+// ── Provider Picker Menu ──────────────────────────────────────────────────────
+
+const ALL_PROVIDERS: AccountProvider[] = ['google', 'github', 'twitter', 'facebook'];
+
+interface ProviderPickerProps {
+  /** Providers that are already connected or pending — excluded from the menu */
+  connectedProviders: Set<AccountProvider>;
+  onSelect: (provider: AccountProvider) => void;
+  disabled: boolean;
+}
+
+/**
+ * WAI-ARIA menu-button pattern.
+ * Opens a menu of unlinked providers; when all are linked shows a static label.
+ * Keyboard: ArrowDown/ArrowUp navigate items, Enter/Space select, Escape closes.
+ */
+function ProviderPicker({ connectedProviders, onSelect, disabled }: ProviderPickerProps) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLUListElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  const availableProviders = ALL_PROVIDERS.filter(p => !connectedProviders.has(p));
+  const allLinked = availableProviders.length === 0;
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (e: MouseEvent) => {
+      if (
+        menuRef.current && !menuRef.current.contains(e.target as Node) &&
+        triggerRef.current && !triggerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [open]);
+
+  // Focus first item when menu opens
+  useEffect(() => {
+    if (open && availableProviders.length > 0) {
+      setActiveIndex(0);
+      requestAnimationFrame(() => {
+        itemRefs.current[0]?.focus();
+      });
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleTriggerKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setOpen(true);
+    }
+  };
+
+  const handleMenuKeyDown = (e: React.KeyboardEvent<HTMLUListElement>) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = (activeIndex + 1) % availableProviders.length;
+      setActiveIndex(next);
+      itemRefs.current[next]?.focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = (activeIndex - 1 + availableProviders.length) % availableProviders.length;
+      setActiveIndex(prev);
+      itemRefs.current[prev]?.focus();
+    }
+  };
+
+  const handleSelect = (provider: AccountProvider) => {
+    setOpen(false);
+    triggerRef.current?.focus();
+    onSelect(provider);
+  };
+
+  const menuId = 'provider-picker-menu';
+
+  if (allLinked) {
+    return (
+      <span
+        className="sticky-action-bar__all-linked"
+        aria-label="All providers linked"
+        data-testid="all-providers-linked"
+      >
+        <CheckCircle className="icon-sm" aria-hidden="true" />
+        <span className="sticky-action-bar__label">All providers linked</span>
+      </span>
+    );
+  }
+
+  return (
+    <div className="provider-picker" style={{ position: 'relative' }}>
+      <Tooltip
+        label="Connect a new account"
+        position="top"
+        hoverDelay={400}
+        longPressDelay={500}
+      >
+        <button
+          ref={triggerRef}
+          onClick={() => setOpen(prev => !prev)}
+          onKeyDown={handleTriggerKeyDown}
+          disabled={disabled}
+          className="btn-secondary btn-sm pending-btn"
+          aria-label="Connect new account from toolbar"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-controls={menuId}
+          data-testid="provider-picker-trigger"
+        >
+          <LinkIcon className="icon-sm" aria-hidden="true" />
+          <span className="sticky-action-bar__label">Connect</span>
+          <ChevronDown className="icon-sm" aria-hidden="true" />
+        </button>
+      </Tooltip>
+
+      {open && (
+        <ul
+          id={menuId}
+          ref={menuRef}
+          role="menu"
+          aria-label="Select provider to connect"
+          className="provider-picker__menu"
+          onKeyDown={handleMenuKeyDown}
+          data-testid="provider-picker-menu"
+          style={{
+            position: 'absolute',
+            bottom: '100%',
+            left: 0,
+            marginBottom: '4px',
+            listStyle: 'none',
+            padding: '4px 0',
+            margin: 0,
+            background: 'var(--color-surface, #fff)',
+            border: '1px solid var(--color-border, #e2e8f0)',
+            borderRadius: '6px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            minWidth: '160px',
+            zIndex: 100,
+          }}
+        >
+          {availableProviders.map((provider, index) => {
+            const info = PROVIDER_INFO[provider];
+            return (
+              <li key={provider} role="none">
+                <button
+                  ref={el => { itemRefs.current[index] = el; }}
+                  role="menuitem"
+                  tabIndex={-1}
+                  onClick={() => handleSelect(provider)}
+                  className="provider-picker__item"
+                  data-testid={`provider-picker-item-${provider}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    width: '100%',
+                    padding: '8px 12px',
+                    border: 'none',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    fontSize: '0.875rem',
+                    textAlign: 'left',
+                  }}
+                >
+                  <span aria-hidden="true">{info.icon}</span>
+                  {info.name}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ── Disconnect-All result types ───────────────────────────────────────────────
+
+interface DisconnectResult {
+  account: LinkedAccount;
+  success: boolean;
+}
+
 /**
  * Main LinkedAccounts page component.
- */
-/**
- * Sticky bottom action bar that appears when the header scrolls out of view.
- * Provides quick access to primary actions: connect new account, disconnect all.
  */
 export function LinkedAccounts() {
   const [accounts, setAccounts] = useState<LinkedAccount[]>([]);
@@ -166,9 +365,16 @@ export function LinkedAccounts() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
-  
+
+  /** IDs currently being processed by Disconnect All (per-card busy state) */
+  const [pendingDisconnectIds, setPendingDisconnectIds] = useState<Set<string>>(new Set());
+
+  /** Accounts that failed in the last Disconnect All attempt — drives Retry failed */
+  const [failedDisconnects, setFailedDisconnects] = useState<LinkedAccount[]>([]);
+
   const messageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   // Fetch linked accounts on mount
   useEffect(() => {
@@ -225,9 +431,9 @@ export function LinkedAccounts() {
     try {
       setActionLoading(true);
       setError(null);
-      
+
       const response = await initiateLinkAccount({ provider });
-      
+
       // In production, redirect to OAuth URL
       // For now, simulate successful connection
       showSuccessMessage(`${PROVIDER_INFO[provider].name} account linked successfully`);
@@ -245,10 +451,12 @@ export function LinkedAccounts() {
     const account = accounts.find(acc => acc.id === accountId);
     if (!account) return;
 
-    // Confirmation dialog
-    const confirmed = window.confirm(
-      `Are you sure you want to disconnect your ${PROVIDER_INFO[account.provider].name} account? You can reconnect it later.`
-    );
+    const providerName = PROVIDER_INFO[account.provider].name;
+    const confirmed = await confirm({
+      title: `Disconnect ${providerName}?`,
+      body: `Disconnecting ${providerName} may lower your credit evaluation score. You can reconnect later.`,
+      confirmLabel: `Disconnect ${providerName}`,
+    });
 
     if (!confirmed) return;
 
@@ -256,9 +464,9 @@ export function LinkedAccounts() {
       setActionLoading(true);
       setLoadingAccountId(accountId);
       setError(null);
-      
+
       await disconnectAccount(accountId);
-      showSuccessMessage(`${PROVIDER_INFO[account.provider].name} account disconnected`);
+      showSuccessMessage(`${providerName} account disconnected`);
       await loadAccounts();
     } catch (err) {
       setError(`Failed to disconnect account. Please try again.`);
@@ -277,9 +485,9 @@ export function LinkedAccounts() {
       setActionLoading(true);
       setLoadingAccountId(accountId);
       setError(null);
-      
+
       const response = await reconnectAccount(accountId);
-      
+
       // In production, redirect to OAuth URL
       // For now, simulate successful reconnection
       showSuccessMessage(`${PROVIDER_INFO[account.provider].name} account reconnected successfully`);
@@ -293,32 +501,108 @@ export function LinkedAccounts() {
     }
   };
 
+  /**
+   * Builds the human-readable summary message from Promise.allSettled results.
+   * - All succeeded: "All N accounts disconnected"
+   * - Partial: "Disconnected X and Y. Z could not be disconnected — try again."
+   * - All failed: "Could not disconnect X, Y, Z. Please try again."
+   */
+  const buildDisconnectMessage = (results: DisconnectResult[]): string => {
+    const succeeded = results.filter(r => r.success);
+    const failed = results.filter(r => !r.success);
+
+    if (failed.length === 0) {
+      return `All ${succeeded.length} account${succeeded.length === 1 ? '' : 's'} disconnected`;
+    }
+
+    if (succeeded.length === 0) {
+      const names = failed.map(r => PROVIDER_INFO[r.account.provider].name).join(', ');
+      return `Could not disconnect ${names}. Please try again.`;
+    }
+
+    const succeededNames = succeeded.map(r => PROVIDER_INFO[r.account.provider].name).join(' and ');
+    const failedNames = failed.map(r => PROVIDER_INFO[r.account.provider].name).join(', ');
+    return `Disconnected ${succeededNames}. ${failedNames} could not be disconnected — try again.`;
+  };
+
+  /**
+   * Run Disconnect All (or Retry failed) using Promise.allSettled so that
+   * per-account outcomes are always known regardless of individual failures.
+   */
+  const runDisconnectAll = useCallback(
+    async (targetAccounts: LinkedAccount[]) => {
+      if (targetAccounts.length === 0) return;
+
+      // Mark every targeted account as pending (per-card busy state)
+      setPendingDisconnectIds(new Set(targetAccounts.map(a => a.id)));
+      setActionLoading(true);
+      setError(null);
+      setFailedDisconnects([]);
+
+      const settled = await Promise.allSettled(
+        targetAccounts.map(acc => disconnectAccount(acc.id)),
+      );
+
+      const results: DisconnectResult[] = targetAccounts.map((acc, i) => ({
+        account: acc,
+        success: settled[i].status === 'fulfilled',
+      }));
+
+      const newFailed = results.filter(r => !r.success).map(r => r.account);
+
+      setPendingDisconnectIds(new Set());
+      setActionLoading(false);
+
+      const msg = buildDisconnectMessage(results);
+
+      // Reload accounts first, then set error/failed state so that
+      // loadAccounts (which clears error) doesn't wipe our message.
+      await loadAccounts();
+
+      setFailedDisconnects(newFailed);
+      if (newFailed.length === 0) {
+        showSuccessMessage(msg);
+      } else {
+        setError(msg);
+      }
+    },
+    [], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
   const handleDisconnectAll = async () => {
     const connectedAccounts = accounts.filter(acc => acc.status === 'connected');
     if (connectedAccounts.length === 0) return;
 
-    const confirmed = window.confirm(
-      'Are you sure you want to disconnect all your accounts? You can reconnect them later.'
-    );
+    const count = connectedAccounts.length;
+    const accountWord = count === 1 ? 'account' : 'accounts';
+    const confirmed = await confirm({
+      title: `Disconnect all ${count} ${accountWord}?`,
+      body: `Disconnecting ${count} linked ${accountWord} may lower your credit evaluation score. You can reconnect later.`,
+      confirmLabel: 'Disconnect All',
+    });
     if (!confirmed) return;
 
-    try {
-      setActionLoading(true);
-      setError(null);
-      
-      await Promise.all(connectedAccounts.map(acc => disconnectAccount(acc.id)));
-      showSuccessMessage('All accounts disconnected successfully');
-      await loadAccounts();
-    } catch (err) {
-      setError('Failed to disconnect some accounts. Please try again.');
-      console.error('Disconnect all error:', err);
-    } finally {
-      setActionLoading(false);
-    }
+    await runDisconnectAll(connectedAccounts);
+  };
+
+  /** Retry only the accounts that failed in the previous Disconnect All attempt. */
+  const handleRetryFailed = async () => {
+    await runDisconnectAll(failedDisconnects);
   };
 
   const connectedCount = useMemo(
     () => accounts.filter((a) => a.status === 'connected').length,
+    [accounts],
+  );
+
+  /** Set of connected/pending provider ids — used by ProviderPicker to exclude them */
+  const connectedProviders = useMemo<Set<AccountProvider>>(
+    () =>
+      new Set(
+        accounts
+          .filter(a => a.status === 'connected' || a.status === 'pending')
+          .map(a => a.provider),
+      ),
     [accounts],
   );
 
@@ -343,9 +627,19 @@ export function LinkedAccounts() {
           <AlertCircle className="icon" aria-hidden="true" />
           <div className="banner-alert__content">
             <p>{error}</p>
+            {failedDisconnects.length > 0 && (
+              <button
+                onClick={handleRetryFailed}
+                className="btn-secondary btn-sm"
+                style={{ marginTop: '8px' }}
+                data-testid="retry-failed-btn"
+              >
+                Retry failed
+              </button>
+            )}
           </div>
           <button
-            onClick={() => setError(null)}
+            onClick={() => { setError(null); setFailedDisconnects([]); }}
             className="banner-alert__close"
             aria-label="Dismiss error"
           >
@@ -407,20 +701,22 @@ export function LinkedAccounts() {
             </div>
           </div>
         ) : (
-          <div className="linked-accounts__grid" role="list">
+          <div className="linked-accounts__grid" role="list" aria-label="Available providers">
             {availableProviders.map((provider) => {
               const account = accounts.find(acc => acc.provider === provider && acc.status !== 'disconnected');
               return (
-                <ProviderCard
-                  key={provider}
-                  provider={provider}
-                  account={account || null}
-                  onConnect={handleConnect}
-                  onDisconnect={handleDisconnect}
-                  onReconnect={handleReconnect}
-                  isLoading={actionLoading}
-                  loadingAccountId={loadingAccountId}
-                />
+                <div key={provider} role="listitem">
+                  <ProviderCard
+                    provider={provider}
+                    account={account || null}
+                    onConnect={handleConnect}
+                    onDisconnect={handleDisconnect}
+                    onReconnect={handleReconnect}
+                    isLoading={actionLoading}
+                    loadingAccountId={loadingAccountId}
+                    pendingDisconnectIds={pendingDisconnectIds}
+                  />
+                </div>
               );
             })}
           </div>
@@ -462,23 +758,12 @@ export function LinkedAccounts() {
             )}
           </div>
           <div className="sticky-action-bar__actions">
-            <Tooltip
-              label="Connect a new account"
-              position="top"
-              hoverDelay={400}
-              longPressDelay={500}
-            >
-              <PendingButton
-                onClick={() => handleConnect('google')}
-                disabled={actionLoading}
-                pending={false}
-                className="btn-secondary btn-sm"
-                aria-label="Connect new account from toolbar"
-              >
-                <LinkIcon className="icon-sm" aria-hidden="true" />
-                <span className="sticky-action-bar__label">Connect</span>
-              </PendingButton>
-            </Tooltip>
+            {/* Provider picker replaces the hard-coded Google Connect button */}
+            <ProviderPicker
+              connectedProviders={connectedProviders}
+              onSelect={handleConnect}
+              disabled={actionLoading}
+            />
             {connectedCount > 0 && (
               <Tooltip
                 label="Disconnect all linked accounts"
@@ -500,6 +785,8 @@ export function LinkedAccounts() {
           </div>
         </div>
       </div>
+
+      {confirmDialog}
     </div>
   );
 }

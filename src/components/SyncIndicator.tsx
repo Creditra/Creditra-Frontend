@@ -9,7 +9,7 @@ import {
 import { formatRelative } from '../utils/dates';
 import './SyncIndicator.css';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface SyncIndicatorProps {
   /** Date/timestamp of the last successful data sync. */
@@ -24,7 +24,7 @@ export interface SyncIndicatorProps {
   className?: string;
 }
 
-// ─── Ticker — keeps the relative label fresh every 30 s ──────────────────────
+// ─── Ticker — keeps the relative label fresh every 30 s ─────────────────────
 
 /** Forces a re-render on a fixed interval. Returns the current tick count. */
 function useTicker(intervalMs = 30_000): number {
@@ -36,7 +36,7 @@ function useTicker(intervalMs = 30_000): number {
   return tick;
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+// ─── Component ───────────────────────────────────────────────────────────────
 
 /**
  * SyncIndicator — inline "Last synced X ago" row with a manual-refresh button.
@@ -58,6 +58,7 @@ export function SyncIndicator({
   className = '',
 }: SyncIndicatorProps) {
   const [spinning, setSpinning] = useState(false);
+  const [hasError, setHasError] = useState(false);
   const [announcement, setAnnouncement] = useState('');
   const [tooltipVisible, setTooltipVisible] = useState(false);
   const tooltipId = useId();
@@ -90,16 +91,18 @@ export function SyncIndicator({
     setAnnouncement('');
     try {
       await onRefresh();
+      setHasError(false);
       setAnnouncement('Data refreshed successfully.');
     } catch {
-      setAnnouncement('Refresh failed. Please try again.');
+      setHasError(true);
+      setAnnouncement("Couldn't refresh — showing data from " + relativeLabel + ". Please try again.");
     } finally {
       setSpinning(false);
       // Clear announcement after screen reader has had time to read it
       if (announcementTimerRef.current) clearTimeout(announcementTimerRef.current);
       announcementTimerRef.current = setTimeout(() => setAnnouncement(''), 5000);
     }
-  }, [spinning, onRefresh]);
+  }, [spinning, onRefresh, relativeLabel]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -113,61 +116,104 @@ export function SyncIndicator({
 
   return (
     <div className={`sync-indicator ${className}`}>
-      {/* Timestamp + tooltip */}
-      <span className="sync-indicator__text">
-        Last synced{' '}
-        <span className="sync-indicator__ts-wrapper">
-          <time
-            ref={timestampRef}
-            dateTime={isoString}
-            className="sync-indicator__ts"
-            aria-describedby={tooltipId}
-            onMouseEnter={showTooltip}
-            onMouseLeave={hideTooltip}
-            onFocus={showTooltip}
-            onBlur={hideTooltip}
-            /* Make the <time> focusable so keyboard users can read the tooltip */
-            tabIndex={0}
-          >
-            {relativeLabel}
-          </time>
+      {hasError ? (
+        <span className="sync-indicator__error-row" role="status">
+          <span className="sync-indicator__text">
+            Couldn't refresh — showing data from{' '}
+            <span className="sync-indicator__ts-wrapper">
+              <time
+                ref={timestampRef}
+                dateTime={isoString}
+                className="sync-indicator__ts"
+                aria-describedby={tooltipId}
+                onMouseEnter={showTooltip}
+                onMouseLeave={hideTooltip}
+                onFocus={showTooltip}
+                onBlur={hideTooltip}
+                tabIndex={0}
+              >
+                {relativeLabel}
+              </time>
 
-          {/* Tooltip — visible on hover/focus of the timestamp */}
-          <span
-            id={tooltipId}
-            role="tooltip"
-            className={`sync-indicator__tooltip${tooltipVisible ? ' sync-indicator__tooltip--visible' : ''}`}
-            aria-hidden={!tooltipVisible}
-          >
-            {exactLabel}
+              <span
+                id={tooltipId}
+                role="tooltip"
+                className={`sync-indicator__tooltip${tooltipVisible ? ' sync-indicator__tooltip--visible' : ''}`}
+                aria-hidden={!tooltipVisible}
+              >
+                {exactLabel}
+              </span>
+            </span>
           </span>
+          <button
+            type="button"
+            className="sync-indicator__retry-btn"
+            onClick={handleRefresh}
+            disabled={spinning}
+            aria-busy={spinning}
+          >
+            Retry
+          </button>
         </span>
-      </span>
+      ) : (
+        <>
+          {/* Timestamp + tooltip */}
+          <span className="sync-indicator__text">
+            Last synced{' '}
+            <span className="sync-indicator__ts-wrapper">
+              <time
+                ref={timestampRef}
+                dateTime={isoString}
+                className="sync-indicator__ts"
+                aria-describedby={tooltipId}
+                onMouseEnter={showTooltip}
+                onMouseLeave={hideTooltip}
+                onFocus={showTooltip}
+                onBlur={hideTooltip}
+                tabIndex={0}
+              >
+                {relativeLabel}
+              </time>
 
-      {/* Manual refresh button — 44 × 44 px minimum target */}
-      <button
-        type="button"
-        className="sync-indicator__btn"
-        onClick={handleRefresh}
-        disabled={spinning}
-        aria-label={spinning ? 'Refreshing…' : 'Refresh data'}
-        aria-disabled={spinning}
-      >
-        <svg
-          className={`sync-indicator__icon${spinning ? ' sync-indicator__icon--spinning' : ''}`}
-          viewBox="0 0 16 16"
-          fill="none"
-          aria-hidden="true"
-          focusable="false"
-          width="14"
-          height="14"
-        >
-          <path
-            d="M13.65 2.35A8 8 0 1 0 15 8h-2a6 6 0 1 1-1.05-3.41L9 7h6V1l-1.35 1.35z"
-            fill="currentColor"
-          />
-        </svg>
-      </button>
+              {/* Tooltip — visible on hover/focus of the timestamp */}
+              <span
+                id={tooltipId}
+                role="tooltip"
+                className={`sync-indicator__tooltip${tooltipVisible ? ' sync-indicator__tooltip--visible' : ''}`}
+                aria-hidden={!tooltipVisible}
+              >
+                {exactLabel}
+              </span>
+            </span>
+          </span>
+
+          {/* Manual refresh button — 44 × 44 px minimum target */}
+          <button
+            type="button"
+            className="sync-indicator__btn"
+            onClick={handleRefresh}
+            disabled={spinning}
+            aria-label={spinning ? 'Refreshing…' : 'Refresh data'}
+            aria-disabled={spinning}
+            aria-busy={spinning}
+          >
+            <svg
+              className={`sync-indicator__icon${spinning ? ' sync-indicator__icon--spinning' : ''}`}
+              viewBox="0 0 16 16"
+              fill="none"
+              aria-hidden="true"
+              focusable="false"
+              width="14"
+              height="14"
+            >
+              <path
+                d="M13.65 2.35A8 8 0 1 0 15 8h-2a6 6 0 1 1-1.05-3.41L9 7h6V1l-1.35 1.35z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+        </>
+      )}
 
       {/* aria-live region — announces sync result without visual noise */}
       <span

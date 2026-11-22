@@ -1,19 +1,49 @@
-import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
-import { Link, useSearchParams, useLocation, useNavigate } from "react-router-dom";
+import React, {
+  useState,
+  useMemo,
+  useRef,
+  useCallback,
+  useEffect,
+} from "react";
+import {
+  Link,
+  useSearchParams,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import { CopyToClipboard } from "../components/CopyToClipboard";
-import { DateRangeChips, type DatePreset } from "../components/DateRangeChips";
-import { AmountRangeChips, type AmountRangePreset } from "../components/AmountRangeChips";
+import { type DatePreset } from "../components/DateRangeChips";
+import {
+  AmountRangeChips,
+  type AmountRangePreset,
+} from "../components/AmountRangeChips";
 import { useDebounceValue } from "../hooks/useDebounceValue";
-import { toCsv, downloadCsv } from "../utils/csv";
+import { downloadCsv } from "../utils/csv";
+import {
+  buildTransactionCsv,
+  buildTransactionCsvFilename,
+  DEFAULT_TRANSACTION_CSV_ASSET,
+} from "../lib/transaction-csv";
 import { useNotifications } from "../context/NotificationContext";
-import { MOCK_CREDIT_LINES } from "../data/mockData";
+import { useCreditLines, useCreditTransactions } from "../hooks/useCreditLines";
+import {
+  amountPresetFromUrl,
+  matchesAmountFilter,
+  type AmountFilter,
+} from "../utils/transactionAmountFilter";
 import type {
   CreditLineStatus,
   TransactionStatus,
   TransactionType,
 } from "../types/creditLine";
-import { startOfDay, startOfMonth, startOfWeek } from "../utils/dates";
-import { COLOR, fmt, fmtDate, fmtDateTime } from "../utils/tokens";
+import {
+  startOfMonth,
+  startOfWeek,
+  getCalendarGroup,
+  relativeTime as formatCalendarRelative,
+} from "../utils/dates";
+import { now as clockNow, nowMs as clockNowMs } from "../lib/clock";
+import { COLOR, fmt, fmtDateTime } from "../utils/tokens";
 import "./TransactionHistory.css";
 import { NoActivity, NoDataGraph, NoLines } from "../components/illustrations";
 import { TransactionHistorySkeleton } from "../components/TransactionHistorySkeleton";
@@ -108,11 +138,11 @@ const TX_TYPE_COLORS: Record<TransactionType, string> = {
 };
 
 const STATUS_COLORS: Record<TransactionStatus, { bg: string; color: string }> =
-{
-  Completed: { bg: "rgba(63,185,80,0.15)", color: COLOR.success },
-  Pending: { bg: "rgba(210,153,34,0.15)", color: COLOR.warning },
-  Failed: { bg: "rgba(248,81,73,0.15)", color: COLOR.danger },
-};
+  {
+    Completed: { bg: "rgba(63,185,80,0.15)", color: COLOR.success },
+    Pending: { bg: "rgba(210,153,34,0.15)", color: COLOR.warning },
+    Failed: { bg: "rgba(248,81,73,0.15)", color: COLOR.danger },
+  };
 
 /**
  * CSS pattern classes for each transaction status.
@@ -134,121 +164,38 @@ const TYPE_FILTER_OPTIONS: Array<{
   value: "all" | Exclude<TransactionType, "StatusChange">;
   label: string;
 }> = [
-    { value: "all", label: "All" },
-    { value: "Draw", label: "Draw" },
-    { value: "Repay", label: "Repay" },
-    { value: "Fee", label: "Fee" },
-    { value: "Interest", label: "Interest" },
-  ];
+  { value: "all", label: "All" },
+  { value: "Draw", label: "Draw" },
+  { value: "Repay", label: "Repay" },
+  { value: "Fee", label: "Fee" },
+  { value: "Interest", label: "Interest" },
+];
 
 type TypeFilter = (typeof TYPE_FILTER_OPTIONS)[number]["value"];
 type RangePreset = "this-week" | "this-month" | "all-time" | "custom";
 
-const RANGE_PRESET_OPTIONS: Array<{ value: Exclude<RangePreset, "custom">; label: string }> = [
+const RANGE_PRESET_OPTIONS: Array<{
+  value: Exclude<RangePreset, "custom">;
+  label: string;
+}> = [
   { value: "this-week", label: "This Week" },
   { value: "this-month", label: "This Month" },
   { value: "all-time", label: "All Time" },
 ];
 
-const AMOUNT_RANGE_PRESET_BOUNDS: Record<
-  Exclude<AmountRangePreset, "all">,
-  { min?: number; max?: number }
-> = {
-  "under-5k": { max: 5000 },
-  "5k-25k": { min: 5000, max: 25000 },
-  "25k-plus": { min: 25000 },
-};
-
-const AMOUNT_FILTER_OPTIONS: Array<{
-  value: "all" | "lt100" | "100-1000" | "gt1000";
-  label: string;
-}> = [
-    { value: "all", label: "All Amounts" },
-    { value: "lt100", label: "<$100" },
-    { value: "100-1000", label: "$100–$1,000" },
-    { value: "gt1000", label: ">$1,000" },
-  ];
-
-type AmountFilter = (typeof AMOUNT_FILTER_OPTIONS)[number]["value"];
-
 // ─── Helper Functions ─────────────────────────────────────────────────────────
 
 const relativeTime = (iso: string): string => {
-  const now = new Date();
-  const txDate = new Date(iso);
-  const diffMs = now.getTime() - txDate.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHrs = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHrs / 24);
-
-  if (diffDays === 0) {
-    if (diffHrs === 0) {
-      if (diffMins < 1) return "Just now";
-      return `${diffMins}m ago`;
-    }
-    return `${diffHrs}h ago`;
-  }
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays} days ago`;
-  return fmtDate(iso);
+  // Issue #1189: delegate to the shared calendar-aware helper.
+  // Handles future timestamps ("in 3m") and "just now" correctly.
+  return formatCalendarRelative(iso, clockNow());
 };
 
 const getDateGroup = (iso: string): string => {
-  const now = new Date();
-  const txDate = new Date(iso);
-  const diffMs = now.getTime() - txDate.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return "This Week";
-  if (diffDays < 30) return "This Month";
-  return "Older";
+  // Issue #1189: local calendar boundaries, with 'Upcoming' + 'Unknown date'
+  // for future-dated and unparseable rows.
+  return getCalendarGroup(iso, clockNow());
 };
-
-function getExportFilename(transactions: TransactionWithLine[]): string {
-  const validDates = transactions
-    .map((tx) => new Date(tx.date))
-    .filter((date) => !Number.isNaN(date.getTime()))
-    .sort((a, b) => a.getTime() - b.getTime());
-
-  const formatDateForFilename = (date: Date) => date.toISOString().slice(0, 10);
-  const start = validDates[0] ? formatDateForFilename(validDates[0]) : "all";
-  const end = validDates[validDates.length - 1]
-    ? formatDateForFilename(validDates[validDates.length - 1])
-    : "all";
-
-  return `creditra-transactions-${start}-${end}.csv`;
-}
-
-function buildTransactionCsv(transactions: TransactionWithLine[]): string {
-  const headers = [
-    "Date",
-    "Type",
-    "Amount",
-    "Credit Line",
-    "Credit Line ID",
-    "Status",
-    "Note",
-    "Transaction Hash",
-  ] as const;
-
-  const rows = transactions.map(
-    (tx) =>
-      [
-        fmtDateTime(tx.date),
-        TX_TYPE_LABELS[tx.type],
-        tx.amount,
-        tx.lineName,
-        tx.lineId,
-        tx.status,
-        tx.note ?? "",
-        tx.txHash ?? "",
-      ] as const,
-  );
-
-  return toCsv(headers, rows);
-}
 
 function TransactionRow({
   tx,
@@ -436,48 +383,41 @@ export function TransactionHistory() {
   const location = useLocation();
   const navigate = useNavigate();
   const { addToast } = useNotifications();
-
-  /**
-   * First-paint loading guard.
-   *
-   * `isLoading` starts as `true` and is cleared to `false` in a
-   * zero-delay `useEffect` (runs after the first committed render).
-   * This gives the browser one frame to paint the skeleton before the
-   * full component tree is committed, preventing a flash of unstyled
-   * content on initial navigation.
-   *
-   * In a real application this flag would be wired to an async data
-   * fetch; here it simulates that pattern against the static mock data.
-   */
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    // Simulate async data resolution on first mount.
-    // Replace with the real data-fetch completion signal when the API is wired up.
-    const id = setTimeout(() => setIsLoading(false), 0);
-    return () => clearTimeout(id);
-  }, []);
+  const { lines: creditLines, status, error, refetch } = useCreditLines();
+  const { transactions } = useCreditTransactions();
 
   // ─── Filter and UI State ───
   const [selectedLine, setSelectedLine] = useState<string>("all");
   const [selectedType, setSelectedType] = useState<TypeFilter>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [searchParams, setSearchParams] = useSearchParams();
-  const [selectedAmount, setSelectedAmount] = useState<AmountFilter>(() => {
-    const url = searchParams.get("amount");
-    if (url === "lt100" || url === "100-1000" || url === "gt1000") return url;
-    return "all";
-  });
   const [dateRange, setDateRange] = useState<DatePreset>("custom");
   const [presetRange, setPresetRange] = useState<RangePreset>("custom");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [selectedAmountRange, setSelectedAmountRange] =
-    useState<AmountRangePreset>("all");
-  const [customAmountMin, setCustomAmountMin] = useState("");
+    useState<AmountRangePreset>(
+      () => amountPresetFromUrl(searchParams.get("amount")) ?? "all",
+    );
+  const [customAmountMin, setCustomAmountMin] = useState(() =>
+    searchParams.get("amount") === "gt1000" ? "1000" : "",
+  );
   const [customAmountMax, setCustomAmountMax] = useState("");
   const [isCustomAmountRangeActive, setIsCustomAmountRangeActive] =
-    useState(false);
+    useState(() => searchParams.get("amount") === "gt1000");
+  const amountFilter = useMemo<AmountFilter>(
+    () =>
+      isCustomAmountRangeActive
+        ? {
+            kind: "custom",
+            min: customAmountMin.trim() ? Number(customAmountMin) : null,
+            max: customAmountMax.trim() ? Number(customAmountMax) : null,
+          }
+        : selectedAmountRange === "all"
+          ? { kind: "all" }
+          : { kind: "preset", id: selectedAmountRange },
+    [isCustomAmountRangeActive, customAmountMin, customAmountMax, selectedAmountRange],
+  );
   const [searchQuery, setSearchQuery] = useState("");
   // ─── Combobox (accessible search with suggestions) ───────────────────────
   // `searchInputValue` drives what the user sees while typing; `searchQuery`
@@ -494,7 +434,9 @@ export function TransactionHistory() {
 
   const [expandedTx, setExpandedTx] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageCursors, setPageCursors] = useState<Array<string | undefined>>([undefined]);
+  const [pageCursors, setPageCursors] = useState<Array<string | undefined>>([
+    undefined,
+  ]);
   const itemsPerPage = ITEMS_PER_PAGE;
 
   const [liveAnnouncement, setLiveAnnouncement] = useState("");
@@ -504,7 +446,6 @@ export function TransactionHistory() {
     selectedLine,
     selectedType,
     selectedStatus,
-    selectedAmount,
     dateRange,
     presetRange,
     customStartDate,
@@ -521,7 +462,11 @@ export function TransactionHistory() {
     const params = new URLSearchParams(location.search);
     const rangeParam = params.get("range");
 
-    if (rangeParam === "this-week" || rangeParam === "this-month" || rangeParam === "all-time") {
+    if (
+      rangeParam === "this-week" ||
+      rangeParam === "this-month" ||
+      rangeParam === "all-time"
+    ) {
       setPresetRange(rangeParam);
       setDateRange("custom");
       return;
@@ -544,23 +489,14 @@ export function TransactionHistory() {
     }
   }, [location.search]);
 
-  // Get all transactions from all credit lines
   const allTransactions = useMemo(() => {
-    const txs: TransactionWithLine[] = [];
-    MOCK_CREDIT_LINES.forEach((cl) => {
-      cl.transactions.forEach((tx) => {
-        txs.push({
-          ...tx,
-          lineId: cl.id,
-          lineName: cl.name,
-          lineStatus: cl.status,
-        });
-      });
+    return transactions.map((tx) => ({ ...tx })).sort((a, b) => {
+      const aTime = new Date(a.date).getTime();
+      const bTime = new Date(b.date).getTime();
+      if (bTime !== aTime) return bTime - aTime;
+      return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
     });
-    return txs.sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-    );
-  }, []);
+  }, [transactions]);
 
   // Sync the debounced input value into the filter state and reset page.
   // This is the only place `searchQuery` (which drives filteredTransactions)
@@ -569,8 +505,6 @@ export function TransactionHistory() {
     setSearchQuery(debouncedSearch);
     setCurrentPage(1);
   }, [debouncedSearch]);
-
-
 
   /**
    * Build a deduplicated list of suggestion strings from the full transaction
@@ -620,10 +554,7 @@ export function TransactionHistory() {
       if (selectedType !== "all" && tx.type !== selectedType) return false;
       if (selectedStatus !== "all" && tx.status !== selectedStatus)
         return false;
-      if (selectedAmount === "lt100" && tx.amount >= 100) return false;
-      if (selectedAmount === "100-1000" && (tx.amount < 100 || tx.amount > 1000))
-        return false;
-      if (selectedAmount === "gt1000" && tx.amount <= 1000) return false;
+      if (!matchesAmountFilter(amountFilter, tx.amount)) return false;
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         const matchesNote = tx.note?.toLowerCase().includes(query);
@@ -634,25 +565,7 @@ export function TransactionHistory() {
           return false;
       }
 
-      const transactionAmount = Math.abs(tx.amount);
-      if (isCustomAmountRangeActive) {
-        const minAmount =
-          customAmountMin.trim().length > 0 ? Number(customAmountMin) : null;
-        const maxAmount =
-          customAmountMax.trim().length > 0 ? Number(customAmountMax) : null;
-
-        if (minAmount !== null && transactionAmount < minAmount) return false;
-        if (maxAmount !== null && transactionAmount > maxAmount) return false;
-      } else if (selectedAmountRange !== "all") {
-        const bounds = AMOUNT_RANGE_PRESET_BOUNDS[selectedAmountRange];
-
-        if (bounds.min !== undefined && transactionAmount < bounds.min)
-          return false;
-        if (bounds.max !== undefined && transactionAmount > bounds.max)
-          return false;
-      }
-
-      const now = new Date();
+      const now = clockNow();
       const startOfToday = new Date(
         now.getFullYear(),
         now.getMonth(),
@@ -660,18 +573,18 @@ export function TransactionHistory() {
       ).getTime();
 
       if (dateRange === "today" && txTime < startOfToday) return false;
-      if (dateRange === "7d" && txTime < Date.now() - 7 * 24 * 60 * 60 * 1000) {
+      if (dateRange === "7d" && txTime < clockNowMs() - 7 * 24 * 60 * 60 * 1000) {
         return false;
       }
       if (
         dateRange === "30d" &&
-        txTime < Date.now() - 30 * 24 * 60 * 60 * 1000
+        txTime < clockNowMs() - 30 * 24 * 60 * 60 * 1000
       ) {
         return false;
       }
       if (
         dateRange === "90d" &&
-        txTime < Date.now() - 90 * 24 * 60 * 60 * 1000
+        txTime < clockNowMs() - 90 * 24 * 60 * 60 * 1000
       ) {
         return false;
       }
@@ -703,12 +616,8 @@ export function TransactionHistory() {
     selectedLine,
     selectedType,
     selectedStatus,
-    selectedAmount,
     searchQuery,
-    selectedAmountRange,
-    isCustomAmountRangeActive,
-    customAmountMin,
-    customAmountMax,
+    amountFilter,
     dateRange,
     presetRange,
     customStartDate,
@@ -720,7 +629,6 @@ export function TransactionHistory() {
     selectedLine,
     selectedType,
     selectedStatus,
-    selectedAmount,
     dateRange,
     presetRange,
     customStartDate,
@@ -759,33 +667,57 @@ export function TransactionHistory() {
       if (!groups[group]) groups[group] = [];
       groups[group].push(tx);
     });
+    // Issue #1189: fixed display order — Upcoming first, Unknown date last.
     return groups;
   }, [paginatedTransactions]);
 
   const stats = useMemo(() => {
-    const completedTxs = allTransactions.filter(
+    // Outstanding balance: authoritative sum of utilized from non-Closed lines.
+    // This matches the per-line balances shown on /credit-lines and the Dashboard,
+    // and correctly accounts for interest, fees and partial adjustments that a
+    // simple draws-minus-repays flow calculation cannot capture.
+    const outstandingBalance = creditLines.filter(
+      (cl) => cl.status !== "Closed",
+    ).reduce((s, cl) => s + cl.utilized, 0);
+
+    // Flow cards are scoped to filteredTransactions so their values change when
+    // filters (date range, line, type) are applied — making the scope explicit.
+    const completedFiltered = filteredTransactions.filter(
       (tx) => tx.status === "Completed",
     );
-    const totalDrawn = completedTxs
+    const totalDrawn = completedFiltered
       .filter((tx) => tx.type === "Draw")
       .reduce((s, tx) => s + tx.amount, 0);
-    const totalRepaid = completedTxs
+    const totalRepaid = completedFiltered
       .filter((tx) => tx.type === "Repay")
       .reduce((s, tx) => s + tx.amount, 0);
-    const totalInterest = completedTxs
-      .filter((tx) => tx.type === "Interest")
+    // Interest & fees: both Interest and Fee rows count against the borrower.
+    const totalInterestAndFees = completedFiltered
+      .filter((tx) => tx.type === "Interest" || tx.type === "Fee")
       .reduce((s, tx) => s + tx.amount, 0);
-    const currentDebt = totalDrawn - totalRepaid;
-    return { totalDrawn, totalRepaid, totalInterest, currentDebt };
-  }, [allTransactions]);
+
+    // Reconciliation: ledger net (draws − repays − fees/interest) vs outstanding balance.
+    // Only meaningful when a single credit line is selected.
+    const ledgerNet = totalDrawn - totalRepaid - totalInterestAndFees;
+
+    return {
+      outstandingBalance,
+      totalDrawn,
+      totalRepaid,
+      totalInterestAndFees,
+      ledgerNet,
+    };
+  }, [creditLines, filteredTransactions]);
 
   const exportDisabled = filteredTransactions.length === 0;
 
   const handleExportCsv = () => {
     if (exportDisabled) return;
 
-    const csv = buildTransactionCsv(filteredTransactions);
-    const filename = getExportFilename(filteredTransactions);
+    const csv = buildTransactionCsv(filteredTransactions, {
+      asset: DEFAULT_TRANSACTION_CSV_ASSET,
+    });
+    const filename = buildTransactionCsvFilename(filteredTransactions);
 
     downloadCsv(filename, csv);
 
@@ -886,17 +818,24 @@ export function TransactionHistory() {
           break;
       }
     },
-    [isSuggestionsOpen, suggestions, activeSuggestionIndex, commitSuggestion, dismissSuggestions],
+    [
+      isSuggestionsOpen,
+      suggestions,
+      activeSuggestionIndex,
+      commitSuggestion,
+      dismissSuggestions,
+    ],
   );
 
-  const hasLines = MOCK_CREDIT_LINES.length > 0;
+  const hasLines = creditLines.length > 0;
   const hasTransactions = allTransactions.length > 0;
 
   const hasActiveFilters =
     selectedLine !== "all" ||
     selectedType !== "all" ||
     selectedStatus !== "all" ||
-    selectedAmount !== "all" ||
+    selectedAmountRange !== "all" ||
+    isCustomAmountRangeActive ||
     dateRange !== "custom" ||
     customStartDate.length > 0 ||
     customEndDate.length > 0 ||
@@ -911,7 +850,6 @@ export function TransactionHistory() {
         selectedLine,
         selectedType,
         selectedStatus,
-        selectedAmount,
         dateRange,
         presetRange,
         customStartDate,
@@ -936,33 +874,33 @@ export function TransactionHistory() {
     } else if (currentPage !== prevStates.current.currentPage) {
       message = `Page ${currentPage} of ${totalPages} loaded. ${resultCountText}.`;
     } else if (selectedType !== prevStates.current.selectedType) {
-      const typeLabel = selectedType === "all" ? "All" : TX_TYPE_LABELS[selectedType];
+      const typeLabel =
+        selectedType === "all" ? "All" : TX_TYPE_LABELS[selectedType];
       message = `Filtered by transaction type ${typeLabel}. ${resultCountText}.`;
     } else if (selectedLine !== prevStates.current.selectedLine) {
       const lineLabel =
         selectedLine === "all"
           ? "All"
-          : MOCK_CREDIT_LINES.find((cl) => cl.id === selectedLine)?.name || selectedLine;
+          : creditLines.find((cl) => cl.id === selectedLine)?.name ||
+            selectedLine;
       message = `Filtered by credit line ${lineLabel}. ${resultCountText}.`;
     } else if (selectedStatus !== prevStates.current.selectedStatus) {
       message = `Filtered by status ${selectedStatus === "all" ? "All" : selectedStatus}. ${resultCountText}.`;
-    } else if (selectedAmount !== prevStates.current.selectedAmount) {
-      const amountLabel =
-        selectedAmount === "all"
-          ? "All"
-          : AMOUNT_FILTER_OPTIONS.find((o) => o.value === selectedAmount)?.label || selectedAmount;
-      message = `Filtered by amount ${amountLabel}. ${resultCountText}.`;
     } else if (selectedAmountRange !== prevStates.current.selectedAmountRange) {
       const rangeLabels: Record<string, string> = {
         all: "All",
-        "under-5k": "Under $5k",
+        "under-100": "Under $100",
+        "100-1k": "$100 to $1k",
+        "1k-5k": "$1k to $5k",
         "5k-25k": "$5k to $25k",
-        "25k-plus": "Over $25k",
+        "25k-plus": "$25k and over",
       };
-      const rangeLabel = rangeLabels[selectedAmountRange] || selectedAmountRange;
+      const rangeLabel =
+        rangeLabels[selectedAmountRange] || selectedAmountRange;
       message = `Filtered by amount range ${rangeLabel}. ${resultCountText}.`;
     } else if (
-      isCustomAmountRangeActive !== prevStates.current.isCustomAmountRangeActive ||
+      isCustomAmountRangeActive !==
+        prevStates.current.isCustomAmountRangeActive ||
       customAmountMin !== prevStates.current.customAmountMin ||
       customAmountMax !== prevStates.current.customAmountMax
     ) {
@@ -1013,7 +951,6 @@ export function TransactionHistory() {
       selectedLine,
       selectedType,
       selectedStatus,
-      selectedAmount,
       dateRange,
       presetRange,
       customStartDate,
@@ -1033,7 +970,6 @@ export function TransactionHistory() {
     selectedLine,
     selectedType,
     selectedStatus,
-    selectedAmount,
     dateRange,
     presetRange,
     customStartDate,
@@ -1065,7 +1001,9 @@ export function TransactionHistory() {
     const parts: string[] = [];
 
     if (selectedType !== "all") {
-      parts.push(`filtered by ${TX_TYPE_LABELS[selectedType as TransactionType]}`);
+      parts.push(
+        `filtered by ${TX_TYPE_LABELS[selectedType as TransactionType]}`,
+      );
     }
 
     const dateLabels: Record<string, string> = {
@@ -1133,7 +1071,13 @@ export function TransactionHistory() {
     }
 
     const nextSearch = params.toString();
-    navigate({ pathname: location.pathname, search: nextSearch ? `?${nextSearch}` : "" }, { replace: true });
+    navigate(
+      {
+        pathname: location.pathname,
+        search: nextSearch ? `?${nextSearch}` : "",
+      },
+      { replace: true },
+    );
   };
 
   const clearFilters = () => {
@@ -1141,7 +1085,6 @@ export function TransactionHistory() {
     setSelectedLine("all");
     setSelectedType("all");
     setSelectedStatus("all");
-    setSelectedAmount("all");
     setDateRange("custom");
     setPresetRange("custom");
     setCustomStartDate("");
@@ -1163,7 +1106,7 @@ export function TransactionHistory() {
     });
   };
 
-  if (isLoading) {
+  if (status === "loading") {
     /*
      * The skeleton mirrors this page's own DOM and class names, so its
      * geometry is driven by TransactionHistory.css rather than a parallel
@@ -1173,7 +1116,20 @@ export function TransactionHistory() {
     return <TransactionHistorySkeleton rows={ITEMS_PER_PAGE} />;
   }
 
-  if (!hasLines) {
+  if (status === "error") {
+    return (
+      <div className="transaction-history-page">
+        <div role="alert" className="th-error-card">
+          <p>{error?.message ?? "Unable to load transactions."}</p>
+          <button type="button" onClick={() => void refetch().catch(() => undefined)}>
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasLines || status === "idle") {
     return (
       <div className="transaction-history-page">
         <div className="th-header">
@@ -1261,6 +1217,31 @@ export function TransactionHistory() {
       </p>
 
       <div className="th-stats">
+        {/* Outstanding balance — derived from authoritative line balances, not flow math */}
+        <div className="th-stat-card">
+          <span
+            className="th-stat-icon"
+            style={{ background: "rgba(248,81,73,0.12)", color: COLOR.danger }}
+          >
+            💳
+          </span>
+          <div className="th-stat-content">
+            <span className="th-stat-label">Outstanding Balance</span>
+            <span
+              className="th-stat-value num-tabular"
+              style={{
+                color:
+                  stats.outstandingBalance > 0 ? COLOR.danger : COLOR.success,
+              }}
+            >
+              {stats.outstandingBalance > 0
+                ? fmt(stats.outstandingBalance)
+                : fmt(0)}
+            </span>
+          </div>
+        </div>
+
+        {/* Flow cards — scoped to the current filter selection */}
         <div className="th-stat-card">
           <span
             className="th-stat-icon"
@@ -1269,8 +1250,14 @@ export function TransactionHistory() {
             ↗
           </span>
           <div className="th-stat-content">
-            <span className="th-stat-label">Total Drawn</span>
-            <span className="th-stat-value num-tabular" style={{ color: COLOR.accent }}>
+            <span className="th-stat-label">
+              Total Drawn
+              <span className="th-stat-scope"> in selected range</span>
+            </span>
+            <span
+              className="th-stat-value num-tabular"
+              style={{ color: COLOR.accent }}
+            >
               {fmt(stats.totalDrawn)}
             </span>
           </div>
@@ -1283,8 +1270,14 @@ export function TransactionHistory() {
             ↙
           </span>
           <div className="th-stat-content">
-            <span className="th-stat-label">Total Repaid</span>
-            <span className="th-stat-value num-tabular" style={{ color: COLOR.success }}>
+            <span className="th-stat-label">
+              Total Repaid
+              <span className="th-stat-scope"> in selected range</span>
+            </span>
+            <span
+              className="th-stat-value num-tabular"
+              style={{ color: COLOR.success }}
+            >
               {fmt(stats.totalRepaid)}
             </span>
           </div>
@@ -1300,31 +1293,60 @@ export function TransactionHistory() {
             📈
           </span>
           <div className="th-stat-content">
-            <span className="th-stat-label">Total Interest</span>
-            <span className="th-stat-value num-tabular" style={{ color: COLOR.warning }}>
-              {fmt(stats.totalInterest)}
+            <span className="th-stat-label">
+              Interest &amp; Fees
+              <span className="th-stat-scope"> in selected range</span>
             </span>
-          </div>
-        </div>
-        <div className="th-stat-card">
-          <span
-            className="th-stat-icon"
-            style={{ background: "rgba(248,81,73,0.12)", color: COLOR.danger }}
-          >
-            💳
-          </span>
-          <div className="th-stat-content">
-            <span className="th-stat-label">Current Debt</span>
             <span
               className="th-stat-value num-tabular"
-              style={{
-                color: stats.currentDebt > 0 ? COLOR.danger : COLOR.success,
-              }}
+              style={{ color: COLOR.warning }}
             >
-              {fmt(Math.abs(stats.currentDebt))}
+              {fmt(stats.totalInterestAndFees)}
             </span>
           </div>
         </div>
+
+        {/* Reconciliation hint — visible only when a single credit line is filtered */}
+        {selectedLine !== "all" && (() => {
+          const line = creditLines.find((cl) => cl.id === selectedLine);
+          if (!line) return null;
+          const diff = stats.ledgerNet - line.utilized;
+          if (diff === 0) return null;
+          const absDiff = Math.abs(diff);
+          return (
+            <div
+              className="th-stat-card th-stat-card--reconciliation"
+              title="The ledger net (draws − repays − fees/interest in the selected range) differs from the authoritative line balance. The gap is caused by transactions outside the selected date range, accrued interest, adjustments, or rounding."
+            >
+              <span
+                className="th-stat-icon"
+                style={{
+                  background: "rgba(139,148,158,0.12)",
+                  color: COLOR.muted,
+                }}
+              >
+                ⚖
+              </span>
+              <div className="th-stat-content">
+                <span className="th-stat-label">
+                  Ledger net vs balance
+                  <span className="th-stat-scope"> ⓘ</span>
+                </span>
+                <span
+                  className="th-stat-value num-tabular"
+                  style={{ color: COLOR.muted }}
+                >
+                  {diff > 0 ? "+" : "−"}
+                  {fmt(absDiff)}{" "}
+                  <span style={{ fontSize: "0.75em" }}>difference</span>
+                </span>
+                <span className="th-stat-hint">
+                  interest / fees / adjustments outside range
+                </span>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="th-filters">
@@ -1338,7 +1360,7 @@ export function TransactionHistory() {
             }}
           >
             <option value="all">All Credit Lines</option>
-            {MOCK_CREDIT_LINES.map((cl) => (
+            {creditLines.map((cl) => (
               <option key={cl.id} value={cl.id}>
                 {cl.name}
               </option>
@@ -1371,52 +1393,6 @@ export function TransactionHistory() {
             ))}
           </div>
         </div>
-        {/*
-         * Amount Range Filter Chips
-         * Implements accessible toggle button group for amount-range filtering
-         *
-         * Filters by absolute transaction amount:
-         * - <$100: amounts under 100
-         * - $100–$1,000: amounts between 100 and 1,000 inclusive
-         * - >$1,000: amounts over 1,000
-         *
-         * URL state is synced via ?amount=lt100 | ?amount=100-1000 | ?amount=gt1000.
-         * Uses same aria-pressed toggle pattern as Type and Date chips.
-         */}
-        <div className="th-filter-group th-filter-group-wide">
-          <span className="th-filter-label" id="amount-filter-label">
-            Amount
-          </span>
-          <div
-            className="th-chip-group"
-            role="group"
-            aria-labelledby="amount-filter-label"
-          >
-            {AMOUNT_FILTER_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className="th-filter-chip"
-                aria-pressed={selectedAmount === option.value}
-                onClick={() => {
-                  setSelectedAmount(option.value);
-                  setCurrentPage(1);
-                  setSearchParams((prev) => {
-                    const next = new URLSearchParams(prev);
-                    if (option.value === "all") {
-                      next.delete("amount");
-                    } else {
-                      next.set("amount", option.value);
-                    }
-                    return next;
-                  });
-                }}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
         <div className="th-filter-group">
           <label>Status</label>
           <select
@@ -1435,10 +1411,17 @@ export function TransactionHistory() {
 
         <div className="th-filter-group th-filter-group-wide">
           <div className="th-subgroup">
-            <span className="th-filter-label" id="transaction-range-filter-label">
+            <span
+              className="th-filter-label"
+              id="transaction-range-filter-label"
+            >
               Presets
             </span>
-            <div className="th-chip-group" role="group" aria-labelledby="transaction-range-filter-label">
+            <div
+              className="th-chip-group"
+              role="group"
+              aria-labelledby="transaction-range-filter-label"
+            >
               {RANGE_PRESET_OPTIONS.map((option) => (
                 <button
                   key={option.value}
@@ -1461,10 +1444,17 @@ export function TransactionHistory() {
             </div>
           </div>
           <div className="th-subgroup">
-            <span className="th-filter-label" id="transaction-date-filter-label">
+            <span
+              className="th-filter-label"
+              id="transaction-date-filter-label"
+            >
               Date Range
             </span>
-            <div className="th-chip-group" role="group" aria-labelledby="transaction-date-filter-label">
+            <div
+              className="th-chip-group"
+              role="group"
+              aria-labelledby="transaction-date-filter-label"
+            >
               {[
                 { value: "today" as DatePreset, label: "Today" },
                 { value: "7d" as DatePreset, label: "7d" },
@@ -1476,7 +1466,9 @@ export function TransactionHistory() {
                   key={option.value}
                   type="button"
                   className="th-filter-chip"
-                  aria-pressed={presetRange === "custom" && dateRange === option.value}
+                  aria-pressed={
+                    presetRange === "custom" && dateRange === option.value
+                  }
                   onClick={() => {
                     setPresetRange("custom");
                     setDateRange(option.value);
@@ -1542,6 +1534,12 @@ export function TransactionHistory() {
               setCustomAmountMax("");
               setIsCustomAmountRangeActive(false);
               setCurrentPage(1);
+              setSearchParams((prev) => {
+                const next = new URLSearchParams(prev);
+                if (preset === "all") next.delete("amount");
+                else next.set("amount", preset);
+                return next;
+              });
             }}
             onCustomRangeApply={({ min, max }) => {
               setSelectedAmountRange("all");
@@ -1549,6 +1547,11 @@ export function TransactionHistory() {
               setCustomAmountMax(max === null ? "" : String(max));
               setIsCustomAmountRangeActive(true);
               setCurrentPage(1);
+              setSearchParams((prev) => {
+                const next = new URLSearchParams(prev);
+                next.delete("amount");
+                return next;
+              });
             }}
             onCustomRangeClear={() => {
               setSelectedAmountRange("all");
@@ -1556,6 +1559,11 @@ export function TransactionHistory() {
               setCustomAmountMax("");
               setIsCustomAmountRangeActive(false);
               setCurrentPage(1);
+              setSearchParams((prev) => {
+                const next = new URLSearchParams(prev);
+                next.delete("amount");
+                return next;
+              });
             }}
           />
         </div>
@@ -1726,11 +1734,7 @@ export function TransactionHistory() {
 
       <div className="th-table-container">
         {filteredTransactions.length === 0 ? (
-          <div
-            className="empty-state"
-            role="status"
-            aria-live="polite"
-          >
+          <div className="empty-state" role="status" aria-live="polite">
             <NoDataGraph className="empty-state-illustration--muted" />
             <h2>No transactions found</h2>
             <p>
@@ -1801,7 +1805,9 @@ export function TransactionHistory() {
                     ]);
                     setCurrentPage((p) => Math.min(totalPages, p + 1));
                   }}
-                  disabled={currentPage === totalPages || !currentPageResult.hasNextPage}
+                  disabled={
+                    currentPage === totalPages || !currentPageResult.hasNextPage
+                  }
                 >
                   Next
                 </button>

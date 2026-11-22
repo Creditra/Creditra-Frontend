@@ -173,3 +173,55 @@ npx vitest run src/components/__tests__/NotificationCenter.test.tsx
   }
 }
 ```
+
+---
+
+## Undo Semantics and Preferences Bypass
+
+### Exact Prior State for Mark All as Read
+- **Capture**: When "Mark all as read" is activated, only the IDs of currently unread notifications (`!notification.read`) are captured in the undo closure.
+- **Restoration**: Triggering "Undo" invokes `undoRead(unreadIds)`, flipping only those specific notifications back to unread. Notifications that were already read before the action remain read.
+- **Idempotency**: Clicking Undo multiple times is idempotent and produces the exact same state without double toggling.
+
+### Merge-Safe Undo for Clear All
+- **Snapshot & Window**: When "Clear all" is triggered, a snapshot of all notifications is captured before clearing the inbox, and an undo toast is displayed for 6 seconds.
+- **Pure Merge**: Restoration calls `restoreNotifications(snapshot)`, which merges the snapshot with any new notifications that arrived or updated during the undo window via the pure function `mergeNotifications(snapshot, current, cap)`.
+- **Deduplication & Sorting**: Notifications are deduplicated by `id` (with newer arrivals taking precedence), sorted descending by timestamp (newest first), and capped at 100 entries.
+- **Idempotency**: Clicking Undo multiple times does not duplicate notifications.
+
+### Preferences Bypass Flag (`bypassPreferences`)
+- **Option**: `AddToastOptions.bypassPreferences?: boolean`
+- **Purpose**: When `bypassPreferences: true` is set, `addToast` bypasses user category mute preferences (e.g. `preferences.system = false`).
+- **Policy**: This flag is strictly reserved for undo toasts and critical system alerts that the user must be able to view and reverse.
+
+---
+
+## Keyboard Shortcuts
+
+### Shift+R: Mark All as Read
+- **Trigger**: `Shift + R` marks all notifications as read when `unreadCount > 0`.
+- **Panel Scoped**: The shortcut only fires when the notification panel is open (`isPanelOpen === true`).
+- **Browser Compatibility**: Handled with `e.shiftKey && e.key.toLowerCase() === 'r'` to support standard browser key event reporting where `e.key` is uppercase `'R'`.
+- **Editable Field Suppression**: Ignored if focus or the event target is inside an editable field (`<input>`, `<textarea>`, `<select>`, or `isContentEditable`) to avoid conflicting with user typing.
+
+---
+
+## Toast and Banner Mounting & Announcement Model
+
+### Mounting in App Shell
+Both `<ToastContainer />` and `<BannerAlerts />` are mounted once in the root application shell (`src/App.tsx`), inside `<NotificationProvider>` and outside `<Routes>`:
+- `<BannerAlerts />` is mounted at the top of `<main className="main">`, rendering page-level alerts above route contents.
+- `<ToastContainer />` is mounted directly in `<div className="app">` outside the main route view, ensuring toasts render above all views (including `NotFound`) and survive client-side route navigation.
+
+### ARIA Roles and Live-Region Semantics
+To prevent duplicate screen-reader announcements:
+- **Toast Container** (`.toast-container`): Serves as a plain landmark-free wrapper with `aria-label="Notifications"`. It does **not** have a live-region role (`role="status"`, `role="log"`) or `aria-live` / `aria-atomic`, preventing screen readers from re-reading the entire stack whenever a toast is added or dismissed.
+- **Individual Toast Items** (`.toast-item`): Each toast item contains exactly one live region:
+  - Error and danger toasts carry `role="alert"` and `aria-live="assertive"`.
+  - Success, info, and warning toasts carry `role="status"` and `aria-live="polite"`.
+  - No `aria-atomic` is placed on the toast stack.
+- **Banner Items** (`.banner-alert`): Render with `role="alert"`.
+
+### Timer Hygiene
+- Toasts evicted by the 5-toast queue cap have their auto-dismiss timers cleared immediately from `timersRef`.
+- When `NotificationProvider` unmounts, all pending timers in `timersRef` are cleared.

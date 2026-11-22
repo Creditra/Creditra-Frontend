@@ -157,3 +157,36 @@
 .sync-indicator--card-header {
   margin-left: auto;
 }
+
+/* Error state & retry button */
+.sync-indicator__error-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sync-indicator__retry-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-raised, #1c2230);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.sync-indicator__retry-btn:hover:not(:disabled) {
+  background: rgba(139, 148, 158, 0.15);
+  border-color: var(--accent);
+}
+
+.sync-indicator__retry-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
