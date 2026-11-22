@@ -9,6 +9,8 @@ interface AutoPayCardProps {
   startDate: string;
   endDate?: string;
   onPreviewRowChange?: (index: number | null) => void;
+  creditLineName?: string;
+  creditLineBalance?: number;
 }
 
 /**
@@ -34,6 +36,8 @@ export function AutoPayCard({
   startDate,
   endDate,
   onPreviewRowChange,
+  creditLineName,
+  creditLineBalance,
 }: AutoPayCardProps) {
   const [focused, setFocused] = useState(false);
 
@@ -78,6 +82,8 @@ export function AutoPayCard({
             endDate={endDate}
             maxRows={8}
             onPreviewRowChange={onPreviewRowChange}
+            creditLineName={creditLineName}
+            creditLineBalance={creditLineBalance}
           />
           {focused && (
             <div

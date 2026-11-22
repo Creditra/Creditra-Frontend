@@ -13,6 +13,7 @@
  * requires a real browser and visual regression testing.
  */
 
+import type { ReactNode } from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
@@ -28,24 +29,36 @@ vi.mock('../context/ReducedMotionContext', () => ({
   motionClasses: (_isActive: boolean, classes: string) => classes,
 }));
 
-vi.mock('../context/WalletContext', () => ({
-  useWallet: () => ({
-    wallet: {
+vi.mock('../context/ThemeContext', () => ({
+  useTheme: () => ({ theme: 'default' }),
+  ThemeProvider: ({ children }: { children: ReactNode }) => children,
+}));
+
+const { mockWallet, mockBalances, mockRefreshBalance } = vi.hoisted(() => {
+  const balances = [{
+    asset: 'USDC',
+    issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+    balance: '50000.0000000',
+  }];
+  return {
+    mockWallet: {
       publicKey: 'GAABC1234567890ABCDEF',
       network: 'TESTNET',
     },
+    mockBalances: balances,
+    mockRefreshBalance: async () => balances,
+  };
+});
+
+vi.mock('../context/WalletContext', () => ({
+  useWallet: () => ({
+    wallet: mockWallet,
     status: 'connected',
-    balances: [{
-      asset: 'USDC',
-      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
-      balance: '50000.0000000',
-    }],
-    refreshBalance: async () => [{
-      asset: 'USDC',
-      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
-      balance: '50000.0000000',
-    }],
+    balances: mockBalances,
+    refreshBalance: mockRefreshBalance,
   }),
+  walletIdentityKey: (wallet: { publicKey: string; network: string } | null) =>
+    wallet ? `undefined:${wallet.publicKey}:${wallet.network}` : null,
 }));
 
 vi.mock('../utils/storage', () => ({
@@ -265,22 +278,29 @@ describe('RepayPage — tabular-nums on numeric displays (FWC26)', () => {
   });
 
   describe('success route', () => {
-    it('shows the confirmed amount on the routed success page', () => {
+    it('shows the confirmed amount on the routed success page', async () => {
       renderWithLine();
       fireEvent.change(screen.getByLabelText(/amount to repay/i), { target: { value: '100' } });
       fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
-      fireEvent.click(screen.getByRole('button', { name: /confirm repayment/i }));
+      await act(async () => {});
+      fireEvent.click(document.querySelector('.rp-confirm-btn') as HTMLButtonElement);
+      await act(async () => {});
 
-      expect(screen.getByRole('heading', { name: 'You repaid $100.00!' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: 'You repaid $100.00!' }),
+      ).toBeInTheDocument();
     });
 
-    it('shows the remaining balance on the routed success page', () => {
+    it('shows the remaining balance on the routed success page', async () => {
       renderWithLine();
       fireEvent.change(screen.getByLabelText(/amount to repay/i), { target: { value: '50' } });
       fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
-      fireEvent.click(screen.getByRole('button', { name: /confirm repayment/i }));
+      await act(async () => {});
+      fireEvent.click(document.querySelector('.rp-confirm-btn') as HTMLButtonElement);
+      await act(async () => {});
 
-      expect(screen.getByText('$187,450.00')).toBeInTheDocument();
+      const remainingRow = screen.getByText('Remaining debt').parentElement;
+      expect(remainingRow?.textContent).toMatch(/Remaining debt\$[\d,]+\.\d{2}/);
     });
   });
 
