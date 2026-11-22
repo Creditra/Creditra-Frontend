@@ -84,27 +84,6 @@ import "@/components/DrawWizardMicroProgress.css";
 import "@/styles/focus.css";
 import "./DrawCreditPage.css";
 
-const drawSteps = [
-  { id: "select", label: "Select line" },
-  { id: "amount", label: "Enter amount" },
-  { id: "preview", label: "Preview" },
-  { id: "confirm", label: "Confirm" },
-] as const;
-
-type ProgressStep = (typeof drawSteps)[number]["id"];
-
-interface RestoredDraft {
-  draft: WizardDraftState | null;
-  line: CreditLine | null;
-  notice: string;
-}
-
-const EMPTY_RESTORED_DRAFT: RestoredDraft = {
-  draft: null,
-  line: null,
-  notice: "",
-};
-
 export default function DrawCreditPage() {
   const navigate = useNavigate();
   // Read the context directly (not `useNotifications()`) so this
@@ -266,7 +245,7 @@ export default function DrawCreditPage() {
       notice: draftOwner
         ? "Your saved draw draft was cleared because the wallet changed."
         : "Your saved draw draft was cleared because the wallet disconnected.",
-    );
+    });
   }, [draftOwner, draftSave.reset]);
 
   useEffect(() => {
@@ -303,6 +282,7 @@ export default function DrawCreditPage() {
     draftSave.markError,
     draftSave.reset,
   ]);
+  }, [state.step, state.selectedCreditLine, state.amount, draftOwner]);
 
   /**
    * Concurrent submission guard (issue #932). The ref is flipped to `true`
@@ -335,16 +315,9 @@ export default function DrawCreditPage() {
     ? Math.max(0, selectedCreditLine.limit - selectedCreditLine.available)
     : 0;
 
-  const handleSelectCreditLine = (creditLine: CreditLine) => {
-    // Derive draw availability from the authoritative utilization at the
-    // wizard boundary (issue #931) so stale or inconsistent `available`
-    // values can never leak into the amount step.
-    setSelectedCreditLine(normalizeCreditLineAvailability(creditLine));
-    setAmount(0);
-    setConfirmationAcknowledged(false);
-    setEligibilityAlert(null);
-    setStep("amount");
-  };
+  const handleSelectCreditLine = useCallback((creditLine: CreditLine) => {
+    dispatch({ type: "SELECT_LINE", line: creditLine });
+  }, []);
 
   const handleAmountChange = useCallback((amount: number) => {
     dispatch({ type: "SET_AMOUNT", amount });
@@ -556,6 +529,18 @@ export default function DrawCreditPage() {
       if (step === "amount" || step === "confirm") {
         e.preventDefault();
         handleBack();
+          if (state.step === "select") {
+          } else if (state.step === "amount" || state.step === "confirm") {
+          if (state.step === "amount" || state.step === "confirm") {
+          if (state.step === "amount" && state.selectedCreditLine) {
+              String(state.amount),
+              state.selectedCreditLine,
+              handleAmountNext(state.amount);
+              dispatch({
+                type: "SET_SUBMIT_ERROR",
+                error: validation.message,
+              });
+          if (state.step === "confirm" && state.confirmationAcknowledged) {
       }
     },
   });
@@ -586,6 +571,15 @@ export default function DrawCreditPage() {
       }
     },
   });
+  }, [
+    state.step,
+    state.amount,
+    state.selectedCreditLine,
+    state.confirmationAcknowledged,
+    handleBack,
+    handleCancel,
+    isRiskModalOpen,
+  ]);
 
   return (
     <main className="dc-page" aria-label="Draw credit">

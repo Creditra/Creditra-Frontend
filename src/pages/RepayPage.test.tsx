@@ -32,7 +32,28 @@ vi.mock('../context/ReducedMotionContext', () => ({
 vi.mock('../context/ThemeContext', () => ({
   useTheme: () => ({ theme: 'default' }),
   ThemeProvider: ({ children }: { children: ReactNode }) => children,
-}));
+vi.mock('../context/WalletContext', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../context/WalletContext')>();
+    ...actual,
+    useWallet: () => ({
+      wallet: {
+        publicKey: 'GAABC1234567890ABCDEF',
+        network: 'TESTNET',
+      },
+      status: 'connected',
+      balances: [{
+        asset: 'USDC',
+        issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+        balance: '50000.0000000',
+      }],
+      refreshBalance: async () => [{
+        asset: 'USDC',
+        issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+        balance: '50000.0000000',
+      }],
+    }),
+  };
+});
 
 const { mockWallet, mockBalances, mockRefreshBalance } = vi.hoisted(() => {
   const balances = [{
@@ -42,21 +63,14 @@ const { mockWallet, mockBalances, mockRefreshBalance } = vi.hoisted(() => {
   }];
   return {
     mockWallet: {
-      publicKey: 'GAABC1234567890ABCDEF',
-      network: 'TESTNET',
-    },
     mockBalances: balances,
     mockRefreshBalance: async () => balances,
   };
 });
 
-vi.mock('../context/WalletContext', () => ({
-  useWallet: () => ({
     wallet: mockWallet,
-    status: 'connected',
     balances: mockBalances,
     refreshBalance: mockRefreshBalance,
-  }),
   walletIdentityKey: (wallet: { publicKey: string; network: string } | null) =>
     wallet ? `undefined:${wallet.publicKey}:${wallet.network}` : null,
 }));

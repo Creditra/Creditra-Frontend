@@ -1,5 +1,6 @@
 /**
  * Safe wrappers around `localStorage` with schema versioning and migrations.
+ * Safe wrappers around browser storage.
  *
  * Storage can throw in private browsing modes, in iframes with strict
  * cookie policies, and when the quota is exceeded. These helpers return
@@ -135,7 +136,9 @@ export function readJson<T>(key: string, fallback: T): T {
 export function writeJson<T>(key: string, value: T): boolean {
   try {
     if (typeof window === 'undefined' || !window.localStorage) return false;
-    window.localStorage.setItem(key, JSON.stringify(value));
+    const storage = getLocalStorage();
+    if (!storage) return;
+    storage.setItem(key, JSON.stringify(value));
     return true;
   } catch {
     /* swallow — quota or private-mode write failure */

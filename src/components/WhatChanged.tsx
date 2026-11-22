@@ -76,8 +76,9 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
     const sessionActiveKey = dashboardSessionActiveKey(owner);
 
     // Check if the session is already active
-    const sessionActive = sessionStorage.getItem("creditra_dashboard_session_active");
-    
+    const sessionActive = readSessionJson<boolean>(sessionActiveKey, false);
+    const storedData = readJson<unknown>(stableKey, {});
+    const lastVisitData = isDashboardValues(storedData) ? storedData : {};
     const lastVisitData = readVersioned<Record<string, number>>(
       DASHBOARD_VALUES_STABLE_KEY,
       {
@@ -98,6 +99,7 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
       writeVersioned(DASHBOARD_VALUES_STABLE_KEY, newStableData, {
         version: DASHBOARD_VALUES_SCHEMA_VERSION,
       });
+      writeJson(stableKey, newStableData);
       
       writeSessionJson(sessionActiveKey, true);
       
@@ -117,6 +119,7 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
       writeVersioned(DASHBOARD_VALUES_STABLE_KEY, newStableData, {
         version: DASHBOARD_VALUES_SCHEMA_VERSION,
       });
+      writeJson(stableKey, newStableData);
     }
   }, [owner, metricId, currentValue]);
 

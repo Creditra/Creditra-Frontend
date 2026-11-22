@@ -815,8 +815,6 @@ export function CollateralSubstitutionModal({
         );
       }
 
-      // Pass the idempotency key to the server to enable duplicate detection.
-      const idempotencyKey = submissionAttemptRef.current?.idempotencyKey ?? 'unknown';
       const payload: SubmitCollateralSwapPayload = {
         idempotencyKey,
         creditLineName,

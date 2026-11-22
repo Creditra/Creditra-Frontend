@@ -1,5 +1,5 @@
 import { useRef, useState, lazy, Suspense } from "react";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { CommandPalette } from "./components/CommandPalette";
 import { RouteAnnouncer, RouteHeadProvider } from "./components/RouteAnnouncer";
 import { WalletProvider } from "./context/WalletContext";
