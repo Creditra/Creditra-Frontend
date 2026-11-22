@@ -4,7 +4,12 @@ import type { DutchAuction } from '../types/dutchAuction';
 import { COLOR, fmt } from '../utils/tokens';
 import { PendingButton } from './PendingButton';
 import { useWallet } from '../context/WalletContext';
-import { canPurchase } from '../lib/dutch-auction-purchase';
+import {
+  canPurchase,
+  createPurchaseIdempotencyKey,
+  type PurchaseOptions,
+  type PurchaseReceipt,
+} from '../lib/dutch-auction-purchase';
 import { purchaseAuction } from '../services/dutchAuctions';
 import { EXPECTED_NETWORK } from '../utils/wallet';
 import { resolveNftImage } from '../utils/nft-image';
@@ -17,7 +22,11 @@ import { AuctionPriceCurve } from './AuctionPriceCurve';
 
 export interface DutchAuctionCardProps {
   auction: DutchAuction;
-  onPurchase?: (auctionId: string, priceStroops: bigint) => void | Promise<void>;
+  onPurchase?: (
+    auctionId: string,
+    priceStroops: bigint,
+    options?: PurchaseOptions,
+  ) => void | PurchaseReceipt | Promise<void | PurchaseReceipt>;
 }
 
 /**
@@ -82,6 +91,9 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
   const { wallet, status } = useWallet();
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const attemptKeyRef = useRef<{ key: string; priceStroops: bigint } | null>(null);
+  const [receipt, setReceipt] = useState<PurchaseReceipt | null>(null);
   const [feedback, setFeedback] = useState('');
   const [politeness, setPoliteness] = useState<'polite' | 'assertive'>('polite');
   const [targetInput, setTargetInput] = useState('');
@@ -100,6 +112,21 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
   useEffect(() => {
     setImageFailed(false);
   }, [imageSrc]);
+
+  // Abort any in-flight purchase when the card unmounts so the async handler
+  // cannot update state after teardown.
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    setReceipt(null);
+  }, [auction.id]);
+
   const intervalRef = useRef<number | undefined>(undefined);
 
   // Update price, timer, and effective status
@@ -185,23 +212,67 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
     pendingRef.current = true;
     setPending(true);
     setFeedback('');
+    setReceipt(null);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       // Price is computed in integer stroops at click time so the submitted
       // amount matches what the contract would settle.
       const priceStroops = priceAt(auction, Date.now());
+
+      // Reuse the key for retries at the same price so a retry cannot buy
+      // twice; a price change is a new purchase intent and gets a new key.
+      const previousAttempt = attemptKeyRef.current;
+      const idempotencyKey =
+        previousAttempt && previousAttempt.priceStroops === priceStroops
+          ? previousAttempt.key
+          : createPurchaseIdempotencyKey(auction.id, priceStroops);
+      attemptKeyRef.current = { key: idempotencyKey, priceStroops };
+
+      const options: PurchaseOptions = {
+        signal: controller.signal,
+        idempotencyKey,
+      };
+
+      let nextReceipt: PurchaseReceipt | null = null;
       if (onPurchase) {
-        await onPurchase(auction.id, priceStroops);
+        const result = await onPurchase(auction.id, priceStroops, options);
+        if (result) nextReceipt = result;
       } else {
-        await purchaseAuction(auction.id, priceStroops);
+        nextReceipt = await purchaseAuction(auction.id, priceStroops, options);
       }
-      setFeedback(`Purchased auction ${auction.id} for ${fmt(fromStroops(priceStroops))} USD!`);
+
+      if (controller.signal.aborted) return;
+
+      const resolvedReceipt: PurchaseReceipt = nextReceipt ?? {
+        auctionId: auction.id,
+        priceStroops,
+        txId: `local_${idempotencyKey.replace(/^idem_/, '')}`,
+        purchasedAt: Date.now(),
+        idempotencyKey,
+      };
+      const purchasedAtLabel = new Date(resolvedReceipt.purchasedAt).toLocaleString();
+
+      setReceipt(resolvedReceipt);
+      setFeedback(
+        `Purchased auction ${auction.id} for ${fmt(fromStroops(priceStroops))} USD. ` +
+          `Transaction ${resolvedReceipt.txId} at ${purchasedAtLabel}.`,
+      );
       setPoliteness('assertive');
     } catch (e) {
+      if (controller.signal.aborted || (e instanceof Error && e.name === 'AbortError')) {
+        return;
+      }
       setFeedback('Purchase failed. Please try again.');
       setPoliteness('assertive');
     } finally {
-      pendingRef.current = false;
-      setPending(false);
+      if (abortRef.current === controller) abortRef.current = null;
+      if (!controller.signal.aborted) {
+        pendingRef.current = false;
+        setPending(false);
+      }
     }
   };
 
@@ -410,6 +481,47 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
                     <p id={helperId} style={{ marginTop: '0.25rem', color: COLOR.muted, fontSize: '0.75rem' }}>
                       {helperText}
                     </p>
+                  )}
+                  {receipt && (
+                    <section
+                      data-testid="purchase-receipt"
+                      aria-label="Purchase receipt"
+                      style={{
+                        marginTop: '0.75rem',
+                        padding: '0.75rem',
+                        border: `1px solid ${COLOR.border}`,
+                        borderRadius: '8px',
+                        background: COLOR.surface,
+                      }}
+                    >
+                      <h4 style={{ margin: 0, color: COLOR.text, fontSize: '0.9rem' }}>
+                        Purchase receipt
+                      </h4>
+                      <dl
+                        style={{
+                          margin: '0.5rem 0 0',
+                          display: 'grid',
+                          gridTemplateColumns: 'auto 1fr',
+                          gap: '0.25rem 0.75rem',
+                          fontSize: '0.8rem',
+                        }}
+                      >
+                        <dt style={{ color: COLOR.muted }}>Transaction</dt>
+                        <dd style={{ margin: 0, color: COLOR.text, wordBreak: 'break-all' }}>
+                          {receipt.txId}
+                        </dd>
+                        <dt style={{ color: COLOR.muted }}>Price</dt>
+                        <dd style={{ margin: 0, color: COLOR.text }}>
+                          {fmt(fromStroops(receipt.priceStroops))} USD
+                        </dd>
+                        <dt style={{ color: COLOR.muted }}>Time</dt>
+                        <dd style={{ margin: 0, color: COLOR.text }}>
+                          <time dateTime={new Date(receipt.purchasedAt).toISOString()}>
+                            {new Date(receipt.purchasedAt).toLocaleString()}
+                          </time>
+                        </dd>
+                      </dl>
+                    </section>
                   )}
                   {feedback && <LiveRegion message={feedback} politeness={politeness} />}
                 </>

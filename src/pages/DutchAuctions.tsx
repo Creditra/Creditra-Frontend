@@ -6,6 +6,10 @@ import { NoDataGraph } from '@/components/illustrations';
 import { MOCK_DUTCH_AUCTIONS } from '../data/mockDutchAuctions';
 import { COLOR } from '../utils/tokens';
 import { purchaseAuction } from '../services/dutchAuctions';
+import type {
+  PurchaseOptions,
+  PurchaseReceipt,
+} from '../lib/dutch-auction-purchase';
 import { getEffectiveStatus } from '../lib/dutch-auction-lifecycle';
 import { WalletProvider } from '../context/WalletContext';
 import {
@@ -199,9 +203,11 @@ export const DutchAuctionsView: React.FC = () => {
     setSearchParams(nextParams);
   };
 
-  const handlePurchase = async (auctionId: string, priceStroops: bigint) => {
-    await purchaseAuction(auctionId, priceStroops);
-  };
+  const handlePurchase = (
+    auctionId: string,
+    priceStroops: bigint,
+    options?: PurchaseOptions,
+  ): Promise<PurchaseReceipt> => purchaseAuction(auctionId, priceStroops, options);
 
   return (
     <div style={{ padding: '1rem' }}>
