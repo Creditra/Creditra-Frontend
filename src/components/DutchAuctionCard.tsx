@@ -13,6 +13,7 @@ import { clearAlert, listAlerts, setAlert } from '../state/auctionAlerts';
 import { Image as ImageIcon } from 'lucide-react';
 import { getEffectiveStatus, type EffectiveDutchAuctionStatus } from '../lib/dutch-auction-lifecycle';
 import { validateSchedule, priceAt, fromStroops } from '../lib/dutch-auction-pricing';
+import { AuctionPriceCurve } from './AuctionPriceCurve';
 
 export interface DutchAuctionCardProps {
   auction: DutchAuction;
@@ -71,6 +72,7 @@ const formatTimeUntilStart = (startTime: string): string => {
 
 export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onPurchase }) => {
   const validation = validateSchedule(auction);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [currentPriceStroops, setCurrentPriceStroops] = useState<bigint | null>(() => calculateCurrentPriceStroops(auction));
   const currentPrice = currentPriceStroops !== null ? fromStroops(currentPriceStroops) : 0;
   const [timeLeft, setTimeLeft] = useState(formatTimeLeft(auction.endTime));
@@ -102,13 +104,16 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
 
   // Update price, timer, and effective status
   useEffect(() => {
-    const newStatus = getEffectiveStatus(auction);
+    const initialNow = Date.now();
+    setNowMs(initialNow);
+    const newStatus = getEffectiveStatus(auction, initialNow);
     setEffectiveStatus(newStatus);
 
     // Only run interval for non-terminal states
     if (newStatus === 'Scheduled' || newStatus === 'Active') {
       intervalRef.current = window.setInterval(() => {
         const now = Date.now();
+        setNowMs(now);
         const updatedStatus = getEffectiveStatus(auction, now);
         setEffectiveStatus(updatedStatus);
         const nextPrice = calculateCurrentPriceStroops(auction, now);
@@ -360,6 +365,9 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
               </div>
             )}
           </div>
+          {(effectiveStatus === 'Scheduled' || effectiveStatus === 'Active') && (
+            <AuctionPriceCurve auction={auction} nowMs={nowMs} />
+          )}
           {effectiveStatus === 'Active' && validation.ok && (
             <div style={{ marginTop: '1rem' }}>
               {savedTarget !== null ? (
