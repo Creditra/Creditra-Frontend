@@ -18,7 +18,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
 import { StatusBadge } from '../components/StatusBadge';
-import { MOCK_CREDIT_LINES } from '../data/mockData';
+import { useCreditLines } from '../hooks/useCreditLines';
 import type { CreditLine } from '../types/creditLine';
 import {
   COLOR,
@@ -159,7 +159,7 @@ function CompareRow({
  * Shown when fewer than two valid IDs are supplied via query params.
  * Lets the user pick two credit lines and then updates the URL.
  */
-function LinePicker() {
+function LinePicker({ lines }: { lines: CreditLine[] }) {
   const [, setSearchParams] = useSearchParams();
   const [pickA, setPickA] = useState('');
   const [pickB, setPickB] = useState('');
@@ -192,7 +192,7 @@ function LinePicker() {
             onChange={(e) => setPickA(e.target.value)}
           >
             <option value="">— Select a line —</option>
-            {MOCK_CREDIT_LINES.filter((l) => l.id !== pickB).map((l) => (
+            {lines.filter((l) => l.id !== pickB).map((l) => (
               <option key={l.id} value={l.id}>
                 {l.name} ({l.id})
               </option>
@@ -215,7 +215,7 @@ function LinePicker() {
             onChange={(e) => setPickB(e.target.value)}
           >
             <option value="">— Select a line —</option>
-            {MOCK_CREDIT_LINES.filter((l) => l.id !== pickA).map((l) => (
+            {lines.filter((l) => l.id !== pickA).map((l) => (
               <option key={l.id} value={l.id}>
                 {l.name} ({l.id})
               </option>
@@ -542,17 +542,18 @@ function Scorecard({ lineA, lineB }: { lineA: CreditLine; lineB: CreditLine }) {
 export default function CreditLineCompare() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [pickerOverride, setPickerOverride] = useState(false);
+  const { lines } = useCreditLines();
 
   const idA = searchParams.get('a') ?? '';
   const idB = searchParams.get('b') ?? '';
 
   const lineA = useMemo(
-    () => MOCK_CREDIT_LINES.find((l) => l.id === idA) ?? null,
-    [idA],
+    () => lines.find((l) => l.id === idA) ?? null,
+    [idA, lines],
   );
   const lineB = useMemo(
-    () => MOCK_CREDIT_LINES.find((l) => l.id === idB) ?? null,
-    [idB],
+    () => lines.find((l) => l.id === idB) ?? null,
+    [idB, lines],
   );
 
   const bothFound = lineA !== null && lineB !== null;
@@ -645,7 +646,7 @@ export default function CreditLineCompare() {
               )}
             </div>
           )}
-          <LinePicker />
+          <LinePicker lines={lines} />
         </>
       )}
     </main>

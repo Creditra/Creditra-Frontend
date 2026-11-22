@@ -39,6 +39,9 @@ const STORED_WALLET = {
   network: 'PUBLIC',
 };
 
+/** The minimal `{ v: 2, type }` record `getStoredWallet()` returns. */
+const STORED_PREFERENCE = { v: 2 as const, type: 'freighter' as const };
+
 /**
  * Consumer that exposes sessionTimeoutWarning and action buttons.
  */
@@ -73,7 +76,7 @@ function renderBanner(sessionTimeoutMs = 120_000) {
  * Simulate a connected session by triggering reconnect with a stored wallet.
  */
 async function connectSession() {
-  vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+  vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_PREFERENCE);
   vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue(STORED_WALLET);
   vi.spyOn(walletUtils, 'isWalletRemembered').mockReturnValue(true);
   vi.spyOn(walletUtils, 'saveWalletPreference').mockImplementation(() => {});
@@ -274,7 +277,7 @@ describe('WalletContext — session timeout timers', () => {
   }
 
   beforeEach(() => {
-    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_WALLET);
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(STORED_PREFERENCE);
     vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue(STORED_WALLET);
     vi.spyOn(walletUtils, 'isWalletRemembered').mockReturnValue(true);
     vi.spyOn(walletUtils, 'saveWalletPreference').mockImplementation(() => {});

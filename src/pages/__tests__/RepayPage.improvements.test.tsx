@@ -12,66 +12,148 @@
  * prevent mock leakage (see comment in that file).
  */
 
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import RepayPage from '../RepayPage';
+import RepaySuccess from '../RepaySuccess';
 
 // ── Shared mock ──────────────────────────────────────────────────────────────
-vi.mock('@/data/mockData', () => ({
-  MOCK_CREDIT_LINES: [
-    {
-      id: 'CL-TEST-001',
-      name: 'Test Business Line',
-      status: 'Active',
-      limit: 100000,
-      utilized: 85000,   // ~85% → high utilization (rp-progress--high)
-      apr: 9.0,
-      riskScore: 680,
-      collateral: 'Equipment',
-      openedAt: '2024-01-01',
-      updatedAt: '2025-01-01T00:00:00Z',
-      nextPaymentDate: '2025-02-01',
-      nextPaymentAmount: 1500,
-      transactions: [],
-      statusHistory: [],
-    },
-    {
-      id: 'CL-TEST-002',
-      name: 'Low Use Line',
-      status: 'Active',
-      limit: 50000,
-      utilized: 10000,   // 20% → low utilization (rp-progress--low)
-      apr: 7.5,
-      riskScore: 750,
-      openedAt: '2024-01-01',
-      updatedAt: '2025-01-01T00:00:00Z',
-      transactions: [],
-      statusHistory: [],
-    },
-    {
-      id: 'CL-TEST-003',
-      name: 'Mid Use Line',
-      status: 'Active',
-      limit: 40000,
-      utilized: 26000,   // 65% → medium utilization (rp-progress--medium)
-      apr: 8.0,
-      riskScore: 710,
-      openedAt: '2024-01-01',
-      updatedAt: '2025-01-01T00:00:00Z',
-      transactions: [],
-      statusHistory: [],
-    },
-  ],
+vi.mock('@/context/WalletContext', () => ({
+  useWallet: () => ({
+    wallet: { publicKey: 'GTEST', network: 'TESTNET' },
+    status: 'connected',
+    balances: [{
+      asset: 'USDC',
+      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      balance: '50000.0000000',
+    }],
+    refreshBalance: async () => [{
+      asset: 'USDC',
+      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      balance: '50000.0000000',
+    }],
+  }),
 }));
 
+vi.mock('@/data/mockData', async () => {
+  const { REPAY_TEST_CREDIT_LINES } = await import('@/test/fixtures/repayCreditLines');
+  const base = REPAY_TEST_CREDIT_LINES[0];
+  return {
+    MOCK_CREDIT_LINES: [
+      ...REPAY_TEST_CREDIT_LINES,
+      {
+        ...base,
+        id: 'CL-TEST-004',
+        name: 'Reserve Minimum Line',
+        limit: 200000,
+        utilized: 60000,
+        apr: 8,
+        nextPaymentAmount: 48000,
+      },
+      {
+        ...base,
+        id: 'CL-TEST-005',
+        name: 'Unaffordable Minimum Line',
+        limit: 200000,
+        utilized: 60000,
+        apr: 8,
+        nextPaymentAmount: 53200,
+      },
+    ],
+  };
+});
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  localStorage.clear();
+});
+
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+});
+
 function render$(initialEntries = ['/repay']) {
-  return render(
+  const result = render(
     <MemoryRouter initialEntries={initialEntries}>
-      <RepayPage />
+      <Routes>
+        <Route path="/repay/success" element={<RepaySuccess />} />
+        <Route path="*" element={<RepayPage />} />
+      </Routes>
     </MemoryRouter>,
   );
+  act(() => vi.advanceTimersByTime(800));
+  return result;
 }
+
+function getAnnouncement() {
+  const region = document.getElementById('repay-announcement');
+  if (!region) throw new Error('Missing repayment announcement region');
+  return region;
+}
+
+describe('Smart Pay minimum due and reasons (#1186)', () => {
+  it('fills an affordable minimum even when it uses the reserve, and explains why', () => {
+    render$(['/repay?line=CL-TEST-004']);
+    fireEvent.click(screen.getByRole('button', { name: /smart pay/i }));
+    expect(screen.getByRole('spinbutton', { name: /amount to repay/i })).toHaveValue(48000);
+    const explanation = screen.getByRole('status', { name: 'Smart Pay suggestion' });
+    expect(explanation).toHaveTextContent('Covers the minimum due.');
+    expect(explanation).toHaveTextContent('Uses part of your reserve to cover the minimum due.');
+    expect(explanation).toHaveClass('rp-severity--warning');
+    expect(getAnnouncement()).toHaveTextContent('Uses part of your reserve');
+  });
+
+  it('disables a zero suggestion and leaves the amount blank', () => {
+    render$(['/repay?line=CL-TEST-005']);
+    const button = screen.getByRole('button', { name: /smart pay/i });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-describedby', 'smart-pay-reason');
+    fireEvent.click(button);
+    expect(screen.getByRole('spinbutton', { name: /amount to repay/i })).toHaveValue(null);
+    expect(getAnnouncement()).not.toHaveTextContent(/smart pay amount set/i);
+  });
+
+  it('warns how much is missing from an unaffordable minimum', () => {
+    render$(['/repay?line=CL-TEST-005']);
+    const explanation = screen.getByRole('status', { name: 'Smart Pay suggestion' });
+    expect(explanation).toHaveClass('rp-severity--warning');
+    expect(explanation).toHaveTextContent('$3,200.00 short of the minimum due');
+    expect(explanation).toHaveTextContent('A partial payment will not cover it.');
+  });
+
+  it('shows the disabled reason in a tooltip on keyboard focus', () => {
+    render$(['/repay?line=CL-TEST-005']);
+    const trigger = screen.getByLabelText('Smart Pay unavailable');
+    expect(trigger).toHaveAttribute('tabindex', '0');
+    fireEvent.focus(trigger);
+    const tooltip = screen.getByRole('tooltip');
+    expect(tooltip).toHaveClass('is-visible');
+    expect(tooltip).toHaveTextContent('$3,200.00 short of the minimum due');
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+    expect(tooltip).not.toHaveClass('is-visible');
+  });
+
+  it('does not let the S shortcut apply a disabled suggestion', () => {
+    render$(['/repay?line=CL-TEST-005']);
+    fireEvent.keyDown(window, { key: 's' });
+    expect(screen.getByRole('spinbutton', { name: /amount to repay/i })).toHaveValue(null);
+    expect(getAnnouncement()).not.toHaveTextContent(/smart pay amount set/i);
+  });
+
+  it('explains a utilization target', () => {
+    render$(['/repay?line=CL-TEST-001']);
+    expect(screen.getByRole('status', { name: 'Smart Pay suggestion' }))
+      .toHaveTextContent('Aims to bring your credit utilization to 50%.');
+  });
+
+  it('explains the interest fallback when there is no scheduled minimum', () => {
+    render$(['/repay?line=CL-TEST-002']);
+    expect(screen.getByRole('status', { name: 'Smart Pay suggestion' }))
+      .toHaveTextContent('Covers estimated monthly interest');
+  });
+});
 
 // ── cb-v7: Pattern fills ─────────────────────────────────────────────────────
 describe('cb-v7 – pattern fills on utilization bars', () => {
@@ -140,23 +222,22 @@ describe('cb-v7 – pattern fills on utilization bars', () => {
 
 // ── resp-v7: Responsive breakpoints ─────────────────────────────────────────
 describe('resp-v7 – responsive breakpoint classes', () => {
-  it('selection-view wrapper has sm:max-w-2xl breakpoint class', () => {
-    const { container } = render$();
-    // The outer div should have sm:max-w-2xl for wider screens
-    const wrapper = container.firstElementChild;
-    expect(wrapper?.className).toMatch(/sm:max-w-2xl/);
-  });
-
-  it('selection-view wrapper has sm:px-6 padding class', () => {
+  it('selection-view wrapper constrains the width to max-w-2xl', () => {
     const { container } = render$();
     const wrapper = container.firstElementChild;
-    expect(wrapper?.className).toMatch(/sm:px-6/);
+    expect(wrapper).toHaveClass('max-w-2xl');
   });
 
-  it('main page wrapper has sm:px-6 padding at small breakpoint', () => {
+  it('selection-view wrapper keeps horizontal padding', () => {
+    const { container } = render$();
+    const wrapper = container.firstElementChild;
+    expect(wrapper).toHaveClass('px-4');
+  });
+
+  it('main page wrapper keeps horizontal padding', () => {
     const { container } = render$(['/repay?line=CL-TEST-001']);
     const wrapper = container.firstElementChild;
-    expect(wrapper?.className).toMatch(/sm:px-6/);
+    expect(wrapper).toHaveClass('px-4');
   });
 
   it('main page wrapper has sm:py-8 vertical padding class', () => {
@@ -189,41 +270,38 @@ describe('resp-v7 – responsive breakpoint classes', () => {
 describe('ariallive-v7 – SR live region', () => {
   it('renders a live region element on the selection view', () => {
     render$();
-    expect(screen.getByTestId('live-region')).toBeInTheDocument();
+    expect(getAnnouncement()).toBeInTheDocument();
   });
 
   it('renders a live region element on the input step', () => {
     render$(['/repay?line=CL-TEST-001']);
-    expect(screen.getByTestId('live-region')).toBeInTheDocument();
+    expect(getAnnouncement()).toBeInTheDocument();
   });
 
   it('live region has aria-live="polite"', () => {
     render$(['/repay?line=CL-TEST-001']);
-    const region = screen.getByTestId('live-region');
+    const region = getAnnouncement();
     expect(region).toHaveAttribute('aria-live', 'polite');
   });
 
   it('live region has aria-atomic="true"', () => {
     render$(['/repay?line=CL-TEST-001']);
-    const region = screen.getByTestId('live-region');
+    const region = getAnnouncement();
     expect(region).toHaveAttribute('aria-atomic', 'true');
   });
 
   it('live region is visually hidden via sr-only class', () => {
     render$(['/repay?line=CL-TEST-001']);
-    const region = screen.getByTestId('live-region');
+    const region = getAnnouncement();
     expect(region).toHaveClass('sr-only');
   });
 
   it('announces Smart Pay amount when clicked', () => {
-    // CL-TEST-002: utilized=10000, walletBalance=50000, no nextPaymentAmount.
-    // suggestRepayAmount → amountToTargetUtil=max(0,10000-25000)=0,
-    //   minimumSuggested=monthlyInterest≈62.50, suggested=62.50,
-    //   maxAffordable=45000 → 62.50.  Just check the announcement fires.
+    // CL-TEST-001 has a utilization target of $35,000.
     render$(['/repay?line=CL-TEST-001']);
     const smartPayBtn = screen.getByRole('button', { name: /smart pay/i });
     fireEvent.click(smartPayBtn);
-    const region = screen.getByTestId('live-region');
+    const region = getAnnouncement();
     expect(region.textContent).toMatch(/smart pay amount set/i);
     // The amount must be a formatted money string
     expect(region.textContent).toMatch(/\$/);
@@ -234,7 +312,7 @@ describe('ariallive-v7 – SR live region', () => {
     const input = screen.getByRole('spinbutton', { name: /amount to repay/i });
     fireEvent.change(input, { target: { value: '5000' } });
     fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
-    const region = screen.getByTestId('live-region');
+    const region = getAnnouncement();
     expect(region.textContent).toMatch(/review step/i);
     expect(region.textContent).toMatch(/\$5,000\.00/i);
   });
@@ -247,8 +325,7 @@ describe('ariallive-v7 – SR live region', () => {
     fireEvent.change(input, { target: { value: '1000' } });
     fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
     fireEvent.click(screen.getByRole('button', { name: /confirm repayment/i }));
-    const region = screen.getByTestId('live-region');
-    expect(region.textContent).toMatch(/payment successful/i);
+    expect(screen.getByRole('heading', { name: /you repaid/i })).toBeInTheDocument();
   });
 
   it('announces "back to input" when stepping back from review', () => {
@@ -256,15 +333,15 @@ describe('ariallive-v7 – SR live region', () => {
     const input = screen.getByRole('spinbutton', { name: /amount to repay/i });
     fireEvent.change(input, { target: { value: '1000' } });
     fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
-    fireEvent.click(screen.getByRole('button', { name: /^back$/i }));
-    const region = screen.getByTestId('live-region');
+    fireEvent.click(screen.getByRole('button', { name: /^back to input$/i }));
+    const region = getAnnouncement();
     expect(region.textContent).toMatch(/back to input/i);
   });
 
   it('announces the credit line name when selected in the selection view', () => {
     render$();
     fireEvent.click(screen.getByRole('button', { name: /test business line/i }));
-    const region = screen.getByTestId('live-region');
+    const region = getAnnouncement();
     expect(region.textContent).toMatch(/test business line/i);
   });
 
@@ -275,8 +352,7 @@ describe('ariallive-v7 – SR live region', () => {
     fireEvent.click(screen.getByRole('button', { name: /review repayment/i }));
     fireEvent.click(screen.getByRole('button', { name: /confirm repayment/i }));
     fireEvent.click(screen.getByRole('button', { name: /make another repayment/i }));
-    const region = screen.getByTestId('live-region');
-    expect(region.textContent).toMatch(/new repayment/i);
+    expect(screen.getByRole('spinbutton', { name: /amount to repay/i })).toBeInTheDocument();
   });
 
   it('announces a validation error to the live region when an invalid amount is entered', () => {
@@ -284,7 +360,7 @@ describe('ariallive-v7 – SR live region', () => {
     const input = screen.getByRole('spinbutton', { name: /amount to repay/i });
     // Entering an amount exceeding the utilized amount (85000)
     fireEvent.change(input, { target: { value: '999999' } });
-    const region = screen.getByTestId('live-region');
+    const region = getAnnouncement();
     expect(region.textContent).toMatch(/Error:/i);
   });
 });

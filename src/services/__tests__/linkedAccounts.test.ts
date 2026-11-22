@@ -146,7 +146,7 @@ describe('linkedAccounts service', () => {
       });
     });
 
-    it('should include redirect URL in OAuth URL', async () => {
+    it('sanitises the redirect URL and omits it from the OAuth URL', async () => {
       vi.mocked(storage.readJson).mockReturnValue([]);
 
       const promise = initiateLinkAccount({
@@ -156,7 +156,31 @@ describe('linkedAccounts service', () => {
       vi.advanceTimersByTime(400);
       const result = await promise;
 
-      expect(result.authUrl).toContain('redirect=%2Fsettings%2Faccounts');
+      expect(result.authUrl).toBe(`/oauth/github?state=${result.state}`);
+      expect(result.authUrl).not.toContain('redirect=');
+      expect(storage.writeJson).toHaveBeenCalledWith('creditra:oauth-state', expect.objectContaining({
+        state: expect.any(String),
+        provider: 'github',
+        returnPath: '/settings/accounts',
+        timestamp: expect.any(Number),
+      }));
+    });
+
+    it('rejects an external redirect URL and falls back to the default path', async () => {
+      vi.mocked(storage.readJson).mockReturnValue([]);
+
+      const promise = initiateLinkAccount({
+        provider: 'github',
+        redirectUrl: 'https://evil.example/x',
+      });
+      vi.advanceTimersByTime(400);
+      const result = await promise;
+
+      expect(result.authUrl).toBe(`/oauth/github?state=${result.state}`);
+      expect(result.authUrl).not.toContain('evil.example');
+      expect(storage.writeJson).toHaveBeenCalledWith('creditra:oauth-state', expect.objectContaining({
+        returnPath: '/linked-accounts',
+      }));
     });
   });
 

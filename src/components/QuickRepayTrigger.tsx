@@ -1,22 +1,23 @@
 import React, { useState, useRef } from 'react';
 import { useWallet } from '../context/WalletContext';
-import { MOCK_CREDIT_LINES } from '../data/mockData';
+import { useCreditLines } from '../hooks/useCreditLines';
 import { QuickRepayModal } from './QuickRepayModal';
+import { getRepayableBalance, moneyToNumber, SETTLEMENT_ASSET } from '../lib/repayable-balance';
+import { getRepayableLines } from '../lib/repay-eligibility';
 
 export const QuickRepayTrigger = () => {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const { balances } = useWallet();
+  const { balances, status, wallet } = useWallet();
+  const { lines } = useCreditLines();
+  const repayableBalance = getRepayableBalance(balances, SETTLEMENT_ASSET);
+  const walletBalance =
+    repayableBalance.status === 'ok' ? moneyToNumber(repayableBalance.amount) : null;
 
-  const walletBalance = balances?.reduce((acc, b) => acc + Number(b.balance), 0) || 0;
-
-  const hasOpenLine = MOCK_CREDIT_LINES.some(cl => cl.status !== 'Closed');
-  if (!hasOpenLine) return null;
-
-  const linesWithBalance = MOCK_CREDIT_LINES.filter(cl => cl.utilized > 0);
-  const mostRecentLine = linesWithBalance.sort((a, b) => 
-    new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  )[0];
+  // Issue #1185: use the canonical getRepayableLines selector so the candidate
+  // set is identical to the RepayPage picker (utilized > 0, status != Closed).
+  const linesWithBalance = getRepayableLines(lines);
+  const mostRecentLine = linesWithBalance[0] ?? null;
 
   if (!mostRecentLine) return null;
 
@@ -53,6 +54,8 @@ export const QuickRepayTrigger = () => {
         <QuickRepayModal
           creditLine={mostRecentLine}
           walletBalance={walletBalance}
+          balanceStatus={repayableBalance.status}
+          walletConnected={status === 'connected' && wallet !== null}
           initialAmount={mostRecentLine.utilized.toString()}
           onClose={() => setIsOpen(false)}
           onSuccess={() => setIsOpen(false)}

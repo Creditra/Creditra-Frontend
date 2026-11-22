@@ -6,6 +6,8 @@ import './AgingTag.css';
 interface AgingTagProps {
   /** The number of days the line is past due. */
   daysPastDue: number;
+  /** Optional tooltip text shown on hover. */
+  title?: string;
   /** Optional additional class names appended to the tag. */
   className?: string;
   /** Optional keyboard shortcut key(s) to display. Defaults to 'R'. */
@@ -24,6 +26,7 @@ interface AgingTagProps {
  */
 export function AgingTag({
   daysPastDue,
+  title = `${daysPastDue} days past due`,
   className = '',
   shortcutKey = 'R',
 }: AgingTagProps) {
@@ -37,7 +40,7 @@ export function AgingTag({
     <span
       className={classes}
       style={{ background: bg, color, borderColor: border }}
-      title={`${daysPastDue} days past due`}
+      title={title}
     >
       <Clock size={12} className="aging-tag__icon" aria-hidden="true" />
       <span>{daysPastDue} days past due</span>
@@ -50,4 +53,3 @@ export function AgingTag({
     </span>
   );
 }
-

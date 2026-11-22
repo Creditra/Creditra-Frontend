@@ -5,6 +5,7 @@ import { KycTriggerButton } from "../components/KycDrawer";
 import { QuickRepayTrigger } from "../components/QuickRepayTrigger";
 import { WalletButton } from "../components/WalletButton";
 import { NotificationWidget } from "../components/notifications/NotificationWidget";
+import { ROUTE_MANIFEST } from "../routes/manifest";
 
 export interface HeaderProps {
   settingsTriggerRef: RefObject<HTMLButtonElement | null>;
@@ -50,55 +51,18 @@ export function Header({
           - 2.4.7: Focus Visible - outline differs from active underline
           - 2.4.8: Location - aria-current="page" indicates current page
         */}
-        <NavLink
-          to="/"
-          end
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Dashboard
-        </NavLink>
-        <NavLink
-          to="/transactions"
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Transactions
-        </NavLink>
-        <NavLink
-          to="/credit-lines"
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Credit Lines
-        </NavLink>
-        <NavLink
-          to="/open-credit"
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Open Credit Line
-        </NavLink>
-        <NavLink
-          to="/dutch-auctions"
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Dutch Auctions
-        </NavLink>
-        <NavLink
-          to="/docs"
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Docs
-        </NavLink>
+        {ROUTE_MANIFEST.filter((route) => Boolean(route.nav?.header)).map((route) => (
+          <NavLink
+            key={route.path}
+            to={route.path}
+            end={route.path === "/"}
+            className={({ isActive }) =>
+              isActive ? "header-nav-link active" : "header-nav-link"
+            }
+          >
+            {route.nav?.headerLabel ?? route.pageName}
+          </NavLink>
+        ))}
       </nav>
       <button
         ref={settingsTriggerRef}
