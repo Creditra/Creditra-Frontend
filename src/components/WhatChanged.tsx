@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type KeyboardEvent } from "react";
 import { COLOR } from "../utils/tokens";
 import "./WhatChanged.css";
 
@@ -16,7 +16,18 @@ interface WhatChangedProps {
 export function WhatChanged({ metricId, currentValue, format, label }: WhatChangedProps) {
   const [prevValue, setPrevValue] = useState<number | null>(null);
   const [showTooltip, setShowTooltip] = useState(false);
-  const touchTimer = useRef<any>(null);
+  const [dismissed, setDismissed] = useState(false);
+  const touchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const focused = useRef(false);
+  const hovered = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (touchTimer.current !== null) clearTimeout(touchTimer.current);
+      if (touchHideTimer.current !== null) clearTimeout(touchHideTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     // Check if the session is already active
@@ -92,20 +103,58 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
     return isPositive ? `+${formatted}` : `-${formatted}`;
   };
 
-  // Long-press handling for mobile devices
+  const handleMouseEnter = () => {
+    hovered.current = true;
+    setDismissed(false);
+    setShowTooltip(true);
+  };
+
+  const handleMouseLeave = () => {
+    hovered.current = false;
+    // A pointer leaving must not hide a tooltip still held open by focus.
+    if (!focused.current) setShowTooltip(false);
+  };
+
+  const handleFocus = () => {
+    focused.current = true;
+    setDismissed(false);
+    setShowTooltip(true);
+  };
+
+  const handleBlur = () => {
+    focused.current = false;
+    if (!hovered.current) setShowTooltip(false);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLSpanElement>) => {
+    if (event.key === "Escape" && showTooltip) {
+      // Keep keyboard focus on the trigger; suppress the focus-visible CSS
+      // rule until another focus or hover interaction deliberately reopens it.
+      setDismissed(true);
+      setShowTooltip(false);
+    }
+  };
+
+  // Retain mobile long-press and its two-second grace period.
   const handleTouchStart = () => {
+    if (touchTimer.current !== null) clearTimeout(touchTimer.current);
+    if (touchHideTimer.current !== null) clearTimeout(touchHideTimer.current);
     touchTimer.current = setTimeout(() => {
+      touchTimer.current = null;
+      setDismissed(false);
       setShowTooltip(true);
     }, 500);
   };
 
   const handleTouchEnd = () => {
-    if (touchTimer.current) {
+    if (touchTimer.current !== null) {
       clearTimeout(touchTimer.current);
+      touchTimer.current = null;
     }
-    // Keep visible briefly for better UX on tap/long-press
-    setTimeout(() => {
-      setShowTooltip(false);
+    if (touchHideTimer.current !== null) clearTimeout(touchHideTimer.current);
+    touchHideTimer.current = setTimeout(() => {
+      touchHideTimer.current = null;
+      if (!focused.current && !hovered.current) setShowTooltip(false);
     }, 2000);
   };
 
@@ -125,17 +174,21 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
   return (
     <span 
       className="what-changed-wrapper"
-      onMouseEnter={() => setShowTooltip(true)}
-      onMouseLeave={() => setShowTooltip(false)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       <span
         tabIndex={0}
         className="what-changed-trigger"
         role="button"
-        aria-label={`What changed for ${label || metricId}`}
-        aria-describedby={tooltipId}
+        aria-label={`${label || metricId} changed from ${formatVal(prevValue)} to ${formatVal(currentValue)} (change ${formatDiff(diff)})`}
+        aria-describedby={showTooltip ? tooltipId : undefined}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
         style={{ color: iconColor }}
       >
         <span className="what-changed-arrow" aria-hidden="true">{arrowIcon}</span>
@@ -145,7 +198,8 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
       <span 
         id={tooltipId} 
         role="tooltip" 
-        className={`what-changed-tooltip ${showTooltip ? "is-visible" : ""}`}
+        className={`what-changed-tooltip ${showTooltip ? "is-visible" : ""} ${dismissed ? "is-dismissed" : ""}`}
+        aria-hidden={!showTooltip}
         style={{ borderLeftColor: iconColor }}
       >
         <span className="tooltip-title">Since last visit:</span>
