@@ -334,4 +334,26 @@ describe.sequential('NotificationProvider hydration', () => {
       notifications.map((n) => n.id)
     );
   });
+
+  it('drops persisted action with an unknown kind while keeping the notification', () => {
+    const entryWithUnknownAction = {
+      ...createValidNotification({ id: 'unknown-action-1', title: 'Unknown Action' }),
+      action: { label: 'Do thing', kind: 'unknown-kind', target: '/foo' },
+    };
+    localStorage.setItem('creditra_notifications', JSON.stringify([entryWithUnknownAction]));
+
+    function Harness() {
+      const { notifications } = useNotifications();
+      return (
+        <div>
+          <span data-testid="count">{notifications.length}</span>
+          <span data-testid="action">{String(notifications[0]?.action)}</span>
+        </div>
+      );
+    }
+
+    renderHarness(<Harness />);
+    expect(screen.getByTestId('count').textContent).toBe('1');
+    expect(screen.getByTestId('action').textContent).toBe('undefined');
+  });
 });

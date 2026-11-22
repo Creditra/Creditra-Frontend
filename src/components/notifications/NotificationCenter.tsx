@@ -544,16 +544,19 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
                       </time>
                     </div>
                     <p className="nc-item-message">{n.message}</p>
-                    {n.action && (
-                      <button
-                        className="nc-item-action"
-                        style={{ color: colors.text }}
-                        onClick={e => { e.stopPropagation(); handleAction(n.action as any); }}
-                        aria-label={`${n.action?.label} for notification: ${n.title}`}
-                      >
-                        {n.action?.label} →
-                      </button>
-                    )}
+                    {n.action && (() => {
+                      const action = n.action;
+                      return (
+                        <button
+                          className="nc-item-action"
+                          style={{ color: colors.text }}
+                          onClick={e => { e.stopPropagation(); handleAction(action); }}
+                          aria-label={`${action.label} for notification: ${n.title}`}
+                        >
+                          {action.label} →
+                        </button>
+                      );
+                    })()}
                   </div>
                   {!n.read && (
                     <span className="nc-unread-dot" aria-hidden="true" />
