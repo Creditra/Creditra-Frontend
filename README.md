@@ -196,6 +196,7 @@ public `LandingPage` exist as components, ready to be wired into the route tree.
 | [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) | LCP/INP/CLS budgets, code-splitting, bundle budgets per route |
 | [`docs/TESTING.md`](docs/TESTING.md) | Test pyramid, coverage status, how to run each tier |
 | [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | Conventional commits, branch model, review checklist |
+| [`SECURITY.md`](SECURITY.md) | Supported versions, vulnerability reporting, and disclosure policy |
 | [`Design System/`](Design%20System/) | Figma source-of-truth references for tokens, components, alerts, interaction |
 
 The deep-dive markdown files (`WALLET_IMPLEMENTATION.md`, `USER_FLOWS.md`,
