@@ -16,7 +16,19 @@ interface WhatChangedProps {
 export function WhatChanged({ metricId, currentValue, format, label }: WhatChangedProps) {
   const [prevValue, setPrevValue] = useState<number | null>(null);
   const [showTooltip, setShowTooltip] = useState(false);
-  const touchTimer = useRef<any>(null);
+  const touchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (touchTimer.current) {
+        clearTimeout(touchTimer.current);
+      }
+      if (hideTimer.current) {
+        clearTimeout(hideTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     // Check if the session is already active
@@ -82,7 +94,10 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
       }).format(val);
     }
     if (format === "percent") {
-      return `${val}%`;
+      const formatted = new Intl.NumberFormat("en-US", {
+        maximumFractionDigits: 2,
+      }).format(val);
+      return `${formatted}%`;
     }
     return val.toString();
   };
@@ -94,18 +109,31 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
 
   // Long-press handling for mobile devices
   const handleTouchStart = () => {
+    if (touchTimer.current) {
+      clearTimeout(touchTimer.current);
+    }
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
     touchTimer.current = setTimeout(() => {
       setShowTooltip(true);
+      touchTimer.current = null;
     }, 500);
   };
 
   const handleTouchEnd = () => {
     if (touchTimer.current) {
       clearTimeout(touchTimer.current);
+      touchTimer.current = null;
+    }
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current);
     }
     // Keep visible briefly for better UX on tap/long-press
-    setTimeout(() => {
+    hideTimer.current = setTimeout(() => {
       setShowTooltip(false);
+      hideTimer.current = null;
     }, 2000);
   };
 

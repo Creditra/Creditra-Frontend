@@ -117,4 +117,100 @@ describe("WhatChanged Component", () => {
     expect(tooltip).toHaveTextContent("Current:80");
     expect(tooltip).toHaveTextContent("Change:-5");
   });
+
+  it("formats float percents with at most 2 fraction digits and trims trailing zeros", () => {
+    localStorage.setItem(
+      "creditra_dashboard_values_stable",
+      JSON.stringify({ "apr-rate": 3.4500000001 })
+    );
+
+    render(
+      <WhatChanged metricId="apr-rate" currentValue={12.345} format="percent" label="APR" />
+    );
+
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toHaveTextContent("Previous:3.45%");
+    expect(tooltip).toHaveTextContent("Current:12.35%");
+    expect(tooltip).toHaveTextContent("Change:+8.89%");
+  });
+
+  it("handles negative percent diffs and floating-point arithmetic imprecision", () => {
+    localStorage.setItem(
+      "creditra_dashboard_values_stable",
+      JSON.stringify({ "util-rate": 0.1 + 0.2 })
+    );
+
+    render(
+      <WhatChanged metricId="util-rate" currentValue={0.1} format="percent" label="Utilization" />
+    );
+
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toHaveTextContent("Previous:0.3%");
+    expect(tooltip).toHaveTextContent("Current:0.1%");
+    expect(tooltip).toHaveTextContent("Change:-0.2%");
+  });
+
+  it("does not show tooltip if touch ends before long-press fires", () => {
+    localStorage.setItem("creditra_dashboard_values_stable", JSON.stringify({ "total-limit": 8000 }));
+
+    const { container } = render(
+      <WhatChanged metricId="total-limit" currentValue={10000} format="currency" label="Total Credit Limit" />
+    );
+
+    const trigger = screen.getByLabelText("What changed for Total Credit Limit");
+    const tooltip = container.querySelector(".what-changed-tooltip");
+
+    fireEvent.touchStart(trigger);
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    fireEvent.touchEnd(trigger);
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(tooltip).not.toHaveClass("is-visible");
+  });
+
+  it("clears pending long-press and hide timers on unmount without warnings", () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    localStorage.setItem("creditra_dashboard_values_stable", JSON.stringify({ "total-limit": 8000 }));
+
+    // Unmount during pending long-press timer
+    const { unmount: unmountDuringTouch } = render(
+      <WhatChanged metricId="total-limit" currentValue={10000} format="currency" label="Total Credit Limit" />
+    );
+    const trigger1 = screen.getByLabelText("What changed for Total Credit Limit");
+    fireEvent.touchStart(trigger1);
+    expect(vi.getTimerCount()).toBe(1);
+
+    unmountDuringTouch();
+    expect(vi.getTimerCount()).toBe(0);
+
+    act(() => {
+      vi.runAllTimers();
+    });
+
+    // Unmount during pending hide timer
+    const { unmount: unmountDuringHide } = render(
+      <WhatChanged metricId="total-limit" currentValue={10000} format="currency" label="Total Credit Limit" />
+    );
+    const trigger2 = screen.getByLabelText("What changed for Total Credit Limit");
+    fireEvent.touchStart(trigger2);
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    fireEvent.touchEnd(trigger2);
+    expect(vi.getTimerCount()).toBe(1);
+
+    unmountDuringHide();
+    expect(vi.getTimerCount()).toBe(0);
+
+    act(() => {
+      vi.runAllTimers();
+    });
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
 });
