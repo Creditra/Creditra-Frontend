@@ -147,15 +147,6 @@ const SUPPORTED_WALLET_TYPES: ReadonlySet<WalletType> = new Set([
   'rabet',
 ]);
 
-declare global {
-  interface Window {
-    freighter?: any;
-    albedo?: any;
-    xBullSDK?: any;
-    rabet?: any;
-  }
-}
-
 /**
  * Detects whether a given Stellar wallet browser extension is currently
  * installed and exposed on the window object.
@@ -164,11 +155,7 @@ declare global {
  * permission or trigger any UI from the wallet.
  */
 export const isWalletInstalled = (type: WalletType): boolean => {
-  if (type === 'freighter') return !!window.freighter;
-  if (type === 'albedo') return !!window.albedo;
-  if (type === 'xbull') return !!window.xBullSDK;
-  if (type === 'rabet') return !!window.rabet;
-  return false;
+  return getWalletAdapter(type)?.isInstalled() ?? false;
 };
 
 /**
@@ -427,13 +414,13 @@ export const setWalletRemembered = (remember: boolean): void => {
 export const EXPECTED_NETWORK = 'TESTNET';
 
 export const isSwitchSupported = (type: WalletType): boolean => {
-  if (type === 'freighter' && window.freighter?.switchNetwork) return true;
-  return false;
+  return Boolean(getWalletAdapter(type)?.switchNetwork);
 };
 
 export const switchNetwork = async (type: WalletType, network: string): Promise<void> => {
-  if (type === 'freighter' && window.freighter?.switchNetwork) {
-    await window.freighter.switchNetwork(network);
+  const adapter = getWalletAdapter(type);
+  if (adapter?.switchNetwork) {
+    await adapter.switchNetwork(network);
     return;
   }
   throw new Error(`Please open your ${type} wallet and switch to ${network}.`);
