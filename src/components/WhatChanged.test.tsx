@@ -1,19 +1,29 @@
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { dashboardValuesStableKey } from "../constants/storageKeys";
 import { WhatChanged } from "./WhatChanged";
+
+const walletIdentity = vi.hoisted(() => ({ current: "wallet-a" as string | null }));
+
+vi.mock("../hooks/useWalletIdentityKey", () => ({
+  useWalletIdentityKey: () => walletIdentity.current,
+}));
 
 describe("WhatChanged Component", () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    walletIdentity.current = "wallet-a";
     vi.useFakeTimers();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("does not render when there is no previous value", () => {
+    walletIdentity.current = null;
     const { container } = render(
       <WhatChanged metricId="total-limit" currentValue={10000} format="currency" label="Total Credit Limit" />
     );
@@ -21,7 +31,7 @@ describe("WhatChanged Component", () => {
   });
 
   it("does not render when the current value is equal to the previous value", () => {
-    localStorage.setItem("creditra_dashboard_values_stable", JSON.stringify({ "total-limit": 10000 }));
+    localStorage.setItem(dashboardValuesStableKey("wallet-a"), JSON.stringify({ "total-limit": 10000 }));
     
     const { container } = render(
       <WhatChanged metricId="total-limit" currentValue={10000} format="currency" label="Total Credit Limit" />
@@ -31,7 +41,7 @@ describe("WhatChanged Component", () => {
 
   it("renders the trigger and tooltip when the value has changed since last visit", () => {
     // Set a different value from the last visit
-    localStorage.setItem("creditra_dashboard_values_stable", JSON.stringify({ "total-limit": 8000 }));
+    localStorage.setItem(dashboardValuesStableKey("wallet-a"), JSON.stringify({ "total-limit": 8000 }));
 
     render(
       <WhatChanged metricId="total-limit" currentValue={10000} format="currency" label="Total Credit Limit" />
@@ -51,7 +61,7 @@ describe("WhatChanged Component", () => {
   });
 
   it("shows the tooltip on hover", () => {
-    localStorage.setItem("creditra_dashboard_values_stable", JSON.stringify({ "total-limit": 8000 }));
+    localStorage.setItem(dashboardValuesStableKey("wallet-a"), JSON.stringify({ "total-limit": 8000 }));
 
     const { container } = render(
       <WhatChanged metricId="total-limit" currentValue={10000} format="currency" label="Total Credit Limit" />
@@ -72,7 +82,7 @@ describe("WhatChanged Component", () => {
   });
 
   it("shows the tooltip on long-press for mobile devices", () => {
-    localStorage.setItem("creditra_dashboard_values_stable", JSON.stringify({ "total-limit": 8000 }));
+    localStorage.setItem(dashboardValuesStableKey("wallet-a"), JSON.stringify({ "total-limit": 8000 }));
 
     const { container } = render(
       <WhatChanged metricId="total-limit" currentValue={10000} format="currency" label="Total Credit Limit" />
@@ -106,7 +116,7 @@ describe("WhatChanged Component", () => {
   });
 
   it("handles negative changes and custom formatting", () => {
-    localStorage.setItem("creditra_dashboard_values_stable", JSON.stringify({ "risk-score": 85 }));
+    localStorage.setItem(dashboardValuesStableKey("wallet-a"), JSON.stringify({ "risk-score": 85 }));
 
     render(
       <WhatChanged metricId="risk-score" currentValue={80} format="number" label="Risk Score" />
@@ -116,5 +126,28 @@ describe("WhatChanged Component", () => {
     expect(tooltip).toHaveTextContent("Previous:85");
     expect(tooltip).toHaveTextContent("Current:80");
     expect(tooltip).toHaveTextContent("Change:-5");
+  });
+
+  it("does not show one wallet's values for another wallet", () => {
+    localStorage.setItem(dashboardValuesStableKey("wallet-a"), JSON.stringify({ "total-limit": 8000 }));
+    const { container, rerender } = render(
+      <WhatChanged metricId="total-limit" currentValue={10000} format="currency" />
+    );
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Previous:$8,000");
+
+    walletIdentity.current = "wallet-b";
+    rerender(<WhatChanged metricId="total-limit" currentValue={12000} format="currency" />);
+
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("does not throw when localStorage is unavailable", () => {
+    vi.spyOn(window, "localStorage", "get").mockImplementation(() => {
+      throw new Error("storage unavailable");
+    });
+
+    expect(() =>
+      render(<WhatChanged metricId="total-limit" currentValue={10000} format="currency" />)
+    ).not.toThrow();
   });
 });

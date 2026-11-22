@@ -1,5 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { COLOR } from "../utils/tokens";
+import {
+  dashboardSessionActiveKey,
+  dashboardValuesLastVisitKey,
+  dashboardValuesStableKey,
+} from "../constants/storageKeys";
+import { useWalletIdentityKey } from "../hooks/useWalletIdentityKey";
+import { readJson, readSessionJson, writeJson, writeSessionJson } from "../utils/storage";
 import "./WhatChanged.css";
 
 interface WhatChangedProps {
@@ -9,64 +16,68 @@ interface WhatChangedProps {
   label?: string;
 }
 
+function isDashboardValues(value: unknown): value is Record<string, number> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every((item) => typeof item === "number")
+  );
+}
+
 /**
  * An inline tooltip component that detects if a metric has changed since the user's last visit.
  * Surfaces a tooltip on hover or long-press.
  */
 export function WhatChanged({ metricId, currentValue, format, label }: WhatChangedProps) {
-  const [prevValue, setPrevValue] = useState<number | null>(null);
+  const owner = useWalletIdentityKey();
+  const [previous, setPrevious] = useState<{ owner: string; value: number } | null>(null);
   const [showTooltip, setShowTooltip] = useState(false);
   const touchTimer = useRef<any>(null);
 
   useEffect(() => {
+    setPrevious(null);
+    if (!owner) return;
+
+    const stableKey = dashboardValuesStableKey(owner);
+    const lastVisitKey = dashboardValuesLastVisitKey(owner);
+    const sessionActiveKey = dashboardSessionActiveKey(owner);
+
     // Check if the session is already active
-    const sessionActive = sessionStorage.getItem("creditra_dashboard_session_active");
-    
-    let lastVisitData: Record<string, number> = {};
-    const localSaved = localStorage.getItem("creditra_dashboard_values_stable");
-    if (localSaved) {
-      try {
-        lastVisitData = JSON.parse(localSaved);
-      } catch (e) {
-        console.error("Failed to parse stable dashboard values", e);
-      }
-    }
+    const sessionActive = readSessionJson<boolean>(sessionActiveKey, false);
+    const storedData = readJson<unknown>(stableKey, {});
+    const lastVisitData = isDashboardValues(storedData) ? storedData : {};
 
     if (!sessionActive) {
       // First render of this session:
       // Save stable values from last visit to sessionStorage for reference during this session
-      sessionStorage.setItem("creditra_dashboard_values_last_visit", JSON.stringify(lastVisitData));
+      writeSessionJson(lastVisitKey, lastVisitData);
       
       // Save current values to localStorage for the next visit
       const newStableData = { ...lastVisitData, [metricId]: currentValue };
-      localStorage.setItem("creditra_dashboard_values_stable", JSON.stringify(newStableData));
+      writeJson(stableKey, newStableData);
       
-      sessionStorage.setItem("creditra_dashboard_session_active", "true");
+      writeSessionJson(sessionActiveKey, true);
       
       if (metricId in lastVisitData) {
-        setPrevValue(lastVisitData[metricId]);
+        setPrevious({ owner, value: lastVisitData[metricId] });
       }
     } else {
       // Session is active: read the last visit's value from sessionStorage
-      const sessionSaved = sessionStorage.getItem("creditra_dashboard_values_last_visit");
-      if (sessionSaved) {
-        try {
-          const sessionData = JSON.parse(sessionSaved);
-          if (metricId in sessionData) {
-            setPrevValue(sessionData[metricId]);
-          }
-        } catch (e) {
-          console.error("Failed to parse session dashboard values", e);
-        }
+      const savedSessionData = readSessionJson<unknown>(lastVisitKey, {});
+      const sessionData = isDashboardValues(savedSessionData) ? savedSessionData : {};
+      if (metricId in sessionData) {
+        setPrevious({ owner, value: sessionData[metricId] });
       }
       
       // Update the localStorage stable value so that the latest value is saved for the next visit
       const newStableData = { ...lastVisitData, [metricId]: currentValue };
-      localStorage.setItem("creditra_dashboard_values_stable", JSON.stringify(newStableData));
+      writeJson(stableKey, newStableData);
     }
-  }, [metricId, currentValue]);
+  }, [owner, metricId, currentValue]);
 
-  if (prevValue === null || prevValue === currentValue) {
+  const prevValue = previous?.owner === owner ? previous.value : null;
+  if (!owner || prevValue === null || prevValue === currentValue) {
     return null;
   }
 

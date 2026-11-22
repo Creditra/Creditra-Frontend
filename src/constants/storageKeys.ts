@@ -16,3 +16,13 @@ export const GRANTFOX_RISK_EDUCATION_ACK_KEY = 'grantfox_risk_education_acknowle
  * risk primer banner on /draw-credit. Read once for migration and then deleted.
  */
 export const DEFAULT_RISK_BANNER_DISMISSED_KEY = 'creditra.default_risk_banner_dismissed';
+
+/** Build wallet-scoped keys for WhatChanged dashboard visit values. */
+export const dashboardValuesStableKey = (owner: string): string =>
+  `creditra_dashboard_values_stable.${owner}`;
+
+export const dashboardValuesLastVisitKey = (owner: string): string =>
+  `creditra_dashboard_values_last_visit.${owner}`;
+
+export const dashboardSessionActiveKey = (owner: string): string =>
+  `creditra_dashboard_session_active.${owner}`;
