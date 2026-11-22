@@ -1,10 +1,10 @@
 // Hook to resolve NotificationActionDescriptor to concrete behaviour
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { NotificationActionDescriptor } from '../types/notification';
+import type { NotificationActionDescriptor, NotificationCommandId } from '../types/notification';
 
 // Simple command registry – can be expanded as needed
-const commandHandlers: Record<string, () => void> = {
+const commandHandlers: Record<NotificationCommandId, () => void> = {
   'open-wallet': () => {
     // TODO: integrate with wallet opening logic
     console.log('open-wallet command executed');
@@ -43,8 +43,9 @@ export function useNotificationActionHandler() {
         console.warn('Unknown command action ignored:', action.id);
       }
     } else {
-      // Future kinds – safe no‑op
-      console.warn('Unsupported action kind:', (action as any).kind);
+      // Exhaustiveness check – compile error if a new action kind is added
+      const _exhaustive: never = action;
+      console.warn('Unsupported action kind:', _exhaustive);
     }
   }, [navigate]);
 

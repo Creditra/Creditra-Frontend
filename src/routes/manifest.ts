@@ -71,6 +71,20 @@ export const ROUTE_MANIFEST: RouteManifestEntry[] = [
     },
   },
   {
+    path: '/credit-report',
+    pageName: 'Credit Report',
+    description: 'View and print a summary of your credit limits, utilisation, risk score, and repayment record.',
+    load: () => import('../pages/CreditReport'),
+    Component: lazy(() => import('../pages/CreditReport')),
+    nav: {
+      palette: {
+        label: 'Credit Report',
+        icon: '📄',
+        description: 'View printable credit report',
+      },
+    },
+  },
+  {
     path: '/help',
     pageName: 'Help Center',
     description: 'Find Creditra support articles, wallet guidance, FAQs, and product walkthroughs.',
@@ -227,6 +241,13 @@ export const ROUTE_MANIFEST: RouteManifestEntry[] = [
         description: 'View your user profile',
       },
     },
+  },
+  {
+    path: '/kyc',
+    pageName: 'KYC Verification',
+    description: 'Complete your Creditra identity and compliance verification steps.',
+    load: () => import('../pages/KycPage').then((m) => ({ default: m.KycPage })),
+    Component: lazy(() => import('../pages/KycPage').then((m) => ({ default: m.KycPage }))),
   },
   {
     path: '/docs',

@@ -94,6 +94,15 @@ transitions. End-to-end tests verify the assembled flows.
 The test setup lives in `src/test/setup.ts` and is loaded via the
 `setupFiles: ['./src/test/setup.ts']` entry in `vitest.config.ts`.
 
+### Running tests
+
+```bash
+npm test                                      # watch mode (interactive development)
+npm run test:run                              # run the full suite once and exit
+npm run test:coverage                         # run once and print a v8 coverage report
+npm run test:run -- src/utils/currency.test.ts # run a single test file
+```
+
 ---
 
 ## 3. Inventory (today)
@@ -143,13 +152,13 @@ the constraint policy.
 
 ```bash
 npm test              # vitest watch mode (best for iterating)
-npm test -- --run     # one-shot CI mode
+npm run test:run      # one-shot CI mode
 ```
 
 ### Coverage
 
 ```bash
-npm test -- --coverage --run
+npm run test:coverage
 ```
 
 Vitest will print a per-file table to stdout. Coverage thresholds are not enforced in

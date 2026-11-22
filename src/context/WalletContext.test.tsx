@@ -31,6 +31,7 @@ import {
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WalletProvider, useWallet } from './WalletContext';
 import * as walletUtils from '../utils/wallet';
+import * as creditNetwork from '../config/creditNetwork';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -141,6 +142,9 @@ beforeEach(() => {
   vi.spyOn(walletUtils, 'recordRecentWallet').mockImplementation(() => {});
   vi.spyOn(walletUtils, 'isWalletRemembered').mockReturnValue(true);
   vi.spyOn(walletUtils, 'setWalletRemembered').mockImplementation(() => {});
+  vi.spyOn(creditNetwork, 'getCreditNetworkConfig').mockReturnValue({
+    horizonUrl: 'https://horizon-testnet.stellar.org',
+  } as ReturnType<typeof creditNetwork.getCreditNetworkConfig>);
   // Make sure legacy + new storage keys are clean so isRemembered defaults
   // to false on every test.
   window.localStorage.clear();
@@ -566,6 +570,8 @@ describe('WalletContext — cache invalidation on account/network switch (#961)'
 
   function mockBalancesFetch(asset: string, balance: string) {
     return vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
       json: async () => ({
         balances: [{ asset_type: asset === 'XLM' ? 'native' : 'credit_alphanum4', asset_code: asset, balance }],
       }),
@@ -728,7 +734,11 @@ describe('WalletContext — cache invalidation on account/network switch (#961)'
 
     // Now let Account A's stale fetch resolve.
     await act(async () => {
-      resolveFetch({ json: async () => ({ balances: [{ asset_type: 'native', asset_code: 'XLM', balance: '100' }] }) });
+      resolveFetch({
+        ok: true,
+        status: 200,
+        json: async () => ({ balances: [{ asset_type: 'native', asset_code: 'XLM', balance: '100' }] }),
+      });
     });
     await flushPromises();
 
@@ -742,7 +752,7 @@ describe('WalletContext — connect result object (#1231)', () => {
   it('returns { ok: true, wallet } on successful connection', async () => {
     const mockWallet = {
       type: 'freighter' as const,
-      publicKey: 'GTEST123',
+      publicKey: STORED_WALLET.publicKey,
       network: 'PUBLIC',
     };
     vi.spyOn(walletUtils, 'connectWallet').mockResolvedValue(mockWallet);
@@ -985,5 +995,307 @@ describe('WalletContext — wallet storage minimisation & session expiry', () =>
 
     expect(screen.getByTestId('status').textContent).toBe('disconnected');
     expect(connectSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ─── fetchBalances hardening ──────────────────────────────────────────────────
+
+describe('WalletContext — fetchBalances hardening', () => {
+  const ACCOUNT_A = {
+    type: 'freighter' as const,
+    publicKey: 'GBBM6BKZPEHWYO3E3YKREDPQXMS4VK35YLNU7NFBRI26RAN7GI5POFBB',
+    network: 'PUBLIC',
+  };
+  const ACCOUNT_B = {
+    type: 'freighter' as const,
+    publicKey: 'GB7KKHHVYLDIZEKYJPAJUOTBE5E3NJAXPSDZK7O6O44WR3EBRO5HRPVT',
+    network: 'PUBLIC',
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('populates balances on 200 ok with a valid balances array', async () => {
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_A);
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        balances: [
+          { asset_type: 'native', balance: '250.5' },
+          { asset_type: 'credit_alphanum4', asset_code: 'USDC', asset_issuer: 'GISSUER', balance: '42.0' },
+        ],
+      }),
+    });
+
+    renderProvider();
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+
+    await act(async () => { screen.getByTestId('refresh-balance-btn').click(); });
+    await flushPromises();
+
+    expect(screen.getByTestId('balances').textContent).toBe('XLM:250.5,USDC:42.0');
+    expect(screen.getByTestId('last-updated').textContent).toBe('set');
+  });
+
+  it('treats 404 (unfunded account) as an empty balance list [] rather than null', async () => {
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_A);
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      json: async () => ({ type: 'https://stellar.org/horizon-errors/not_found', status: 404 }),
+    });
+
+    let latestBalances: unknown = 'unset';
+    function Inspector() {
+      const { connect, refreshBalance, balances } = useWallet();
+      latestBalances = balances;
+      return (
+        <div>
+          <button data-testid="c-btn" onClick={() => { connect('freighter'); }}>Connect</button>
+          <button data-testid="r-btn" onClick={() => { refreshBalance(); }}>Refresh</button>
+        </div>
+      );
+    }
+
+    render(
+      <WalletProvider timeoutMs={200}>
+        <Inspector />
+      </WalletProvider>,
+    );
+
+    await act(async () => { screen.getByTestId('c-btn').click(); });
+    await flushPromises();
+
+    await act(async () => { screen.getByTestId('r-btn').click(); });
+    await flushPromises();
+
+    expect(latestBalances).toEqual([]);
+  });
+
+  it('keeps the last good balances and logs status on 500 error', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_A);
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          balances: [{ asset_type: 'native', balance: '100' }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        json: async () => ({ title: 'Internal Server Error' }),
+      });
+
+    renderProvider();
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+
+    await act(async () => { screen.getByTestId('refresh-balance-btn').click(); });
+    await flushPromises();
+    expect(screen.getByTestId('balances').textContent).toBe('XLM:100');
+
+    await act(async () => { screen.getByTestId('refresh-balance-btn').click(); });
+    await flushPromises();
+
+    expect(screen.getByTestId('balances').textContent).toBe('XLM:100');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('500'));
+  });
+
+  it('keeps the last good balances when response payload has non-array balances', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_A);
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          balances: [{ asset_type: 'native', balance: '75' }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ balances: null }),
+      });
+
+    renderProvider();
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+
+    await act(async () => { screen.getByTestId('refresh-balance-btn').click(); });
+    await flushPromises();
+    expect(screen.getByTestId('balances').textContent).toBe('XLM:75');
+
+    await act(async () => { screen.getByTestId('refresh-balance-btn').click(); });
+    await flushPromises();
+
+    expect(screen.getByTestId('balances').textContent).toBe('XLM:75');
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  it('aborts the request after the 10s timeout and swallows AbortError without clearing balances', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_A);
+
+    let capturedSignal: AbortSignal | null | undefined;
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          balances: [{ asset_type: 'native', balance: '123' }],
+        }),
+      })
+      .mockImplementationOnce((_url: string, init?: RequestInit) => {
+        capturedSignal = init?.signal;
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            const abortErr = new Error('The operation was aborted.');
+            abortErr.name = 'AbortError';
+            reject(abortErr);
+          });
+        });
+      });
+
+    renderProvider();
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+
+    // Populate initial good balances.
+    await act(async () => { screen.getByTestId('refresh-balance-btn').click(); });
+    await flushPromises();
+    expect(screen.getByTestId('balances').textContent).toBe('XLM:123');
+
+    // Start a hanging balance fetch.
+    act(() => { screen.getByTestId('refresh-balance-btn').click(); });
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal?.aborted).toBe(false);
+
+    // Advance past the 10 s timeout.
+    await act(async () => { vi.advanceTimersByTime(10_000); });
+    await flushPromises();
+
+    expect(capturedSignal?.aborted).toBe(true);
+    expect(screen.getByTestId('balances').textContent).toBe('XLM:123');
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('aborts the in-flight request when switching wallets', async () => {
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_A);
+
+    let capturedSignal: AbortSignal | null | undefined;
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    fetchMock.mockImplementationOnce((_url: string, init?: RequestInit) => {
+      capturedSignal = init?.signal;
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          const abortErr = new Error('The operation was aborted.');
+          abortErr.name = 'AbortError';
+          reject(abortErr);
+        });
+      });
+    });
+
+    renderProvider();
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+
+    act(() => { screen.getByTestId('refresh-balance-btn').click(); });
+    expect(capturedSignal?.aborted).toBe(false);
+
+    // Disconnect / switch to Account B while fetch is in flight.
+    await act(async () => { screen.getByTestId('disconnect-btn').click(); });
+    expect(capturedSignal?.aborted).toBe(true);
+
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_B);
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+
+    expect(screen.getByTestId('wallet').textContent).toBe(ACCOUNT_B.publicKey);
+    expect(screen.getByTestId('balances').textContent).toBe('null');
+  });
+
+  it('aborts the previous in-flight request when a new fetchBalances call starts', async () => {
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_A);
+
+    const signals: AbortSignal[] = [];
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    fetchMock
+      .mockImplementationOnce((_url: string, init?: RequestInit) => {
+        if (init?.signal) signals.push(init.signal);
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            const abortErr = new Error('The operation was aborted.');
+            abortErr.name = 'AbortError';
+            reject(abortErr);
+          });
+        });
+      })
+      .mockImplementationOnce((_url: string, init?: RequestInit) => {
+        if (init?.signal) signals.push(init.signal);
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            balances: [{ asset_type: 'native', balance: '500' }],
+          }),
+        });
+      });
+
+    renderProvider();
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+
+    act(() => { screen.getByTestId('refresh-balance-btn').click(); });
+    expect(signals[0]?.aborted).toBe(false);
+
+    await act(async () => { screen.getByTestId('refresh-balance-btn').click(); });
+    await flushPromises();
+
+    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[1]?.aborted).toBe(false);
+    expect(screen.getByTestId('balances').textContent).toBe('XLM:500');
+  });
+
+  it('aborts the in-flight request on unmount without updating state', async () => {
+    vi.spyOn(walletUtils, 'connectWallet').mockResolvedValueOnce(ACCOUNT_A);
+
+    let capturedSignal: AbortSignal | null | undefined;
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    fetchMock.mockImplementationOnce((_url: string, init?: RequestInit) => {
+      capturedSignal = init?.signal;
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          const abortErr = new Error('The operation was aborted.');
+          abortErr.name = 'AbortError';
+          reject(abortErr);
+        });
+      });
+    });
+
+    const { unmount } = renderProvider();
+    await act(async () => { screen.getByTestId('connect-btn').click(); });
+    await flushPromises();
+
+    act(() => { screen.getByTestId('refresh-balance-btn').click(); });
+    expect(capturedSignal?.aborted).toBe(false);
+
+    unmount();
+    expect(capturedSignal?.aborted).toBe(true);
   });
 });

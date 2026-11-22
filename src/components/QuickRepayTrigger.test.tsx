@@ -17,18 +17,31 @@ vi.mock('../context/WalletContext', () => ({
   }),
 }));
 
-vi.mock('../data/mockData', () => ({
-  MOCK_CREDIT_LINES: [
-    {
-      id: 'CL-TEST',
-      name: 'Test credit line',
-      status: 'Active',
-      limit: 10000,
-      utilized: 1000,
-      apr: 8,
-      updatedAt: '2026-01-01T00:00:00.000Z',
-    },
-  ],
+vi.mock('../hooks/useCreditLines', () => ({
+  useCreditLines: () => ({
+    status: 'success',
+    lines: [
+      {
+        id: 'CL-TEST',
+        name: 'Test credit line',
+        status: 'Active',
+        limit: 10000,
+        utilized: 1000,
+        apr: 8,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        transactions: [],
+        statusHistory: [],
+        riskScore: 700,
+        openedAt: '2024-01-01',
+      },
+    ],
+    error: null,
+    refetch: async () => [],
+    lastUpdatedAt: null,
+    owner: 'GTEST',
+    wallet: null,
+    setLines: () => undefined,
+  }),
 }));
 
 describe('QuickRepayTrigger', () => {

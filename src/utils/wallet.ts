@@ -148,15 +148,6 @@ const SUPPORTED_WALLET_TYPES: ReadonlySet<WalletType> = new Set([
   'rabet',
 ]);
 
-declare global {
-  interface Window {
-    freighter?: any;
-    albedo?: any;
-    xBullSDK?: any;
-    rabet?: any;
-  }
-}
-
 /**
  * Detects whether a given Stellar wallet browser extension is currently
  * installed and exposed on the window object.
@@ -165,11 +156,7 @@ declare global {
  * permission or trigger any UI from the wallet.
  */
 export const isWalletInstalled = (type: WalletType): boolean => {
-  if (type === 'freighter') return !!window.freighter;
-  if (type === 'albedo') return !!window.albedo;
-  if (type === 'xbull') return !!window.xBullSDK;
-  if (type === 'rabet') return !!window.rabet;
-  return false;
+  return getWalletAdapter(type)?.isInstalled() ?? false;
 };
 
 /**
@@ -320,7 +307,7 @@ function extractWalletType(value: unknown): WalletType | null {
  * idempotent and needs no user action; a record whose type is missing or
  * unsupported is removed outright so no reconnect is attempted from it.
  */
-export const getStoredWallet = (): StoredWalletPreference | null => {
+export const getStoredWallet = (): (StoredWalletPreference & Partial<WalletInfo>) | null => {
   const current = readJson<unknown>(STORAGE_KEY_INFO, null);
   const legacyInfo = readJson<unknown>(STORAGE_KEY_INFO_LEGACY, null);
   const legacyPreference = readJson<unknown>(STORAGE_KEY_PREFERENCE_LEGACY, null);
@@ -340,7 +327,13 @@ export const getStoredWallet = (): StoredWalletPreference | null => {
     return null;
   }
 
-  const stored: StoredWalletPreference = { v: WALLET_INFO_VERSION, type };
+  const rawObj = (current && typeof current === 'object' ? current : legacyInfo && typeof legacyInfo === 'object' ? legacyInfo : {}) as Record<string, unknown>;
+  const stored: StoredWalletPreference & Partial<WalletInfo> = {
+    v: WALLET_INFO_VERSION,
+    type,
+    ...(typeof rawObj.publicKey === 'string' ? { publicKey: rawObj.publicKey } : {}),
+    ...(typeof rawObj.network === 'string' ? { network: rawObj.network as any } : {}),
+  };
   // Rewrite only when the on-disk record is not already the current shape, so
   // repeated reads stay idempotent.
   if (
@@ -349,7 +342,7 @@ export const getStoredWallet = (): StoredWalletPreference | null => {
     (current as StoredWalletPreference).v !== WALLET_INFO_VERSION ||
     (current as StoredWalletPreference).type !== type
   ) {
-    writeJson(STORAGE_KEY_INFO, stored);
+    writeJson(STORAGE_KEY_INFO, { v: WALLET_INFO_VERSION, type });
   }
   return stored;
 };
@@ -428,13 +421,13 @@ export const setWalletRemembered = (remember: boolean): void => {
 export const EXPECTED_NETWORK = 'TESTNET';
 
 export const isSwitchSupported = (type: WalletType): boolean => {
-  if (type === 'freighter' && window.freighter?.switchNetwork) return true;
-  return false;
+  return Boolean(getWalletAdapter(type)?.switchNetwork);
 };
 
 export const switchNetwork = async (type: WalletType, network: string): Promise<void> => {
-  if (type === 'freighter' && window.freighter?.switchNetwork) {
-    await window.freighter.switchNetwork(network);
+  const adapter = getWalletAdapter(type);
+  if (adapter?.switchNetwork) {
+    await adapter.switchNetwork(network);
     return;
   }
   throw new Error(`Please open your ${type} wallet and switch to ${network}.`);

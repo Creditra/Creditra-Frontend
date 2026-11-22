@@ -1,15 +1,31 @@
 import { useState, useEffect } from 'react';
 import { Info, X } from 'lucide-react';
+import { TERMS_ACCEPTED_VERSION_KEY } from '../constants/storageKeys';
+import { readVersioned, writeVersioned } from '../utils/storage';
 import './TermsBanner.css';
 
 const TERMS_VERSION = "2026-07";
+const TERMS_STORAGE_VERSION = 1;
+
+function migrateTermsVersion(raw: unknown, fromVersion: number): string | undefined {
+  if (fromVersion === 0 && typeof raw === 'string' && raw.length > 0) {
+    return raw;
+  }
+  return undefined;
+}
 
 export function TermsBanner() {
   const [showBanner, setShowBanner] = useState(false);
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
-    const isAccepted = localStorage.getItem("creditra_terms_accepted_version") === TERMS_VERSION;
+    const acceptedVersion = readVersioned<string | null>(TERMS_ACCEPTED_VERSION_KEY, {
+      version: TERMS_STORAGE_VERSION,
+      fallback: null,
+      migrate: migrateTermsVersion,
+      validate: (data): data is string => typeof data === 'string',
+    });
+    const isAccepted = acceptedVersion === TERMS_VERSION;
     const isDismissed = sessionStorage.getItem("creditra_terms_dismissed") === "true";
     if (!isAccepted && !isDismissed) {
       setShowBanner(true);
@@ -17,7 +33,9 @@ export function TermsBanner() {
   }, []);
 
   const handleAccept = () => {
-    localStorage.setItem("creditra_terms_accepted_version", TERMS_VERSION);
+    writeVersioned(TERMS_ACCEPTED_VERSION_KEY, TERMS_VERSION, {
+      version: TERMS_STORAGE_VERSION,
+    });
     setShowBanner(false);
     setShowModal(false);
   };

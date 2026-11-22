@@ -6,6 +6,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { WalletConnectionModal, WalletProvider } from '../WalletConnectionModal';
 import type { WalletType } from '@/utils/wallet';
 import * as walletUtils from '@/utils/wallet';
+import * as walletSupportUtils from '@/utils/walletSupport';
+import { useDetectedWallets } from '@/hooks/useDetectedWallets';
 
 // Mock hooks to avoid DOM side effects in test environment
 vi.mock('@/hooks/useBodyScrollLock', () => ({
@@ -25,7 +27,8 @@ const TestWrapper: React.FC<{
     options?: { remember?: boolean },
   ) => Promise<void>;
   detectedWallets?: WalletProvider[];
-}> = ({ isOpen, onClose, onConnect, detectedWallets }) => {
+  onRefreshWallets?: () => void;
+}> = ({ isOpen, onClose, onConnect, detectedWallets, onRefreshWallets }) => {
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   return (
@@ -40,6 +43,7 @@ const TestWrapper: React.FC<{
           onConnect={onConnect}
           triggerRef={triggerRef}
           detectedWallets={detectedWallets}
+          onRefreshWallets={onRefreshWallets}
         />
       </div>
     </MemoryRouter>
@@ -1046,5 +1050,157 @@ describe('WalletConnectionModal — error propagation (#1231)', () => {
       const errorAlert = screen.getByRole('alert');
       expect(errorAlert).toHaveTextContent(/Failed to connect.*freighter/i);
     });
+  });
+});
+
+describe('WalletConnectionModal — no-wallet & unsupported-browser help panel', () => {
+  const mockOnClose = vi.fn();
+  const mockOnConnect = vi.fn().mockResolvedValue(undefined);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(walletUtils, 'getRecentWalletOrder').mockReturnValue([]);
+    vi.spyOn(walletUtils, 'getStoredWallet').mockReturnValue(null);
+    vi.spyOn(walletSupportUtils, 'getWalletBrowserSupport').mockReturnValue({
+      browserSupported: true,
+      reason: null,
+      browserFamily: 'chromium',
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete (window as unknown as Record<string, unknown>).freighter;
+  });
+
+  it('renders the help panel with per-wallet detection results, install links, Albedo note, and Re-check button when nothing is detected', async () => {
+    const user = userEvent.setup();
+    const mockRefresh = vi.fn();
+
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={[]}
+        onRefreshWallets={mockRefresh}
+      />,
+    );
+
+    const panel = screen.getByRole('region', { name: /no wallet extension detected/i });
+    expect(panel).toBeInTheDocument();
+
+    // Per-wallet detection results
+    const statusItems = screen.getAllByText(/detected: no/i);
+    expect(statusItems).toHaveLength(4);
+
+    // Install links
+    expect(screen.getByRole('link', { name: 'Install Freighter' })).toHaveAttribute(
+      'href',
+      'https://www.freighter.app',
+    );
+    expect(screen.getByRole('link', { name: 'Install Albedo' })).toHaveAttribute(
+      'href',
+      'https://albedo.link',
+    );
+    expect(screen.getByRole('link', { name: 'Install xBull' })).toHaveAttribute(
+      'href',
+      'https://xbull.app',
+    );
+    expect(screen.getByRole('link', { name: 'Install Rabet' })).toHaveAttribute(
+      'href',
+      'https://rabet.io',
+    );
+
+    // Albedo note
+    expect(panel).toHaveTextContent(/albedo works without a browser extension/i);
+
+    // Re-check button calls refresh without closing the modal
+    const recheckBtn = screen.getByRole('button', { name: /^re-check$/i });
+    await user.click(recheckBtn);
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+    expect(mockOnClose).not.toHaveBeenCalled();
+
+    // Panel controls are keyboard reachable inside the focus trap
+    const closeButton = screen.getByLabelText('Close wallet connection dialog');
+    closeButton.focus();
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Install Freighter' }));
+  });
+
+  it('hides the help panel when at least one wallet is detected', () => {
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={['freighter']}
+      />,
+    );
+
+    expect(screen.queryByTestId('wallet-help-panel')).not.toBeInTheDocument();
+  });
+
+  it('shows the unsupported-browser message when browserSupported is false', () => {
+    vi.spyOn(walletSupportUtils, 'getWalletBrowserSupport').mockReturnValue({
+      browserSupported: false,
+      reason: 'Wallet extensions require a secure (HTTPS) context.',
+      browserFamily: 'chromium',
+    });
+
+    render(
+      <TestWrapper
+        isOpen={true}
+        onClose={mockOnClose}
+        onConnect={mockOnConnect}
+        detectedWallets={[]}
+      />,
+    );
+
+    const panel = screen.getByRole('region', {
+      name: /this browser may not support wallet extensions/i,
+    });
+    expect(panel).toBeInTheDocument();
+    expect(panel).toHaveTextContent(/secure \(HTTPS\) context/i);
+  });
+
+  it('updates detection results on Re-check when window.freighter appears after mount without closing the modal', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(walletUtils, 'isWalletInstalled').mockImplementation((type) => {
+      if (type === 'freighter') {
+        return Boolean((window as unknown as Record<string, unknown>).freighter);
+      }
+      return false;
+    });
+
+    const LiveModalHarness: React.FC = () => {
+      const { detectedWallets, refresh } = useDetectedWallets();
+      return (
+        <MemoryRouter>
+          <WalletConnectionModal
+            isOpen={true}
+            onClose={mockOnClose}
+            onConnect={mockOnConnect}
+            detectedWallets={detectedWallets}
+            onRefreshWallets={refresh}
+          />
+        </MemoryRouter>
+      );
+    };
+
+    render(<LiveModalHarness />);
+
+    expect(screen.getByTestId('wallet-help-panel')).toBeInTheDocument();
+
+    // Simulate Freighter extension injecting after mount
+    (window as unknown as Record<string, unknown>).freighter = { isConnected: () => true };
+
+    await user.click(screen.getByRole('button', { name: /^re-check$/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('wallet-help-panel')).not.toBeInTheDocument();
+    });
+    expect(mockOnClose).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Connect with Freighter')).toBeInTheDocument();
   });
 });

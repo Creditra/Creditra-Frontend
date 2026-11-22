@@ -1,5 +1,5 @@
-import { render, screen, act } from '@testing-library/react';
-import { BrowserRouter } from 'react-router-dom';
+import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
+import { BrowserRouter, MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import CreditLines from '../CreditLines';
 import { freezeTime, unfreezeTime } from '../../test/freezeTime';
@@ -227,6 +227,70 @@ describe('CreditLines page', () => {
       // Skeletons should be replaced by real credit lines content
       expect(screen.queryByTestId("creditlines-skeleton-grid")).not.toBeInTheDocument();
       expect(screen.getAllByText("Primary Business Line")[0]).toBeInTheDocument();
+    });
+  });
+
+  describe("CreditLineDetailDrawer integration", () => {
+    it("opens drawer from row menu Details action, traps focus, and restores focus on Escape", async () => {
+      render(
+        <MemoryRouter initialEntries={["/credit-lines"]}>
+          <CreditLines defaultLoading={false} />
+        </MemoryRouter>
+      );
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+
+      const menuTrigger = screen.getByLabelText("Menu for Primary Business Line");
+      fireEvent.click(menuTrigger);
+
+      const detailsItem = screen.getByRole("menuitem", { name: /Details/i });
+      fireEvent.click(detailsItem);
+
+      const dialog = await screen.findByRole("dialog");
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveTextContent("Primary Business Line");
+
+      // Advance past useFocusTrap's 50ms initial focus delay
+      act(() => {
+        vi.advanceTimersByTime(60);
+      });
+      expect(dialog.contains(document.activeElement)).toBe(true);
+
+      // Press Escape to close and restore focus to the row menu trigger
+      fireEvent.keyDown(dialog, { key: "Escape", code: "Escape" });
+
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+      expect(document.activeElement).toBe(menuTrigger);
+    });
+
+    it("opens drawer on load when ?line=<id> deep link is present and ignores unknown ids", async () => {
+      const { unmount } = render(
+        <MemoryRouter initialEntries={["/credit-lines?line=CL-001"]}>
+          <CreditLines defaultLoading={false} />
+        </MemoryRouter>
+      );
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+
+      const dialog = await screen.findByRole("dialog");
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveTextContent("CL-001");
+      unmount();
+
+      render(
+        <MemoryRouter initialEntries={["/credit-lines?line=UNKNOWN-ID"]}>
+          <CreditLines defaultLoading={false} />
+        </MemoryRouter>
+      );
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
   });
 });

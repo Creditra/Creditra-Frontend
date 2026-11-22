@@ -1,15 +1,15 @@
 import type { CreditLine } from "@/types/draw-credit.types";
+import {
+  canDraw,
+  getDrawBlockedReason,
+  type DrawBlockedReason,
+} from "@/lib/credit-line-status";
 
 /**
  * Why a credit line cannot currently be drawn from. The reason is surfaced
  * verbatim in the selector and in the submit-time guard.
  */
-export type DrawIneligibilityReason =
-  | "suspended"
-  | "defaulted"
-  | "frozen"
-  | "closed"
-  | "no_available";
+export type DrawIneligibilityReason = DrawBlockedReason | "no_available";
 
 export type DrawEligibility =
   | { eligible: true }
@@ -39,19 +39,12 @@ export const DRAW_INELIGIBILITY_REASON_LABELS: Record<
  * field existed) fall back to the Active/availability rule.
  */
 export function getDrawEligibility(line: CreditLine): DrawEligibility {
-  switch (line.status) {
-    case "Suspended":
-      return { eligible: false, reason: "suspended" };
-    case "Defaulted":
-      return { eligible: false, reason: "defaulted" };
-    case "Frozen":
-      return { eligible: false, reason: "frozen" };
-    case "Closed":
-      return { eligible: false, reason: "closed" };
-    case "Active":
-    default:
-      return line.available > 0
-        ? { eligible: true }
-        : { eligible: false, reason: "no_available" };
+  if (!canDraw(line.status)) {
+    const reason = getDrawBlockedReason(line.status);
+    if (reason) return { eligible: false, reason };
   }
+
+  return line.available > 0
+    ? { eligible: true }
+    : { eligible: false, reason: "no_available" };
 }

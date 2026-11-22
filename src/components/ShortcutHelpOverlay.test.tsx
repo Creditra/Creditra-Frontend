@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { registerHotkey, resetHotkeyRegistry } from '../lib/hotkeys';
 import { ShortcutHelpOverlay } from './ShortcutHelpOverlay';
 
 // Isolate component from side-effecting hooks in the JSDOM environment
@@ -15,6 +16,14 @@ const renderOverlay = (props?: Partial<React.ComponentProps<typeof ShortcutHelpO
   );
 
 describe('ShortcutHelpOverlay', () => {
+  beforeEach(() => {
+    resetHotkeyRegistry();
+  });
+
+  afterEach(() => {
+    resetHotkeyRegistry();
+  });
+
   // ── Rendering ──────────────────────────────────────────────────────────────
 
   it('renders nothing when isOpen is false', () => {
@@ -26,13 +35,47 @@ describe('ShortcutHelpOverlay', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('renders all shortcut groups', () => {
+  it('renders registered shortcut groups by scope', () => {
+    registerHotkey({
+      combo: '?',
+      scope: 'global',
+      description: 'Open this keyboard shortcut guide',
+      handler: vi.fn(),
+    });
+    registerHotkey({
+      combo: 'R',
+      scope: 'page',
+      description: 'Refresh the activity feed',
+      handler: vi.fn(),
+    });
+    registerHotkey({
+      combo: 'Shift+R',
+      scope: 'modal',
+      description: 'Mark all notifications as read',
+      handler: vi.fn(),
+    });
+
     renderOverlay();
     expect(screen.getByRole('heading', { name: 'Global' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Navigation' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Wallet' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Wizard' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Notifications' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Page' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Modal' })).toBeInTheDocument();
+    expect(screen.getByText('Open this keyboard shortcut guide')).toBeInTheDocument();
+    expect(screen.getByText('Refresh the activity feed')).toBeInTheDocument();
+    expect(screen.getByText('Mark all notifications as read')).toBeInTheDocument();
+  });
+
+  it('lists only scopes that have registered shortcuts', () => {
+    registerHotkey({
+      combo: '?',
+      scope: 'global',
+      description: 'Open this keyboard shortcut guide',
+      handler: vi.fn(),
+    });
+
+    renderOverlay();
+    expect(screen.getByRole('heading', { name: 'Global' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Page' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Modal' })).not.toBeInTheDocument();
   });
 
   it('renders the settings link pointing to /help#shortcuts', () => {

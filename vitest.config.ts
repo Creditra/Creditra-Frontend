@@ -33,7 +33,9 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
-    timeout: 10000,
+    // 10 s limit for both individual tests and lifecycle hooks (Vitest defaults to 5 s)
+    testTimeout: 10000,
+    hookTimeout: 10000,
   },
   server: {
     fs: {
