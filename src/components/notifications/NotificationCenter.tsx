@@ -18,6 +18,7 @@ import { useInertBackdrop } from '../../hooks/useInertBackdrop';
 import type { Notification, NotificationCategory } from '../../types/notification';
 import { CATEGORY_ICON, TYPE_COLOR, TYPE_ICON } from './notificationIcons';
 import { KbdHint } from '../KbdHint';
+import { useHotkey } from '../../lib/hotkeys';
 import './NotificationCenter.css';
 
 const PANEL_ID = 'notification-center';
@@ -236,27 +237,18 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
   }, [notifications, unreadCount, addToast, dismissToast, undoRead, markAllAsRead, announce]);
 
   // Keyboard shortcut: Shift+R to mark all as read when panel is open
-  useEffect(() => {
-    if (!isPanelOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (isEditableTarget(e.target)) return;
-      if (
-        e.shiftKey &&
-        !e.ctrlKey &&
-        !e.metaKey &&
-        !e.altKey &&
-        e.key.toLowerCase() === 'r' &&
-        unreadCount > 0
-      ) {
+  useHotkey({
+    combo: 'Shift+R',
+    scope: 'modal',
+    description: 'Mark all notifications as read',
+    enabled: isPanelOpen,
+    handler: (e) => {
+      if (unreadCount > 0) {
         e.preventDefault();
         handleMarkAllAsRead();
       }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isPanelOpen, unreadCount, handleMarkAllAsRead]);
+    },
+  });
 
   const pendingEmptyFocusRef = useRef(false);
 

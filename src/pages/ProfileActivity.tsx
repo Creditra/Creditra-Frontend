@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { KbdHint } from '../components/KbdHint';
 import ActivityTimeline from '../components/ActivityTimeline';
-import { isEditableTarget } from '../utils/isEditableTarget';
+import { useHotkey } from '../lib/hotkeys';
 import './ProfileActivity.css';
 
 export function ProfileActivity() {
@@ -16,18 +16,15 @@ export function ProfileActivity() {
     announcementTimer.current = setTimeout(() => setAnnouncement(''), 3000);
   }, []);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key !== 'r' && e.key !== 'R') return;
-      if (isEditableTarget(e.target)) return;
+  useHotkey({
+    combo: 'R',
+    scope: 'page',
+    description: 'Refresh the activity feed',
+    handler: (e) => {
       e.preventDefault();
       handleRefresh();
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [handleRefresh]);
+    },
+  });
 
   useEffect(() => {
     return () => {
