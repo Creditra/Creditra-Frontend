@@ -1,0 +1,71 @@
+/* Base Focus Styles */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Typography Utilities */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: var(--lh-body);
+}
+
+/* Restore sensible defaults that Tailwind's preflight strips. Kept in the
+   base layer so any component class, utility or inline style still wins. */
+@layer base {
+  h1 { font-size: 1.875rem; font-weight: 700; }
+  h2 { font-size: 1.375rem; font-weight: 600; }
+  h3 { font-size: 1.125rem; font-weight: 600; }
+  h4 { font-weight: 600; }
+  a:not([class]) { color: var(--accent); }
+  a:not([class]):hover { text-decoration: underline; }
+}
+
+/* Typography Base Styles */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  line-height: var(--lh-heading);
+  margin: 0;
+}
+
+p {
+  line-height: var(--lh-body);
+  margin: 0;
+}
+
+/* Text Truncation */
+.text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-truncate-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Tabular numerals — prevents digit-width wobble in money/percent columns */
+.num-tabular {
+  font-variant-numeric: tabular-nums;
+}

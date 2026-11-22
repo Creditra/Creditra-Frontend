@@ -31,7 +31,9 @@ describe("wizardDraft", () => {
   });
 
   it("saves and restores a valid draft for the same owner", () => {
-    saveDraft({ step: "amount", lineId: "cl_1", amountCents: 125000 }, OWNER_A);
+    expect(
+      saveDraft({ step: "amount", lineId: "cl_1", amountCents: 125000 }, OWNER_A),
+    ).toBe(true);
 
     expect(loadDraft(OWNER_A)).toEqual({
       v: 1,
@@ -41,6 +43,35 @@ describe("wizardDraft", () => {
       lineId: "cl_1",
       amountCents: 125000,
     });
+  });
+
+  it("returns false when localStorage throws (quota exceeded)", () => {
+    const spy = vi
+      .spyOn(window.localStorage, "setItem")
+      .mockImplementation(() => {
+        throw new DOMException("QuotaExceededError", "QuotaExceededError");
+      });
+
+    expect(
+      saveDraft({ step: "amount", lineId: "cl_1", amountCents: 1000 }, OWNER_A),
+    ).toBe(false);
+    spy.mockRestore();
+  });
+
+  it("returns false when window.localStorage is undefined", () => {
+    const desc = Object.getOwnPropertyDescriptor(window, "localStorage");
+    Object.defineProperty(window, "localStorage", {
+      value: undefined,
+      configurable: true,
+    });
+
+    expect(
+      saveDraft({ step: "amount", lineId: "cl_1", amountCents: 1000 }, OWNER_A),
+    ).toBe(false);
+
+    if (desc) {
+      Object.defineProperty(window, "localStorage", desc);
+    }
   });
 
   it("allows an anonymous (null-owner) draft for a disconnected session", () => {

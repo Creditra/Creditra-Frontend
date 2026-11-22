@@ -28,6 +28,7 @@ describe('Route Manifest', () => {
       '/settings/notifications',
       '/profile',
       '/docs',
+      '/credit-report',
     ];
     for (const p of required) {
       expect(paths).toContain(p);
