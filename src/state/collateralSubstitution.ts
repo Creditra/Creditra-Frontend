@@ -149,7 +149,7 @@ export function reducer(state: State, action: Action): State {
       if (state.phase !== 'error' || !state.error.retryable || state.retryCount >= MAX_RETRY_ATTEMPTS) return state;
       return withReviewStep(state, 'confirm', isStaleQuote(state.quote.timestampMs, action.nowMs));
     case 'BACK':
-      if (state.phase === 'reviewing' && state.step === 'confirm') return withReviewStep(state, 'review');
+      if (state.phase === 'reviewing' && state.step === 'confirm') return withReviewStep({ ...state, confirmText: '' }, 'review');
       if (state.phase === 'reviewing' && state.step === 'review') {
         return {
           phase: 'selecting',
@@ -158,7 +158,7 @@ export function reducer(state: State, action: Action): State {
           slippageTolerance: state.slippageTolerance,
         };
       }
-      if (state.phase === 'error') return withReviewStep(state, 'review');
+      if (state.phase === 'error') return withReviewStep({ ...state, confirmText: '' }, 'review');
       return state;
     default: {
       const exhaustive: never = action;
