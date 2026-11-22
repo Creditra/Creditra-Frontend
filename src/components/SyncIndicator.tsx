@@ -7,9 +7,16 @@ import {
   useState,
 } from 'react';
 import { formatRelative } from '../utils/dates';
+import type { HorizonStreamStatus } from '../services/horizonStream';
 import './SyncIndicator.css';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+const CONNECTION_STATE_LABELS: Record<HorizonStreamStatus, string> = {
+  live: 'Live',
+  reconnecting: 'Reconnecting…',
+  polling: 'Polling',
+};
 
 export interface SyncIndicatorProps {
   /** Date/timestamp of the last successful data sync. */
@@ -20,6 +27,8 @@ export interface SyncIndicatorProps {
    * completion to screen readers when it resolves.
    */
   onRefresh: () => Promise<void> | void;
+  /** Optional live stream connection state (`live | reconnecting | polling`). */
+  connectionState?: HorizonStreamStatus;
   /** Optional CSS class forwarded to the root element. */
   className?: string;
 }
@@ -55,6 +64,7 @@ function useTicker(intervalMs = 30_000): number {
 export function SyncIndicator({
   lastSyncedAt,
   onRefresh,
+  connectionState,
   className = '',
 }: SyncIndicatorProps) {
   const [spinning, setSpinning] = useState(false);
@@ -116,6 +126,18 @@ export function SyncIndicator({
 
   return (
     <div className={`sync-indicator ${className}`}>
+      {connectionState ? (
+        <span
+          className={`sync-indicator__stream sync-indicator__stream--${connectionState}`}
+          aria-label={`Balance stream: ${CONNECTION_STATE_LABELS[connectionState]}`}
+          title={`Balance stream: ${CONNECTION_STATE_LABELS[connectionState]}`}
+        >
+          <span className="sync-indicator__stream-dot" aria-hidden="true" />
+          <span className="sync-indicator__stream-label">
+            {CONNECTION_STATE_LABELS[connectionState]}
+          </span>
+        </span>
+      ) : null}
       {hasError ? (
         <span className="sync-indicator__error-row" role="status">
           <span className="sync-indicator__text">
