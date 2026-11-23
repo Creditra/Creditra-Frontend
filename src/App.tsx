@@ -34,6 +34,8 @@ const Profile = lazy(() => import("./pages/Profile"));
 const Docs = lazy(() => import("./pages/Docs"));
 const SessionTimeoutBanner = lazy(() => import("./components/SessionTimeoutBanner").then(m => ({ default: m.SessionTimeoutBanner })));
 const NotificationPreferences = lazy(() => import("./pages/NotificationPreferences").then(m => ({ default: m.NotificationPreferences })));
+const Terms = lazy(() => import("./pages/Terms").then(m => ({ default: m.Terms })));
+const Privacy = lazy(() => import("./pages/Privacy").then(m => ({ default: m.Privacy })));
 
 // ── Suspense Fallback for Route Loading ───────────────────────────────────────
 /** Minimal skeleton shown while route chunks load (preserves first paint). */
@@ -168,6 +170,8 @@ function App() {
                               <Route path="/settings/notifications" element={<NotificationSettings />} />
                               <Route path="/profile" element={<Profile />} />
                               <Route path="/docs" element={<Docs />} />
+                              <Route path="/terms" element={<Terms />} />
+                              <Route path="/privacy" element={<Privacy />} />
                               <Route path="*" element={<NotFound />} />
                             </Routes>
                           </Suspense>
