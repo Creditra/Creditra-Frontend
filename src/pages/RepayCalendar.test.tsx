@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { RepayCalendar } from './RepayCalendar';
+import * as icsUtils from '../utils/ics';
 
 describe('RepayCalendar', () => {
   const sampleEvents = [
@@ -131,5 +132,82 @@ describe('RepayCalendar', () => {
     expect(timeEl).not.toBeNull();
     expect(timeEl!.textContent).toBe('TBD');
     expect(timeEl!.textContent).not.toContain('Invalid Date');
+  });
+
+  describe('Add to calendar (.ics export)', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('exports all upcoming events and announces download in live region', () => {
+      const downloadSpy = vi
+        .spyOn(icsUtils, 'downloadIcs')
+        .mockImplementation(() => {});
+
+      render(
+        <RepayCalendar
+          events={[
+            {
+              date: '2026-08-01',
+              amount: 1500,
+              label: 'Working Capital',
+              lineId: 'wc-1',
+            },
+            {
+              date: '2026-09-01',
+              amount: 750,
+              label: 'Autopay Line',
+              lineId: 'ap-1',
+              frequency: 'monthly',
+            },
+          ]}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add to calendar' }));
+
+      expect(downloadSpy).toHaveBeenCalledTimes(1);
+      const [filename, content] = downloadSpy.mock.calls[0];
+      expect(filename).toBe('creditra-repayments.ics');
+      expect(content).toContain('UID:wc-1-2026-08-01@creditra');
+      expect(content).toContain('UID:ap-1-2026-09-01@creditra');
+      expect(content).toContain('RRULE:FREQ=MONTHLY');
+      expect(content).toContain('BEGIN:VALARM');
+
+      expect(screen.getByRole('status')).toHaveTextContent(
+        /Downloaded creditra-repayments\.ics with 2 payments/i,
+      );
+    });
+
+    it('exports a single event when its row button is clicked', () => {
+      const downloadSpy = vi
+        .spyOn(icsUtils, 'downloadIcs')
+        .mockImplementation(() => {});
+
+      render(
+        <RepayCalendar
+          events={[
+            {
+              date: '2026-08-01',
+              amount: 1500,
+              label: 'Equipment Line',
+              lineId: 'eq-1',
+            },
+          ]}
+        />,
+      );
+
+      fireEvent.click(
+        screen.getByRole('button', { name: /Add Equipment Line on .* to calendar/i }),
+      );
+
+      expect(downloadSpy).toHaveBeenCalledTimes(1);
+      const [filename, content] = downloadSpy.mock.calls[0];
+      expect(filename).toBe('creditra-eq-1-2026-08-01.ics');
+      expect(content).toContain('UID:eq-1-2026-08-01@creditra');
+      expect(screen.getByRole('status')).toHaveTextContent(
+        /Downloaded creditra-eq-1-2026-08-01\.ics/i,
+      );
+    });
   });
 });

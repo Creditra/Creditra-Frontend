@@ -27,6 +27,7 @@
 
 import React, { useState, useRef, useCallback, useId, useMemo, useEffect } from 'react';
 import { COLOR } from '@/utils/tokens';
+import { getNumberFormat } from '@/utils/formatters';
 import { KbdHint } from './KbdHint';
 import { LiveRegion } from './LiveRegion';
 import { useReducedMotion } from '@/context/ReducedMotionContext';
@@ -401,7 +402,7 @@ function StackedAreaChart({ schedule, tooltipId, onTooltip, tooltip, chartAriaLa
 
 function TooltipBubble({ data }: { data: TooltipData }) {
   const fmt = (n: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+    getNumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
 
   return (
     <div
@@ -436,10 +437,10 @@ interface SRTableProps {
 
 function SRTable({ schedule, caption }: SRTableProps) {
   const fmt = (n: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n);
+    getNumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n);
 
   const fmtShort = (n: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+    getNumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
 
   const termMonths = schedule.length;
   const totalInterest = schedule[schedule.length - 1]?.cumulativeInterest ?? 0;
@@ -510,7 +511,7 @@ function VisibleTable({ schedule, limit = 12 }: VisibleTableProps) {
   const [showAll, setShowAll] = useState(false);
   const rows = showAll ? schedule : schedule.slice(0, limit);
   const fmt = (n: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n);
+    getNumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n);
 
   const thStyle: React.CSSProperties = {
     textAlign: 'right',
@@ -812,7 +813,7 @@ export function RepaymentVisualizer({
         {schedule.length > 0 && (
           <p style={{ fontSize: 'var(--text-xs)', color: `var(--muted, ${COLOR.muted})`, margin: 0, fontVariantNumeric: 'tabular-nums' }}>
             {termMonths} month{termMonths !== 1 ? 's' : ''} ·{' '}
-            {new Intl.NumberFormat('en-US', {
+            {getNumberFormat('en-US', {
               style: 'currency',
               currency: 'USD',
               maximumFractionDigits: 0,

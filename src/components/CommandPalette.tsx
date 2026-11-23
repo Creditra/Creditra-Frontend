@@ -38,7 +38,7 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useInertBackdrop } from '../hooks/useInertBackdrop';
 import { useDebounceValue } from '../hooks/useDebounceValue';
-import { ROUTE_MANIFEST } from '../routes/manifest';
+import { getEnabledRoutes } from '../routes/manifest';
 import { getRecentIds, recordRecent } from '../utils/commandRecents';
 import './CommandPalette.css';
 
@@ -76,24 +76,28 @@ export interface CommandItem {
  * Keep this list sorted by expected usage frequency so the most useful
  * commands appear first in the default (empty-query) view.
  */
-const DEFAULT_ITEMS: CommandItem[] = [
-  ...ROUTE_MANIFEST.filter((r) => Boolean(r.nav?.palette)).map((r) => ({
-    id: `nav-${r.path.replace(/^\//, '').replace(/\//g, '-') || 'dashboard'}`,
-    label: r.nav!.palette!.label,
-    icon: r.nav!.palette!.icon,
-    action: r.path,
-    description: r.nav!.palette!.description,
-  })),
-  // The manifest is keyed by route path, so query-parameter deep links such as
-  // the URL-driven Activity tab need an explicit entry.
-  {
-    id: 'nav-profile-activity',
-    label: 'Profile activity',
-    icon: '📈',
-    action: '/profile?tab=activity',
-    description: 'View your activity feed',
-  },
-];
+export function getCommandPaletteDefaultItems(): CommandItem[] {
+  return [
+    ...getEnabledRoutes().filter((r) => Boolean(r.nav?.palette)).map((r) => ({
+      id: `nav-${r.path.replace(/^\//, '').replace(/\//g, '-') || 'dashboard'}`,
+      label: r.nav!.palette!.label,
+      icon: r.nav!.palette!.icon,
+      action: r.path,
+      description: r.nav!.palette!.description,
+    })),
+    // The manifest is keyed by route path, so query-parameter deep links such as
+    // the URL-driven Activity tab need an explicit entry.
+    {
+      id: 'nav-profile-activity',
+      label: 'Profile activity',
+      icon: '📈',
+      action: '/profile?tab=activity',
+      description: 'View your activity feed',
+    },
+  ];
+}
+
+const DEFAULT_ITEMS: CommandItem[] = getCommandPaletteDefaultItems();
 
 /** Exported for tests and documentation of the default registry. */
 export { DEFAULT_ITEMS as COMMAND_PALETTE_DEFAULT_ITEMS };
@@ -216,7 +220,7 @@ export function CommandPalette({
   const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Merge built-in defaults with any context-sensitive extras.
-  const allItems = [...DEFAULT_ITEMS, ...extraItems];
+  const allItems = [...getCommandPaletteDefaultItems(), ...extraItems];
   const isEmptyQuery = normalize(debouncedQuery).length === 0;
 
   let recentItems: CommandItem[] = [];

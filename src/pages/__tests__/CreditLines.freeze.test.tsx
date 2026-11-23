@@ -27,11 +27,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import CreditLines from '../CreditLines';
 import {
-  resetGlobalCreditLines,
   getGlobalCreditLines as getLegacyGlobalCreditLines,
   setGlobalCreditLines,
   useCreditLines,
 } from '../../hooks/useCreditLines';
+import { resetGlobalCreditLines } from '../../test/creditLinesTestHelpers';
 import type { CreditLine } from '../../types/creditLine';
 import { renderWithCredit } from '../../test/renderWithCredit';
 

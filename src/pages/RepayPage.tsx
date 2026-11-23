@@ -65,6 +65,7 @@ import {
 } from '@/state/repayDraft';
 import { useDraftSaveStatus } from '@/hooks/useDraftSaveStatus';
 import { DraftSavedIndicator } from '@/components/DraftSavedIndicator';
+import { PendingButton } from '@/components/PendingButton';
 
 /**
  * Reason a saved draft was discarded instead of being offered for recovery.
@@ -2385,17 +2386,23 @@ export default function RepayPage() {
                   Back <KbdHint keys={['Esc']} />
                 </span>
               </button>
-              <button
-                type="button"
-                onClick={handleConfirm}
-                disabled={isReviewConfirmDisabled}
-                aria-disabled={isReviewConfirmDisabled || undefined}
-                className={`rp-confirm-btn flex-[2] rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${motionClasses(isReducedMotionActive, 'transition-all hover:brightness-110')}`}
-              >
-                <span className="flex items-center justify-center gap-2">
-                  Confirm Repayment <KbdHint keys={['Enter']} />
-                </span>
-              </button>
+              <div className="flex-[2] flex flex-col">
+                <PendingButton
+                  type="button"
+                  onClick={handleConfirm}
+                  pending={false}
+                  pendingLabel="Confirming..."
+                  disabled={isReviewConfirmDisabled}
+                  aria-disabled={isReviewConfirmDisabled || undefined}
+                  requiresOnline
+                  offlineReason="You're offline — reconnect to repay"
+                  className={`rp-confirm-btn w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${motionClasses(isReducedMotionActive, 'transition-all hover:brightness-110')}`}
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    Confirm Repayment <KbdHint keys={['Enter']} />
+                  </span>
+                </PendingButton>
+              </div>
             </div>
             <DraftSavedIndicator
               status={draftSave.status}
