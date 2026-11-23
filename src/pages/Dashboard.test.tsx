@@ -7,11 +7,11 @@ import '@testing-library/jest-dom';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { setGlobalCreditLines } from '../hooks/useCreditLines';
 import {
-  setGlobalCreditLines,
   setMockRefetchError,
   resetGlobalCreditLines,
-} from '../hooks/useCreditLines';
+} from '../test/creditLinesTestHelpers';
 import { MOCK_CREDIT_LINES } from '../data/mockData';
 import type { CreditLine } from '../types/creditLine';
 import { freezeTime, unfreezeTime } from '../test/freezeTime';

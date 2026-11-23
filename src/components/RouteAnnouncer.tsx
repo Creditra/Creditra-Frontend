@@ -68,7 +68,7 @@ export function useRouteHead(): RouteHeadContextValue {
   return useContext(defaultRouteHeadContext);
 }
 
-import { ROUTE_MANIFEST } from "../routes/manifest";
+import { getEnabledRoutes } from "../routes/manifest";
 
 export type RouteMetadata = {
   path: string;
@@ -76,7 +76,7 @@ export type RouteMetadata = {
   description: string;
 };
 
-export const ROUTE_METADATA: RouteMetadata[] = ROUTE_MANIFEST.map((r) => ({
+export const ROUTE_METADATA: RouteMetadata[] = getEnabledRoutes().map((r) => ({
   path: r.path,
   pageName: r.pageName,
   description: r.description,
@@ -90,10 +90,17 @@ export const NOT_FOUND_METADATA: Omit<RouteMetadata, "path"> = {
 
 const titleFor = (pageName: string) => `Creditra · ${pageName}`;
 
-const getRouteMetadata = (pathname: string) =>
-  ROUTE_METADATA.find((route) =>
+const getRouteMetadata = (pathname: string) => {
+  const matched = getEnabledRoutes().find((route) =>
     matchPath({ path: route.path, end: true }, pathname),
-  ) ?? NOT_FOUND_METADATA;
+  );
+  if (!matched) return NOT_FOUND_METADATA;
+  return {
+    path: matched.path,
+    pageName: matched.pageName,
+    description: matched.description,
+  };
+};
 
 export function RouteAnnouncer() {
   const location = useLocation();

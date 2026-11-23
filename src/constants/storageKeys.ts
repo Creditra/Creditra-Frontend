@@ -72,3 +72,8 @@ export const dashboardValuesLastVisitKey = (owner: string): string =>
 
 export const dashboardSessionActiveKey = (owner: string): string =>
   `creditra_dashboard_session_active.${owner}`;
+
+/** Per-wallet autopay schedules persistence key. */
+export function autopaySchedulesStorageKey(owner: string): string {
+  return `creditra.autopay_schedules.${owner}.v1`;
+}

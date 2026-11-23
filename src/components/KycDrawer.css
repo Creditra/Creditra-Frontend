@@ -12,7 +12,7 @@
   inset: 0;
   z-index: 80;        /* above header (header has no z-index), below critical alerts */
   display: flex;
-  justify-content: flex-end; /* panel sits on the right */
+  justify-content: flex-end; /* panel sits at the logical inline end */
   pointer-events: none;      /* let backdrop handle its own clicks */
 }
 
@@ -36,9 +36,10 @@
 .kyc-drawer {
   position: relative;
   width: min(400px, 100vw);
+  inset-inline-end: 0;
   height: 100%;
   background: var(--surface);
-  border-left: 1px solid var(--border);
+  border-inline-start: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -52,7 +53,7 @@
 }
 
 @keyframes kyc-slide-in {
-  from { transform: translateX(100%); }
+  from { transform: translateX(var(--kyc-drawer-enter-offset, 100%)); }
   to   { transform: translateX(0); }
 }
 
@@ -225,7 +226,7 @@
 .kyc-step:not(:last-child)::after {
   content: '';
   position: absolute;
-  left: calc(var(--space-xl) + 11px);   /* centre of the 24px icon */
+  inset-inline-start: calc(var(--space-xl) + 11px);   /* centre of the 24px icon */
   top: calc(var(--space-md) + 24px);
   bottom: calc(-1 * var(--space-md));
   width: 2px;
@@ -326,7 +327,7 @@
   border: 1px solid rgba(88, 166, 255, 0.25);
   border-radius: var(--radius-pill);
   padding: 1px 6px;
-  margin-left: var(--space-sm);
+  margin-inline-start: var(--space-sm);
   vertical-align: middle;
 }
 
@@ -443,7 +444,7 @@
 .kyc-trigger-btn__dot {
   position: absolute;
   top: 8px;
-  right: 8px;
+  inset-inline-end: 8px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -466,7 +467,7 @@
     width: 100%;
     height: auto;
     max-height: 90vh;
-    border-left: none;
+    border-inline-start: none;
     border-top: 1px solid var(--border);
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     animation: kyc-slide-up-mobile 300ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -512,12 +513,11 @@
   }
 
   .kyc-step:not(:last-child)::after {
-    left: calc(var(--space-md) + 11px);
+    inset-inline-start: calc(var(--space-md) + 11px);
   }
 
   .kyc-drawer__body {
-    padding-left: var(--space-md);
-    padding-right: var(--space-md);
+    padding-inline: var(--space-md);
   }
 
   .kyc-drawer__footer {
@@ -545,3 +545,9 @@
     transition: none;
   }
 
+
+
+/* The drawer enters from the logical inline end in RTL layouts. */
+[dir="rtl"] .kyc-drawer {
+  --kyc-drawer-enter-offset: -100%;
+}

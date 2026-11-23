@@ -106,8 +106,8 @@
 button.header-nav-link {
   background: transparent;
   border-top: 1px solid transparent;
-  border-left: 1px solid transparent;
-  border-right: 1px solid transparent;
+  border-inline-start: 1px solid transparent;
+  border-inline-end: 1px solid transparent;
   border-bottom: 1px solid transparent;
   font: inherit;
   cursor: pointer;
@@ -162,7 +162,7 @@ button.header-nav-link {
     justify-content: flex-start;
   }
   .header .logo {
-    margin-right: auto;
+    margin-inline-end: auto;
   }
   .header-nav {
     order: 10;
@@ -176,8 +176,8 @@ button.header-nav-link {
 
 @media (max-width: 640px) {
   .header {
-    padding-left: 1rem;
-    padding-right: 1rem;
+    padding-inline-start: 1rem;
+    padding-inline-end: 1rem;
     gap: 0.5rem;
   }
   .main {

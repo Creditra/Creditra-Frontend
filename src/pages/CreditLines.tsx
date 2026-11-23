@@ -68,6 +68,12 @@ const CreditLineDetailDrawer = lazy(() =>
   })),
 );
 
+const AprHistoryChart = lazy(() =>
+  import("../components/AprHistoryChart").then((m) => ({
+    default: m.AprHistoryChart,
+  })),
+);
+
 const CREDIT_LINES_PAGE_SIZE = 6;
 const getCreditLineId = (line: CreditLine) => line.id;
 
@@ -164,6 +170,7 @@ function CreditLineCard({
   const level = getUtilizationLevel(line.utilized, line.limit);
   const swapTriggerRef = useRef<HTMLButtonElement>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const isDefaulted = line.status === "Defaulted";
   const transitionContext = { statusHistory: line.statusHistory };
@@ -317,6 +324,33 @@ function CreditLineCard({
       <div className="cl-card-detail">
         <RepaymentPlanChart line={line} />
       </div>
+
+      <div className="cl-card-expand-row">
+        <button
+          type="button"
+          className="cl-expand-btn focus-ring"
+          aria-expanded={isExpanded}
+          aria-controls={`cl-expanded-${line.id}`}
+          onClick={() => setIsExpanded((prev) => !prev)}
+        >
+          {isExpanded ? "Hide APR history" : "Show APR history"}
+        </button>
+      </div>
+
+      {isExpanded && (
+        <div id={`cl-expanded-${line.id}`} className="cl-card-expanded">
+          {line.aprHistory && line.aprHistory.length > 0 && (
+            <div className="cl-apr-history">
+              <Suspense fallback={null}>
+                <AprHistoryChart
+                  history={line.aprHistory}
+                  lineId={line.id}
+                />
+              </Suspense>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

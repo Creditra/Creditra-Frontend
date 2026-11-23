@@ -37,6 +37,7 @@
 import { useEffect, useRef } from "react";
 import { Transaction } from "@/types/draw-credit.types";
 import { CheckCircle2, AlertCircle, Clock, RotateCcw } from "lucide-react";
+import { formatCurrency } from "../utils/currency";
 import "../styles/patterns.css";
 
 export type DrawErrorKind = "retryable" | "terminal";
@@ -175,7 +176,7 @@ export function TransactionStatus({
         <div className="dc-status-detail-row">
           <p className="dc-status-detail-row__label">Amount Drawn</p>
           <p className="dc-status-detail-row__value dc-status-detail-row__value--large tabular-nums">
-            ${transaction.amount.toLocaleString()}
+            {formatCurrency(transaction.amount)}
           </p>
         </div>
 
