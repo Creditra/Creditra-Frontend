@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { AlertCircle, AlertTriangle, CheckCircle, Info, ArrowLeft, RefreshCw, X } from 'lucide-react';
 import { Skeleton } from '@/components/Skeleton';
 import { Amount } from '@/components/Amount';
@@ -40,9 +41,11 @@ import {
 } from '@/components/TypedAmountConfirm';
 import { KbdHint } from '@/components/KbdHint';
 import { RepayPreviewModal } from '@/components/RepayPreviewModal';
+import { AffordabilityCalc } from '@/components/AffordabilityCalc';
 import { CopyToClipboard } from '@/components/CopyToClipboard';
 import { Tooltip } from '@/components/Tooltip';
 import { submitRepayment } from '@/services/repayService';
+import { emit } from '@/lib/event-bus';
 import { motionClasses, useReducedMotion } from '@/context/ReducedMotionContext';
 import { useWallet, walletIdentityKey } from '@/context/WalletContext';
 import { useCreditLine, useCreditLines } from '@/hooks/useCreditLines';
@@ -213,6 +216,10 @@ export default function RepayPage() {
   const helpTriggerRef = useRef<HTMLButtonElement>(null);
   const previewTriggerRef = useRef<HTMLButtonElement>(null);
   const { isReducedMotionActive } = useReducedMotion();
+
+  // Warn on unload while the form holds an unsaved amount. The page navigates
+  // away on success, so checking amountStr alone is sufficient.
+  useUnsavedChangesGuard(amountStr !== '' && !isSubmittingRef.current);
 
   // ── Repayable lines — single predicate used by picker and deep-link ──
   // Issue #1185: getRepayableLines (utilized > 0 && status !== Closed) replaces
@@ -457,6 +464,14 @@ export default function RepayPage() {
         nextPaymentAmount: selectedLine.nextPaymentAmount,
       });
     }
+    emit('repay:success', {
+      transactionId,
+      creditLineId: selectedLine.id,
+      creditLineName: selectedLine.name,
+      amount,
+      remainingDebt,
+      timestamp,
+    });
     navigate(`/repay/success?tx=${encodeURIComponent(transactionId)}`, {
       state: {
         amount,
@@ -1238,15 +1253,6 @@ export default function RepayPage() {
                   } ${motionClasses(isReducedMotionActive, 'transition duration-200 ease-in-out')}`}
                 />
               </button>
-                      const planned = appliedPlan?.allocations.find((a) => a.lineId === cl.id);
-                      if (planned && planned.amount > 0) {
-                        setAmountStr(planned.amount.toFixed(2));
-                        setSrAnnouncement(
-                          `Selected ${cl.name}. Prefilled ${formatMoney(planned.amount)} from your ${appliedPlan?.strategy} plan.`,
-                        );
-                      } else {
-                        setSrAnnouncement(`Selected ${cl.name}. Choose a repayment amount.`);
-                      }
             </div>
 
             {isMultiLineMode ? (
@@ -1773,7 +1779,7 @@ export default function RepayPage() {
                 })}
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     );
@@ -2076,6 +2082,26 @@ export default function RepayPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* AffordabilityCalc disclosure – collapsed by default so it
+                    doesn't obscure the amount input, but keyboard-accessible
+                    via the native <details>/<summary> element. onApply fills
+                    amountStr (respecting existing amount validation). */}
+                <details className="rounded-lg border border-border bg-surface">
+                  <summary className="cursor-pointer select-none list-none px-4 py-3 text-xs font-semibold uppercase text-muted [&::-webkit-details-marker]:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+                    <span className="flex items-center gap-2">
+                      <span>Affordability Calculator</span>
+                      <span className="text-muted font-normal normal-case">(optional)</span>
+                    </span>
+                  </summary>
+                  <div className="border-t border-border">
+                    <AffordabilityCalc
+                      onApply={(suggested) => {
+                        setAmountStr(suggested.toFixed(2));
+                      }}
+                    />
+                  </div>
+                </details>
 
                 <div className="rounded-lg border border-border bg-surface p-4">
                   <p className="text-xs font-semibold uppercase text-muted">

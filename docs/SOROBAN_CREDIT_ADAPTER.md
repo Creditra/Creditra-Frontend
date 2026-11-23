@@ -13,6 +13,7 @@ Creditra's credit lines live in a Soroban smart contract. The `SorobanCreditData
 - **Lossless Precision**: Contract `i128` values (stroops / base units) are decoded with lossless BigInt arithmetic prior to scaling to standard currency units, preventing precision loss above `Number.MAX_SAFE_INTEGER`.
 - **Deferred Bundle Loading**: `@stellar/stellar-sdk` is split into its own manual rollup chunk (`stellar`), ensuring `vendor-core` bundle size and first-paint performance remain unaffected.
 - **Timeout & Abort Guarantees**: Every RPC simulation is bounded by a 15-second default timeout and strictly honours `AbortSignal` with guaranteed resource cleanup.
+- **Request Coalescing & Throttling**: Concurrent `listCreditLines` calls for the same borrower share a single in-flight RPC simulation (`AbortSignal` from one consumer rejects only that consumer unless all consumers abort). Successful list responses are cached for a configurable `minListIntervalMs` (default `1000` ms) so bursts cost a single RPC; errors are never cached and `options.force` bypasses the interval.
 
 ---
 

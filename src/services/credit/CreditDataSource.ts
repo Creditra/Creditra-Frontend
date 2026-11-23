@@ -36,6 +36,7 @@ export class CreditDataError extends Error {
 export interface CreditDataOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
+  force?: boolean;
 }
 
 export interface CreditDataSource {

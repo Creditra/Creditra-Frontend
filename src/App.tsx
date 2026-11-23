@@ -1,4 +1,4 @@
-import { useRef, useState, lazy, Suspense } from "react";
+import { useRef, useState, useEffect, lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { CommandPalette } from "./components/CommandPalette";
 import { RouteAnnouncer, RouteHeadProvider } from "./components/RouteAnnouncer";
@@ -16,11 +16,15 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ShortcutHelpOverlay } from "./components/ShortcutHelpOverlay";
 import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
 import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatchBanner";
+import { StaleDataBanner } from "./components/StaleDataBanner";
 import { ToastContainer } from "./components/notifications/ToastContainer";
 import { BannerAlerts } from "./components/notifications/BannerAlert";
 import { Header } from "./layouts/Header";
 import { Skeleton } from "./components/Skeleton";
 import { useHotkey } from "./lib/hotkeys";
+import { useNotifications } from "./context/NotificationContext";
+import { useCreditData } from "./context/CreditDataContext";
+import { registerEventSubscribers } from "./lib/event-subscribers";
 
 import { getEnabledRoutes } from "./routes/manifest";
 
@@ -43,6 +47,10 @@ function RouteLoadingFallback() {
 function AppShell() {
   const navigate = useNavigate();
   const { privacyMode, togglePrivacyMode } = usePrivacyMode();
+  const { addToast } = useNotifications();
+  const { refetch } = useCreditData();
+
+  useEffect(() => registerEventSubscribers({ addToast, refetch }), [addToast, refetch]);
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [openedFromSettingsLink, setOpenedFromSettingsLink] = useState(false);
   const [isKycDrawerOpen, setIsKycDrawerOpen] = useState(false);
@@ -102,6 +110,7 @@ function AppShell() {
           <main className="main">
             <BannerAlerts />
             <NetworkMismatchBanner />
+            <StaleDataBanner />
             <Suspense fallback={<RouteLoadingFallback />}>
               <Routes>
                 {getEnabledRoutes().map((route) => {
@@ -187,17 +196,17 @@ function App() {
         <ContrastProvider>
           <PrivacyModeProvider>
             <WalletProvider>
-              <CreditDataProvider>
-                <KycProvider>
-                  <NotificationProvider>
+              <NotificationProvider>
+                <CreditDataProvider>
+                  <KycProvider>
                     <ReducedMotionProvider>
                       <BrowserRouter>
                         <AppShell />
                       </BrowserRouter>
                     </ReducedMotionProvider>
-                  </NotificationProvider>
-                </KycProvider>
-              </CreditDataProvider>
+                  </KycProvider>
+                </CreditDataProvider>
+              </NotificationProvider>
             </WalletProvider>
           </PrivacyModeProvider>
         </ContrastProvider>

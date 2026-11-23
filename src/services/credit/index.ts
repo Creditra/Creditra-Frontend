@@ -58,3 +58,4 @@ export class MockCreditAdapter implements CreditDataPort {
 
 export const creditService: CreditDataPort = new MockCreditAdapter();
 
+export * from './eventPoller';

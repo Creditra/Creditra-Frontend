@@ -26,11 +26,13 @@
  * Theming: every visible color comes from a design token declared in
  * `src/index.css :root`. Components do not hardcode hex values.
  */
-import { useMemo, useId } from 'react';
+import { useMemo, useId, useState } from 'react';
 import './RepaymentSchedule.css';
 import { fmt, fmtDate } from '../utils/tokens';
 import type { CreditLine } from '../types/creditLine';
 import { now as clockNow } from '../lib/clock';
+import { buildIcs, downloadIcs, type IcsEventInput } from '../utils/ics';
+import type { AutopayFrequency } from '../lib/autopay-schedule';
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -68,6 +70,21 @@ interface ScheduledRepaymentBase {
   lineId?: string;
   /** Owning credit line name — required when aggregating. */
   lineName?: string;
+  /** Optional autopay recurrence frequency exported as an RFC 5545 `RRULE`. */
+  frequency?: AutopayFrequency;
+}
+
+export interface AutopayCalendarSchedule {
+  /** Credit line identifier for deterministic `.ics` UIDs. */
+  lineId: string;
+  /** Human-readable credit line name. */
+  lineName?: string;
+  /** First autopay due date (`YYYY-MM-DD`). */
+  startDate: string;
+  /** Recurring payment amount in USD. */
+  amount: number;
+  /** Autopay recurrence frequency. */
+  frequency: AutopayFrequency;
 }
 
 /**
@@ -102,6 +119,11 @@ export interface RepaymentScheduleProps {
    * Exposed for deterministic testing and SSR-safe rendering.
    */
   now?: Date;
+  /**
+   * Optional recurring autopay schedules to include as `RRULE` events
+   * when exporting the schedule to `.ics`.
+   */
+  autopaySchedules?: readonly AutopayCalendarSchedule[];
 }
 
 // ─── Helpers (exported for tests and reuse) ──────────────────────────────────
@@ -308,10 +330,12 @@ export function RepaymentSchedule({
   loading = false,
   headingId,
   now,
+  autopaySchedules = [],
 }: RepaymentScheduleProps) {
   // Default lazily so a stable reference isn't required; the prop is the
   // supported override for tests.
   const nowRef = useMemo(() => now ?? clockNow(), [now]);
+  const [announcement, setAnnouncement] = useState('');
 
   const reactId = useId();
   const id = headingId ?? `repayment-schedule-${reactId}`;
@@ -347,6 +371,53 @@ export function RepaymentSchedule({
       totalCount: ordered.length,
     };
   }, [ordered]);
+
+  const exportableEvents = useMemo<IcsEventInput[]>(() => {
+    const unpaid: IcsEventInput[] = ordered
+      .filter((entry) => entry.status !== 'paid')
+      .map((entry) => {
+        const lineLabel = entry.lineName ?? 'Creditra';
+        const summary = `${lineLabel} repayment — ${fmt(entry.amount)}`;
+        const details = [
+          `Amount: ${fmt(entry.amount)} (Principal ${fmt(entry.principal)}, Interest ${fmt(entry.interest)})`,
+          entry.note ? `Note: ${entry.note}` : null,
+        ]
+          .filter(Boolean)
+          .join('\n');
+        return {
+          lineId: entry.lineId ?? entry.id,
+          date: entry.dueDate,
+          summary,
+          description: details,
+          frequency: entry.frequency,
+        };
+      });
+
+    const autopay: IcsEventInput[] = autopaySchedules.map((item) => {
+      const lineLabel = item.lineName ?? item.lineId;
+      return {
+        lineId: `autopay-${item.lineId}`,
+        date: item.startDate,
+        summary: `${lineLabel} autopay — ${fmt(item.amount)}`,
+        description: `Recurring ${item.frequency} autopay of ${fmt(item.amount)} for ${lineLabel}.`,
+        frequency: item.frequency,
+      };
+    });
+
+    return [...unpaid, ...autopay];
+  }, [ordered, autopaySchedules]);
+
+  const handleExportCalendar = () => {
+    if (exportableEvents.length === 0) return;
+    const content = buildIcs(exportableEvents, { now: nowRef });
+    const filename = 'creditra-repayment-schedule.ics';
+    downloadIcs(filename, content);
+    setAnnouncement(
+      `Downloaded ${filename} with ${exportableEvents.length} ${
+        exportableEvents.length === 1 ? 'event' : 'events'
+      }.`,
+    );
+  };
 
   // ─── Skeleton / empty / error render branches ───────────────────────────
 
@@ -403,15 +474,30 @@ export function RepaymentSchedule({
         <h2 id={id} className="rs-schedule__title">
           {title}
         </h2>
-        <span
-          className="rs-schedule__total-count"
-          aria-label={`${stats.totalCount} scheduled ${
-            stats.totalCount === 1 ? 'installment' : 'installments'
-          }`}
-        >
-          {stats.totalCount} {stats.totalCount === 1 ? 'installment' : 'installments'}
-        </span>
+        <div className="rs-schedule__header-actions">
+          {exportableEvents.length > 0 && (
+            <button
+              type="button"
+              className="rs-schedule__export-btn"
+              onClick={handleExportCalendar}
+            >
+              Add to calendar
+            </button>
+          )}
+          <span
+            className="rs-schedule__total-count"
+            aria-label={`${stats.totalCount} scheduled ${
+              stats.totalCount === 1 ? 'installment' : 'installments'
+            }`}
+          >
+            {stats.totalCount} {stats.totalCount === 1 ? 'installment' : 'installments'}
+          </span>
+        </div>
       </header>
+
+      <p className="sr-only" role="status" aria-live="polite">
+        {announcement}
+      </p>
 
       {/* ── Summary strip ───────────────────────────────────────────────── */}
       <div className="rs-schedule__summary" role="status" aria-live="polite">

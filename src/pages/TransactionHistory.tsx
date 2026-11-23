@@ -11,6 +11,7 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
+import { MoreHorizontal, Copy, ExternalLink } from "lucide-react";
 import { CopyToClipboard } from "../components/CopyToClipboard";
 import { Amount } from "../components/Amount";
 import { type DatePreset } from "../components/DateRangeChips";
@@ -19,6 +20,9 @@ import {
   type AmountRangePreset,
 } from "../components/AmountRangeChips";
 import { useDebounceValue } from "../hooks/useDebounceValue";
+import { getExplorerBaseUrl } from "../utils/wallet";
+import { getCreditNetworkConfig } from "../config/creditNetwork";
+import { copyTextToClipboard } from "../utils/clipboard";
 import { downloadCsv } from "../utils/csv";
 import {
   buildTransactionCsv,
@@ -200,6 +204,118 @@ const getDateGroup = (iso: string): string => {
   return getCalendarGroup(iso, clockNow());
 };
 
+function getExplorerUrl(txHash: string): string {
+  let network = "PUBLIC";
+  try {
+    network = getCreditNetworkConfig().network;
+  } catch {
+    // ConfigError on bad env — fall back to PUBLIC
+  }
+  return `${getExplorerBaseUrl(network)}/${encodeURIComponent(txHash)}`;
+}
+
+function TransactionHashMenu({ txHash }: { txHash: string }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  async function handleCopy() {
+    await copyTextToClipboard(txHash);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    setOpen(false);
+  }
+
+  return (
+    <div
+      className="tx-hash-menu-wrapper"
+      ref={menuRef}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span className="tx-hash-truncated">
+        {txHash.slice(0, 8)}...{txHash.slice(-6)}
+      </span>
+      <button
+        ref={triggerRef}
+        className="tx-hash-menu-trigger"
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-label="Transaction actions"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((o) => !o);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((o) => !o);
+          }
+        }}
+      >
+        <MoreHorizontal className="w-4 h-4" aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          className="tx-hash-menu"
+          role="menu"
+          aria-orientation="vertical"
+          aria-label="Transaction hash actions"
+        >
+          <button
+            role="menuitem"
+            className="tx-hash-menu-item"
+            onClick={handleCopy}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleCopy(); }
+            }}
+          >
+            <Copy className="w-4 h-4" aria-hidden="true" />
+            {copied ? "Copied!" : "Copy transaction hash"}
+          </button>
+          <a
+            role="menuitem"
+            className="tx-hash-menu-item"
+            href={getExplorerUrl(txHash)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setOpen(false)}
+          >
+            <ExternalLink className="w-4 h-4" aria-hidden="true" />
+            View on explorer
+          </a>
+        </div>
+      )}
+      {copied && (
+        <span role="status" aria-live="polite" className="sr-only">
+          Copied
+        </span>
+      )}
+    </div>
+  );
+}
+
 function TransactionRow({
   tx,
   expanded,
@@ -286,22 +402,7 @@ function TransactionRow({
         </td>
         <td className="tx-hash">
           {tx.txHash ? (
-            <div className="tx-hash-actions">
-              <a
-                href={`https://stellar.expert/tx/${tx.txHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="tx-hash-link"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {tx.txHash.slice(0, 8)}...{tx.txHash.slice(-6)}
-              </a>
-              <CopyToClipboard
-                value={tx.txHash}
-                ariaLabel={`Copy transaction hash for ${tx.id}`}
-                stopPropagation
-              />
-            </div>
+            <TransactionHashMenu txHash={tx.txHash} />
           ) : (
             <span className="tx-hash-muted">—</span>
           )}
@@ -367,7 +468,7 @@ function TransactionRow({
                       <span className="label">Transaction Hash</span>
                       <div className="value tx-detail-hash">
                         <a
-                          href={`https://stellar.expert/tx/${tx.txHash}`}
+                          href={getExplorerUrl(tx.txHash)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="tx-hash-full"

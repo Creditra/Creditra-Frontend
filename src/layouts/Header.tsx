@@ -28,12 +28,12 @@ export function Header({
   const { pathname } = useLocation();
 
   // On narrow screens the nav is a horizontally scrolling row; keep the
-  // active link in view (adjust scrollLeft only, never the page scroll).
+  // active link in view using the browser's direction-aware inline scrolling.
   useEffect(() => {
     const nav = navRef.current;
     const active = nav?.querySelector<HTMLElement>(".header-nav-link.active");
     if (!nav || !active || nav.scrollWidth <= nav.clientWidth) return;
-    nav.scrollLeft = active.offsetLeft - nav.offsetLeft - (nav.clientWidth - active.offsetWidth) / 2;
+    active.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [pathname]);
 
   return (

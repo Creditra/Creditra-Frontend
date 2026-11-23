@@ -28,7 +28,7 @@
  *     a meaningful visual fallback rather than a frozen rotation frame.
  */
 
-import { useRef, useState, useReducer, useEffect, useCallback, useContext } from "react";
+import { useRef, useState, useReducer, useEffect, useCallback } from "react";
 import { Skeleton } from "@/components/Skeleton";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useReducedMotion } from "@/context/ReducedMotionContext";
@@ -74,11 +74,11 @@ import { getDrawAmountValidation } from "@/utils/amountValidation";
 import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
 import { projectDraw } from "@/lib/draw-projection";
 import { offlineMutation } from "@/utils/offline";
-import { NotificationContext } from "@/context/NotificationContext";
 import { useOnline } from "@/hooks/useOnline";
 import { WhyApr } from "@/components/WhyApr";
 import { DrawSummaryBar } from "@/components/DrawSummaryBar";
 import { useDrawWizardMicroProgress } from "@/hooks/useDrawWizardMicroProgress";
+import { emit } from "@/lib/event-bus";
 import { useHotkey } from "@/lib/hotkeys";
 import "@/components/DrawWizardMicroProgress.css";
 import "@/styles/focus.css";
@@ -86,12 +86,6 @@ import "./DrawCreditPage.css";
 
 export default function DrawCreditPage() {
   const navigate = useNavigate();
-  // Read the context directly (not `useNotifications()`) so this
-  // component renders in isolation tests without a provider.
-  // In production, App.tsx always wraps this in <NotificationProvider>,
-  // so `addToast` is defined and the toast fires.
-  const notifCtx = useContext(NotificationContext);
-  const addToast = notifCtx?.addToast;
   const isMountedRef = useRef(true);
   useEffect(() => {
     isMountedRef.current = true;
@@ -402,24 +396,17 @@ export default function DrawCreditPage() {
             timestamp: new Date(),
           };
 
-          if (!isMountedRef.current) {
-            addToast?.({
-              type: succeeded ? "success" : "error",
-              category: "transaction",
-              title: succeeded
-                ? `Your $${state.amount} draw succeeded`
-                : `Your $${state.amount} draw failed`,
-              message: succeeded
-                ? "View the details in your transaction history."
-                : "Insufficient funds available.",
-              action: {
-                label: "View transactions",
-                onClick: () => navigate("/transactions"),
-              },
-              saveToHistory: true,
+          if (succeeded) {
+            emit("draw:success", {
+              transactionId: newTransaction.id,
+              creditLineId: line.id,
+              creditLineName: line.name,
+              amount: newTransaction.amount,
+              timestamp: newTransaction.timestamp?.toISOString() ?? new Date().toISOString(),
             });
-            return;
           }
+
+          if (!isMountedRef.current) return;
 
           if (succeeded) {
             dispatch({ type: "SUBMIT_SUCCESS", transaction: newTransaction });
