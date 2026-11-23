@@ -1221,3 +1221,72 @@
         justify-content: flex-start;
     }
 }
+
+/* Transaction hash actions menu (issue #1466) */
+.tx-hash-menu-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.tx-hash-truncated {
+  font-size: 0.75rem;
+  font-family: monospace;
+  color: var(--muted, #888);
+}
+
+.tx-hash-menu-trigger {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.2rem;
+  border-radius: 4px;
+  color: var(--muted, #888);
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+
+.tx-hash-menu-trigger:hover,
+.tx-hash-menu-trigger:focus-visible {
+  color: var(--foreground, #fff);
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: 2px;
+}
+
+.tx-hash-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 200px;
+  background: var(--surface, #18181b);
+  border: 1px solid var(--border, #27272a);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 50;
+  padding: 4px 0;
+}
+
+.tx-hash-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--foreground, #e4e4e7);
+  text-decoration: none;
+  transition: background 0.1s;
+}
+
+.tx-hash-menu-item:hover,
+.tx-hash-menu-item:focus-visible {
+  background: var(--accent, #6366f1)1a;
+  color: var(--accent, #6366f1);
+  outline: none;
+}
