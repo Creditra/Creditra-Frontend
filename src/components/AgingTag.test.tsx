@@ -3,11 +3,21 @@ import { describe, it, expect } from 'vitest';
 import { AgingTag } from './AgingTag';
 
 describe('AgingTag', () => {
-  it('renders correctly for a delinquent line', () => {
+  it('renders correctly for a delinquent line with default shortcut hint', () => {
     render(<AgingTag daysPastDue={15} />);
     
     // The text should be present
     expect(screen.getByText('15 days past due')).toBeInTheDocument();
+    
+    // The default shortcut hint 'R' should be present
+    expect(screen.getByText('R')).toBeInTheDocument();
+  });
+
+  it('renders correctly with a custom shortcut hint', () => {
+    render(<AgingTag daysPastDue={15} shortcutKey="P" />);
+    
+    // The custom shortcut hint 'P' should be present
+    expect(screen.getByText('P')).toBeInTheDocument();
   });
 
   it('does not render if daysPastDue is 0', () => {
@@ -36,3 +46,4 @@ describe('AgingTag', () => {
     expect(icon).toHaveAttribute('aria-hidden', 'true');
   });
 });
+

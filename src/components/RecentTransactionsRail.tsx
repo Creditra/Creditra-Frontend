@@ -8,7 +8,13 @@ type RichTransaction = Transaction & { lineName: string; lineId: string };
 
 interface RecentTransactionsRailProps {
   transactions: RichTransaction[];
-  loading?: boolean;
+  isLoading?: boolean;
+  /**
+   * A value that changes when the active filters change. When this value changes,
+   * the component is remounted so any internal state (e.g., history cursors,
+   * scroll offsets) is reset. Pass e.g. a serialized query or filter id.
+   */
+  filterKey?: string | number;
 }
 
 const relativeTime = (iso: string): string => {
@@ -25,9 +31,9 @@ const relativeTime = (iso: string): string => {
 const TX_ICON: Record<TransactionType, string> = {
   Draw: '\u2197',
   Repay: '\u2199',
-  Fee: '\uD83D\uDCCB',
-  Interest: '\uD83D\uDCC8',
-  StatusChange: '\uD83D\uDD04',
+  Fee: '\uD03D\uDDEB',
+  Interest: '\uD3CD\uDDC8',
+  StatusChange: '\uD03D\uDD04',
 };
 
 const TX_COLOR: Record<TransactionType, string> = {
@@ -41,11 +47,11 @@ const TX_COLOR: Record<TransactionType, string> = {
 const fmtAmount = (type: TransactionType, amount: number) =>
   `${type === 'Repay' ? '+' : '-'}${fmt(amount)}`;
 
-export function RecentTransactionsRail({ transactions, loading = false }: RecentTransactionsRailProps) {
+export function RecentTransactionsRail({ transactions, isLoading = false, filterKey }: RecentTransactionsRailProps) {
   return (
-    <div className="recent-transactions-rail" role="region" aria-label="Recent transactions">
-      {loading ? (
-        <>
+    <div key={filterKey} className="recent-transactions-rail" role="region" aria-label="Recent transactions">
+      {isLoading ? (
+      <>
           <div className="activity-item">
             <Skeleton className="activity-icon" style={{ borderRadius: '6px' }} />
             <div className="activity-content" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>

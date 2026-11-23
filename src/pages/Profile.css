@@ -24,10 +24,65 @@
 }
 
 .profile-tabs button.active {
-  border-color: var(--color-primary);
+  border-color: var(--accent);
+  color: var(--accent);
   font-weight: 600;
 }
 
 .profile-content {
   /* Content area styling */
+}
+
+.profile-tabs button {
+  color: var(--text);
+  min-height: 44px;
+}
+
+.profile-overview-intro {
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+
+.profile-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1.25rem;
+}
+
+.profile-stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.profile-stat dt {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.profile-stat dd {
+  margin: 0.25rem 0 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.profile-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.profile-links a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.profile-links a:hover {
+  text-decoration: underline;
 }

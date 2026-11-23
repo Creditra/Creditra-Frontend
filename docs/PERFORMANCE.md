@@ -147,6 +147,27 @@ We do not silently ship over budget.
 - **Skeletons match final layout** so the painted area is stable across the loading →
   ready transition and CLS stays at 0.
 
+### Table virtualization (`VirtualList`)
+
+`/transactions` renders transaction rows through `src/components/VirtualList.tsx` in
+`mode="table"` so large ledgers or large page sizes do not mount thousands of `<tr>`
+nodes at once.
+
+| Parameter | Default | Guidance |
+| --- | --- | --- |
+| `threshold` | `100` rows | Below this count (or when `matchMedia("print")` matches), `VirtualList` falls back to full rendering with zero spacer overhead. |
+| `estimateSize` | `64` px (`260` px expanded) | Initial row height estimate before `ResizeObserver` / `getBoundingClientRect` measures actual height. Keep close to real row height to minimize scrollbar jump. |
+| `overscan` | `5` rows | Extra rows mounted above and below the viewport. Raise slightly (e.g. `8–10`) if fast wheel scrolling shows blank flashes; lower (`3`) on memory-constrained devices. |
+| `pinnedIndex` | `focusedRowIndex` | Keeps the keyboard-focused row mounted even when scrolled out of view so focus is never lost. |
+
+Accessibility notes:
+- Spacer `<tr>` elements carry `aria-hidden="true"` so screen readers skip them.
+- The `<table>` sets `aria-rowcount={rows.length + 1}` and each data `<tr>` sets
+  `aria-rowindex={index + 2}` (1-based, accounting for the header row) so assistive
+  technology still announces "row N of M".
+- Expanding or collapsing a row triggers `remeasure()` so prefix-sum offsets stay
+  accurate for variable-height rows.
+
 ---
 
 ## 6. Network performance
@@ -168,7 +189,7 @@ We do not silently ship over budget.
 | --- | --- | --- |
 | `vite build` | Per-chunk gzip size printed in the build summary | Locally and CI |
 | Lighthouse CI (recommended) | LCP/INP/CLS/TBT against the budgets above | CI on every PR |
-| `@axe-core/react` (recommended) | A11y regressions that also frequently surface perf regressions | CI on every PR |
+| `@axe-core/react` (optional recommendation; install separately if adopted) | A11y regressions that also frequently surface perf regressions | CI on every PR |
 | Bundle visualizer (`rollup-plugin-visualizer`, recommended) | Per-chunk treemap when a budget is breached | Local |
 
 When budgets are breached, the recovery order is: (1) lazy-split, (2) shrink dependency,

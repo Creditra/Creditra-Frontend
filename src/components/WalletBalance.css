@@ -20,12 +20,25 @@
   height: 8px;
   border-radius: 50%;
   background-color: var(--color-success, #2ea043);
-  transition: opacity 0.3s ease;
+  transition: opacity 0.3s ease, background-color 0.3s ease;
 }
 
-.wallet-balance-indicator.polling {
-  animation: pulse 1s infinite alternate;
+.wallet-balance-indicator--live {
+  background-color: var(--color-success, #2ea043);
+}
+
+.wallet-balance-indicator--reconnecting {
+  background-color: var(--color-warning, #d29922);
+}
+
+.wallet-balance-indicator--polling {
   background-color: var(--color-accent, #58a6ff);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .wallet-balance-indicator--reconnecting {
+    animation: pulse 1s infinite alternate;
+  }
 }
 
 @keyframes pulse {

@@ -38,6 +38,8 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useInertBackdrop } from '../hooks/useInertBackdrop';
 import { useDebounceValue } from '../hooks/useDebounceValue';
+import { getEnabledRoutes } from '../routes/manifest';
+import { getRecentIds, recordRecent } from '../utils/commandRecents';
 import './CommandPalette.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -74,18 +76,28 @@ export interface CommandItem {
  * Keep this list sorted by expected usage frequency so the most useful
  * commands appear first in the default (empty-query) view.
  */
-const DEFAULT_ITEMS: CommandItem[] = [
-  { id: 'nav-dashboard',    label: 'Dashboard',           icon: '🏠',  action: '/',                          description: 'Go to Dashboard' },
-  { id: 'nav-transactions', label: 'Transactions',         icon: '📋',  action: '/transactions',              description: 'View transaction history' },
-  { id: 'nav-credit-lines', label: 'Credit Lines',         icon: '💳',  action: '/credit-lines',              description: 'Manage your credit lines' },
-  { id: 'nav-repay',        label: 'Repay',                icon: '💰',  action: '/repay',                     description: 'Make a repayment' },
-  { id: 'nav-draw-credit',  label: 'Draw',                 icon: '⬇️',  action: '/draw-credit',               description: 'Draw from a credit line' },
-  { id: 'nav-open-credit',  label: 'Request Evaluation',   icon: '📝',  action: '/open-credit',               description: 'Apply for a new credit line' },
-  { id: 'nav-auctions',     label: 'Dutch Auctions',       icon: '🔨',  action: '/dutch-auctions',            description: 'View active auctions' },
-  { id: 'nav-linked',       label: 'Linked Accounts',      icon: '🔗',  action: '/linked-accounts',           description: 'Manage linked external accounts' },
-  { id: 'nav-help',         label: 'Help Center',          icon: '❓',  action: '/help',                      description: 'Browse help articles' },
-  { id: 'nav-notif-prefs',  label: 'Notification Settings',icon: '🔔',  action: '/notification-preferences',  description: 'Manage notification preferences' },
-];
+export function getCommandPaletteDefaultItems(): CommandItem[] {
+  return [
+    ...getEnabledRoutes().filter((r) => Boolean(r.nav?.palette)).map((r) => ({
+      id: `nav-${r.path.replace(/^\//, '').replace(/\//g, '-') || 'dashboard'}`,
+      label: r.nav!.palette!.label,
+      icon: r.nav!.palette!.icon,
+      action: r.path,
+      description: r.nav!.palette!.description,
+    })),
+    // The manifest is keyed by route path, so query-parameter deep links such as
+    // the URL-driven Activity tab need an explicit entry.
+    {
+      id: 'nav-profile-activity',
+      label: 'Profile activity',
+      icon: '📈',
+      action: '/profile?tab=activity',
+      description: 'View your activity feed',
+    },
+  ];
+}
+
+const DEFAULT_ITEMS: CommandItem[] = getCommandPaletteDefaultItems();
 
 /** Exported for tests and documentation of the default registry. */
 export { DEFAULT_ITEMS as COMMAND_PALETTE_DEFAULT_ITEMS };
@@ -196,6 +208,7 @@ export function CommandPalette({
   // ── Local state ────────────────────────────────────────────────────────────
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
+  const [recentIds, setRecentIds] = useState<string[]>(() => getRecentIds());
 
   /**
    * Debounce user input by 80 ms to avoid re-filtering on every keystroke.
@@ -204,18 +217,43 @@ export function CommandPalette({
    */
   const debouncedQuery = useDebounceValue(query, 80);
   const inputRef = useRef<HTMLInputElement>(null);
+  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Merge built-in defaults with any context-sensitive extras.
-  const allItems = [...DEFAULT_ITEMS, ...extraItems];
-  const results = filterItems(allItems, debouncedQuery);
+  const allItems = [...getCommandPaletteDefaultItems(), ...extraItems];
+  const isEmptyQuery = normalize(debouncedQuery).length === 0;
+
+  let recentItems: CommandItem[] = [];
+  let otherItems: CommandItem[] = [];
+  let results: CommandItem[];
+
+  if (isEmptyQuery) {
+    const itemById = new Map(allItems.map((item) => [item.id, item]));
+    const recentIdSet = new Set<string>();
+    recentItems = [];
+
+    for (const id of recentIds) {
+      const found = itemById.get(id);
+      if (found && !recentIdSet.has(id)) {
+        recentItems.push(found);
+        recentIdSet.add(id);
+      }
+    }
+
+    otherItems = allItems.filter((item) => !recentIdSet.has(item.id));
+    results = [...recentItems, ...otherItems];
+  } else {
+    results = filterItems(allItems, debouncedQuery);
+  }
 
   // ── Side-effects ───────────────────────────────────────────────────────────
 
-  /** Reset search query and selection whenever the palette opens. */
+  /** Reset search query, refresh recents, and reset selection whenever the palette opens. */
   useEffect(() => {
     if (isOpen) {
       setQuery('');
       setActiveIndex(0);
+      setRecentIds(getRecentIds());
     }
   }, [isOpen]);
 
@@ -255,8 +293,18 @@ export function CommandPalette({
   useEffect(() => {
     if (isOpen) {
       // Small delay aligns with useFocusTrap's 50 ms initialisation timeout.
-      setTimeout(() => inputRef.current?.focus(), 10);
+      if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
+      focusTimeoutRef.current = setTimeout(() => {
+        inputRef.current?.focus();
+        focusTimeoutRef.current = null;
+      }, 10);
     }
+    return () => {
+      if (focusTimeoutRef.current) {
+        clearTimeout(focusTimeoutRef.current);
+        focusTimeoutRef.current = null;
+      }
+    };
   }, [isOpen]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
@@ -270,6 +318,7 @@ export function CommandPalette({
    * page are both visible simultaneously.
    */
   function activate(item: CommandItem) {
+    setRecentIds(recordRecent(item.id));
     onClose();
     if (typeof item.action === 'string') {
       navigate(item.action);
@@ -315,6 +364,41 @@ export function CommandPalette({
   const activeItemId = results[activeIndex]
     ? `cp-item-${results[activeIndex].id}`
     : undefined;
+
+  function renderOption(item: CommandItem, index: number) {
+    return (
+      <li
+        key={item.id}
+        id={`cp-item-${item.id}`}
+        role="option"
+        aria-selected={index === activeIndex}
+      >
+        <button
+          type="button"
+          className={`cp-item${index === activeIndex ? ' cp-item--active' : ''}`}
+          onClick={() => activate(item)}
+          onMouseEnter={() => setActiveIndex(index)}
+          tabIndex={-1}
+        >
+          {item.icon && (
+            <span className="cp-item-icon" aria-hidden="true">{item.icon}</span>
+          )}
+          <span className="cp-item-text">
+            <span className="cp-item-label">{item.label}</span>
+            {item.description && (
+              <span className="cp-item-desc">{item.description}</span>
+            )}
+          </span>
+          {/* ↵ hint is only meaningful for navigation routes. */}
+          {typeof item.action === 'string' && (
+            <span className="cp-item-hint" aria-hidden="true">
+              <kbd>↵</kbd>
+            </span>
+          )}
+        </button>
+      </li>
+    );
+  }
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -400,48 +484,26 @@ export function CommandPalette({
             </li>
           )}
 
-          {results.map((item, index) => (
-            <li key={item.id} role="option" aria-selected={index === activeIndex}>
-              {/*
-               * Each item is a `<button>` (not an `<a>`) because:
-               * - Navigation items call `navigate()` imperatively.
-               * - Callback items don't have a URL.
-               * - Both need click + keyboard activation, which `<button>` provides.
-               *
-               * `tabIndex={-1}` keeps the buttons out of the Tab order;
-               * keyboard navigation is handled entirely via arrow keys on the
-               * dialog container, with `aria-activedescendant` tracking focus
-               * for AT rather than real DOM focus.
-               *
-               * `onMouseEnter` syncs visual hover with keyboard selection so
-               * the two never conflict.
-               */}
-              <button
-                id={`cp-item-${item.id}`}
-                type="button"
-                className={`cp-item${index === activeIndex ? ' cp-item--active' : ''}`}
-                onClick={() => activate(item)}
-                onMouseEnter={() => setActiveIndex(index)}
-                tabIndex={-1}
-              >
-                {item.icon && (
-                  <span className="cp-item-icon" aria-hidden="true">{item.icon}</span>
-                )}
-                <span className="cp-item-text">
-                  <span className="cp-item-label">{item.label}</span>
-                  {item.description && (
-                    <span className="cp-item-desc">{item.description}</span>
+          {isEmptyQuery && recentItems.length > 0 ? (
+            <>
+              <li className="cp-group-label" role="presentation">
+                Recent
+              </li>
+              {recentItems.map((item, index) => renderOption(item, index))}
+              {otherItems.length > 0 && (
+                <>
+                  <li className="cp-group-label" role="presentation">
+                    All commands
+                  </li>
+                  {otherItems.map((item, offset) =>
+                    renderOption(item, recentItems.length + offset),
                   )}
-                </span>
-                {/* ↵ hint is only meaningful for navigation routes. */}
-                {typeof item.action === 'string' && (
-                  <span className="cp-item-hint" aria-hidden="true">
-                    <kbd>↵</kbd>
-                  </span>
-                )}
-              </button>
-            </li>
-          ))}
+                </>
+              )}
+            </>
+          ) : (
+            results.map((item, index) => renderOption(item, index))
+          )}
         </ul>
 
         {/*

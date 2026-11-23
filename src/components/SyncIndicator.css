@@ -157,3 +157,78 @@
 .sync-indicator--card-header {
   margin-left: auto;
 }
+
+/* Error state & retry button */
+.sync-indicator__error-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sync-indicator__retry-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-raised, #1c2230);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.sync-indicator__retry-btn:hover:not(:disabled) {
+  background: rgba(139, 148, 158, 0.15);
+  border-color: var(--accent);
+}
+
+.sync-indicator__retry-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Subtle live / reconnecting / polling stream indicator */
+.sync-indicator__stream {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  line-height: 1;
+  color: var(--muted);
+  margin-right: 0.25rem;
+}
+
+.sync-indicator__stream-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background-color: var(--color-success, #2ea043);
+}
+
+.sync-indicator__stream--reconnecting .sync-indicator__stream-dot {
+  background-color: var(--color-warning, #d29922);
+}
+
+.sync-indicator__stream--polling .sync-indicator__stream-dot {
+  background-color: var(--color-accent, #58a6ff);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sync-indicator__stream--reconnecting .sync-indicator__stream-dot {
+    animation: sync-stream-pulse 1.2s ease-in-out infinite;
+  }
+}
+
+@keyframes sync-stream-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}

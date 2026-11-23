@@ -6,6 +6,7 @@ interface CreditLineRowMenuProps {
   lineId: string;
   lineName: string;
   frozen?: boolean;
+  triggerRef?: React.RefObject<HTMLButtonElement | null>;
   onRepay?: () => void;
   onSchedule?: (lineId: string) => void;
   onDetails?: (lineId: string) => void;
@@ -28,6 +29,7 @@ export function CreditLineRowMenu({
   lineId,
   lineName,
   frozen,
+  triggerRef,
   onRepay,
   onSchedule,
   onDetails,
@@ -62,6 +64,7 @@ export function CreditLineRowMenu({
   return (
     <div className="relative" ref={menuRef}>
       <button
+        ref={triggerRef}
         onClick={() => setIsOpen(!isOpen)}
         className="p-2 text-muted hover:text-foreground hover:bg-surface rounded-full transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         aria-haspopup="true"

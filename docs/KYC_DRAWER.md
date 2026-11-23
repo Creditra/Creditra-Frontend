@@ -13,6 +13,7 @@ The KYC drawer lives permanently in the header as a small shield-icon button lab
 - An overall status badge and `n / 5 steps` progress fraction
 - A linear progress bar
 - A **Resume** (or **Start**) CTA that navigates directly to the first incomplete step
+- A sticky bottom action bar that fades in after the drawer body is scrolled, keeping the primary verification CTA visible while reviewing later steps
 
 Progress is persisted to `localStorage` so the user picks up exactly where they left off across page refreshes and navigation.
 
@@ -26,7 +27,7 @@ Progress is persisted to `localStorage` so the user picks up exactly where they 
 | `src/context/KycContext.tsx` | App-wide state provider; persistence, derived status, `setStepStatus`, `resetAll` |
 | `src/components/KycDrawer.tsx` | `KycDrawer` panel + `KycTriggerButton` header button |
 | `src/components/KycDrawer.css` | Component-scoped styles: slide-in desktop, bottom-sheet mobile, reduced-motion |
-| `src/components/__tests__/KycDrawer.test.tsx` | 34 unit/integration tests |
+| `src/components/__tests__/KycDrawer.test.tsx` | Focused unit/integration coverage for drawer rendering, CTA behavior, and sticky action bar reveal-on-scroll |
 
 ---
 
@@ -160,6 +161,7 @@ State is written to `localStorage` under the key `creditra_kyc` on every `setSte
 - All interactive elements ≥ 44×44 px — WCAG 2.5.5
 - Status communicated via colour + text label + shape (icon) — WCAG 1.4.1
 - Mobile bottom sheet: drag-handle hint, full-width, rounded top corners
+- Sticky action bar remains keyboard reachable and uses safe-area bottom padding so the CTA clears mobile gesture/home-indicator areas
 
 ---
 
@@ -169,7 +171,7 @@ State is written to `localStorage` under the key `creditra_kyc` on every `setSte
 npx vitest run src/components/__tests__/KycDrawer.test.tsx
 ```
 
-**34 tests, 0 failures.**
+Includes focused coverage for the sticky action bar reveal-on-scroll behavior.
 
 ### What's tested
 
@@ -179,6 +181,7 @@ npx vitest run src/components/__tests__/KycDrawer.test.tsx
 - Progress bar `valuenow` at 0% and 40% (2 completed)
 - Status badge labels for all 5 `overallStatus` values
 - CTA labels: "Start", "Resume", "All steps submitted"
+- Sticky footer becomes visible after the drawer step list is scrolled
 - CTA disabled state (approved / under_review)
 - `onResume` called with correct `stepId` for not_started and in_progress cases
 - `onClose` called after resume, via ×, backdrop click, and Escape

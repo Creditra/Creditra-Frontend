@@ -40,7 +40,7 @@ export function RiskExplainerCard() {
             and market conditions to determine your personalized APR. Better repayment
             history means lower rates.
           </p>
-          <a href="/docs/risk-pricing" className="risk-explainer-link" aria-label="Learn more about risk pricing">
+          <a href="/docs#risk-pricing" className="risk-explainer-link" aria-label="Learn more about risk pricing">
             Learn more
           </a>
         </div>

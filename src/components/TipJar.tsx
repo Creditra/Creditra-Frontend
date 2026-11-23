@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Coins, Sparkles, Loader2, CheckCircle2, ArrowRight } from 'lucide-react';
-import { MOCK_CREDIT_LINES } from '../data/mockData';
-import { COLOR, fmt } from '../utils/tokens';
+import { useCreditLines } from '../hooks/useCreditLines';
+import type { CreditLine } from '../types/creditLine';
+import { fmt } from '../utils/tokens';
 import './TipJar.css';
 
 interface TipJarProps {
@@ -9,18 +10,19 @@ interface TipJarProps {
 }
 
 export function TipJar({ onRepaySuccess }: TipJarProps) {
+  const { lines, setLines } = useCreditLines();
   const [step, setStep] = useState<'idle' | 'processing' | 'success'>('idle');
   const [processingAmount, setProcessingAmount] = useState<number | null>(null);
   const [successAmount, setSuccessAmount] = useState<number | null>(null);
   const [successLineName, setSuccessLineName] = useState<string>('');
 
   // Find active/suspended credit lines with an outstanding balance
-  const activeLinesWithBalance = MOCK_CREDIT_LINES.filter(
+  const activeLinesWithBalance = lines.filter(
     (cl) => (cl.status === 'Active' || cl.status === 'Suspended') && cl.utilized > 0
   );
 
   // Target the line with the highest APR to save the most interest
-  const targetLine = activeLinesWithBalance.sort((a, b) => b.apr - a.apr)[0];
+  const targetLine = [...activeLinesWithBalance].sort((a, b) => b.apr - a.apr)[0];
 
   if (!targetLine) {
     return (
@@ -48,16 +50,16 @@ export function TipJar({ onRepaySuccess }: TipJarProps) {
 
     // Simulate blockchain/network transaction delay
     setTimeout(() => {
-      // Mutate the mock data in place
-      targetLine.utilized = Math.max(0, targetLine.utilized - actualAmount);
-      targetLine.updatedAt = new Date().toISOString();
-
       // Append to transactions
       const txHash = '0x' + Array.from({ length: 32 }, () => 
         Math.floor(Math.random() * 16).toString(16)
       ).join('');
 
-      targetLine.transactions.unshift({
+      const updatedLine: CreditLine = {
+        ...targetLine,
+        utilized: Math.max(0, targetLine.utilized - actualAmount),
+        updatedAt: new Date().toISOString(),
+        transactions: [{
         id: `TX-TIP-${Date.now()}`,
         type: 'Repay',
         amount: actualAmount,
@@ -65,7 +67,9 @@ export function TipJar({ onRepaySuccess }: TipJarProps) {
         note: `Tip Jar Micro-Repayment (${targetLine.name})`,
         status: 'Completed',
         txHash,
-      });
+        }, ...targetLine.transactions],
+      };
+      setLines(lines.map((line) => line.id === targetLine.id ? updatedLine : line));
 
       setSuccessAmount(actualAmount);
       setSuccessLineName(targetLine.name);

@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import './RepaySuccessShareCard.css';
 import { Share2, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { fmt } from '../utils/tokens';
+import { usePrivacyMode } from '../context/PrivacyContext';
+import { Amount } from './Amount';
 
 interface RepaySuccessShareCardProps {
   amount: number;
@@ -21,7 +23,16 @@ export const RepaySuccessShareCard: React.FC<RepaySuccessShareCardProps> = ({
 }) => {
   const [isMasked, setIsMasked] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { theme } = useTheme();
+  const { privacyMode } = usePrivacyMode();
+
+  useEffect(
+    () => () => {
+      if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
+    },
+    [],
+  );
 
   const maskText = (text: string, visibleStart = 4, visibleEnd = 4) => {
     if (!isMasked) return text;
@@ -40,7 +51,7 @@ export const RepaySuccessShareCard: React.FC<RepaySuccessShareCardProps> = ({
   };
 
   const handleShare = async () => {
-    const shareText = `Repaid ${fmt(amount)} on ${creditLineName} (${transactionId})`;
+    const shareText = `Repaid ${privacyMode ? '••••' : fmt(amount)} on ${creditLineName} (${transactionId})`;
     
     if (navigator.share) {
       try {
@@ -58,11 +69,15 @@ export const RepaySuccessShareCard: React.FC<RepaySuccessShareCardProps> = ({
   };
 
   const copyToClipboard = async () => {
-    const shareText = `Repaid ${fmt(amount)} on ${creditLineName} (${transactionId})`;
+    const shareText = `Repaid ${privacyMode ? '••••' : fmt(amount)} on ${creditLineName} (${transactionId})`;
     try {
       await navigator.clipboard.writeText(shareText);
       setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000);
+      if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
+      copiedTimeoutRef.current = setTimeout(() => {
+        setIsCopied(false);
+        copiedTimeoutRef.current = null;
+      }, 2000);
     } catch {
       // Ignore errors
     }
@@ -79,7 +94,9 @@ export const RepaySuccessShareCard: React.FC<RepaySuccessShareCardProps> = ({
       <div className="repay-share-content">
 <div className="repay-info-row">
           <span className="repay-label">Amount</span>
-          <span className="repay-value tabular-nums">{fmt(amount)}</span>
+          <span className="repay-value tabular-nums">
+            <Amount value={amount} format={fmt} maskedLabel="Repayment amount hidden for privacy" />
+          </span>
         </div>
         <div className="repay-info-row">
           <span className="repay-label">Credit Line</span>

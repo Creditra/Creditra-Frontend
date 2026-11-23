@@ -1,17 +1,33 @@
-import { useState, useId, useCallback } from 'react';
+import { useState, useId, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useUnsavedChangesGuard } from '../hooks/useUnsavedChangesGuard';
 import { FormField } from '../components/FormField';
 import './AutopayPage.css';
 import { PendingButton } from '../components/PendingButton';
-import {
-  AutopaySchedule,
-  type AutopayFrequency,
-} from '../components/AutopaySchedule';
+import { useConfirm } from '../components/ConfirmDialog';
+import type { AutopayFrequency } from '../components/AutopaySchedule';
 import { AutoPayCard } from './AutoPayCard';
 import { fmt } from '../utils/tokens';
+import { useCreditLines } from '../hooks/useCreditLines';
+import { useWallet } from '../context/WalletContext';
+import { useWalletIdentityKey } from '../hooks/useWalletIdentityKey';
+import {
+  hasOverlappingActiveSchedule,
+  useAutopaySchedules,
+  type AutopayScheduleRecord,
+} from '../state/autopay';
+import { getRepayableLines } from '../lib/repay-eligibility';
+import { getAccruedInterest } from '../lib/interest';
+import { roundToCents } from '../utils/currency';
+import {
+  getRepayableBalance,
+  moneyToNumber,
+  SETTLEMENT_ASSET,
+} from '../lib/repayable-balance';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AutopayFormState {
+  creditLineId: string;
   amount: string;
   frequency: AutopayFrequency;
   startDate: string;
@@ -19,6 +35,7 @@ interface AutopayFormState {
 }
 
 interface FormErrors {
+  creditLineId?: string;
   amount?: string;
   startDate?: string;
   endDate?: string;
@@ -34,11 +51,16 @@ const FREQUENCY_OPTIONS: { value: AutopayFrequency; label: string }[] = [
 ];
 
 const EMPTY_FORM: AutopayFormState = {
+  creditLineId: '',
   amount: '',
   frequency: 'monthly',
   startDate: '',
   endDate: '',
 };
+
+const CREDIT_LINE_ERROR_ID = 'autopay-credit-line-error';
+const AMOUNT_LINE_WARNING_ID = 'autopay-amount-line-warning';
+const AMOUNT_WALLET_WARNING_ID = 'autopay-amount-wallet-warning';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -51,8 +73,19 @@ function todayISO(): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function validate(form: AutopayFormState): FormErrors {
+function validate(
+  form: AutopayFormState,
+  repayableLineIds: ReadonlySet<string>,
+  activeSchedules: readonly AutopayScheduleRecord[],
+  editingId: string | null,
+): FormErrors {
   const errors: FormErrors = {};
+
+  if (!form.creditLineId) {
+    errors.creditLineId = 'Select a credit line to pay.';
+  } else if (!repayableLineIds.has(form.creditLineId)) {
+    errors.creditLineId = 'Select an available credit line.';
+  }
 
   const amt = parseFloat(form.amount);
   if (!form.amount || isNaN(amt) || amt <= 0) {
@@ -71,6 +104,24 @@ function validate(form: AutopayFormState): FormErrors {
     if (form.startDate && form.endDate <= form.startDate) {
       errors.endDate = 'End date must be after the start date.';
     }
+  }
+
+  if (
+    !errors.creditLineId &&
+    !errors.startDate &&
+    !errors.endDate &&
+    hasOverlappingActiveSchedule(
+      activeSchedules,
+      {
+        creditLineId: form.creditLineId,
+        startDate: form.startDate,
+        endDate: form.endDate || undefined,
+      },
+      editingId ?? undefined,
+    )
+  ) {
+    errors.creditLineId =
+      'An active autopay schedule already overlaps this date range for the selected credit line.';
   }
 
   return errors;
@@ -103,21 +154,99 @@ export default function AutopayPage() {
   const statusRegionId = useId();
   const freqId = useId();
   const freqHelpId = `${freqId}-help`;
-  const freqErrorId = `${freqId}-error`;
+
+  const { lines } = useCreditLines();
+  const { balances } = useWallet();
+  const walletKey = useWalletIdentityKey();
+  const { activeSchedules, create, update, cancel } = useAutopaySchedules();
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   const [form, setForm] = useState<AutopayFormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<FormErrors>({});
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [cancelAnnouncement, setCancelAnnouncement] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [savedBanner, setSavedBanner] = useState<{
+    action: 'created' | 'updated';
+    amount: number;
+    startDate: string;
+  } | null>(null);
+  const [liveAnnouncement, setLiveAnnouncement] = useState('');
+
+  const isMountedRef = useRef(true);
+  const cancelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const submitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (cancelTimerRef.current !== null) {
+        clearTimeout(cancelTimerRef.current);
+        cancelTimerRef.current = null;
+      }
+      if (submitTimerRef.current !== null) {
+        clearTimeout(submitTimerRef.current);
+        submitTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Warn on unload while the form holds unsaved input.
+  const isFormDirty =
+    (form.amount !== EMPTY_FORM.amount ||
+      form.creditLineId !== EMPTY_FORM.creditLineId ||
+      form.startDate !== EMPTY_FORM.startDate ||
+      form.endDate !== EMPTY_FORM.endDate) &&
+    !submitted;
+  useUnsavedChangesGuard(isFormDirty);
 
   // ─── Derived ──────────────────────────────────────────────────────────────
 
+  const repayableLines = useMemo(() => getRepayableLines(lines), [lines]);
+  const repayableLineIds = useMemo(
+    () => new Set(repayableLines.map((line) => line.id)),
+    [repayableLines],
+  );
+  const selectedLine = useMemo(
+    () => repayableLines.find((line) => line.id === form.creditLineId) ?? null,
+    [repayableLines, form.creditLineId],
+  );
+  const selectedLineRepayable = useMemo(() => {
+    if (!selectedLine) return null;
+    return roundToCents(
+      selectedLine.utilized + getAccruedInterest(selectedLine, new Date()),
+    );
+  }, [selectedLine]);
+
+  const walletBalanceResult = useMemo(
+    () => getRepayableBalance(balances ?? null, SETTLEMENT_ASSET),
+    [balances],
+  );
+  const walletUsdcBalance =
+    walletBalanceResult.status === 'ok'
+      ? moneyToNumber(walletBalanceResult.amount)
+      : null;
+
   const parsedAmount = parseFloat(form.amount) || 0;
+  const amountExceedsLine =
+    selectedLineRepayable !== null && parsedAmount > selectedLineRepayable;
+  const amountExceedsWallet =
+    walletUsdcBalance !== null && parsedAmount > walletUsdcBalance;
+
+  const amountDescribedBy = [
+    amountExceedsLine ? AMOUNT_LINE_WARNING_ID : '',
+    amountExceedsWallet ? AMOUNT_WALLET_WARNING_ID : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   const hasValidPreview =
     parsedAmount > 0 && !!form.startDate && form.startDate >= todayISO();
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
+
+  const announce = useCallback((message: string) => {
+    setLiveAnnouncement(message);
+  }, []);
 
   const handleChange = useCallback(
     <K extends keyof AutopayFormState>(field: K, value: AutopayFormState[K]) => {
@@ -129,43 +258,150 @@ export default function AutopayPage() {
         delete next[field as keyof FormErrors];
         return next;
       });
-      setSubmitted(false);
+      setSavedBanner(null);
     },
     [],
   );
 
   const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
+    (e: React.FormEvent) => {
       e.preventDefault();
-      const errs = validate(form);
+      if (!walletKey) {
+        setErrors({
+          creditLineId: 'Connect your wallet to save an autopay schedule.',
+        });
+        document.getElementById('autopay-credit-line')?.focus();
+        return;
+      }
+
+      const errs = validate(form, repayableLineIds, activeSchedules, editingId);
       if (Object.keys(errs).length > 0) {
         setErrors(errs);
         // Move focus to the first errored field
-        const firstErrorId = errs.amount
-          ? 'autopay-amount'
-          : errs.startDate
-            ? 'autopay-start'
-            : 'autopay-end';
+        const firstErrorId = errs.creditLineId
+          ? 'autopay-credit-line'
+          : errs.amount
+            ? 'autopay-amount'
+            : errs.startDate
+              ? 'autopay-start'
+              : 'autopay-end';
         document.getElementById(firstErrorId)?.focus();
         return;
       }
-      setSubmitting(true);
-      // Simulate async submission
-      await new Promise(resolve => setTimeout(resolve, 1200));
-      setSubmitting(false);
-      setSubmitted(true);
+
+      const amount = parseFloat(form.amount);
+      try {
+        if (editingId) {
+          update(editingId, {
+            creditLineId: form.creditLineId,
+            amount,
+            frequency: form.frequency,
+            startDate: form.startDate,
+            endDate: form.endDate || undefined,
+          });
+          setSavedBanner({
+            action: 'updated',
+            amount,
+            startDate: form.startDate,
+          });
+          announce('Autopay schedule updated successfully.');
+          setEditingId(null);
+        } else {
+          create({
+            creditLineId: form.creditLineId,
+            amount,
+            frequency: form.frequency,
+            startDate: form.startDate,
+            endDate: form.endDate || undefined,
+          });
+          setSavedBanner({
+            action: 'created',
+            amount,
+            startDate: form.startDate,
+          });
+          announce('Autopay schedule saved successfully.');
+        }
+        setForm(EMPTY_FORM);
+        setErrors({});
+      } catch (err) {
+        setErrors({
+          creditLineId:
+            err instanceof Error ? err.message : 'Unable to save autopay schedule.',
+        });
+        document.getElementById('autopay-credit-line')?.focus();
+      }
+      await new Promise<void>(resolve => {
+        if (submitTimerRef.current !== null) {
+          clearTimeout(submitTimerRef.current);
+        }
+        submitTimerRef.current = setTimeout(() => {
+          submitTimerRef.current = null;
+          resolve();
+        }, 1200);
+      });
+      if (!isMountedRef.current) return;
     },
-    [form],
+    [walletKey, form, repayableLineIds, activeSchedules, editingId, create, update, announce],
   );
 
   const handleCancel = useCallback(() => {
     setForm(EMPTY_FORM);
     setErrors({});
-    setSubmitted(false);
-    setCancelAnnouncement('Autopay schedule cleared.');
-    // Clear the announcement after it has been read
-    setTimeout(() => setCancelAnnouncement(''), 4000);
-  }, []);
+    setSavedBanner(null);
+    const wasEditing = editingId !== null;
+    setEditingId(null);
+    announce(wasEditing ? 'Schedule edit cancelled.' : 'Autopay schedule cleared.');
+  }, [editingId, announce]);
+
+  const handleEditSchedule = useCallback(
+    (record: AutopayScheduleRecord) => {
+      setEditingId(record.id);
+      setForm({
+        creditLineId: record.creditLineId,
+        amount: String(record.amount),
+        frequency: record.frequency,
+        startDate: record.startDate,
+        endDate: record.endDate ?? '',
+      });
+      setErrors({});
+      setSavedBanner(null);
+      announce('Editing autopay schedule.');
+      document.getElementById('autopay-amount')?.focus();
+    },
+    [announce],
+  );
+
+  const handleCancelSchedule = useCallback(
+    async (record: AutopayScheduleRecord) => {
+      const lineName =
+        lines.find((line) => line.id === record.creditLineId)?.name ?? record.creditLineId;
+      const confirmed = await confirm({
+        title: 'Cancel autopay schedule?',
+        body: `This will stop automatic ${fmt(record.amount)} payments for ${lineName}. You can create a new schedule anytime.`,
+        confirmLabel: 'Cancel Schedule',
+        cancelLabel: 'Keep Schedule',
+        variant: 'danger',
+      });
+      if (!confirmed) return;
+
+      cancel(record.id);
+      if (editingId === record.id) {
+        setEditingId(null);
+        setForm(EMPTY_FORM);
+        setErrors({});
+      }
+      setSavedBanner(null);
+      announce(`Autopay schedule for ${lineName} cancelled.`);
+    },
+    [lines, confirm, cancel, editingId, announce],
+  );
+    if (cancelTimerRef.current !== null) {
+      clearTimeout(cancelTimerRef.current);
+    }
+    cancelTimerRef.current = setTimeout(() => {
+      cancelTimerRef.current = null;
+      setCancelAnnouncement('');
+    }, 4000);
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -180,7 +416,7 @@ export default function AutopayPage() {
         </p>
       </header>
 
-      {/* ── Live region for cancel / success announcements ────────────────── */}
+      {/* ── Live region for save / edit / cancel announcements ────────────── */}
       <div
         id={statusRegionId}
         role="status"
@@ -188,12 +424,11 @@ export default function AutopayPage() {
         aria-atomic="true"
         className="sr-only"
       >
-        {cancelAnnouncement}
-        {submitted ? 'Autopay schedule saved successfully.' : ''}
+        {liveAnnouncement}
       </div>
 
       {/* ── Success banner ────────────────────────────────────────────────── */}
-      {submitted && (
+      {savedBanner && (
         <div
           className="autopay-page__success-banner"
           role="alert"
@@ -203,10 +438,14 @@ export default function AutopayPage() {
             ✅
           </span>
           <span>
-            <strong>Autopay activated.</strong> Your first payment of{' '}
-            {fmt(parsedAmount)} is scheduled for{' '}
-            {form.startDate
-              ? new Date(form.startDate + 'T00:00:00').toLocaleDateString(
+            <strong>
+              {savedBanner.action === 'updated'
+                ? 'Autopay updated.'
+                : 'Autopay activated.'}
+            </strong>{' '}
+            Your payment of {fmt(savedBanner.amount)} is scheduled for{' '}
+            {savedBanner.startDate
+              ? new Date(savedBanner.startDate + 'T00:00:00').toLocaleDateString(
                   'en-US',
                   { month: 'long', day: 'numeric', year: 'numeric' },
                 )
@@ -232,25 +471,92 @@ export default function AutopayPage() {
               noValidate
               aria-label="Autopay schedule configuration"
             >
+              {/* Credit line */}
+              <div className="form-field">
+                <label htmlFor="autopay-credit-line" className="form-field__label">
+                  Credit Line
+                  <span className="form-field__required" aria-label="required">
+                    *
+                  </span>
+                </label>
+                <p id="autopay-credit-line-help" className="form-field__help">
+                  The credit line this autopay schedule repays.
+                </p>
+                <select
+                  id="autopay-credit-line"
+                  value={form.creditLineId}
+                  onChange={e => handleChange('creditLineId', e.target.value)}
+                  required
+                  aria-required="true"
+                  aria-describedby={`autopay-credit-line-help${
+                    errors.creditLineId ? ` ${CREDIT_LINE_ERROR_ID}` : ''
+                  }`}
+                  aria-invalid={!!errors.creditLineId}
+                  className={`form-field__input autopay-page__select${
+                    errors.creditLineId ? ' form-field__input--error' : ''
+                  }`}
+                >
+                  <option value="">Select a credit line</option>
+                  {repayableLines.map(line => (
+                    <option key={line.id} value={line.id}>
+                      {line.name} — {fmt(line.utilized)} outstanding
+                    </option>
+                  ))}
+                </select>
+                {repayableLines.length === 0 && (
+                  <p className="form-field__help">
+                    No repayable credit lines are available.
+                  </p>
+                )}
+                {errors.creditLineId && (
+                  <div
+                    id={CREDIT_LINE_ERROR_ID}
+                    className="form-field__error"
+                    role="alert"
+                  >
+                    {errors.creditLineId}
+                  </div>
+                )}
+              </div>
+
               {/* Amount */}
               <FormField
                 id="autopay-amount"
+                name="amount"
                 label="Payment Amount"
                 type="number"
                 required
                 helpText="Amount to deduct on each scheduled date."
+                describedBy={amountDescribedBy}
+                value={form.amount}
+                onChange={value => handleChange('amount', value)}
+                placeholder="0.00"
                 error={errors.amount}
-                inputProps={{
-                  value: form.amount,
-                  onChange: e => handleChange('amount', e.target.value),
-                  placeholder: '0.00',
-                  min: '0.01',
-                  max: '1000000',
-                  step: '0.01',
-                  autoComplete: 'off',
-                  className: 'form-field__input',
-                }}
               />
+
+              {amountExceedsLine && selectedLineRepayable !== null && (
+                <p
+                  id={AMOUNT_LINE_WARNING_ID}
+                  className="autopay-page__warning"
+                  role="status"
+                >
+                  <span aria-hidden="true">⚠️ </span>
+                  This amount exceeds the line&apos;s repayable balance of{' '}
+                  {fmt(selectedLineRepayable)}. The schedule may fail when it runs.
+                </p>
+              )}
+
+              {amountExceedsWallet && walletUsdcBalance !== null && (
+                <p
+                  id={AMOUNT_WALLET_WARNING_ID}
+                  className="autopay-page__warning"
+                  role="status"
+                >
+                  <span aria-hidden="true">⚠️ </span>
+                  This amount exceeds your {SETTLEMENT_ASSET.code} wallet balance
+                  of {fmt(walletUsdcBalance)}. Add funds before the next payment.
+                </p>
+              )}
 
               {/* Frequency — custom render so the <select> gets the same
                   describedby wiring as other FormField controls. */}
@@ -288,72 +594,98 @@ export default function AutopayPage() {
               </div>
 
               {/* Start date */}
-              <FormField
-                id="autopay-start"
-                label="Start Date"
-                type="text"
-                required
-                helpText="The date of your first automatic payment."
-                error={errors.startDate}
-                as="custom"
-              >
-                {({ id, 'aria-describedby': describedBy, 'aria-invalid': invalid, 'aria-required': req }) => (
-                  <input
-                    id={id}
-                    type="date"
-                    value={form.startDate}
-                    min={todayISO()}
-                    onChange={e => handleChange('startDate', e.target.value)}
-                    required
-                    aria-required={req}
-                    aria-describedby={describedBy}
-                    aria-invalid={invalid}
-                    className={`form-field__input${invalid ? ' form-field__input--error' : ''}`}
-                  />
+              <div className="form-field">
+                <label htmlFor="autopay-start" className="form-field__label">
+                  Start Date
+                  <span className="form-field__required" aria-label="required">
+                    *
+                  </span>
+                </label>
+                <p id="autopay-start-help" className="form-field__help">
+                  The date of your first automatic payment.
+                </p>
+                <input
+                  id="autopay-start"
+                  type="date"
+                  value={form.startDate}
+                  min={todayISO()}
+                  onChange={e => handleChange('startDate', e.target.value)}
+                  required
+                  aria-required="true"
+                  aria-describedby={`autopay-start-help${
+                    errors.startDate ? ' autopay-start-error' : ''
+                  }`}
+                  aria-invalid={!!errors.startDate}
+                  className={`form-field__input${
+                    errors.startDate ? ' form-field__input--error' : ''
+                  }`}
+                />
+                {errors.startDate && (
+                  <div
+                    id="autopay-start-error"
+                    className="form-field__error"
+                    role="alert"
+                  >
+                    {errors.startDate}
+                  </div>
                 )}
-              </FormField>
+              </div>
 
               {/* End date (optional) */}
-              <FormField
-                id="autopay-end"
-                label="End Date"
-                type="text"
-                helpText="Leave blank for an open-ended schedule."
-                error={errors.endDate}
-                as="custom"
-              >
-                {({ id, 'aria-describedby': describedBy, 'aria-invalid': invalid }) => (
-                  <input
-                    id={id}
-                    type="date"
-                    value={form.endDate}
-                    min={form.startDate || todayISO()}
-                    onChange={e => handleChange('endDate', e.target.value)}
-                    aria-describedby={describedBy}
-                    aria-invalid={invalid}
-                    className={`form-field__input${invalid ? ' form-field__input--error' : ''}`}
-                  />
+              <div className="form-field">
+                <label htmlFor="autopay-end" className="form-field__label">
+                  End Date
+                </label>
+                <p id="autopay-end-help" className="form-field__help">
+                  Leave blank for an open-ended schedule.
+                </p>
+                <input
+                  id="autopay-end"
+                  type="date"
+                  value={form.endDate}
+                  min={form.startDate || todayISO()}
+                  onChange={e => handleChange('endDate', e.target.value)}
+                  aria-describedby={`autopay-end-help${
+                    errors.endDate ? ' autopay-end-error' : ''
+                  }`}
+                  aria-invalid={!!errors.endDate}
+                  className={`form-field__input${
+                    errors.endDate ? ' form-field__input--error' : ''
+                  }`}
+                />
+                {errors.endDate && (
+                  <div
+                    id="autopay-end-error"
+                    className="form-field__error"
+                    role="alert"
+                  >
+                    {errors.endDate}
+                  </div>
                 )}
-              </FormField>
+              </div>
 
               {/* Actions */}
               <div className="autopay-page__actions">
                 <PendingButton
                   type="submit"
-                  pending={submitting}
-                  pendingLabel="Activating…"
+                  pending={false}
+                  pendingLabel="Saving…"
                   className="autopay-page__btn autopay-page__btn--primary"
                 >
-                  Activate Autopay
+                  {editingId ? 'Save Changes' : 'Activate Autopay'}
                 </PendingButton>
 
                 <button
                   type="button"
                   onClick={handleCancel}
                   className="autopay-page__btn autopay-page__btn--cancel"
-                  aria-label="Cancel autopay — clears the current schedule"
+                  aria-label={
+                    editingId
+                      ? 'Cancel editing autopay schedule'
+                      : 'Cancel autopay — clears the current schedule'
+                  }
                 >
-                  Cancel Autopay
+                  {editingId ? 'Cancel Edit' : 'Cancel Autopay'}
                 </button>
               </div>
             </form>
@@ -368,9 +700,91 @@ export default function AutopayPage() {
             frequency={form.frequency}
             startDate={form.startDate}
             endDate={form.endDate || undefined}
+            creditLineName={selectedLine?.name}
+            creditLineBalance={selectedLineRepayable ?? undefined}
+            walletKey={walletKey}
+            creditLineId={form.creditLineId || undefined}
           />
         </div>
       </div>
+
+      {/* ── Active Schedules List ─────────────────────────────────────────── */}
+      <section
+        className="card autopay-page__schedules"
+        aria-labelledby="autopay-schedules-heading"
+        style={{ marginTop: 'var(--space-6)' }}
+      >
+        <h2 id="autopay-schedules-heading" className="autopay-page__section-title">
+          Active Autopay Schedules
+        </h2>
+
+        {activeSchedules.length === 0 ? (
+          <p className="form-field__help">
+            No active autopay schedules saved for this wallet yet.
+          </p>
+        ) : (
+          <ul
+            className="autopay-page__schedule-list"
+            style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 'var(--space-3)' }}
+          >
+            {activeSchedules.map((record) => {
+              const lineName =
+                lines.find((line) => line.id === record.creditLineId)?.name ??
+                record.creditLineId;
+              const freqLabel =
+                FREQUENCY_OPTIONS.find((opt) => opt.value === record.frequency)?.label ??
+                record.frequency;
+
+              return (
+                <li
+                  key={record.id}
+                  className="autopay-page__schedule-item"
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 'var(--space-3)',
+                    padding: 'var(--space-4)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-md)',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{lineName}</div>
+                    <div className="form-field__help" style={{ margin: 0 }}>
+                      {fmt(record.amount)} · {freqLabel} · Starts {record.startDate}
+                      {record.endDate ? ` · Ends ${record.endDate}` : ''}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                    <button
+                      type="button"
+                      className="autopay-page__btn autopay-page__btn--cancel"
+                      onClick={() => handleEditSchedule(record)}
+                      aria-label={`Edit autopay schedule for ${lineName}`}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="autopay-page__btn autopay-page__btn--cancel"
+                      onClick={() => {
+                        void handleCancelSchedule(record);
+                      }}
+                      aria-label={`Cancel autopay schedule for ${lineName}`}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      {confirmDialog}
     </div>
   );
 }

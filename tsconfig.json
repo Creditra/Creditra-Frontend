@@ -15,11 +15,12 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": { "@/*": ["src/*"] },
     "types": ["vitest/globals"]
   },
   "include": ["src"],
-  "exclude": ["src/**/*.test.tsx", "src/**/*.test.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

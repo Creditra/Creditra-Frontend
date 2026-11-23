@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
 import {
     TrendingUp,
     ShieldCheck,
@@ -13,15 +12,14 @@ import {
     Code2,
     Users,
 } from "lucide-react";
-import { usePrefersReducedMotion } from "../hooks/usePrefersReducedMotion";
+import { getVariant, FEATURES, HOW_IT_WORKS, USE_CASES, FAQ, FINAL_CTA, HEADER, FOOTER } from "../copy/landing";
+import LandingHero from "../pages/LandingHero";
 import "./LandingPage.css";
 
 export default function LandingPage() {
     const [openFAQ, setOpenFAQ] = useState<number | null>(null);
-    const reduceMotion = usePrefersReducedMotion();
 
     const variant = getVariant();
-    const hero = getHeroCopy(variant);
 
     const featureIcons = [TrendingUp, ShieldCheck, Cpu, RefreshCcw];
     const stepIcons = [Wallet, BarChart3, Cpu, CreditCard, LineChart];
@@ -47,52 +45,7 @@ export default function LandingPage() {
             </header>
 
             {/* HERO */}
-            <section className="landing-section landing-hero relative overflow-hidden">
-                <div className="max-w-300 mx-auto grid md:grid-cols-2 gap-16 items-center">
-                    <div className="space-y-6">
-                        <h1 className="landing-hero__title">
-                            {hero.title}
-                        </h1>
-                        <p className="landing-hero__copy">
-                            {hero.subtitle}
-                        </p>
-                        <div className="landing-hero__actions">
-                            <button type="button" className="landing-button landing-button--primary">
-                                {hero.primaryCta}
-                            </button>
-                            <a href="#how" className="landing-button landing-button--secondary">
-                                {hero.secondaryCta}
-                            </a>
-                        </div>
-                    </div>
-
-                    {/* Animated Adaptive Credit Card */}
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ duration: reduceMotion ? 0 : 1 }}
-                        className="landing-hero-card"
-                    >
-                        <p className="text-[#8b949e] mb-4">Dynamic Credit Limit</p>
-                        <div
-                            className="w-full h-4 bg-[#21262d] rounded"
-                            role="progressbar"
-                            aria-valuenow={85}
-                            aria-valuemin={0}
-                            aria-valuemax={100}
-                            aria-label="Adaptive credit limit growth preview"
-                        >
-                            <motion.div
-                                initial={{ width: reduceMotion ? "85%" : "20%" }}
-                                animate={{ width: "85%" }}
-                                transition={{ duration: reduceMotion ? 0 : 3 }}
-                                className="h-4 bg-[#58a6ff] rounded"
-                            />
-                        </div>
-                        <p className="mt-6 text-3xl font-semibold">$48,750</p>
-                    </motion.div>
-                </div>
-            </section>
+            <LandingHero variantId={variant} />
 
             {/* FEATURES */}
             <section className="landing-section">

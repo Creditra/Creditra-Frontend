@@ -21,6 +21,26 @@
   background: rgba(88, 166, 255, 0.06);
 }
 
+.notif-bell.bell-pulse {
+  animation: bellPulse 0.65s ease-out;
+}
+
+@keyframes bellPulse {
+  0% { transform: scale(1); }
+  15% { transform: scale(1.15); }
+  30% { transform: scale(0.95); }
+  45% { transform: scale(1.1); }
+  60% { transform: scale(0.98); }
+  100% { transform: scale(1); }
+}
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .notif-bell.bell-pulse {
+    animation: none;
+  }
+}
+
 .notif-bell-badge {
   position: absolute;
   top: -5px;

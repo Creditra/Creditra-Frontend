@@ -36,7 +36,8 @@
 .num-tabular,
 .tabular-nums,
 .amount,
-[data-amount] {
+[data-amount],
+.cl-amount {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }

@@ -1,0 +1,177 @@
+.autopay-card {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 24px;
+  background: var(--card-background);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px var(--shadow-color);
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.autopay-card__header {
+  margin-bottom: 24px;
+}
+
+.autopay-card__header h2 {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 8px 0;
+}
+
+.autopay-card__header p {
+  color: var(--text-secondary);
+  margin: 0;
+  font-size: 16px;
+}
+
+.autopay-card__form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.autopay-card__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.autopay-card__toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.toggle-label input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: var(--primary-color);
+}
+
+.toggle-help {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.autopay-card__actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.btn {
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn-primary {
+  background: var(--primary-color);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: var(--primary-hover);
+}
+
+.btn-secondary {
+  background: var(--secondary-background);
+  color: var(--text-primary);
+}
+
+.btn-secondary:hover {
+  background: var(--secondary-hover);
+}
+
+/* Dark mode variables */
+.autopay-card.dark {
+  --card-background: #1e1e1e;
+  --text-primary: #e0e0e0;
+  --text-secondary: #a0a0a0;
+  --shadow-color: rgba(0, 0, 0, 0.3);
+  --border-color: #333;
+  --primary-color: #4a90d9;
+  --primary-hover: #5a9ee9;
+  --secondary-background: #2a2a2a;
+  --secondary-hover: #3a3a3a;
+}
+
+/* Light mode variables */
+.autopay-card.light {
+  --card-background: #ffffff;
+  --text-primary: #1a1a1a;
+  --text-secondary: #666666;
+  --shadow-color: rgba(0, 0, 0, 0.1);
+  --border-color: #e0e0e0;
+  --primary-color: #4a90d9;
+  --primary-hover: #3a80c9;
+  --secondary-background: #f5f5f5;
+  --secondary-hover: #e5e5e5;
+}
+
+/* Responsive styles */
+@media (max-width: 768px) {
+  .autopay-card {
+    padding: 16px;
+    border-radius: 8px;
+  }
+
+  .autopay-card__header h2 {
+    font-size: 20px;
+  }
+
+  .autopay-card__row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .autopay-card__actions {
+    flex-direction: column;
+  }
+
+  .autopay-card__actions .btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .autopay-card {
+    padding: 12px;
+  }
+
+  .autopay-card__header h2 {
+    font-size: 18px;
+  }
+
+  .autopay-card__toggle {
+    flex-wrap: wrap;
+  }
+}

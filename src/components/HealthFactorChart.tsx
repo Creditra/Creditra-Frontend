@@ -43,7 +43,7 @@ export interface HealthFactorPoint {
 
 export interface HealthFactorChartProps {
   /** Ordered oldest → newest samples. */
-  data: HealthFactorPoint[];
+  data?: HealthFactorPoint[];
   /** Current health factor — shown as a badge. */
   current: number;
   /** Credit line name for accessible labelling. */
@@ -115,7 +115,7 @@ const PAD = { top: 8, right: 8, bottom: 8, left: 8 };
 const TABLE_COLUMNS = [{ header: 'Date' }, { header: 'Health factor' }] as const;
 
 export function HealthFactorChart({
-  data,
+  data = [],
   current,
   lineName,
   width = W_DEFAULT,
@@ -185,7 +185,17 @@ export function HealthFactorChart({
   if (!data.length) {
     return (
       <div className={`hf-chart hf-chart--empty ${className}`} role="status">
-        No health-factor history yet for {lineName}.
+        <span className="hf-chart__title">Health factor · {lineName}</span>
+        <span className={`hf-chart__badge hf-chart__badge--${band} tabular-nums`}>
+          {current.toFixed(2)} · {healthBandLabel(band)}
+        </span>
+        <span className="hf-chart__empty-caption">History not available yet</span>
+        <span className="sr-only">
+          Current health factor {current.toFixed(2)} ({healthBandLabel(band)}).
+          The factor is the credit limit divided by the utilized balance; an
+          unused line uses 3.00. Safe is 2.00 or higher, caution is 1.25 to
+          below 2.00, and at risk is below 1.25.
+        </span>
       </div>
     );
   }
@@ -208,7 +218,7 @@ export function HealthFactorChart({
           height={height}
           explicitDimensions
           title={`Health factor trend for ${lineName}`}
-          description={`Current health factor ${current.toFixed(2)} (${healthBandLabel(band)}). Range ${min.toFixed(2)} to ${max.toFixed(2)} across ${data.length} samples.`}
+          description={`Current health factor ${current.toFixed(2)} (${healthBandLabel(band)}). History of ${data.length} observed points, from ${min.toFixed(2)} to ${max.toFixed(2)}. The factor is the credit limit divided by utilized balance; an unused line uses 3.00. Safe is 2.00 or higher, caution is 1.25 to below 2.00, and at risk is below 1.25.`}
           className="hf-chart__svg"
         >
           {/* Caution threshold guide at HF = 1.25 */}

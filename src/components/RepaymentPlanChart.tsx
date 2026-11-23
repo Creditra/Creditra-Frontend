@@ -12,6 +12,7 @@ import {
   useChartTooltip,
 } from './charts';
 import type { AxisTick, ChartTooltipPoint } from './charts';
+import { getNumberFormat } from '../utils/formatters';
 import './RepaymentPlanChart.css';
 import type { CreditLine } from '../types/creditLine';
 
@@ -38,7 +39,7 @@ const TABLE_COLUMNS = [
 ] as const;
 
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat('en-US', {
+  return getNumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
     maximumFractionDigits: 0,
@@ -169,10 +170,9 @@ export function RepaymentPlanChart({ line }: RepaymentPlanChartProps) {
           <h4 id="repayment-plan-heading">Projected repayment plan</h4>
           <p>Weekly buckets for the selected draw amount over 12 weeks.</p>
         </div>
-        <div className="repayment-plan__summary" aria-live="polite">
-          <span>Estimated repayment over 12 weeks</span>
-          <strong>{formatCurrency(totalProjectedRepayment)}</strong>
-        </div>
+        <span className="repayment-plan__summary" aria-live="polite">
+          <span>Estimated repayment over 12 weeks {formatCurrency(totalProjectedRepayment)}</span>
+        </span>
       </div>
 
       <div className="repayment-plan__controls" role="group" aria-label="Draw amount presets">

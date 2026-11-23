@@ -40,12 +40,7 @@
   animation: draw-summary-bar-mount 0.18s ease-out both;
 }
 
-/* Sticky summary is mobile-only — desktop uses the sidebar preview. */
-@media (min-width: 768px) {
-  .draw-summary-bar {
-    display: none;
-  }
-}
+/* Sticky summary is now visible on all breakpoints. */
 
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .draw-summary-bar {

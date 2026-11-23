@@ -13,7 +13,7 @@
  * @darkmode Uses var(--color-*) tokens; adapts automatically.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Download } from 'lucide-react';
 import './Data.css';
 
@@ -21,13 +21,45 @@ type ExportState = 'idle' | 'loading' | 'success' | 'error';
 
 export default function DataPrivacySettings() {
   const [exportState, setExportState] = useState<ExportState>('idle');
+  const isMountedRef = useRef(true);
+  const exportWaitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (exportWaitTimerRef.current !== null) {
+        clearTimeout(exportWaitTimerRef.current);
+        exportWaitTimerRef.current = null;
+      }
+      if (resetTimerRef.current !== null) {
+        clearTimeout(resetTimerRef.current);
+        resetTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const handleExport = useCallback(async () => {
+    if (resetTimerRef.current !== null) {
+      clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = null;
+    }
     setExportState('loading');
 
     try {
       // Simulate 1.5s delay for processing
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await new Promise<void>((resolve) => {
+        if (exportWaitTimerRef.current !== null) {
+          clearTimeout(exportWaitTimerRef.current);
+        }
+        exportWaitTimerRef.current = setTimeout(() => {
+          exportWaitTimerRef.current = null;
+          resolve();
+        }, 1500);
+      });
+
+      if (!isMountedRef.current) return;
 
       // Mock data structure (would come from API in production)
       const exportData = {
@@ -61,8 +93,17 @@ export default function DataPrivacySettings() {
       setExportState('success');
 
       // Reset to idle after 4 seconds
-      setTimeout(() => setExportState('idle'), 4000);
+      if (resetTimerRef.current !== null) {
+        clearTimeout(resetTimerRef.current);
+      }
+      resetTimerRef.current = setTimeout(() => {
+        resetTimerRef.current = null;
+        if (isMountedRef.current) {
+          setExportState('idle');
+        }
+      }, 4000);
     } catch (error) {
+      if (!isMountedRef.current) return;
       setExportState('error');
     }
   }, []);

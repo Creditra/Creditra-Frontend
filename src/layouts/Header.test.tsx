@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { Header } from './Header';
 import { WalletProvider } from '../context/WalletContext';
 import { KycProvider } from '../context/KycContext';
+import { NotificationProvider } from '../context/NotificationContext';
 import * as useOnlineHook from '../hooks/useOnline';
 
 vi.mock('../hooks/useOnline');
@@ -18,22 +19,25 @@ describe('Header', () => {
       isOnline: true,
       queueAction: vi.fn(),
       checkOnlineStatus: vi.fn(),
+      queuedActionCount: 0,
     });
   });
 
   it('renders network status indicator in the banner', () => {
     render(
       <MemoryRouter>
-        <WalletProvider>
-          <KycProvider>
-            <Header
-              settingsTriggerRef={settingsTriggerRef}
-              kycTriggerRef={kycTriggerRef}
-              onSettingsClick={vi.fn()}
-              onKycClick={vi.fn()}
-            />
-          </KycProvider>
-        </WalletProvider>
+        <NotificationProvider>
+          <WalletProvider>
+            <KycProvider>
+              <Header
+                settingsTriggerRef={settingsTriggerRef}
+                kycTriggerRef={kycTriggerRef}
+                onSettingsClick={vi.fn()}
+                onKycClick={vi.fn()}
+              />
+            </KycProvider>
+          </WalletProvider>
+        </NotificationProvider>
       </MemoryRouter>,
     );
 

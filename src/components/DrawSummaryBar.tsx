@@ -5,9 +5,8 @@
  *
  * Visibility
  * ──────────
- * Shown only below the `md` breakpoint (max-width 767px) on the `amount`
- * step once a credit line is selected. Desktop uses the sidebar
- * `PreviewSection`; `select`, `confirm`, and `status` steps are excluded
+ * Shown on all breakpoints on the `amount` step once a credit line is
+ * selected. `select`, `confirm`, and `status` steps are excluded
  * (see VISIBLE_STEPS).
  *
  * Scroll behaviour
@@ -26,11 +25,18 @@
 
 import { CreditLine, DrawStep } from "@/types/draw-credit.types";
 import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
+import { projectDraw } from "@/lib/draw-projection";
+import {
+  DrawPricingTierHint,
+  getDrawPricingQuote,
+  getNextAprTier,
+} from "@/lib/draw-credit-pricing";
 import { formatMoney } from "@/utils/amountValidation";
 import { useDebounceValue } from "@/hooks/useDebounceValue";
 import { useScrollCollapse } from "@/hooks/useScrollCollapse";
-import { BELOW_MD_MEDIA, useMediaQuery } from "@/hooks/useMediaQuery";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
+import { usePrivacyMode } from "@/context/PrivacyContext";
+import { Amount } from "@/components/Amount";
 import "./DrawSummaryBar.css";
 
 interface DrawSummaryBarProps {
@@ -45,8 +51,15 @@ function buildAnnouncement(
   lineName: string,
   amountText: string,
   apr: number,
+  nextTier: DrawPricingTierHint | null,
 ): string {
-  return `Draw summary: ${lineName}, ${amountText} draw amount, ${apr} percent APR.`;
+  const summary = `Draw summary: ${lineName}, ${amountText} draw amount, ${apr} percent APR.`;
+
+  if (!nextTier) {
+    return summary;
+  }
+
+  return `${summary} APR increases to ${nextTier.apr}% above ${formatMoney(nextTier.aboveAmount)}.`;
 }
 
 function computeSummary(
@@ -54,14 +67,17 @@ function computeSummary(
   amount: number,
 ): {
   apr: number;
+  newUtilizationPct: number;
   amountText: string;
   announcement: string;
 } {
   const safeAmount = Math.max(amount, 0);
-  const { apr } = getDrawPricingQuote(line, safeAmount);
+  const quote = getDrawPricingQuote(line, safeAmount);
+  const { apr } = quote;
+  const projection = projectDraw(line, safeAmount, quote);
   const amountText = formatMoney(safeAmount);
-  const announcement = buildAnnouncement(line.name, amountText, apr);
-  return { apr, amountText, announcement };
+  const announcement = `${buildAnnouncement(line.name, amountText, apr)} New utilization ${projection.newUtilizationPct}%.`;
+  return { apr, newUtilizationPct: projection.newUtilizationPct, amountText, announcement };
 }
 
 export function DrawSummaryBar({
@@ -69,21 +85,25 @@ export function DrawSummaryBar({
   amount,
   step,
 }: DrawSummaryBarProps) {
-  const isBelowMd = useMediaQuery(BELOW_MD_MEDIA);
-  const isVisible = !!creditLine && VISIBLE_STEPS.has(step) && isBelowMd;
+  const isVisible = !!creditLine && VISIBLE_STEPS.has(step);
   const isCollapsed = useScrollCollapse(isVisible);
   const prefersReducedMotion = usePrefersReducedMotion();
+  const { privacyMode } = usePrivacyMode();
 
   const summary =
     isVisible && creditLine ? computeSummary(creditLine, amount) : null;
-  const announcement = summary ? summary.announcement : "";
+  const announcement = summary
+    ? privacyMode
+      ? 'Draw summary: amount hidden.'
+      : summary.announcement
+    : "";
   const debouncedAnnouncement = useDebounceValue(announcement, 400);
 
   if (!isVisible || !summary || !creditLine) {
     return null;
   }
 
-  const { apr, amountText } = summary;
+  const { apr, newUtilizationPct } = summary;
 
   return (
     <aside
@@ -112,7 +132,7 @@ export function DrawSummaryBar({
             ·
           </span>
           <span className="draw-summary-bar__peek-amount num-tabular">
-            {amountText}
+            <Amount value={Math.max(amount, 0)} format={formatMoney} maskedLabel="Draw amount hidden for privacy" />
           </span>
           <span className="draw-summary-bar__peek-sep" aria-hidden="true">
             ·
@@ -144,7 +164,7 @@ export function DrawSummaryBar({
               className="draw-summary-bar__value num-tabular"
               data-testid="draw-summary-amount"
             >
-              {amountText}
+              <Amount value={Math.max(amount, 0)} format={formatMoney} maskedLabel="Draw amount hidden for privacy" />
             </dd>
           </div>
           <div
@@ -158,6 +178,19 @@ export function DrawSummaryBar({
               data-testid="draw-summary-apr"
             >
               {apr}%
+            </dd>
+          </div>
+          <div
+            className="draw-summary-bar__tile"
+            data-tile="utilization"
+            data-testid="draw-summary-tile-utilization"
+          >
+            <dt className="draw-summary-bar__caption">After draw</dt>
+            <dd
+              className="draw-summary-bar__value num-tabular"
+              data-testid="draw-summary-utilization"
+            >
+              {newUtilizationPct}%
             </dd>
           </div>
         </dl>

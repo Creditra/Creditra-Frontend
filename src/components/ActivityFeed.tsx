@@ -1,7 +1,7 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { NoActivity } from "./illustrations";
-import { MOCK_CREDIT_LINES } from "../data/mockData";
+import { useCreditTransactions } from "../hooks/useCreditLines";
 import type { Transaction, TransactionType } from "../types/creditLine";
 import { COLOR, fmt } from "../utils/tokens";
 
@@ -131,19 +131,37 @@ function getTitle(group: ActivityGroup): string {
 }
 
 export function ActivityFeed() {
-  const [searchParams] = useSearchParams();
+  const { transactions } = useCreditTransactions({ limit: 10 });
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filterKeyString = ["range", "start", "end"]
+    .map((key) => searchParams.get(key) ?? "")
+    .join("|");
+  const prevFilterKeyStringRef = useRef(filterKeyString);
+
+  useEffect(() => {
+    if (prevFilterKeyStringRef.current !== filterKeyString) {
+      prevFilterKeyStringRef.current = filterKeyString;
+      if (searchParams.has("cursor")) {
+        const nextSearchParams = new URLSearchParams(searchParams);
+        nextSearchParams.delete("cursor");
+        setSearchParams(nextSearchParams, { replace: true });
+      }
+    }
+  }, [filterKeyString, searchParams, setSearchParams]);
 
   const events = useMemo<FeedEvent[]>(() => {
-    return MOCK_CREDIT_LINES.flatMap((line) =>
-      line.transactions.map((transaction) => ({
-        ...transaction,
-        lineId: line.id,
-        lineName: line.name,
-      })),
-    )
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 10);
-  }, []);
+    return transactions.map((transaction) => ({
+      id: transaction.id,
+      type: transaction.type,
+      amount: transaction.amount,
+      date: transaction.date,
+      note: transaction.note,
+      status: transaction.status,
+      txHash: transaction.txHash,
+      lineId: transaction.lineId,
+      lineName: transaction.lineName,
+    }));
+  }, [transactions]);
 
   const groupedEvents = useMemo(() => getGroupedActivity(events), [events]);
 

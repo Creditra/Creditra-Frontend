@@ -1,0 +1,40 @@
+/* Statements page print stylesheet */
+
+@media print {
+  /* Hide everything that isn't the statement */
+  header,
+  nav,
+  aside,
+  .skip-to-content,
+  .statements-controls,
+  .statements-actions {
+    display: none !important;
+  }
+
+  .statements-page {
+    margin: 0;
+    padding: 0;
+  }
+
+  .statements-summary,
+  .statements-entries {
+    page-break-inside: avoid;
+  }
+
+  .statements-entries table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .statements-entries th,
+  .statements-entries td {
+    border: 1px solid #000;
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  /* Force a page break before the entries table if it doesn't fit */
+  .statements-entries {
+    page-break-before: auto;
+  }
+}
