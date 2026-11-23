@@ -9,8 +9,9 @@ import { useActiveSection } from "../hooks/useActiveSection";
 import { useReducedMotion } from "../context/ReducedMotionContext";
 import { useDebounceValue } from "../hooks/useDebounceValue";
 import { FAQ, HELP_ANCHORS } from "../content/faq";
-import { searchFaq } from "../lib/faq-search";
+import { normalizeText, searchFaq } from "../lib/faq-search";
 import { downloadDiagnosticsBundle } from "../utils/diagnostics";
+import { trackEvent } from "../utils/analytics";
 import "./HelpCenter.css";
 
 export { HELP_ANCHORS };
@@ -53,6 +54,9 @@ export default function HelpCenter() {
   const navRef = useRef<HTMLElement>(null);
   const [diagnosticsStatus, setDiagnosticsStatus] = useState("");
   const { isReducedMotionActive } = useReducedMotion();
+  // Tracks normalised queries already reported this visit so the same zero-
+  // result query is sent at most once per page load.
+  const reportedQueriesRef = useRef<Set<string>>(new Set());
 
   const filteredFaqs = useMemo(() => {
     return searchFaq(FAQ, searchQuery);
@@ -74,6 +78,38 @@ export default function HelpCenter() {
   }, [debouncedQuery, filteredFaqs.length]);
 
   const activeFaqId = openFaqId;
+
+  // ── Zero-result search analytics ──────────────────────────────────────
+  // Fires at most once per distinct normalised query per visit.
+  // Only executes when the debounced query is long enough to be meaningful,
+  // the search returned no results, and the user has consented (enforced
+  // inside trackEvent via its category gate).
+  useEffect(() => {
+    const trimmed = debouncedQuery.trim();
+    if (trimmed.length < 3) return;
+    if (filteredFaqs.length !== 0) return;
+
+    const normalised = normalizeText(trimmed);
+    if (reportedQueriesRef.current.has(normalised)) return;
+
+    // Strip tokens that look like 56-character Stellar public keys (G + 55
+    // base-32 chars) or long unbroken digit runs (≥ 8 digits) before sending.
+    // These patterns can appear if a user pastes an address or account number
+    // into the search box. The underlying trackEvent also runs redactFinancialData,
+    // but this provides an extra defence specifically for Stellar key formats.
+    const sanitised = normalised
+      .replace(/g[a-z2-7]{55}/gi, '[redacted]')
+      .replace(/\d{8,}/g, '[redacted]')
+      .slice(0, 80);
+
+    reportedQueriesRef.current.add(normalised);
+
+    void trackEvent({
+      eventName: 'help_search_no_results',
+      category: 'usage',
+      payload: { query: sanitised },
+    });
+  }, [debouncedQuery, filteredFaqs.length]);
 
   useEffect(() => {
     const currentRawHash = location.hash || (typeof window !== "undefined" ? window.location.hash : "");
