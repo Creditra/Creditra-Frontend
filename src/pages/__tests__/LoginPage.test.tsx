@@ -16,10 +16,12 @@
  *  - Keyboard / semantic requirements (autocomplete, required)
  */
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LoginPage } from '../LoginPage';
+import { FetchTimeoutError } from '../../utils/fetchWithTimeout';
+import * as fetchWithTimeoutModule from '../../utils/fetchWithTimeout';
 
 /** Helper: render LoginPage inside MemoryRouter (required for Link / useNavigate). */
 function renderPage() {
@@ -283,5 +285,76 @@ describe('LoginPage — password field aria-describedby with error state', () =>
     const input = document.getElementById('password') as HTMLInputElement;
     expect(input).not.toBeNull();
     expect(input).toHaveAttribute('aria-invalid', 'true');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Timeout and unmount cancellation
+// ---------------------------------------------------------------------------
+
+describe('LoginPage — request timeout and unmount cancellation', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('shows a retryable timeout error and re-enables the submit button when login times out', async () => {
+    vi.spyOn(fetchWithTimeoutModule, 'fetchWithTimeout').mockRejectedValueOnce(
+      new FetchTimeoutError(15000),
+    );
+
+    renderPage();
+
+    fireEvent.change(screen.getByLabelText(/email or username/i), {
+      target: { value: 'user@example.com' },
+    });
+    fireEvent.change(getPasswordInput(), {
+      target: { value: 'password123' },
+    });
+
+    const submitButton = screen.getByRole('button', { name: /login/i });
+    fireEvent.submit(submitButton.closest('form')!);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        /request timed out\. please try again\./i,
+      );
+    });
+
+    expect(screen.getByRole('button', { name: /login/i })).not.toBeDisabled();
+  });
+
+  it('aborts the in-flight request when unmounted mid-request', () => {
+    let capturedSignal: AbortSignal | undefined;
+    vi.spyOn(fetchWithTimeoutModule, 'fetchWithTimeout').mockImplementationOnce(
+      (_input, _init, options) => {
+        capturedSignal = options?.signal;
+        return new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => {
+            const err = new Error('Aborted');
+            err.name = 'AbortError';
+            reject(err);
+          });
+        });
+      },
+    );
+
+    const { unmount } = renderPage();
+
+    fireEvent.change(screen.getByLabelText(/email or username/i), {
+      target: { value: 'user@example.com' },
+    });
+    fireEvent.change(getPasswordInput(), {
+      target: { value: 'password123' },
+    });
+
+    const submitButton = screen.getByRole('button', { name: /login/i });
+    fireEvent.submit(submitButton.closest('form')!);
+
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal?.aborted).toBe(false);
+
+    unmount();
+
+    expect(capturedSignal?.aborted).toBe(true);
   });
 });
