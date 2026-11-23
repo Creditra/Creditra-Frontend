@@ -1,10 +1,17 @@
-import { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { fmt, fmtDate } from '../utils/tokens';
+import {
+  buildSchedule,
+  toLocalDateString,
+  toLocalDateTimeString,
+  type AutopayFrequency,
+} from '../lib/autopay-schedule';
+import { PreviewCard } from './PreviewCard';
 import './AutopaySchedule.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type AutopayFrequency = 'weekly' | 'biweekly' | 'monthly' | 'quarterly';
+export type { AutopayFrequency } from '../lib/autopay-schedule';
 
 export interface AutopayScheduleProps {
   /** Payment amount per installment, in USD. */
@@ -17,16 +24,15 @@ export interface AutopayScheduleProps {
   endDate?: string;
   /** Maximum rows to render (default 8). Prevents an unbounded list. */
   maxRows?: number;
+  /** Optional callback when a preview card row is hovered or focused */
+  onPreviewRowChange?: (index: number | null) => void;
+  /** Credit line the schedule applies to, shown above the table. */
+  creditLineName?: string;
+  /** Repayable balance of the selected credit line, shown above the table. */
+  creditLineBalance?: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const FREQ_DAYS: Record<AutopayFrequency, number> = {
-  weekly: 7,
-  biweekly: 14,
-  monthly: 0, // special-cased below
-  quarterly: 0, // special-cased below
-};
 
 const FREQ_LABEL: Record<AutopayFrequency, string> = {
   weekly: 'Weekly',
@@ -35,58 +41,20 @@ const FREQ_LABEL: Record<AutopayFrequency, string> = {
   quarterly: 'Quarterly',
 };
 
-/** Advance `date` by one frequency interval, returning a new Date. */
-function advanceByFrequency(date: Date, frequency: AutopayFrequency): Date {
-  const next = new Date(date);
-  if (frequency === 'monthly') {
-    next.setMonth(next.getMonth() + 1);
-  } else if (frequency === 'quarterly') {
-    next.setMonth(next.getMonth() + 3);
-  } else {
-    next.setDate(next.getDate() + FREQ_DAYS[frequency]);
-  }
-  return next;
-}
-
-/** Build an ordered list of upcoming payment dates. */
-function buildSchedule(
-  startDate: string,
-  frequency: AutopayFrequency,
-  endDate?: string,
-  maxRows = 8,
-): Date[] {
-  const start = new Date(startDate);
-  const end = endDate ? new Date(endDate) : null;
-
-  if (isNaN(start.getTime())) return [];
-
-  const dates: Date[] = [];
-  let cursor = start;
-
-  while (dates.length < maxRows) {
-    if (end && cursor > end) break;
-    dates.push(new Date(cursor));
-    cursor = advanceByFrequency(cursor, frequency);
-  }
-
-  return dates;
-}
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 /**
  * AutopaySchedule — live, responsive list preview of upcoming repayment dates.
  *
- * Re-derives the schedule on every render from props, so the preview
- * updates in real-time as the user edits the form above it.
+ * Includes hover-triggered & keyboard-accessible PreviewCard popovers for
+ * each repayment installment row.
  *
  * Accessibility:
  * - Table is labelled with an `aria-labelledby` heading.
  * - Column headers use `scope="col"` per WCAG technique H63.
- * - "Upcoming" badge uses `aria-label` to give screen readers extra
- *   context (the visual color alone must not be the sole differentiator).
- * - The caption is visually hidden but keeps the table semantically
- *   self-describing when navigated out of context.
+ * - Rows are keyboard-focusable (tabIndex={0}) and announce details via aria-describedby.
+ * - Pressing Escape key dismisses any open preview popover.
+ * - Pressing Enter or Space toggles row preview details.
  */
 export function AutopaySchedule({
   amount,
@@ -94,10 +62,38 @@ export function AutopaySchedule({
   startDate,
   endDate,
   maxRows = 8,
+  onPreviewRowChange,
+  creditLineName,
+  creditLineBalance,
 }: AutopayScheduleProps) {
   const schedule = useMemo(
     () => buildSchedule(startDate, frequency, endDate, maxRows),
     [startDate, frequency, endDate, maxRows],
+  );
+
+  const [activePreviewIndex, setActivePreviewIndex] = useState<number | null>(null);
+
+  const handleRowHover = useCallback(
+    (index: number | null) => {
+      setActivePreviewIndex(index);
+      if (onPreviewRowChange) {
+        onPreviewRowChange(index);
+      }
+    },
+    [onPreviewRowChange],
+  );
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent, index: number) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        handleRowHover(null);
+      } else if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        handleRowHover(activePreviewIndex === index ? null : index);
+      }
+    },
+    [activePreviewIndex, handleRowHover],
   );
 
   const today = new Date();
@@ -132,6 +128,15 @@ export function AutopaySchedule({
         </span>
       </div>
 
+      {creditLineName && (
+        <p className="autopay-schedule__credit-line">
+          {creditLineName}
+          {creditLineBalance !== undefined && (
+            <> · {fmt(creditLineBalance)} repayable</>
+          )}
+        </p>
+      )}
+
       {/* ── Summary strip ───────────────────────────────────────────────── */}
       <div className="autopay-schedule__summary" role="status" aria-live="polite">
         <div className="autopay-schedule__summary-item">
@@ -159,14 +164,24 @@ export function AutopaySchedule({
       </div>
 
       {/* ── Table ───────────────────────────────────────────────────────── */}
-      <div className="autopay-schedule__table-wrapper" tabIndex={0} aria-label="Scroll to view more payments">
+      <div
+        className="autopay-schedule__table-wrapper"
+        tabIndex={0}
+        aria-label="Scroll or focus payment rows to view details"
+      >
         <table
           className="autopay-schedule__table"
           aria-labelledby="schedule-heading"
         >
           <caption className="sr-only">
             Upcoming autopay payments — {FREQ_LABEL[frequency]}, {fmt(amount)}{' '}
-            per payment, starting {fmtDate(startDate)}
+            per payment, starting{' '}
+            {fmtDate(
+              /^\d{4}-\d{2}-\d{2}$/.test(startDate)
+                ? `${startDate}T00:00:00`
+                : startDate,
+            )}
+            . Hover or focus rows for details.
           </caption>
           <thead>
             <tr>
@@ -190,18 +205,41 @@ export function AutopaySchedule({
               dateOnly.setHours(0, 0, 0, 0);
               const isUpcoming = dateOnly.getTime() === today.getTime();
               const isPast = dateOnly < today;
+              const status: 'Upcoming' | 'Scheduled' | 'Past' = isUpcoming
+                ? 'Upcoming'
+                : isPast
+                ? 'Past'
+                : 'Scheduled';
+
+              const previewId = `autopay-preview-card-${index}`;
+              const isPreviewActive = activePreviewIndex === index;
+              const accumulatedSoFar = amount * (index + 1);
 
               return (
                 <tr
-                  key={date.toISOString()}
-                  className={`autopay-schedule__row${isUpcoming ? ' autopay-schedule__row--upcoming' : ''}${isPast ? ' autopay-schedule__row--past' : ''}`}
+                  key={toLocalDateString(date)}
+                  tabIndex={0}
+                  role="row"
+                  aria-haspopup="dialog"
+                  aria-expanded={isPreviewActive}
+                  aria-describedby={isPreviewActive ? previewId : undefined}
+                  className={`autopay-schedule__row preview-card-trigger${
+                    isUpcoming ? ' autopay-schedule__row--upcoming' : ''
+                  }${isPast ? ' autopay-schedule__row--past' : ''}${
+                    isPreviewActive ? ' autopay-schedule__row--active' : ''
+                  }`}
+                  onMouseEnter={() => handleRowHover(index)}
+                  onMouseLeave={() => handleRowHover(null)}
+                  onFocus={() => handleRowHover(index)}
+                  onBlur={() => handleRowHover(null)}
+                  onKeyDown={(e) => handleKeyDown(e, index)}
                 >
                   <td className="autopay-schedule__td autopay-schedule__td--num">
                     {index + 1}
                   </td>
                   <td className="autopay-schedule__td">
-                    <time dateTime={date.toISOString().split('T')[0]}>
-                      {fmtDate(date.toISOString())}
+                    <time dateTime={toLocalDateString(date)}>
+                      {fmtDate(toLocalDateTimeString(date))}
                     </time>
                   </td>
                   <td className="autopay-schedule__td autopay-schedule__td--right autopay-schedule__td--amount">
@@ -230,6 +268,19 @@ export function AutopaySchedule({
                         Scheduled
                       </span>
                     )}
+
+                    {/* Popover PreviewCard */}
+                    <PreviewCard
+                      id={previewId}
+                      paymentNumber={index + 1}
+                      date={date.toISOString()}
+                      amount={amount}
+                      frequency={FREQ_LABEL[frequency]}
+                      status={status}
+                      totalAccumulated={accumulatedSoFar}
+                      isOpenEnded={isOpen}
+                      className={isPreviewActive ? 'preview-card--visible' : ''}
+                    />
                   </td>
                 </tr>
               );
@@ -242,12 +293,12 @@ export function AutopaySchedule({
       {isOpen && (
         <p className="autopay-schedule__footnote">
           * Open-ended schedule — showing the first {totalPayments} payments.
-          Total will vary.
+          Total will vary. Focus or hover rows for installment preview details.
         </p>
       )}
       {!isOpen && totalPayments === maxRows && (
         <p className="autopay-schedule__footnote">
-          Showing first {maxRows} of all scheduled payments.
+          Showing first {maxRows} of all scheduled payments. Focus or hover rows for installment preview details.
         </p>
       )}
     </section>

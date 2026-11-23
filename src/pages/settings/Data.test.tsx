@@ -1,6 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { describe, it, expect } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import DataPrivacySettings from './Data';
 
 describe('DataPrivacySettings', () => {
@@ -111,6 +110,74 @@ describe('DataPrivacySettings', () => {
     expect(screen.getByText(/Download a copy of your Creditra data/i)).toBeInTheDocument();
     expect(screen.getByText(/Your data is retained for the duration/i)).toBeInTheDocument();
     expect(screen.getByText(/Your personal and financial information is encrypted/i)).toBeInTheDocument();
+  });
+
+  describe('timer cleanup on unmount', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    it('clears the export wait timer on unmount without state-update warnings', async () => {
+      vi.useFakeTimers();
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { unmount } = render(<DataPrivacySettings />);
+
+      const button = screen.getByRole('button', { name: /export my data/i });
+      fireEvent.click(button);
+      expect(vi.getTimerCount()).toBe(1);
+
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    });
+
+    it('clears the post-export reset timer on unmount without state-update warnings', async () => {
+      vi.useFakeTimers();
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const originalCreateObjectURL = URL.createObjectURL;
+      const originalRevokeObjectURL = URL.revokeObjectURL;
+      const createObjectURLMock = vi.fn().mockReturnValue('blob:mock');
+      const revokeObjectURLMock = vi.fn();
+      URL.createObjectURL = createObjectURLMock;
+      URL.revokeObjectURL = revokeObjectURLMock;
+      const anchorClickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+      try {
+        const { unmount } = render(<DataPrivacySettings />);
+
+        const button = screen.getByRole('button', { name: /export my data/i });
+        fireEvent.click(button);
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1500);
+        });
+
+        expect(screen.getByText(/Export ready/i)).toBeInTheDocument();
+        expect(vi.getTimerCount()).toBe(1);
+
+        unmount();
+        expect(vi.getTimerCount()).toBe(0);
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(5000);
+        });
+
+        expect(consoleErrorSpy).not.toHaveBeenCalled();
+        expect(createObjectURLMock).toHaveBeenCalledTimes(1);
+        expect(revokeObjectURLMock).toHaveBeenCalledTimes(1);
+        expect(anchorClickSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        URL.createObjectURL = originalCreateObjectURL;
+        URL.revokeObjectURL = originalRevokeObjectURL;
+      }
+    });
   });
 });
 

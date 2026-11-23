@@ -30,7 +30,9 @@ import {
   getStoredWallet,
   type WalletType,
 } from '@/utils/wallet';
-import type { WalletInfo } from '@/types/wallet';
+import { getWalletBrowserSupport } from '@/utils/walletSupport';
+import type { StoredWalletPreference } from '@/types/wallet';
+import { WalletConnectError } from '@/types/wallet';
 import './WalletConnectionModal.css';
 
 // Wallet provider definitions
@@ -42,6 +44,7 @@ interface WalletOption {
   icon: string;
   description: string;
   installUrl: string;
+  features: string[];
 }
 
 /**
@@ -55,6 +58,7 @@ const DEFAULT_WALLET_ORDER: WalletOption[] = [
     icon: '/assets/wallets/freighter.svg',
     description: 'Browser extension wallet for Stellar',
     installUrl: 'https://www.freighter.app',
+    features: ['Supports Soroban smart contracts', 'Ledger hardware wallet compatible', 'Open source'],
   },
   {
     id: 'albedo',
@@ -62,6 +66,7 @@ const DEFAULT_WALLET_ORDER: WalletOption[] = [
     icon: '/assets/wallets/albedo.svg',
     description: 'Web-based Stellar wallet',
     installUrl: 'https://albedo.link',
+    features: ['No installation required', 'Hardware wallet support', 'Built-in asset swap'],
   },
   {
     id: 'xbull',
@@ -69,6 +74,7 @@ const DEFAULT_WALLET_ORDER: WalletOption[] = [
     icon: '/assets/wallets/xbull.svg',
     description: 'Mobile and desktop Stellar wallet',
     installUrl: 'https://xbull.app',
+    features: ['Cross-platform (mobile + desktop)', 'Built-in DApp browser', 'Multi-account support'],
   },
   {
     id: 'rabet',
@@ -76,6 +82,7 @@ const DEFAULT_WALLET_ORDER: WalletOption[] = [
     icon: '/assets/wallets/rabet.svg',
     description: 'Stellar wallet for desktop',
     installUrl: 'https://rabet.io',
+    features: ['Lightweight desktop application', 'Clean minimal interface', 'Beginner-friendly setup'],
   },
 ];
 
@@ -111,13 +118,19 @@ interface WalletConnectionModalProps {
    * Callback when a wallet is selected.  Implementers should respect the
    * `options.remember` flag and persist it via the safe wrappers in
    * `src/utils/storage.ts`.
+   * 
+   * Returns a Promise so the modal can distinguish success from failure.
    */
-  onConnect: (provider: WalletProvider, options?: WalletConnectOptions) => void;
+  onConnect: (provider: WalletProvider, options?: WalletConnectOptions) => Promise<void>;
   /** Ref to the trigger button that opened the modal (for return focus) */
   triggerRef?: React.RefObject<HTMLElement | null>;
   /** Currently detected/available wallets */
   detectedWallets?: WalletProvider[];
+  /** Callback to re-run wallet extension detection without closing the modal */
+  onRefreshWallets?: () => void;
 }
+
+const EMPTY_DETECTED_WALLETS: WalletProvider[] = [];
 
 /**
  * WalletConnectionModal
@@ -142,7 +155,8 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
   onClose,
   onConnect,
   triggerRef,
-  detectedWallets = [],
+  detectedWallets = EMPTY_DETECTED_WALLETS,
+  onRefreshWallets,
 }) => {
   const [connectingId, setConnectingId] = useState<WalletProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -154,33 +168,41 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
   const [showFullList, setShowFullList] = useState<boolean>(false);
   const modalId = 'wallet-connection-modal';
   const rememberCheckboxId = useId();
+  const helpPanelTitleId = useId();
+
+  const browserSupport = useMemo(() => {
+    if (!isOpen) {
+      return { browserSupported: true, reason: null, browserFamily: 'unknown' as const };
+    }
+    return getWalletBrowserSupport();
+  }, [isOpen]);
 
   // ── MRU-aware ordering ─────────────────────────────────────────────────────
   //
   // Compute the display order once per render.  We honour any persisted
   // recency list (`getRecentWalletOrder`); if that is empty we fall back to
-  // the `wallet_info` legacy entry so users who already connected once
-  // are not served the default ordering on their first post-upgrade visit.
+  // the stored session preference (type only) so users who already connected
+  // once are not served the default ordering on their first post-upgrade visit.
 
   const { primaryWallet, orderedWallets } = useMemo(() => {
     const recent = getRecentWalletOrder();
-    const legacy: WalletInfo | null = recent.length === 0 ? getStoredWallet() : null;
+    const stored: StoredWalletPreference | null = recent.length === 0 ? getStoredWallet() : null;
 
     // We only treat a primary wallet as "most recently used" when we have an
-    // *actual* recency signal — either a non-empty MRU list or a legacy
-    // `wallet_info` entry from before the MRU feature shipped.  When neither
+    // *actual* recency signal — either a non-empty MRU list or a stored
+    // session preference from before the MRU feature shipped.  When neither
     // is present, fall through to the full catalogue so first-time visitors
     // see every option at a glance instead of an arbitrary "Continue with"
     // prompt.
-    const hasRecency = recent.length > 0 || legacy !== null;
+    const hasRecency = recent.length > 0 || stored !== null;
 
-    // Build a unified recency ordering.  Legacy entry is treated as if it
-    // were the only MRU entry (most recent by definition).
+    // Build a unified recency ordering.  A stored session preference is
+    // treated as if it were the only MRU entry (most recent by definition).
     const recencyOrder: WalletProvider[] =
       recent.length > 0
         ? recent
-        : legacy
-        ? [legacy.type]
+        : stored
+        ? [stored.type]
         : [];
 
     // Anything in the recency list that we don't ship metadata for
@@ -206,6 +228,19 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
     };
   }, [isOpen]); // Re-read ordering each time the modal opens.
 
+  // Sort detected wallets before undetected ones, preserving the existing
+  // MRU ordering within each group.
+  const sortedWallets = useMemo(() => {
+    const detectedSet = new Set(detectedWallets);
+    const detected: WalletOption[] = [];
+    const undetected: WalletOption[] = [];
+    for (const wallet of orderedWallets) {
+      if (detectedSet.has(wallet.id)) detected.push(wallet);
+      else undetected.push(wallet);
+    }
+    return [...detected, ...undetected];
+  }, [orderedWallets, detectedWallets]);
+
   // When the modal opens we want to start in the collapsed "Continue with
   // X" view if there is a primary wallet, or expanded if there is not.
   // We do this in a layout effect so we don't show stale state mid-render.
@@ -223,6 +258,7 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
   }, [onClose]);
 
   // Wallet selection handler — forwards the opt-in flag to the consumer.
+  // On failure, the error is displayed in an alert and the modal stays open.
   const handleWalletSelect = useCallback(
     async (provider: WalletProvider) => {
       setError(null);
@@ -230,14 +266,23 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
 
       try {
         await onConnect(provider, { remember: rememberChoice });
+        // Success: close the modal
         handleClose();
       } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : `Failed to connect to ${provider}. Please try again.`
-        );
-        setConnectingId(null);
+        // Connection failed: show error message and keep modal open
+        let errorMessage: string;
+        
+        if (err instanceof WalletConnectError) {
+          // Use the user-facing message from the classified error
+          errorMessage = err.message;
+        } else if (err instanceof Error) {
+          errorMessage = err.message;
+        } else {
+          errorMessage = `Failed to connect to ${provider}. Please try again.`;
+        }
+        
+        setError(errorMessage);
+        setConnectingId(null); // Re-enable buttons
       }
     },
     [onConnect, handleClose, rememberChoice],
@@ -247,6 +292,11 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
   const handleInstall = useCallback((wallet: WalletOption) => {
     window.open(wallet.installUrl, '_blank', 'noopener,noreferrer');
   }, []);
+
+  // Re-check wallet extensions without closing the modal
+  const handleRefreshWallets = useCallback(() => {
+    onRefreshWallets?.();
+  }, [onRefreshWallets]);
 
   // Handlers dedicated to the "Continue with recent" affordance so the
   // primary wallet can be picked up with a single click — no toggling,
@@ -268,8 +318,6 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
 
   // Don't render if not open
   if (!isOpen) return null;
-
-  const selectedProvider = wallets.find(w => w.type === selectedWallet);
 
   return (
     <div
@@ -332,6 +380,58 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
             aria-live="polite"
           >
             {error}
+          </div>
+        )}
+
+        {/* Help panel when no wallet extension is detected */}
+        {detectedWallets.length === 0 && (
+          <div
+            role="region"
+            aria-labelledby={helpPanelTitleId}
+            className={`wallet-help-panel${!browserSupport.browserSupported ? ' wallet-help-panel--unsupported' : ''}`}
+            data-testid="wallet-help-panel"
+          >
+            <h3 id={helpPanelTitleId} className="wallet-help-title">
+              {browserSupport.browserSupported
+                ? 'No wallet extension detected'
+                : 'This browser may not support wallet extensions'}
+            </h3>
+            {!browserSupport.browserSupported && browserSupport.reason && (
+              <p className="wallet-help-reason">{browserSupport.reason}</p>
+            )}
+            <ul className="wallet-help-list" aria-label="Wallet detection results">
+              {DEFAULT_WALLET_ORDER.map((wallet) => {
+                const isDetected = detectedWallets.includes(wallet.id);
+                return (
+                  <li key={wallet.id} className="wallet-help-item">
+                    <span className="wallet-help-wallet">
+                      <span className="wallet-help-name">{wallet.name}</span>
+                      <span className="wallet-help-status">
+                        {isDetected ? 'detected: yes' : 'detected: no'}
+                      </span>
+                    </span>
+                    <a
+                      href={wallet.installUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="wallet-help-install-link"
+                    >
+                      Install {wallet.name}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="wallet-help-albedo-note">
+              Albedo works without a browser extension.
+            </p>
+            <button
+              type="button"
+              className="wallet-help-recheck-btn"
+              onClick={handleRefreshWallets}
+            >
+              Re-check
+            </button>
           </div>
         )}
 
@@ -422,13 +522,15 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
           hidden={primaryWallet !== null && !showFullList}
           data-testid="wallet-modal-list"
         >
-          {orderedWallets.map((wallet) => {
+          {sortedWallets.map((wallet) => {
             const isDetected = detectedWallets.includes(wallet.id);
             const isConnecting = connectingId === wallet.id;
             const isDisabled = connectingId !== null;
 
+            const previewId = `wallet-preview-${wallet.id}`;
+
             return (
-              <li key={wallet.id} role="none">
+              <li key={wallet.id} role="none" className="wallet-option-wrapper">
                 <button
                   className={`wallet-option ${isDetected ? 'wallet-option--detected' : 'wallet-option--undetected'}`}
                   style={{ minHeight: '44px', minWidth: '44px' }}
@@ -441,7 +543,7 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
                       ? `Connect with ${wallet.name}${isConnecting ? ', connecting' : ''}`
                       : `Install ${wallet.name} wallet`
                   }
-                  aria-describedby={`wallet-status-${wallet.id}`}
+                  aria-describedby={`wallet-status-${wallet.id} ${previewId}`}
                   type="button"
                 >
                   {/* Icon */}
@@ -490,6 +592,33 @@ export const WalletConnectionModal: React.FC<WalletConnectionModalProps> = ({
                     )}
                   </span>
                 </button>
+
+                {/* Hover-preview card — shows wallet features on hover/focus */}
+                <div
+                  id={previewId}
+                  className="wallet-preview"
+                  role="tooltip"
+                  aria-hidden="true"
+                >
+                  <div className="wallet-preview__header">
+                    <img
+                      src={wallet.icon}
+                      alt=""
+                      width="28"
+                      height="28"
+                      aria-hidden="true"
+                    />
+                    <span className="wallet-preview__name">{wallet.name}</span>
+                  </div>
+                  <ul className="wallet-preview__features">
+                    {wallet.features.map((feat) => (
+                      <li key={feat} className="wallet-preview__feature">
+                        <span className="wallet-preview__check" aria-hidden="true">✓</span>
+                        {feat}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </li>
             );
           })}

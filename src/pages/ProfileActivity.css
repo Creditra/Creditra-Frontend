@@ -1,0 +1,56 @@
+.profile-activity-page {
+  padding: 1rem;
+}
+
+.profile-activity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.profile-activity-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text, #e6edf3);
+  margin: 0;
+}
+
+.profile-activity-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-raised, #1c2230);
+  border: 1px solid var(--border, #30363d);
+  border-radius: var(--radius-md, 6px);
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text, #e6edf3);
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.profile-activity-refresh-btn:hover {
+  background: var(--surface-hover, #242b3d);
+  border-color: var(--border-hover, #484f58);
+}
+
+.profile-activity-refresh-btn:focus-visible {
+  outline: 2px solid var(--color-primary, #58a6ff);
+  outline-offset: 2px;
+}
+
+.profile-activity-btn-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .profile-activity-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

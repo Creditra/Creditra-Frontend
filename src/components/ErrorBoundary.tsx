@@ -1,6 +1,7 @@
 import { Component, ErrorInfo, ReactNode } from "react";
-import { Link } from "react-router-dom";
 import "../pages/ErrorPage.css";
+import { isChunkLoadError } from "../lib/lazy-with-retry";
+import { recordDiagnosticError } from "../utils/diagnostics";
 
 interface Props {
   /** Application subtree to guard. */
@@ -32,7 +33,7 @@ interface State {
  * - errors thrown inside the boundary's own render
  */
 export class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
+  public override state: State = {
     hasError: false,
   };
 
@@ -40,11 +41,16 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  public override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
+    recordDiagnosticError(error?.message ?? String(error));
   }
 
-  public render() {
+  public static isChunkError(error: unknown): boolean {
+    return isChunkLoadError(error);
+  }
+
+  public override render() {
     if (this.state.hasError) {
       return <ErrorPage error={this.state.error} />;
     }
@@ -74,8 +80,8 @@ function ErrorPage({ error }: ErrorPageProps) {
         </div>
         <h1 className="error-title">Something went wrong</h1>
         <p className="error-message">
-          We encountered an unexpected error. Our team has been notified and is
-          working to fix it.
+          We encountered an unexpected error. Please try reloading the
+          page.
         </p>
         {!error && (
           <p className="error-details">
@@ -90,13 +96,13 @@ function ErrorPage({ error }: ErrorPageProps) {
           >
             Go Back
           </button>
-          <Link
-            to="/"
+          <a
+            href="/"
             className="error-btn error-btn-secondary"
             aria-label="Return to dashboard"
           >
             Dashboard
-          </Link>
+          </a>
           <button
             className="error-btn error-btn-secondary"
             onClick={handleReload}

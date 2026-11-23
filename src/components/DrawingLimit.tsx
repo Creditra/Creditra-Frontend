@@ -1,6 +1,8 @@
 "use client";
 
 import { useId } from "react";
+import { Amount } from "./Amount";
+import { usePrivacyMode } from "../context/PrivacyContext";
 
 interface DrawingLimitProps {
   /** Current amount drawn (utilized) */
@@ -13,6 +15,12 @@ interface DrawingLimitProps {
   availableLabel?: string;
   /** Optional className for custom styling */
   className?: string;
+  /**
+   * Whether the percentage should be announced through its own polite live
+   * region. Set to false when an adjacent live region already announces the
+   * same value to avoid double announcements.
+   */
+  announcePercentage?: boolean;
 }
 
 /**
@@ -36,8 +44,10 @@ export function DrawingLimit({
   drawnLabel = "Drawn",
   availableLabel = "Available",
   className = "",
+  announcePercentage = true,
 }: DrawingLimitProps) {
   const id = useId();
+  const { privacyMode } = usePrivacyMode();
   const percentage = totalLimit > 0 ? (drawnAmount / totalLimit) * 100 : 0;
   const available = Math.max(0, totalLimit - drawnAmount);
   const isExceeded = drawnAmount > totalLimit;
@@ -70,22 +80,22 @@ export function DrawingLimit({
         <div className="flex items-center gap-4">
           <span className="font-medium text-foreground">
             {drawnLabel}:{" "}
-            <span className={`font-semibold ${textColor}`}>
-              {formatCurrency(drawnAmount)}
+            <span className={`font-semibold ${textColor} tabular-nums`}>
+              <Amount value={drawnAmount} format={formatCurrency} maskedLabel="Drawn amount hidden for privacy" />
             </span>
           </span>
           <span className="text-muted-foreground">/</span>
           <span className="text-muted-foreground">
             {availableLabel}:{" "}
-            <span className="font-semibold text-foreground">
-              {formatCurrency(available)}
+            <span className="font-semibold text-foreground tabular-nums">
+              <Amount value={available} format={formatCurrency} maskedLabel="Available credit hidden for privacy" />
             </span>
           </span>
         </div>
         <span
-          className={`text-sm font-semibold ${textColor}`}
-          aria-live="polite"
-          aria-atomic="true"
+          className={`text-sm font-semibold ${textColor} tabular-nums`}
+          aria-live={announcePercentage ? "polite" : undefined}
+          aria-atomic={announcePercentage ? "true" : undefined}
         >
           {isExceeded ? "Exceeded" : `${Math.round(clampedPercentage)}%`}
         </span>
@@ -106,7 +116,9 @@ export function DrawingLimit({
         >
           <span className="sr-only">
             {isExceeded
-              ? `Credit limit exceeded by ${formatCurrency(drawnAmount - totalLimit)}`
+              ? privacyMode
+                ? "Credit limit exceeded"
+                : `Credit limit exceeded by ${formatCurrency(drawnAmount - totalLimit)}`
               : `${Math.round(clampedPercentage)}% of credit limit utilized`}
           </span>
         </div>
@@ -116,13 +128,13 @@ export function DrawingLimit({
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>
           Limit:{" "}
-          <span className="font-medium text-foreground">
-            {formatCurrency(totalLimit)}
+          <span className="font-medium text-foreground tabular-nums">
+            <Amount value={totalLimit} format={formatCurrency} maskedLabel="Credit limit hidden for privacy" />
           </span>
         </span>
         {isExceeded && (
-          <span className="font-medium text-red-400">
-            Overdrawn by {formatCurrency(drawnAmount - totalLimit)}
+          <span className="font-medium text-red-400 tabular-nums">
+            Overdrawn by <Amount value={drawnAmount - totalLimit} format={formatCurrency} maskedLabel="Overdrawn amount hidden for privacy" />
           </span>
         )}
       </div>

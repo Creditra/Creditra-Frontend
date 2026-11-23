@@ -1,320 +1,149 @@
-import { useMemo, useState, useEffect, useRef, useCallback } from "react";
-import { Link } from "react-router-dom";
-import ActivityFeed from "../components/ActivityFeed";
-import { CopyToClipboard } from "../components/CopyToClipboard";
-import { CopyLoanButton } from "../components/CopyLoanButton";
-import { StatusBadge } from "../components/StatusBadge";
-import { useWallet } from "../context/WalletContext";
-import { Sparkline } from "../components/Sparkline";
-import { RiskBandsPanel } from "../components/RiskBandsPanel";
-import { WhatsChangedPanel } from "../components/WhatsChangedPanel";
-import { RiskExplainerOverlay } from "../components/RiskExplainerOverlay";
-import { MOCK_CREDIT_LINES } from "../data/mockData";
-import type { Transaction } from "../types/creditLine";
+import { useEffect, useState, type ReactNode } from 'react';
+import { CopyToClipboard } from '../components/CopyToClipboard';
+import { NextSteps } from '../components/NextSteps';
+import { DashboardActivity } from '../components/dashboard/DashboardActivity';
+import { DashboardCompare } from '../components/dashboard/DashboardCompare';
 import {
-  COLOR,
-  UTIL_COLOR,
-  fmt,
-  fmtDate,
-  utilizationPct,
-  RISK_COLOR,
-  getUtilizationLevel,
-} from "../utils/tokens";
-import { readJson, writeJson } from "../utils/storage";
-import "./Dashboard.css";  import { Skeleton } from "../components/Skeleton";
-import { NoDataGraph } from "../components/illustrations";
-import CompareLinesPanel from "../components/CompareLinesPanel";
-import { useFocusTrap } from "../hooks/useFocusTrap";
-import { useInertBackdrop } from "../hooks/useInertBackdrop";
-import { useBodyScrollLock } from "../hooks/useBodyScrollLock";
-import { useReducedMotion } from "../context/ReducedMotionContext";
-import { TipJar } from "../components/TipJar";
-import { NextSteps } from "../components/NextSteps";
-import { WhatChanged } from "../components/WhatChanged";
-import { HealthTipsPanel } from "../components/HealthTipsPanel";
-import { RiskGauge } from "./RiskGauge";
+  DashboardSummary,
+  DashboardSummaryMetrics,
+} from '../components/dashboard/DashboardSummary';
+import { DashboardTourSection } from '../components/dashboard/DashboardTourSection';
+import { EmptyState } from '../components/EmptyState';
+import { KbdHint } from '../components/KbdHint';
+import { LiveRegion } from '../components/LiveRegion';
+import { NoLines } from '../components/illustrations';
+import { HealthTipsPanel } from '../components/HealthTipsPanel';
+import { DashboardDataProvider, useDashboardDataContext } from '../hooks/useDashboardData';
+import { useCompareSelection } from '../hooks/useCompareSelection';
+import { useDashboardTour } from '../hooks/useDashboardTour';
+import { useWalletIdentityKey } from '../hooks/useWalletIdentityKey';
+import {
+  loadDashboardLayout,
+  resetDashboardLayout,
+  saveDashboardLayout,
+  type DashboardLayout,
+} from '../state/dashboardLayout';
+import './Dashboard.css';
+import '../styles/focus.css';
 
-export { RiskGauge };
+export { RiskGauge } from './RiskGauge';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const relativeTime = (iso: string): string => {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return fmtDate(iso);
-};
-
-const TX_ICON: Record<string, string> = {
-  Draw: "↗",
-  Repay: "↙",
-  Fee: "📋",
-  Interest: "📈",
-};
-
-const TX_COLOR: Record<string, string> = {
-  Draw: COLOR.danger,
-  Repay: COLOR.success,
-  Fee: COLOR.muted,
-  Interest: COLOR.warning,
-};
-
-// ─── Risk Explainer ───────────────────────────────────────────────────────────
-
-function RiskExplainer({ score, address }: { score: number; address?: string }) {
-  const [dismissed, setDismissed] = useState(() => {
-    if (!address) return true;
-    return readJson(`risk-explainer-dismissed-${address}`, false);
-  });
-
-  if (dismissed || !address) return null;
-
-  const band = RISK_COLOR(score);
-
-  const message = band === COLOR.success
-    ? 'Strong credit position \u2014 you\u2019re above the recommended threshold for new draws.'
-    : band === COLOR.warning
-    ? 'Fair credit position \u2014 within acceptable range, though keep an eye on your utilization.'
-    : 'Below the recommended threshold \u2014 consider improving your score before new draws.';
-
-  const handleDismiss = () => {
-    setDismissed(true);
-    writeJson(`risk-explainer-dismissed-${address}`, true);
-  };
-
+export function Dashboard() {
   return (
-    <div className="risk-explainer" role="status" style={{ borderLeftColor: band }}>
-      <p className="risk-explainer-text">{message}</p>
-      <button
-        className="risk-explainer-dismiss"
-        onClick={handleDismiss}
-        aria-label="Dismiss risk score explainer"
-        type="button"
-      >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-      </button>
-    </div>
+    <DashboardDataProvider>
+      <DashboardContent />
+    </DashboardDataProvider>
   );
 }
 
-// ─── Dashboard Component ──────────────────────────────────────────────────────
+function DashboardContent() {
+  const {
+    wallet,
+    status,
+    creditError,
+    announcement,
+    statusAnnouncement,
+    refetchCreditLines,
+    isConnected,
+    truncAddr,
+    hasLines,
+    totalAvailable,
+    totalUtilized,
+  } = useDashboardDataContext();
+  const compareSelection = useCompareSelection();
+  const dashboardTour = useDashboardTour();
+  const walletKey = useWalletIdentityKey();
+  const [isCustomising, setIsCustomising] = useState(false);
+  const [layoutAnnouncement, setLayoutAnnouncement] = useState('');
 
-export function Dashboard() {
-  const { wallet, status } = useWallet();
-  const creditLines = MOCK_CREDIT_LINES;
-
-  const [repayCount, setRepayCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [isExplainOpen, setIsExplainOpen] = useState(false);
-  // `isExplainOpen` now drives the centred RiskExplainerOverlay (#426).
-  // The slide-out panel (`RiskBandsPanel`) keeps its own local state and
-  // is unaffected.
-
-  // ─── Sync timestamps ─────────────────────────────────────────────────────
-  const [riskSyncedAt, setRiskSyncedAt] = useState<Date>(() => new Date());
-  const [creditSyncedAt, setCreditSyncedAt] = useState<Date>(() => new Date());
-  const [activitySyncedAt, setActivitySyncedAt] = useState<Date>(() => new Date());
-
-  const handleRiskRefresh = useCallback(async () => {
-    await new Promise<void>((r) => setTimeout(r, 600));
-    setRiskSyncedAt(new Date());
-  }, []);
-
-  const handleCreditRefresh = useCallback(async () => {
-    await new Promise<void>((r) => setTimeout(r, 600));
-    setCreditSyncedAt(new Date());
-  }, []);
-
-  const handleActivityRefresh = useCallback(async () => {
-    await new Promise<void>((r) => setTimeout(r, 600));
-    setActivitySyncedAt(new Date());
-  }, []);
-  const explainTriggerRef = useRef<HTMLButtonElement>(null);
-  const [selectedCompareLines, setSelectedCompareLines] = useState<string[]>([]);
-  const [showCompare, setShowCompare] = useState(false);
-  const compareTriggerRef = useRef<HTMLButtonElement>(null);
-
-
-  const handleCloseCompare = () => {
-    setShowCompare(false);
-    setSelectedCompareLines([]);
-  };
-
-  const handleOpenCompare = () => {
-    if (selectedCompareLines.length === 2) {
-      setShowCompare(true);
-    }
-  };
-
-  const toggleCompareSelection = (id: string) => {
-    setSelectedCompareLines((prev) => {
-      if (prev.includes(id)) {
-        return prev.filter((lineId) => lineId !== id);
-      } else if (prev.length < 2) {
-        return [...prev, id];
-      }
-      return prev;
-    });
-  };
-
-  const comparePanelRef = useFocusTrap({
-    isActive: showCompare,
-    triggerRef: compareTriggerRef,
-    onEscape: handleCloseCompare,
-  });
-
-  useInertBackdrop({ isInert: showCompare, modalId: "compare-lines-drawer-dashboard" });
-  useBodyScrollLock({ isLocked: showCompare });
-
-  const selectedCreditLines = useMemo(
-    () => creditLines.filter((line) => selectedCompareLines.includes(line.id)),
-    [creditLines, selectedCompareLines],
+  const cardRegistry: Array<{ id: string; title: string; component: ReactNode }> = [
+    { id: 'summary', title: 'Credit overview', component: <DashboardSummary /> },
+    {
+      id: 'next-steps',
+      title: 'Next steps',
+      component: <NextSteps totalAvailable={totalAvailable} totalUtilized={totalUtilized} />,
+    },
+    {
+      id: 'credit-details',
+      title: 'Credit details',
+      component: (
+        <div>
+          <DashboardSummaryMetrics
+            isExplainOpen={dashboardTour.isExplainOpen}
+            explainTriggerRef={dashboardTour.explainTriggerRef}
+            openExplain={dashboardTour.openExplain}
+          />
+          <DashboardCompare {...compareSelection} />
+        </div>
+      ),
+    },
+    { id: 'activity', title: 'Activity', component: <DashboardActivity /> },
+    { id: 'health-tips', title: 'Health tips', component: <HealthTipsPanel /> },
+  ];
+  const cardIds = cardRegistry.map((card) => card.id);
+  const [layout, setLayout] = useState<DashboardLayout>(() =>
+    loadDashboardLayout(walletKey, cardIds),
   );
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, []);
+    setLayout(loadDashboardLayout(walletKey, cardIds));
+  }, [walletKey]);
 
-  const activeLines = useMemo(
-    () =>
-      creditLines.filter(
-        (cl) => cl.status === "Active" || cl.status === "Suspended",
-      ),
-    [creditLines, repayCount],
-  );
+  const updateLayout = (next: DashboardLayout, announcement: string) => {
+    const saved = saveDashboardLayout(walletKey, next, cardIds);
+    setLayout(saved);
+    setLayoutAnnouncement(announcement);
+  };
 
-  const activeLinesOnly = useMemo(
-    () => creditLines.filter((cl) => cl.status === "Active"),
-    [creditLines, repayCount],
-  );
+  const moveCard = (id: string, direction: -1 | 1) => {
+    const index = layout.order.indexOf(id);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= layout.order.length) return;
+    const order = [...layout.order];
+    [order[index], order[nextIndex]] = [order[nextIndex], order[index]];
+    const card = cardRegistry.find((item) => item.id === id);
+    updateLayout(
+      { ...layout, order },
+      `${card?.title ?? id} moved ${direction === -1 ? 'up' : 'down'}.`,
+    );
+  };
 
+  const toggleHidden = (id: string) => {
+    const hidden = layout.hidden.includes(id)
+      ? layout.hidden.filter((hiddenId) => hiddenId !== id)
+      : [...layout.hidden, id];
+    const card = cardRegistry.find((item) => item.id === id);
+    updateLayout(
+      { ...layout, hidden },
+      hidden.includes(id) ? `${card?.title ?? id} hidden.` : `${card?.title ?? id} restored.`,
+    );
+  };
 
-  const totalLimit = activeLinesOnly.reduce((s, cl) => s + cl.limit, 0);
-  const totalUtilized = activeLinesOnly.reduce((s, cl) => s + cl.utilized, 0);
-  const totalAvailable = totalLimit - totalUtilized;
-  const overallPct = utilizationPct(totalUtilized, totalLimit || 1);
-  const overallLevel =
-    totalLimit > 0 ? getUtilizationLevel(totalUtilized, totalLimit) : "low";
+  const resetLayout = () => {
+    const reset = resetDashboardLayout(walletKey, cardIds);
+    setLayout(reset);
+    setLayoutAnnouncement('Dashboard layout reset to default.');
+  };
 
-  const avgRiskScore =
-    activeLinesOnly.length > 0
-      ? Math.round(
-          activeLinesOnly.reduce((s, cl) => s + cl.riskScore, 0) /
-            activeLinesOnly.length,
-        )
-      : 0;
-
-  const recentActivity = useMemo(() => {
-    const all: (Transaction & { lineName: string; lineId: string })[] = [];
-    creditLines.forEach((cl) => {
-      cl.transactions.forEach((tx) => {
-        all.push({ ...tx, lineName: cl.name, lineId: cl.id });
-      });
-    });
-    all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    return all.slice(0, 5);
-  }, [creditLines, repayCount]);
-
-
-  const notifications = useMemo(() => {
-    const notes: {
-      icon: string;
-      content: React.ReactNode;
-      type: "info" | "warning" | "danger";
-      time?: string;
-    }[] = [];
-
-    creditLines.forEach((cl) => {
-      if (cl.status === "Suspended") {
-        notes.push({
-          icon: "⚠️",
-          content: (
-            <>
-              <strong>{cl.name}</strong> has been suspended. Make a repayment to
-              restore access.
-            </>
-          ),
-          type: "warning",
-          time: cl.updatedAt,
-        });
-      }
-      if (cl.status === "Defaulted") {
-        notes.push({
-          icon: "🚨",
-          content: (
-            <>
-              <strong>{cl.name}</strong> is in default (90+ days overdue).
-              Contact support immediately.
-            </>
-          ),
-          type: "danger",
-          time: cl.updatedAt,
-        });
-      }
-      if (cl.status === "Active") {
-        const util = cl.utilized / cl.limit;
-        if (util >= 0.75) {
-          notes.push({
-            icon: "📊",
-            content: (
-              <>
-                <strong>{cl.name}</strong> utilization is at{" "}
-                {Math.round(util * 100)}%. Consider a repayment.
-              </>
-            ),
-            type: "warning",
-          });
-        }
-        if (cl.nextPaymentDate) {
-          const daysUntil = Math.ceil(
-            (new Date(cl.nextPaymentDate).getTime() - Date.now()) / 86400000,
-          );
-          if (daysUntil > 0 && daysUntil <= 7) {
-            notes.push({
-              icon: "🗓️",
-              content: (
-                <>
-                  Payment of <strong>{fmt(cl.nextPaymentAmount ?? 0)}</strong>{" "}
-                  due in {daysUntil} day{daysUntil !== 1 ? "s" : ""} for{" "}
-                  {cl.name}.
-                </>
-              ),
-              type: "info",
-            });
-          }
-        }
-      }
-    });
-    return notes;
-  }, [creditLines, repayCount]);
-
-
-  const hasLines = creditLines.length > 0;
-  const hasUtilized = totalUtilized > 0;
-  const isConnected = status === "connected" && wallet;
-
-  const truncAddr = wallet?.publicKey
-    ? `${wallet.publicKey.slice(0, 6)}...${wallet.publicKey.slice(-4)}`
-    : "";
-
-  if (!loading && !hasLines) {
+  if ((status === 'success' && !hasLines) || status === 'idle') {
     return (
       <>
+        <LiveRegion message={announcement || statusAnnouncement} aria-live="polite" />
         <div className="dashboard-header">
           <div>
-            <h1>Dashboard</h1>
+            <h1
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--space-3)',
+              }}
+            >
+              Dashboard
+              <KbdHint keys={['Cmd', 'K']} separator="+" label="Command Palette" variant="badge" />
+            </h1>
             <p className="subtitle">Your credit overview at a glance</p>
           </div>
-          {isConnected && (
+          {isConnected && wallet && (
             <div className="wallet-info">
               <CopyToClipboard
                 value={wallet.publicKey}
@@ -324,61 +153,69 @@ export function Dashboard() {
                 className="wallet-address-chip"
                 valueClassName="wallet-address-value"
               />
-               <span
-                 className={`network-badge ${wallet.network === "TESTNET" ? "testnet" : "mainnet"}`}
-                 title={
-                   wallet.network === "TESTNET"
-                     ? "Testnet (no real funds)"
-                     : "Mainnet (real funds)"
-                 }
-                 aria-label={
-                   wallet.network === "TESTNET"
-                     ? "Testnet network (test funds)"
-                     : "Mainnet network (real funds)"
-                 }
-               >
-                 <span className="dot" />
-                 <span className="network-icon" aria-hidden="true">
-                   {wallet.network === "TESTNET" ? "⚠️" : "✅"}
-                 </span>
-                 {wallet.network === "TESTNET" ? "Testnet" : "Mainnet"}
-               </span>
+              <span
+                className={`network-badge ${wallet.network === 'TESTNET' ? 'testnet' : 'mainnet'}`}
+                title={
+                  wallet.network === 'TESTNET' ? 'Testnet (no real funds)' : 'Mainnet (real funds)'
+                }
+                aria-label={
+                  wallet.network === 'TESTNET'
+                    ? 'Testnet network (test funds)'
+                    : 'Mainnet network (real funds)'
+                }
+              >
+                <span className="dot" />
+                <span className="network-icon" aria-hidden="true">
+                  {wallet.network === 'TESTNET' ? '⚠️' : '✅'}
+                </span>
+                {wallet.network === 'TESTNET' ? 'Testnet' : 'Mainnet'}
+              </span>
             </div>
           )}
         </div>
-        <div className="empty-state">
-          <NoDataGraph className="empty-state-illustration--muted" />
-          <h2>No credit lines yet</h2>
-          <p>
-            Start your credit journey by requesting a credit evaluation. We'll
-            analyze your on-chain activity to determine your credit limit and
-            terms.
-          </p>
-          <Link to="/open-credit" className="empty-state-btn">
-            Request Credit Evaluation
-          </Link>
-        </div>
+        <EmptyState
+          illustration={<NoLines className="empty-state-illustration--muted" />}
+          title="No credit lines yet"
+          description="Start your credit journey by requesting a credit evaluation. We'll analyze your on-chain activity to determine your credit limit and terms."
+          primaryAction={{
+            label: 'Request Credit Evaluation',
+            to: '/open-credit',
+          }}
+        />
       </>
     );
   }
 
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      aria-busy={loading}
-      className="dashboard-root"
-    >
-      <span className="sr-only">
-        {loading ? "Loading dashboard" : "Dashboard loaded"}
-      </span>
+    <div aria-busy={status === 'loading'} className="dashboard-root">
+      <LiveRegion
+        message={announcement || statusAnnouncement}
+        aria-live={status === 'error' ? 'assertive' : 'polite'}
+      />
+      {status === 'error' && (
+        <div role="alert" className="dashboard-error-card">
+          <p>{creditError?.message ?? 'Unable to load credit data.'}</p>
+          <button type="button" onClick={() => void refetchCreditLines().catch(() => undefined)}>
+            Retry
+          </button>
+        </div>
+      )}
 
       <div className="dashboard-header">
         <div>
-          <h1>Dashboard</h1>
+          <h1
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-3)',
+            }}
+          >
+            Dashboard
+            <KbdHint keys={['Cmd', 'K']} separator="+" label="Command Palette" variant="badge" />
+          </h1>
           <p className="subtitle">Your credit overview at a glance</p>
         </div>
-        {isConnected && (
+        {isConnected && wallet && (
           <div className="wallet-info">
             <CopyToClipboard
               value={wallet.publicKey}
@@ -388,709 +225,103 @@ export function Dashboard() {
               className="wallet-address-chip"
               valueClassName="wallet-address-value"
             />
-             <span
-               className={`network-badge ${wallet.network === "TESTNET" ? "testnet" : "mainnet"}`}
-               title={
-                 wallet.network === "TESTNET"
-                   ? "Testnet (no real funds)"
-                   : "Mainnet (real funds)"
-               }
-               aria-label={
-                 wallet.network === "TESTNET"
-                   ? "Testnet network (test funds)"
-                   : "Mainnet network (real funds)"
-               }
-             >
-               <span className="dot" />
-               <span className="network-icon" aria-hidden="true">
-                 {wallet.network === "TESTNET" ? "⚠️" : "✅"}
-               </span>
-               {wallet.network === "TESTNET" ? "Testnet" : "Mainnet"}
-             </span>
+            <span
+              className={`network-badge ${wallet.network === 'TESTNET' ? 'testnet' : 'mainnet'}`}
+              title={
+                wallet.network === 'TESTNET' ? 'Testnet (no real funds)' : 'Mainnet (real funds)'
+              }
+              aria-label={
+                wallet.network === 'TESTNET'
+                  ? 'Testnet network (test funds)'
+                  : 'Mainnet network (real funds)'
+              }
+            >
+              <span className="dot" />
+              <span className="network-icon" aria-hidden="true">
+                {wallet.network === 'TESTNET' ? '⚠️' : '✅'}
+              </span>
+              {wallet.network === 'TESTNET' ? 'Testnet' : 'Mainnet'}
+            </span>
           </div>
         )}
       </div>
 
-      {/* Summary Cards */}
-      <div className="summary-cards" data-tour-target="summaryCards" aria-busy={loading}>
-        {loading ? (
+      <div className="dashboard-customise-bar">
+        <button
+          type="button"
+          className="dashboard-customise-button"
+          aria-pressed={isCustomising}
+          onClick={() => {
+            setIsCustomising((current) => !current);
+            setLayoutAnnouncement(
+              isCustomising ? 'Customisation mode closed.' : 'Customisation mode opened.',
+            );
+          }}
+        >
+          {isCustomising ? 'Done' : 'Customise'}
+        </button>
+        {isCustomising && (
           <>
-            <div className="summary-card skeleton-card">
-              <Skeleton
-                style={{
-                  width: "60%",
-                  height: "14px",
-                  marginBottom: "16px",
-                  borderRadius: "4px",
-                }}
-              />
-              <Skeleton
-                style={{
-                  width: "80%",
-                  height: "32px",
-                  marginBottom: "12px",
-                  borderRadius: "4px",
-                }}
-              />
-              <Skeleton
-                style={{ width: "40%", height: "12px", borderRadius: "4px" }}
-              />
-            </div>
-            <div className="summary-card skeleton-card">
-              <Skeleton
-                style={{
-                  width: "60%",
-                  height: "14px",
-                  marginBottom: "16px",
-                  borderRadius: "4px",
-                }}
-              />
-              <Skeleton
-                style={{
-                  width: "80%",
-                  height: "32px",
-                  marginBottom: "12px",
-                  borderRadius: "4px",
-                }}
-              />
-              <Skeleton
-                style={{ width: "40%", height: "12px", borderRadius: "4px" }}
-              />
-            </div>
-            <div className="summary-card skeleton-card">
-              <Skeleton
-                style={{
-                  width: "60%",
-                  height: "14px",
-                  marginBottom: "16px",
-                  borderRadius: "4px",
-                }}
-              />
-              <Skeleton
-                style={{
-                  width: "80%",
-                  height: "32px",
-                  marginBottom: "12px",
-                  borderRadius: "4px",
-                }}
-              />
-              <Skeleton
-                style={{ width: "40%", height: "12px", borderRadius: "4px" }}
-              />
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="summary-card">
-              <div className="glow" style={{ background: COLOR.accent }} />
-              <p className="label">
-                Total Credit Limit
-                <WhatChanged metricId="total-limit" currentValue={totalLimit} format="currency" label="Total Credit Limit" />
-              </p>
-              {/* num-tabular: prevents digit-width jitter as credit values change (FWC26) */}
-              <p className="value num-tabular" style={{ color: COLOR.accent }}>
-                {fmt(totalLimit)}
-              </p>
-              <p className="sub">
-                Across {activeLinesOnly.length} active line
-                {activeLinesOnly.length !== 1 ? "s" : ""}
-              </p>
-            </div>
-            <div className="summary-card">
-              <div
-                className="glow"
-                style={{ background: UTIL_COLOR[overallLevel] }}
-              />
-              <p className="label">
-                Total Utilized
-                <WhatChanged metricId="total-utilized" currentValue={totalUtilized} format="currency" label="Total Utilized" />
-              </p>
-              <p className="value num-tabular" style={{ color: UTIL_COLOR[overallLevel] }}>
-                {fmt(totalUtilized)}
-              </p>
-              <p className="sub">{overallPct}% of total limit</p>
-            </div>
-            <div className="summary-card">
-              <div className="glow" style={{ background: COLOR.success }} />
-              <p className="label">
-                Available Credit
-                <WhatChanged metricId="available-credit" currentValue={totalAvailable} format="currency" label="Available Credit" />
-              </p>
-              <p className="value num-tabular" style={{ color: COLOR.success }}>
-                {fmt(totalAvailable)}
-              </p>
-              <p className="sub">Ready to draw</p>
+            <button type="button" onClick={resetLayout}>
+              Reset layout
+            </button>
+            <div className="dashboard-card-controls" aria-label="Dashboard card layout">
+              {layout.order.map((id, index) => {
+                const card = cardRegistry.find((item) => item.id === id);
+                const isHidden = layout.hidden.includes(id);
+                return (
+                  <div className="dashboard-card-control" key={id}>
+                    <span>{card?.title ?? id}</span>
+                    <button
+                      type="button"
+                      aria-label={`Move ${card?.title ?? id} up`}
+                      disabled={index === 0}
+                      onClick={() => moveCard(id, -1)}
+                    >
+                      Move up
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Move ${card?.title ?? id} down`}
+                      disabled={index === layout.order.length - 1}
+                      onClick={() => moveCard(id, 1)}
+                    >
+                      Move down
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`${isHidden ? 'Restore' : 'Hide'} ${card?.title ?? id}`}
+                      onClick={() => toggleHidden(id)}
+                    >
+                      {isHidden ? 'Restore' : 'Hide'}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </>
         )}
       </div>
+      <LiveRegion
+        message={layoutAnnouncement}
+        aria-live="polite"
+        id="dashboard-layout-announcement"
+      />
 
-      {!loading && <ActivityFeed />}
-
-      {!loading && hasLines && <ContinuePrompt creditLines={creditLines} />}
-
-      <div className="dashboard-grid">
-        <div>
-          <div className="card" style={{ animationDelay: "0.1s" }}>
-            <h2>
-              <span className="icon">📊</span> Credit Summary
-              {!loading && (
-                <SyncIndicator
-                  lastSyncedAt={creditSyncedAt}
-                  onRefresh={handleCreditRefresh}
-                  className="sync-indicator--card-header"
-                />
-              )}
-            </h2>
-            <div className="util-bar-container">
-              <div className="util-bar-header">
-                <span style={{ color: COLOR.muted }}>Utilization</span>
-                {/* num-tabular: stable percentage display (FWC26) */}
-                <span
-                  className="num-tabular"
-                  style={{ fontWeight: 600, color: UTIL_COLOR[overallLevel] }}
-                >
-                  {overallPct}%
-                </span>
-              </div>
-              <div className="util-bar-track">
-                <div
-                  className="util-bar-fill"
-                  style={{
-                    width: `${overallPct}%`,
-                    background: UTIL_COLOR[overallLevel],
-                  }}
-                />
-              </div>
-            </div>
-            <div className="credit-breakdown">
-              <div className="credit-breakdown-item">
-                <p className="cb-label">Total Limit</p>
-                {/* num-tabular: stable breakdown amounts (FWC26) */}
-                <p className="cb-value num-tabular" style={{ color: COLOR.accent }}>
-                  {fmt(totalLimit)}
-                </p>
-              </div>
-              <div className="credit-breakdown-item">
-                <p className="cb-label">Utilized</p>
-                <p
-                  className="cb-value num-tabular"
-                  style={{ color: UTIL_COLOR[overallLevel] }}
-                >
-                  {fmt(totalUtilized)}
-                </p>
-              </div>
-              <div className="credit-breakdown-item">
-                <p className="cb-label">Available</p>
-                <p className="cb-value num-tabular" style={{ color: COLOR.success }}>
-                  {fmt(totalAvailable)}
-                </p>
-              </div>
-            </div>
+      {layout.order.map((cardId) => {
+        if (layout.hidden.includes(cardId)) return null;
+        const card = cardRegistry.find((c) => c.id === cardId);
+        return card ? (
+          <div key={card.id} className="dashboard-card">
+            {card.component}
           </div>
+        ) : null;
+      })}
 
-          {/* Risk Score */}
-          <div className="card" data-tour-target="riskGauge" style={{ animationDelay: '0.15s' }} aria-busy={loading}>
-            <h2>
-              <span className="icon">🛡️</span> Risk Score
-              {!loading && (
-                <button
-                  ref={explainTriggerRef}
-                  type="button"
-                  onClick={() => setIsExplainOpen(true)}
-                  aria-haspopup="dialog"
-                  aria-expanded={isExplainOpen}
-                  aria-label="Explain risk bands"
-                  className="risk-explainer-trigger focus-ring"
-                  data-testid="risk-explainer-trigger"
-                  style={{
-                    marginLeft: "auto",
-                    fontSize: "0.75rem",
-                    fontWeight: 600,
-                    padding: "0.25rem 0.6rem",
-                    borderRadius: 6,
-                    background: "transparent",
-                    border: "1px solid var(--border, #30363d)",
-                    color: "var(--muted, #8b949e)",
-                    cursor: "pointer",
-                    minHeight: "32px",
-                  }}
-                >
-                  Explain
-                </button>
-              )}
-            </h2>
-            {loading ? (
-              <div className="risk-gauge-container">
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100px', width: '160px', marginBottom: '0.75rem' }}>
-                  <Skeleton style={{ width: '80px', height: '80px', borderRadius: '50%' }} />
-                </div>
-                <div className="risk-meta" style={{ width: '100%' }}>
-                  <div className="risk-meta-item" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <Skeleton style={{ width: '40px', height: '10px', marginBottom: '6px', borderRadius: '2px' }} />
-                    <Skeleton style={{ width: '60px', height: '14px', borderRadius: '2px' }} />
-                  </div>
-                  <div className="risk-meta-item" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <Skeleton style={{ width: '60px', height: '10px', marginBottom: '6px', borderRadius: '2px' }} />
-                    <Skeleton style={{ width: '50px', height: '14px', borderRadius: '2px' }} />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <RiskGauge
-                score={avgRiskScore}
-                trend="improving"
-                lastUpdated={activeLinesOnly[0]?.updatedAt ?? new Date().toISOString()}
-              />
-            )}
-          </div>
-
-           <div
-             className="card"
-             style={{ animationDelay: "0.2s" }}
-             aria-busy={loading}
-           >
-             <h2>
-               <span className="icon">💳</span> Active Credit Lines
-               {!loading && (
-                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                   {activeLines.length >= 2 && (
-                     <button
-                       ref={compareTriggerRef}
-                       type="button"
-                       onClick={handleOpenCompare}
-                       disabled={selectedCompareLines.length !== 2}
-                       className="focus-ring"
-                       style={{
-                         padding: "0.35rem 0.75rem",
-                         fontSize: "0.75rem",
-                         fontWeight: 600,
-                         borderRadius: "4px",
-                         background: selectedCompareLines.length === 2 ? "var(--accent)" : "rgba(139,148,158,0.12)",
-                         color: selectedCompareLines.length === 2 ? "#0d1117" : "var(--muted)",
-                         border: "none",
-                         cursor: selectedCompareLines.length === 2 ? "pointer" : "not-allowed",
-                         opacity: selectedCompareLines.length === 2 ? 1 : 0.6,
-                         transition: "all 0.15s",
-                       }}
-                     >
-                       Compare Selected ({selectedCompareLines.length}/2)
-                     </button>
-                   )}
-                   <span
-                     style={{
-                       fontSize: "0.75rem",
-                       fontWeight: 400,
-                       color: COLOR.muted,
-                     }}
-                   >
-                     {activeLines.length} line{activeLines.length !== 1 ? "s" : ""}
-                   </span>
-                 </div>
-               )}
-             </h2>
-             {loading ? (
-               <>
-                 <div className="cl-preview-item">
-                   <div style={{ flex: 1, minWidth: 0 }}>
-                     <div
-                       style={{
-                         display: "flex",
-                         alignItems: "center",
-                         gap: "0.5rem",
-                         marginBottom: "0.4rem",
-                       }}
-                     >
-                       <Skeleton
-                         style={{
-                           width: "100px",
-                           height: "14px",
-                           borderRadius: "2px",
-                         }}
-                       />
-                       <Skeleton
-                         style={{
-                           width: "50px",
-                           height: "14px",
-                           borderRadius: "4px",
-                         }}
-                       />
-                     </div>
-                     <Skeleton
-                       style={{
-                         width: "120px",
-                         height: "10px",
-                         borderRadius: "2px",
-                       }}
-                     />
-                   </div>
-                   <div
-                     className="cl-preview-right"
-                     style={{
-                       display: "flex",
-                       flexDirection: "column",
-                       alignItems: "flex-end",
-                       gap: "0.4rem",
-                     }}
-                   >
-                     <Skeleton
-                       style={{
-                         width: "80px",
-                         height: "14px",
-                         borderRadius: "2px",
-                       }}
-                     />
-                     <Skeleton
-                       style={{
-                         width: "60px",
-                         height: "6px",
-                         borderRadius: "2px",
-                       }}
-                     />
-                   </div>
-                 </div>
-                 <div className="cl-preview-item">
-                   <div style={{ flex: 1, minWidth: 0 }}>
-                     <div
-                       style={{
-                         display: "flex",
-                         alignItems: "center",
-                         gap: "0.5rem",
-                         marginBottom: "0.4rem",
-                       }}
-                     >
-                       <Skeleton
-                         style={{
-                           width: "80px",
-                           height: "14px",
-                           borderRadius: "2px",
-                         }}
-                       />
-                       <Skeleton
-                         style={{
-                           width: "50px",
-                           height: "14px",
-                           borderRadius: "4px",
-                         }}
-                       />
-                     </div>
-                     <Skeleton
-                       style={{
-                         width: "100px",
-                         height: "10px",
-                         borderRadius: "2px",
-                       }}
-                     />
-                   </div>
-                   <div
-                     className="cl-preview-right"
-                     style={{
-                       display: "flex",
-                       flexDirection: "column",
-                       alignItems: "flex-end",
-                       gap: "0.4rem",
-                     }}
-                   >
-                     <Skeleton
-                       style={{
-                         width: "70px",
-                         height: "14px",
-                         borderRadius: "2px",
-                       }}
-                     />
-                     <Skeleton
-                       style={{
-                         width: "50px",
-                         height: "6px",
-                         borderRadius: "2px",
-                       }}
-                     />
-                   </div>
-                 </div>
-                 <div className="cl-preview-item">
-                   <div style={{ flex: 1, minWidth: 0 }}>
-                     <div
-                       style={{
-                         display: "flex",
-                         alignItems: "center",
-                         gap: "0.5rem",
-                         marginBottom: "0.4rem",
-                       }}
-                     >
-                       <Skeleton
-                         style={{
-                           width: "90px",
-                           height: "14px",
-                           borderRadius: "2px",
-                         }}
-                       />
-                       <Skeleton
-                         style={{
-                           width: "50px",
-                           height: "14px",
-                           borderRadius: "4px",
-                         }}
-                       />
-                     </div>
-                     <Skeleton
-                       style={{
-                         width: "110px",
-                         height: "10px",
-                         borderRadius: "2px",
-                       }}
-                     />
-                   </div>
-                   <div
-                     className="cl-preview-right"
-                     style={{
-                       display: "flex",
-                       flexDirection: "column",
-                       alignItems: "flex-end",
-                       gap: "0.4rem",
-                     }}
-                   >
-                     <Skeleton
-                       style={{
-                         width: "60px",
-                         height: "14px",
-                         borderRadius: "2px",
-                       }}
-                     />
-                     <Skeleton
-                       style={{
-                         width: "40px",
-                         height: "6px",
-                         borderRadius: "2px",
-                       }}
-                     />
-                   </div>
-                 </div>
-               </>
-             ) : (
-               <>
-                 {activeLines.slice(0, 3).map((cl) => {
-                   const pct = utilizationPct(cl.utilized, cl.limit);
-                   const level = getUtilizationLevel(cl.utilized, cl.limit);
-                   const isSelected = selectedCompareLines.includes(cl.id);
-                   return (
-                     <div key={cl.id} className="cl-preview-item">
-                       {activeLines.length >= 2 && (
-                         <div style={{ paddingRight: "0.75rem", display: "flex", alignItems: "center" }}>
-                           <label
-                             className="cl-row-select"
-                             style={{
-                               margin: 0,
-                               display: "inline-flex",
-                               alignItems: "center",
-                               justifyContent: "center",
-                               cursor: "pointer",
-                               minWidth: "44px",
-                               minHeight: "44px",
-                             }}
-                           >
-                             <input
-                               type="checkbox"
-                               checked={isSelected}
-                               onChange={() => toggleCompareSelection(cl.id)}
-                               aria-label={`Select ${cl.name} for comparison`}
-                               style={{
-                                 cursor: "pointer",
-                                 width: "16px",
-                                 height: "16px",
-                                 accentColor: "var(--accent)",
-                               }}
-                             />
-                           </label>
-                         </div>
-                       )}
-                       <div style={{ flex: 1, minWidth: 0 }}>
-                         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.2rem" }}>
-                           <p className="cl-preview-name">{cl.name}</p>
-                           <StatusBadge status={cl.status} />
-                         </div>
-                         <p className="cl-preview-id">{cl.id}</p>
-                       </div>
-                       <div className="cl-preview-right">
-                         {/* num-tabular: stable utilized/limit amounts (FWC26) */}
-                         <div className="cl-preview-amount num-tabular">
-                           {fmt(cl.utilized)} <span style={{ color: COLOR.muted, fontWeight: 400, fontSize: "0.75rem" }}>/ {fmt(cl.limit)}</span>
-                         </div>
-                         <div className="cl-preview-bar">
-                           <div className="cl-preview-bar-fill" style={{ width: `${pct}%`, background: UTIL_COLOR[level] }} />
-                         </div>
-                       </div>
-                     </div>
-                   );
-                 })}
-                 <Link to="/credit-lines" className="view-all-link">
-                   View all credit lines →
-                 </Link>
-               </>
-             )}
-           </div>
-         </div>
- 
-         <div>
-           <div className="card" style={{ animationDelay: "0.12s" }}>
-             <h2><span className="icon">⚡</span> Quick Actions</h2>
-             <div className="quick-actions-grid">
-               {!hasLines && (
-                 <button
-                   className="qa-btn"
-                   style={{ borderColor: "rgba(88,166,255,0.3)" }}
-                 >
-                   <div className="qa-icon" style={{ background: "rgba(88,166,255,0.12)", color: COLOR.accent }}>🆕</div>
-                   <div>
-                     <div className="qa-label" style={{ color: COLOR.accent }}>Open Credit Line</div>
-                     <div className="qa-desc" style={{ color: COLOR.muted }}>Get started with your first line</div>
-                   </div>
-                   <span className="qa-arrow" style={{ color: COLOR.muted }}>→</span>
-                 </button>
-               )}
-               {hasLines && activeLinesOnly.length > 0 && (
-                 <button
-                   className="qa-btn"
-                   style={{ borderColor: "rgba(88,166,255,0.3)" }}
-                 >
-                   <div className="qa-icon" style={{ background: "rgba(88,166,255,0.12)", color: COLOR.accent }}>↗</div>
-                   <div>
-                     <div className="qa-label" style={{ color: COLOR.accent }}>Draw Credit</div>
-                     <div className="qa-desc" style={{ color: COLOR.muted }}>{fmt(totalAvailable)} available</div>
-                   </div>
-                   <span className="qa-arrow" style={{ color: COLOR.muted }}>→</span>
-                 </button>
-               )}
-               {hasUtilized && (
-                 <button
-                   className="qa-btn"
-                   style={{ borderColor: "rgba(63,185,80,0.3)" }}
-                 >
-                   <div className="qa-icon" style={{ background: "rgba(63,185,80,0.12)", color: COLOR.success }}>↙</div>
-                   <div>
-                     <div className="qa-label" style={{ color: COLOR.success }}>Repay Credit</div>
-                     <div className="qa-desc" style={{ color: COLOR.muted }}>{fmt(totalUtilized)} outstanding</div>
-                   </div>
-                   <span className="qa-arrow" style={{ color: COLOR.muted }}>→</span>
-                 </button>
-               )}
-               <Link
-                 to="/credit-lines"
-                 className="qa-btn"
-                 style={{ borderColor: "transparent", textDecoration: "none" }}
-               >
-                 <div className="qa-icon" style={{ background: "rgba(139,148,158,0.12)", color: COLOR.muted }}>📋</div>
-                 <div>
-                   <div className="qa-label" style={{ color: COLOR.text }}>View Credit Lines</div>
-                   <div className="qa-desc" style={{ color: COLOR.muted }}>Manage all your credit lines</div>
-                 </div>
-                 <span className="qa-arrow" style={{ color: COLOR.muted }}>→</span>
-               </Link>
-                {hasLines && (
-                  <CopyLoanButton creditLines={creditLines} />
-                )}
-             </div>
-           </div>
- 
-           <div className="card" style={{ animationDelay: "0.18s" }} aria-busy={loading}>
-             <h2>
-               <span className="icon">📝</span> Recent Activity
-               {!loading && (
-                 <SyncIndicator
-                   lastSyncedAt={activitySyncedAt}
-                   onRefresh={handleActivityRefresh}
-                   className="sync-indicator--card-header"
-                 />
-               )}
-             </h2>
-             {loading ? (
-               <>
-                 <div className="activity-item">
-                   <Skeleton className="activity-icon" style={{ borderRadius: "6px" }} />
-                   <div className="activity-content" style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                     <Skeleton style={{ width: "120px", height: "14px", borderRadius: "2px" }} />
-                     <Skeleton style={{ width: "180px", height: "10px", borderRadius: "2px" }} />
-                   </div>
-                   <Skeleton style={{ width: "60px", height: "14px", marginLeft: "auto", borderRadius: "2px" }} />
-                 </div>
-                 <div className="activity-item">
-                   <Skeleton className="activity-icon" style={{ borderRadius: "6px" }} />
-                   <div className="activity-content" style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                     <Skeleton style={{ width: "100px", height: "14px", borderRadius: "2px" }} />
-                     <Skeleton style={{ width: "150px", height: "10px", borderRadius: "2px" }} />
-                   </div>
-                   <Skeleton style={{ width: "50px", height: "14px", marginLeft: "auto", borderRadius: "2px" }} />
-                 </div>
-                 <div className="activity-item">
-                   <Skeleton className="activity-icon" style={{ borderRadius: "6px" }} />
-                   <div className="activity-content" style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                     <Skeleton style={{ width: "140px", height: "14px", borderRadius: "2px" }} />
-                     <Skeleton style={{ width: "160px", height: "10px", borderRadius: "2px" }} />
-                   </div>
-                   <Skeleton style={{ width: "70px", height: "14px", marginLeft: "auto", borderRadius: "2px" }} />
-                 </div>
-               </>
-             ) : recentActivity.length === 0 ? (
-               <p style={{ color: COLOR.muted, fontSize: "0.8rem", textAlign: "center", padding: "1.5rem 0" }}>
-                 No transactions yet
-               </p>
-             ) : (
-               recentActivity.map((tx, i) => (
-                 <div key={`${tx.id}-${i}`} className="activity-item">
-                   <div
-                     className="activity-icon"
-                     style={{
-                       background: `${TX_COLOR[tx.type]}15`,
-                       color: TX_COLOR[tx.type],
-                     }}
-                   >
-                     {TX_ICON[tx.type]}
-                   </div>
-                   <div className="activity-content">
-                     <div className="activity-title">{tx.note || tx.type}</div>
-                     <div className="activity-sub">{tx.lineName} · {relativeTime(tx.date)}</div>
-                   </div>
-                   {/* num-tabular: stable transaction amounts (FWC26) */}
-                   <div className="activity-amount num-tabular" style={{ color: TX_COLOR[tx.type] }}>
-                     {tx.type === "Repay" ? "+" : "-"}{fmt(tx.amount)}
-                   </div>
-                 </div>
-               ))
-             )}
-           </div>
- 
-           {notifications.length > 0 && (
-             <div className="card" style={{ animationDelay: "0.22s" }}>
-               <h2><span className="icon">🔔</span> Alerts</h2>
-               {notifications.map((note, i) => (
-                 <div 
-                   key={i} 
-                   className={`notification-item notification-item--${note.type}`}
-                   role={note.type === "danger" ? "alert" : "status"}
-                 >
-                   <span className="notification-icon" aria-hidden="true">{note.icon}</span>
-                   <div>
-                     <div className="notification-text">
-                       {note.content}
-                     </div>
-                     {note.time && (
-                       <div className="notification-time">{relativeTime(note.time)}</div>
-                     )}
-                   </div>
-                 </div>
-               ))}
-             </div>
-           )}
-         </div>
-       </div>
-      <DashboardTour />
-      {/* Centered risk-band explainer overlay (#426).  Triggered by the
-          "Explain risk bands" button rendered next to the risk gauge
-          header.  The component manages its own focus trap, body scroll
-          lock, and inert backdrop. */}
-      <RiskExplainerOverlay
-        isOpen={isExplainOpen}
-        onClose={() => setIsExplainOpen(false)}
-        triggerRef={explainTriggerRef}
+      <DashboardTourSection
+        isExplainOpen={dashboardTour.isExplainOpen}
+        explainTriggerRef={dashboardTour.explainTriggerRef}
+        closeExplain={dashboardTour.closeExplain}
       />
     </div>
   );

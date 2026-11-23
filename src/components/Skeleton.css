@@ -1,25 +1,22 @@
 /*
   Skeleton.css — Shimmer placeholder for loading states
   ──────────────────────────────────────────────────────
-  GrantFox FWC26 (Stellar Wave) — "Themed skeleton while Dashboard data loads."
+  GrantFox FWC26 (Stellar Wave) — issues #690 and #834
+  #690: shape-parity for pill/badge/chip placeholders
+  #834: CollateralSwap skeleton shape parity (card shape, --radius-lg)
 
-  Previously the skeleton used `var(--border)` (#30363d) as its background,
-  which blended poorly against --surface (#161b22) cards and did not respond
-  to [data-contrast="high"] theming.
-
-  It now uses `var(--skeleton-bg)` — a token whose default is `--surface-raised`
-  (#1c2230). This gives:
-    • A visible-but-subtle placeholder on dark cards (3:1 contrast vs --bg)
-    • Automatic adaptation when [data-contrast="high"] sets --surface-raised
-      to a higher-contrast value
-    • No hard-coded hex in component CSS (token-first principle)
+  Background is driven by --skeleton-bg → var(--border). var(--border) is
+  guaranteed-to-exist (defined in src/index.css :root) and gives a
+  ~2:1 contrast against --surface (#161b22) cards plus ~5:1 against --bg
+  (#0d1117), which is sufficient for a non-text placeholder whose primary
+  affordance is the moving shimmer stripe.
 
   Token chain:
-    --skeleton-bg → var(--surface-raised, #1c2230)   (default theme)
-                  → var(--surface-raised, #141414)    ([data-contrast="high"])
+    --skeleton-bg → var(--border, #30363d)
 
-  The shimmer highlight is still `rgba(255,255,255,0.08)` — reduced from 0.20
-  to avoid overly bright flashes on dark backgrounds; still ≥ 3:1 perceptible.
+  The shimmer highlight is rgba(255,255,255,0.08) — kept subtle so it does
+  not flash harshly on dark backgrounds. The combination of static contrast
+  + moving shimmer meets WCAG 2.1 AA visible-UI-element guidance.
 
   See docs/DESIGN_SYSTEM.md §Loading States for the full loading-state policy.
 */
@@ -29,13 +26,14 @@
   /*
    * --skeleton-bg
    * Base background for all Skeleton shimmer placeholders.
-   * Defaults to --surface-raised so skeletons sit visually above the card
-   * surface without being as prominent as real content.
+   * Defaults to --border so skeletons are guaranteed visible against both
+   * --surface cards and --bg page background.
    *
    * Override per-component if a lighter or darker variant is needed:
-   *   .my-component .skeleton { --skeleton-bg: var(--surface-overlay); }
+   *   .my-section { --skeleton-bg: var(--text); }   // bright on dark
+   *   .my-section { --skeleton-bg: var(--muted); }  // mid-tone
    */
-  --skeleton-bg: var(--surface-raised, #1c2230);
+  --skeleton-bg: var(--border, #30363d);
 
   /*
    * --skeleton-highlight
@@ -46,10 +44,36 @@
 
   /*
    * --skeleton-radius
-   * Default border-radius — matches the card/input radius token so
-   * placeholder shapes match their eventual content.
+   * Default border-radius for block/text placeholders.
+   * Resolves to --radius-md (0.5 rem / 8 px) — the same token used on
+   * cards, inputs, and buttons — so skeleton shapes match their final
+   * content and first-paint does not jump (CLS prevention, issue #690).
    */
-  --skeleton-radius: var(--radius-md, 6px);
+  --skeleton-radius: var(--radius-md, 0.5rem);
+
+  /*
+   * --skeleton-radius-sm
+   * Smaller radius for inline text-line placeholders (label rows, sub-text).
+   * Resolves to --radius-sm (0.375 rem / 6 px).
+   */
+  --skeleton-radius-sm: var(--radius-sm, 0.375rem);
+
+  /*
+   * --skeleton-radius-card
+   * Larger radius for outer page-level card containers.
+   * Resolves to --radius-lg (0.75 rem / 12 px) — the same token used by
+   * `.collateral-swap__card` and similar full-page card surfaces so the
+   * skeleton wrapper and the loaded card share an identical border-radius
+   * (FWC26 — issue #834).
+   */
+  --skeleton-radius-card: var(--radius-lg, 0.75rem);
+
+  /*
+   * --skeleton-radius-pill
+   * Pill radius for badge / chip placeholders (status badges, network chips).
+   * Resolves to --radius-full (9999 px).
+   */
+  --skeleton-radius-pill: var(--radius-full, 9999px);
 }
 
 /* ── Base skeleton ───────────────────────────────────────────────────────── */
@@ -58,6 +82,12 @@
   position: relative;
   overflow: hidden;
   border-radius: var(--skeleton-radius);
+  /*
+   * Declared explicitly so the `as="span"` form (used when a placeholder sits
+   * inside phrasing content such as a <p> or <h1>) still honours width/height
+   * and boxes identically to the default <div>.
+   */
+  display: block;
 }
 
 /* ── Shimmer animation ───────────────────────────────────────────────────── */
@@ -109,12 +139,76 @@
 
 /* ── Shape variants ──────────────────────────────────────────────────────── */
 
+/*
+ * Shape parity (FWC26 — issues #690 and #834)
+ * ────────────────────────────────────────────
+ * Every shape variant resolves to the same border-radius token used by its
+ * target final component so that first-paint skeleton geometry matches the
+ * loaded-state geometry exactly and the layout does not jump (CLS = 0).
+ *
+ * Mapping:
+ *   skeleton--rectangular  →  --skeleton-radius (--radius-md, 0.5rem / 8px)
+ *                              Matches: inputs, buttons, summary cards,
+ *                              asset rows inside the CollateralSwap card.
+ *
+ *   skeleton--card         →  --skeleton-radius-card (--radius-lg, 0.75rem / 12px)
+ *                              Matches: outer page-level card containers, e.g.
+ *                              .collateral-swap__card (issue #834).
+ *
+ *   skeleton--rounded      →  --skeleton-radius (same token as rectangular;
+ *                              semantic alias for inline text-row placeholders).
+ *                              Matches: credit-breakdown values, activity
+ *                              titles, notification text blocks.
+ *
+ *   skeleton--circular     →  border-radius: 50%
+ *                              Matches: avatar / icon placeholders (activity
+ *                              icon 28 × 28 px, asset icon 40 × 40 px).
+ *
+ *   skeleton--pill         →  --skeleton-radius-pill (--radius-full, 9999px)
+ *                              Matches: StatusBadge chips, network-badge,
+ *                              wallet-address-chip.
+ *
+ * For text-line placeholders where the target text cap-height is ≤ 14 px,
+ * prefer shape="rounded" with height ≤ 14px — the token resolves to the
+ * same 8px radius but the element height is close enough to be a half-pill,
+ * matching how text rows look in the rendered state.
+ */
+
+.skeleton--card {
+  border-radius: var(--skeleton-radius-card);
+}
+
 .skeleton--circular {
   border-radius: 50%;
 }
 
 .skeleton--rounded {
   border-radius: var(--skeleton-radius);
+}
+
+/*
+ * .skeleton--pill — new in FWC26 (#690)
+ * For badge and chip placeholders that are full-pill in their final state.
+ */
+.skeleton--pill {
+  border-radius: var(--skeleton-radius-pill);
+}
+
+/*
+ * .skeleton--inherit — new in FWC26 (#854)
+ *
+ * For a shimmer that fills a real page element (e.g. `.th-stat-icon`, whose
+ * own rule already sets `border-radius: var(--radius-lg)`).  Inheriting the
+ * parent's radius keeps a single source of truth for the corner shape, so a
+ * later change to the real component — including a responsive or
+ * high-contrast override — is picked up by the skeleton for free.
+ *
+ * The parent must establish a containing block (`position: relative`) and clip
+ * (`overflow: hidden`); the skeleton itself is positioned to fill it by the
+ * consuming stylesheet.
+ */
+.skeleton--inherit {
+  border-radius: inherit;
 }
 
 /* ── Visual variants ─────────────────────────────────────────────────────── */

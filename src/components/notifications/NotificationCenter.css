@@ -116,6 +116,7 @@
   color: var(--bg, #0d1117);
   font-size: 0.7rem;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
   padding: 0.1rem 0.4rem;
   border-radius: 10px;
   min-width: 18px;
@@ -169,6 +170,16 @@
   display: inline-flex;
   align-items: center;
   transition: opacity 0.15s;
+}
+
+.nc-btn-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.nc-shortcut-hint {
+  font-size: 0.65rem;
 }
 
 .nc-text-btn:hover         { opacity: 0.75; }
@@ -320,6 +331,11 @@
 
 .nc-item:last-child { border-bottom: none; }
 .nc-item:hover      { background: rgba(255, 255, 255, 0.03); }
+.nc-item:focus-visible,
+.nc-empty:focus-visible {
+  outline: 2px solid var(--accent, #58a6ff);
+  outline-offset: -2px;
+}
 
 .nc-item-unread { background: rgba(88, 166, 255, 0.03); }
 
@@ -357,6 +373,7 @@
 
 .nc-item-time {
   font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
   color: var(--muted, #8b949e);
   flex-shrink: 0;
 }

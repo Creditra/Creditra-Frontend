@@ -12,7 +12,7 @@
   inset: 0;
   z-index: 80;        /* above header (header has no z-index), below critical alerts */
   display: flex;
-  justify-content: flex-end; /* panel sits on the right */
+  justify-content: flex-end; /* panel sits at the logical inline end */
   pointer-events: none;      /* let backdrop handle its own clicks */
 }
 
@@ -36,9 +36,10 @@
 .kyc-drawer {
   position: relative;
   width: min(400px, 100vw);
+  inset-inline-end: 0;
   height: 100%;
   background: var(--surface);
-  border-left: 1px solid var(--border);
+  border-inline-start: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -52,7 +53,7 @@
 }
 
 @keyframes kyc-slide-in {
-  from { transform: translateX(100%); }
+  from { transform: translateX(var(--kyc-drawer-enter-offset, 100%)); }
   to   { transform: translateX(0); }
 }
 
@@ -203,6 +204,7 @@
   flex: 1;
   overflow-y: auto;
   padding: var(--space-lg) 0;
+  padding-bottom: calc(var(--space-xl) + 104px);
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
@@ -224,7 +226,7 @@
 .kyc-step:not(:last-child)::after {
   content: '';
   position: absolute;
-  left: calc(var(--space-xl) + 11px);   /* centre of the 24px icon */
+  inset-inline-start: calc(var(--space-xl) + 11px);   /* centre of the 24px icon */
   top: calc(var(--space-md) + 24px);
   bottom: calc(-1 * var(--space-md));
   width: 2px;
@@ -325,12 +327,15 @@
   border: 1px solid rgba(88, 166, 255, 0.25);
   border-radius: var(--radius-pill);
   padding: 1px 6px;
-  margin-left: var(--space-sm);
+  margin-inline-start: var(--space-sm);
   vertical-align: middle;
 }
 
 /* ── Footer / Resume CTA ────────────────────────────────────────────────── */
 .kyc-drawer__footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
   flex-shrink: 0;
   padding: var(--space-lg) var(--space-xl);
   /* Add home-indicator clearance for iOS PWA standalone mode */
@@ -339,7 +344,20 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  background: var(--surface);
+  background: rgba(22, 27, 34, 0.95);
+  box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transform: translateY(16px);
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.kyc-drawer__footer--sticky-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
 }
 
 .kyc-drawer__resume-btn {
@@ -379,7 +397,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 36px;
+  min-height: 44px;
   font-size: 0.8rem;
   color: var(--muted);
   text-decoration: none;
@@ -426,7 +444,7 @@
 .kyc-trigger-btn__dot {
   position: absolute;
   top: 8px;
-  right: 8px;
+  inset-inline-end: 8px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -449,7 +467,7 @@
     width: 100%;
     height: auto;
     max-height: 90vh;
-    border-left: none;
+    border-inline-start: none;
     border-top: 1px solid var(--border);
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
     animation: kyc-slide-up-mobile 300ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -472,11 +490,47 @@
   }
 }
 
+/* ── Narrow screens (<=375px) ──────────────────────────────────────────── */
+@media (max-width: 375px) {
+  .kyc-drawer__header {
+    padding: var(--space-lg) var(--space-md);
+  }
+
+  .kyc-drawer__title {
+    font-size: 1rem;
+  }
+
+  .kyc-drawer__subtitle {
+    font-size: 0.75rem;
+  }
+
+  .kyc-drawer__status-row {
+    padding: var(--space-md);
+  }
+
+  .kyc-step {
+    padding: var(--space-md);
+  }
+
+  .kyc-step:not(:last-child)::after {
+    inset-inline-start: calc(var(--space-md) + 11px);
+  }
+
+  .kyc-drawer__body {
+    padding-inline: var(--space-md);
+  }
+
+  .kyc-drawer__footer {
+    padding: var(--space-lg) var(--space-md);
+  }
+}
+
 /* ── Reduced motion ─────────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .kyc-drawer,
   .kyc-drawer-backdrop,
-  .kyc-drawer__progress-bar-fill {
+  .kyc-drawer__progress-bar-fill,
+  .kyc-drawer__footer {
     animation: none;
     transition: none;
   }
@@ -485,8 +539,15 @@
 /* Reduced Motion Override */
 [data-motion="reduced"] .kyc-drawer,
 [data-motion="reduced"] .kyc-drawer-backdrop,
-[data-motion="reduced"] .kyc-drawer__progress-bar-fill {
+[data-motion="reduced"] .kyc-drawer__progress-bar-fill,
+[data-motion="reduced"] .kyc-drawer__footer {
     animation: none;
     transition: none;
   }
 
+
+
+/* The drawer enters from the logical inline end in RTL layouts. */
+[dir="rtl"] .kyc-drawer {
+  --kyc-drawer-enter-offset: -100%;
+}

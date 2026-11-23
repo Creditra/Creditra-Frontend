@@ -1,6 +1,9 @@
 import { CreditLine } from "@/types/draw-credit.types";
 import { formatMoney } from "@/utils/amountValidation";
+import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
+import { projectDraw } from "@/lib/draw-projection";
 import { lineAccentColor } from "../utils/tokens";
+import { Amount } from "./Amount";
 
 interface CreditLineSummaryBlockProps {
   /** Credit line being summarised. */
@@ -40,8 +43,13 @@ export function CreditLineSummaryBlock({
 }: CreditLineSummaryBlockProps) {
   const utilized = creditLine.limit - creditLine.available;
   const safeAmount = Math.max(amount, 0);
-  const projectedUtilized = utilized + safeAmount;
-  const projectedAvailable = Math.max(creditLine.available - safeAmount, 0);
+  const projection = projectDraw(
+    creditLine,
+    safeAmount,
+    getDrawPricingQuote(creditLine, safeAmount),
+  );
+  const projectedUtilized = projection.newBalance;
+  const projectedAvailable = projection.remainingAvailable;
 
   // Deterministic accent color derived from the line's stable id.
   const accentColor = lineAccentColor(creditLine.id);
@@ -109,20 +117,20 @@ export function CreditLineSummaryBlock({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
         <div className="rounded-lg border border-border bg-background/60 p-3">
           <p className="text-muted">Limit</p>
-          <p className="text-base font-semibold text-foreground mt-1">
-            {formatMoney(creditLine.limit)}
+          <p className="text-base font-semibold text-foreground mt-1 tabular-nums">
+            <Amount value={creditLine.limit} format={formatMoney} maskedLabel="Credit limit hidden for privacy" />
           </p>
         </div>
         <div className="rounded-lg border border-border bg-background/60 p-3">
           <p className="text-muted">Utilized</p>
-          <p className="text-base font-semibold text-foreground mt-1">
-            {formatMoney(projectedUtilized)}
+          <p className="text-base font-semibold text-foreground mt-1 tabular-nums">
+            <Amount value={projectedUtilized} format={formatMoney} maskedLabel="Utilized amount hidden for privacy" />
           </p>
         </div>
         <div className="rounded-lg border border-border bg-background/60 p-3">
           <p className="text-muted">Available</p>
-          <p className="text-base font-semibold text-foreground mt-1">
-            {formatMoney(projectedAvailable)}
+          <p className="text-base font-semibold text-foreground mt-1 tabular-nums">
+            <Amount value={projectedAvailable} format={formatMoney} maskedLabel="Available credit hidden for privacy" />
           </p>
         </div>
       </div>

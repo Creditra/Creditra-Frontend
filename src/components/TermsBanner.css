@@ -1,0 +1,310 @@
+/* TermsBanner.css
+ *
+ * Design token compliant CSS for the Terms updated banner.
+ * Leverages variables from :root in src/index.css to support
+ * dark mode and high contrast.
+ */
+
+.terms-banner {
+  background: var(--accent-tint, rgba(88, 166, 255, 0.08));
+  border-bottom: 1px solid var(--accent-border, rgba(88, 166, 255, 0.3));
+  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
+  animation: tbSlideDown 0.25s ease;
+}
+
+@keyframes tbSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terms-banner {
+    animation: none;
+  }
+}
+
+.tb-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+}
+
+.tb-icon {
+  color: var(--accent, #58a6ff);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.tb-message {
+  flex: 1;
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--text, #e6edf3);
+  line-height: var(--leading-normal, 1.5);
+}
+
+.tb-message strong {
+  color: var(--text, #ffffff);
+  font-weight: var(--font-semibold, 600);
+}
+
+.tb-actions {
+  display: flex;
+  gap: var(--space-2, 0.5rem);
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Base button styles */
+.tb-btn {
+  background: none;
+  border: none;
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-semibold, 600);
+  cursor: pointer;
+  min-height: 44px; /* WCAG touch target */
+  padding: 0 var(--space-3, 0.75rem);
+  border-radius: var(--radius-sm, 4px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.tb-btn--review {
+  border: 1px solid var(--border, #30363d);
+  color: var(--text, #e6edf3);
+  background: var(--surface, #161b22);
+}
+
+.tb-btn--review:hover {
+  background: var(--border, #30363d);
+}
+
+.tb-btn--accept {
+  background: var(--accent, #58a6ff);
+  color: var(--bg, #0d1117);
+}
+
+.tb-btn--accept:hover {
+  opacity: 0.9;
+}
+
+.tb-btn--cancel {
+  border: 1px solid transparent;
+  color: var(--muted, #8b949e);
+}
+
+.tb-btn--cancel:hover {
+  color: var(--text, #e6edf3);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tb-close {
+  background: none;
+  border: none;
+  color: var(--muted, #8b949e);
+  cursor: pointer;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm, 4px);
+  transition: color 0.15s;
+}
+
+.tb-close:hover {
+  color: var(--text, #e6edf3);
+}
+
+/* Modal dialog styling */
+.tb-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: var(--space-4, 1rem);
+  animation: tbFadeIn 0.2s ease;
+}
+
+@keyframes tbFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.tb-modal {
+  background: var(--surface, #161b22);
+  border: 1px solid var(--border, #30363d);
+  border-radius: var(--radius-lg, 12px);
+  width: 100%;
+  max-width: 540px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+  animation: tbScaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+@keyframes tbScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tb-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4, 1rem) var(--space-6, 1.5rem);
+  border-bottom: 1px solid var(--border, #30363d);
+}
+
+.tb-modal-title {
+  font-size: var(--text-lg, 1.125rem);
+  font-weight: var(--font-semibold, 600);
+  color: var(--text, #e6edf3);
+}
+
+.tb-modal-close {
+  background: none;
+  border: none;
+  color: var(--muted, #8b949e);
+  cursor: pointer;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm, 4px);
+  transition: color 0.15s;
+}
+
+.tb-modal-close:hover {
+  color: var(--text, #e6edf3);
+}
+
+.tb-modal-body {
+  padding: var(--space-6, 1.5rem);
+  overflow-y: auto;
+  max-height: 50vh;
+}
+
+.tb-modal-intro {
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--muted, #8b949e);
+  margin-bottom: var(--space-4, 1rem);
+}
+
+.tb-modal-content h3 {
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-semibold, 600);
+  color: var(--accent, #58a6ff);
+  margin-top: var(--space-4, 1rem);
+  margin-bottom: var(--space-1, 0.25rem);
+}
+
+.tb-modal-content p {
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--text, #e6edf3);
+  line-height: var(--leading-normal, 1.5);
+  margin-bottom: var(--space-4, 1rem);
+}
+
+.tb-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3, 0.75rem);
+  padding: var(--space-4, 1rem) var(--space-6, 1.5rem);
+  border-top: 1px solid var(--border, #30363d);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+/* Responsive adjustment */
+@media (max-width: 768px) {
+  .tb-container {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3, 0.75rem);
+  }
+  
+  .tb-icon {
+    align-self: flex-start;
+  }
+  
+  .tb-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+  
+  .tb-btn {
+    flex: 1;
+  }
+  
+  .tb-close {
+    position: absolute;
+    top: var(--space-2, 0.5rem);
+    right: var(--space-2, 0.5rem);
+  }
+
+  .terms-banner {
+    position: relative;
+    padding-right: var(--space-10, 2.5rem);
+  }
+}
+
+/* High Contrast Mode Adaptation */
+[data-contrast="high"] .terms-banner {
+  background: #000000;
+  border-bottom: 2px solid #ffffff;
+}
+
+[data-contrast="high"] .tb-btn--review {
+  border: 2px solid #ffffff;
+  background: #000000;
+  color: #ffffff;
+}
+
+[data-contrast="high"] .tb-btn--accept {
+  background: #ffffff;
+  color: #000000;
+  border: 2px solid #ffffff;
+}
+
+[data-contrast="high"] .tb-modal {
+  border: 2px solid #ffffff;
+  background: #000000;
+}
+
+[data-contrast="high"] .tb-modal-header,
+[data-contrast="high"] .tb-modal-footer {
+  border-color: #ffffff;
+}
+
+[data-contrast="high"] .tb-modal-content h3 {
+  color: #ffffff;
+  text-decoration: underline;
+}

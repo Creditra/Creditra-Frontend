@@ -1,8 +1,25 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle, Info } from 'lucide-react';
-import { useFocusTrap } from '../hooks/useFocusTrap';
-import { formatMoney, getRepayAmountValidation, requiresRepayConfirmation } from '../utils/amountValidation';
-import { PendingButton } from './PendingButton';
+import { Modal } from './Modal';
+import { getRepayAmountValidation, requiresRepayConfirmation } from '../utils/amountValidation';
+import {
+  computeMonthlyAccruedInterest,
+  roundToCents,
+} from '../utils/currency';
+import { allocateRepayment } from '../lib/repay-allocation';
+import { offlineMutation } from '../utils/offline';
+import { submitRepayment } from '../services/repayService';
+import {
+  createSubmissionAttempt,
+  hasSucceeded,
+  recordServerResponse,
+  recordSubmissionAttempt,
+  type SubmissionAttempt,
+} from '../utils/idempotency';
+import { Skeleton } from './Skeleton';
+import { ConnectWalletPrompt } from './ConnectWalletPrompt';
+import type { RepayableBalanceResult } from '../lib/repayable-balance';
+import { SETTLEMENT_ASSET } from '../lib/repayable-balance';
 import {
   TypedAmountConfirmField,
   isTypedAmountMatch,
@@ -14,14 +31,21 @@ interface RepaymentCreditLine {
   limit: number;
   utilized: number;
   apr: number;
+  nextPaymentAmount?: number;
 }
 
 interface QuickRepayModalProps {
   creditLine: RepaymentCreditLine;
-  walletBalance: number;
+  walletBalance: number | null;
+  balanceStatus: RepayableBalanceResult['status'];
+  walletConnected: boolean;
+  /** Public key of the connected wallet; required to record the repayment. */
+  walletPublicKey?: string | null;
   initialAmount?: string;
   onClose: () => void;
   onSuccess: (amount: number) => void;
+  /** Refreshes credit data after a successful submission. */
+  refetch?: () => Promise<unknown>;
   triggerRef?: React.RefObject<HTMLElement | null>;
 }
 
@@ -79,39 +103,46 @@ const fmt = (n: number) =>
 export function QuickRepayModal({
   creditLine,
   walletBalance,
+  balanceStatus,
+  walletConnected,
+  walletPublicKey,
   initialAmount,
   onClose,
   onSuccess,
+  refetch,
   triggerRef,
 }: QuickRepayModalProps) {
   const [amountStr, setAmountStr] = useState(initialAmount || '');
   const [confirmAmountStr, setConfirmAmountStr] = useState('');
-  const [step, setStep] = useState<'confirm' | 'pending' | 'success'>('confirm');
+  const [step, setStep] = useState<'confirm' | 'pending' | 'success' | 'error'>('confirm');
+  const [errorMessage, setErrorMessage] = useState('');
+  const inFlightRef = useRef(false);
+  const submissionRef = useRef<SubmissionAttempt | null>(null);
+  const transactionIdRef = useRef<string | null>(null);
+  const modalContainerRef = useRef<HTMLDivElement>(null);
   
-  const modalRef = useFocusTrap({
-    isActive: step !== 'success',
-    triggerRef,
-    onEscape: step !== 'pending' ? onClose : undefined,
-  });
-
   useEffect(() => {
-    if (step === 'confirm') {
-      document.body.style.overflow = 'hidden';
-    } else if (step === 'success') {
-      document.body.style.overflow = '';
+    // Manage focus across step states to prevent focus dropping to body
+    if (step !== 'confirm') {
+      requestAnimationFrame(() => {
+        modalContainerRef.current?.focus();
+      });
     }
-    return () => {
-      document.body.style.overflow = '';
-    };
   }, [step]);
 
-  const totalDue = creditLine.utilized;
-  const validation = getRepayAmountValidation(amountStr, totalDue, walletBalance);
+  const accruedInterest = computeMonthlyAccruedInterest(
+    creditLine.utilized,
+    creditLine.apr,
+  );
+  const totalDue = roundToCents(creditLine.utilized + accruedInterest);
+  const hasRepayableBalance =
+    walletConnected && balanceStatus === 'ok' && walletBalance !== null;
+  const validation = getRepayAmountValidation(amountStr, totalDue, walletBalance ?? 0);
   const amount = validation.amount;
   const isInvalid = !validation.isValid;
-  
-  const remainingDebt = validation.remainingDebt;
-  const oldPct = creditLine.limit === 0 ? 0 : Math.round((creditLine.utilized / creditLine.limit) * 100);
+
+  const allocation = allocateRepayment(creditLine, amount, accruedInterest);
+  const remainingDebt = allocation.remainingTotal;
   const newPct = creditLine.limit === 0 ? 0 : Math.round((remainingDebt / creditLine.limit) * 100);
 
   const toneMeta = {
@@ -124,13 +155,78 @@ export function QuickRepayModal({
 
   const needsConfirm = requiresRepayConfirmation(amount);
   const isConfirmDisabled =
-    isInvalid || (needsConfirm && !isTypedAmountMatch(confirmAmountStr, amount));
+    !hasRepayableBalance ||
+    isInvalid ||
+    (needsConfirm && !isTypedAmountMatch(confirmAmountStr, amount));
 
-  const handleConfirm = () => {
-    setStep('pending');
-    setTimeout(() => {
+  const handleConfirm = async () => {
+    if (inFlightRef.current || step === 'pending' || step === 'success') return;
+
+    if (!walletPublicKey) {
+      setErrorMessage('Connect a wallet before submitting a repayment.');
+      setStep('error');
+      return;
+    }
+
+    if (!submissionRef.current) {
+      const created = createSubmissionAttempt({
+        creditLineId: creditLine.id,
+        incomingAssetId: 'repay',
+        initiatedAtMs: Date.now(),
+      });
+      submissionRef.current = created;
+      // Derive the transaction id from the idempotency key so retries and
+      // double clicks resolve to the same persisted record.
+      transactionIdRef.current = `TXN-${created.idempotencyKey.slice('idem_'.length)}`;
+    }
+
+    const attempt = submissionRef.current;
+    if (!attempt) return;
+
+    if (hasSucceeded(attempt)) {
       setStep('success');
-    }, 2000);
+      return;
+    }
+
+    inFlightRef.current = true;
+    setErrorMessage('');
+    setStep('pending');
+    submissionRef.current = recordSubmissionAttempt(attempt);
+    const currentAttempt = submissionRef.current;
+
+    try {
+      await offlineMutation({
+        fn: () =>
+          submitRepayment({
+            transactionId: transactionIdRef.current ?? undefined,
+            walletPublicKey,
+            creditLineId: creditLine.id,
+            creditLineName: creditLine.name,
+            amount,
+            remainingDebt,
+            limit: creditLine.limit,
+            apr: creditLine.apr,
+            nextPaymentAmount: creditLine.nextPaymentAmount,
+          }),
+        offlineMessage:
+          'You are offline. The repayment was not submitted. Reconnect and retry.',
+      });
+      submissionRef.current = recordServerResponse(currentAttempt, 'success');
+      setStep('success');
+      if (refetch) {
+        void Promise.resolve(refetch()).catch(() => undefined);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'The repayment could not be submitted. Please retry.';
+      submissionRef.current = recordServerResponse(currentAttempt, 'error', message);
+      setErrorMessage(message);
+      setStep('error');
+    } finally {
+      inFlightRef.current = false;
+    }
   };
 
   const handleCloseComplete = () => {
@@ -138,21 +234,26 @@ export function QuickRepayModal({
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fadeIn 0.2s ease' }}
-      onClick={step !== 'pending' ? onClose : undefined} role="presentation">
-      
-      <div 
-        ref={modalRef}
-        style={{ background: COLOR.surface, border: `1px solid ${COLOR.border}`, borderRadius: 12, width: '100%', maxWidth: 400, boxShadow: '0 16px 40px rgba(0,0,0,0.4)', overflow: 'hidden', animation: 'slideUp 0.3s ease' }}
-        onClick={e => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="quick-repay-title"
-      >
+    <Modal
+      isOpen
+      triggerRef={triggerRef}
+      dialogRef={modalContainerRef}
+      closeOnEscape={step !== 'pending'}
+      closeOnBackdropClick={step !== 'pending'}
+      onEscape={step !== 'pending' ? onClose : undefined}
+      onBackdropClick={step !== 'pending' ? onClose : undefined}
+      ariaLabelledBy="quick-repay-title"
+      overlayStyle={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fadeIn 0.2s ease' }}
+      dialogStyle={{ background: COLOR.surface, border: `1px solid ${COLOR.border}`, borderRadius: 12, width: '100%', maxWidth: 400, boxShadow: '0 16px 40px rgba(0,0,0,0.4)', overflow: 'hidden', animation: 'slideUp 0.3s ease' }}
+    >
         <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${COLOR.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h2 id="quick-repay-title" style={{ margin: '0 0 0.25rem', fontSize: '1.25rem', fontWeight: 600, color: COLOR.text }}>
-              {step === 'success' ? 'Repayment Successful' : 'Quick Repay'}
+              {step === 'success'
+                ? 'Repayment Successful'
+                : step === 'error'
+                  ? 'Repayment Failed'
+                  : 'Quick Repay'}
             </h2>
             {step !== 'success' && (
               <p style={{ margin: 0, fontSize: '0.85rem', color: COLOR.muted }}>
@@ -160,11 +261,64 @@ export function QuickRepayModal({
               </p>
             )}
           </div>
-          {step !== 'pending' && <button onClick={onClose} style={{ ...btn.ghost, padding: '0.4rem', borderRadius: 4 }} aria-label="Close modal">✕</button>}
+          {step !== 'pending' && <button className="focus-ring" onClick={onClose} style={{ ...btn.ghost, padding: '0.4rem', borderRadius: 4 }} aria-label="Close modal">✕</button>}
         </div>
 
-        {step === 'confirm' && (
+        {step === 'confirm' && !walletConnected && (
           <div style={{ padding: '1.5rem' }}>
+            <ConnectWalletPrompt assetCode={SETTLEMENT_ASSET.code} />
+          </div>
+        )}
+
+        {step === 'confirm' && walletConnected && balanceStatus === 'no_trustline' && (
+          <div style={{ padding: '1.5rem' }}>
+            <div
+              role="alert"
+              style={{
+                border: `1px solid ${COLOR.danger}`,
+                background: 'rgba(248,81,73,0.08)',
+                color: COLOR.text,
+                borderRadius: 8,
+                padding: '1rem',
+              }}
+            >
+              <p style={{ margin: 0, fontWeight: 600 }}>
+                Add a {SETTLEMENT_ASSET.code} trustline to repay
+              </p>
+              <p style={{ margin: '0.5rem 0 0', color: COLOR.muted }}>
+                Add the settlement-asset trustline to your wallet, then refresh your balance.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {step === 'confirm' && walletConnected && balanceStatus !== 'no_trustline' && (
+          <div style={{ padding: '1.5rem' }}>
+            <div
+              aria-busy={balanceStatus === 'loading'}
+              role="status"
+              aria-live="polite"
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '1rem',
+                color: COLOR.muted,
+                fontSize: '0.85rem',
+              }}
+            >
+              <span>{SETTLEMENT_ASSET.code} wallet balance</span>
+              {balanceStatus === 'loading' ? (
+                <>
+                  <span className="sr-only">
+                    Loading {SETTLEMENT_ASSET.code} balance
+                  </span>
+                  <Skeleton width={72} height={16} />
+                </>
+              ) : (
+                <span>{fmt(walletBalance ?? 0)}</span>
+              )}
+            </div>
             <div style={{ marginBottom: '1.5rem', background: COLOR.bg, padding: '1rem', borderRadius: 8, border: `1px solid ${COLOR.border}` }}>
               <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: COLOR.muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Outstanding debt
@@ -178,11 +332,15 @@ export function QuickRepayModal({
               <label htmlFor="quick-repay-amount" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: COLOR.text, fontWeight: 500 }}>Repayment amount</label>
               <div style={{ position: 'relative' }}>
                 <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', fontSize: '1.25rem', color: COLOR.muted }} aria-hidden="true">$</span>
-                <input
+                <input className="focus-ring"
                   id="quick-repay-amount"
                   type="number"
                   value={amountStr}
-                  onChange={(e) => setAmountStr(e.target.value)}
+                  onChange={(e) => {
+                    setAmountStr(e.target.value);
+                    submissionRef.current = null;
+                    transactionIdRef.current = null;
+                  }}
                   placeholder="0.00"
                   aria-invalid={isInvalid}
                   style={{
@@ -246,7 +404,7 @@ export function QuickRepayModal({
               />
             )}
 
-            <button
+            <button className="focus-ring"
               onClick={handleConfirm}
               disabled={isConfirmDisabled}
               style={{
@@ -283,6 +441,39 @@ export function QuickRepayModal({
           </div>
         )}
 
+        {step === 'error' && (
+          <div style={{ padding: '2.5rem 1.5rem', textAlign: 'center', animation: 'fadeIn 0.2s ease' }}>
+            <div style={{ width: 64, height: 64, background: 'rgba(248,81,73,0.15)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem' }}>
+              <AlertCircle size={32} color={COLOR.danger} aria-hidden="true" />
+            </div>
+            <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.25rem', color: COLOR.text }}>
+              Repayment failed
+            </h3>
+            <p role="alert" style={{ margin: '0 0 1.5rem', fontSize: '0.9rem', color: COLOR.muted }}>
+              {errorMessage}
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                className="focus-ring"
+                onClick={() => { void handleConfirm(); }}
+                style={{ ...btn.primary, flex: 1 }}
+              >
+                Retry
+              </button>
+              <button
+                className="focus-ring"
+                onClick={() => {
+                  setErrorMessage('');
+                  setStep('confirm');
+                }}
+                style={{ ...btn.ghost, flex: 1, border: `1px solid ${COLOR.border}` }}
+              >
+                Back
+              </button>
+            </div>
+          </div>
+        )}
+
         {step === 'success' && (
           <div style={{ padding: '2.5rem 1.5rem', textAlign: 'center', animation: 'fadeIn 0.2s ease' }}>
             <div style={{ width: 64, height: 64, background: COLOR.success, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem', animation: 'scaleIn 0.4s ease' }}>
@@ -296,12 +487,11 @@ export function QuickRepayModal({
             <p style={{ margin: '0 0 1.5rem', fontSize: '0.9rem', color: COLOR.muted }}>
               Your transaction was successful.
             </p>
-            <button onClick={handleCloseComplete} style={{ ...btn.primary, width: '100%' }}>
+            <button className="focus-ring" onClick={handleCloseComplete} style={{ ...btn.primary, width: '100%' }}>
               Back to Dashboard
             </button>
           </div>
         )}
-      </div>
 
       <style>{`
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -309,6 +499,6 @@ export function QuickRepayModal({
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes scaleIn { 0% { transform: scale(0); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
       `}</style>
-    </div>
+    </Modal>
   );
 }

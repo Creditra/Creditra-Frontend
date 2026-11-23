@@ -83,7 +83,10 @@
   gap: 4px;
 }
 
-.what-changed-tooltip.is-visible {
+/* Keyboard focus and explicit visibility share the same visual treatment.
+   Escape marks the tooltip dismissed so focus-visible cannot reopen it. */
+.what-changed-tooltip.is-visible,
+.what-changed-trigger:focus-visible + .what-changed-tooltip:not(.is-dismissed) {
   opacity: 1;
   pointer-events: auto;
   transform: translateX(-50%) translateY(0);

@@ -1,0 +1,202 @@
+/* src/pages/AmountConfirm.css
+   Styling for the AmountConfirm page.
+   Design-token and dark-mode consistent.
+*/
+
+.amount-confirm-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-xl) var(--space-lg);
+}
+
+.amount-confirm__chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+}
+
+.amount-confirm__back-btn,
+.amount-confirm__print-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+  min-height: 44px;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.amount-confirm__back-btn:hover,
+.amount-confirm__print-btn:hover {
+  background: var(--border);
+}
+
+.amount-confirm__card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+  margin-bottom: var(--space-xl);
+}
+
+.amount-confirm__header {
+  margin-bottom: var(--space-lg);
+}
+
+.amount-confirm__title {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--text);
+  margin: 0 0 var(--space-xs) 0;
+}
+
+.amount-confirm__subtitle {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  margin: 0;
+}
+
+.amount-confirm__amount-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+  text-align: center;
+  margin-bottom: var(--space-xl);
+}
+
+.amount-confirm__amount-label {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 var(--space-xs) 0;
+}
+
+.amount-confirm__amount-value {
+  font-size: var(--text-3xl);
+  font-weight: var(--font-bold);
+  color: var(--text);
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Collapsible sections */
+.amount-confirm__collapsible {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-md);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.amount-confirm__collapsible-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-lg);
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+  text-align: left;
+  min-height: 44px;
+}
+
+.amount-confirm__collapsible-trigger:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.amount-confirm__collapsible-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.amount-confirm__chevron {
+  transition: transform 0.2s ease;
+  color: var(--muted);
+}
+
+.amount-confirm__chevron--open {
+  transform: rotate(180deg);
+}
+
+.amount-confirm__collapsible-content {
+  padding: 0 var(--space-lg) var(--space-lg) var(--space-lg);
+  border-top: 1px solid var(--border);
+  margin-top: 0;
+}
+
+.amount-confirm__detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-xs) 0;
+  font-size: var(--text-sm);
+}
+
+.amount-confirm__detail-label {
+  color: var(--muted);
+}
+
+.amount-confirm__detail-value {
+  color: var(--text);
+  font-weight: var(--font-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.amount-confirm__actions {
+  display: flex;
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
+}
+
+.amount-confirm__btn {
+  flex: 1;
+  min-height: 44px;
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+
+.amount-confirm__btn--secondary {
+  background: transparent;
+  color: var(--text);
+}
+
+.amount-confirm__btn--secondary:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.amount-confirm__btn--primary {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: transparent;
+}
+
+.amount-confirm__btn--primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 600px) {
+  .amount-confirm-page {
+    padding: var(--space-md);
+  }
+
+  .amount-confirm__actions {
+    flex-direction: column-reverse;
+  }
+}

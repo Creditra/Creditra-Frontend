@@ -1,5 +1,5 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { expect, test, vi, describe, beforeEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { expect, test, vi, describe, beforeEach, afterEach } from 'vitest';
 import { OnboardingFlow } from './OnboardingFlow';
 
 // Provide a clean requestAnimationFrame polyfill (jsdom doesn't ship one)
@@ -108,6 +108,122 @@ describe('OnboardingFlow', () => {
     expect(
       screen.getByRole('button', { name: 'Get started' }),
     ).toBeInTheDocument();
+  });
+
+  describe('Tooltip primitives on OnboardingFlow', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    test('renders tooltip on hover over skip button', () => {
+      render(<OnboardingFlow {...defaultProps} />);
+      const skipBtn = screen.getByRole('button', { name: 'Skip onboarding' });
+      const wrapper = skipBtn.closest('.tooltip-wrapper')!;
+
+      fireEvent.mouseEnter(wrapper);
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
+
+      expect(screen.getByText('Skip onboarding flow')).toBeInTheDocument();
+    });
+
+    test('renders tooltip on step indicator hover', () => {
+      render(<OnboardingFlow {...defaultProps} />);
+      const indicatorBtn = screen.getByRole('button', { name: 'Step 1' });
+      const wrapper = indicatorBtn.closest('.tooltip-wrapper')!;
+
+      fireEvent.mouseEnter(wrapper);
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
+
+      expect(screen.getByText('Step 1: Welcome to Creditra')).toBeInTheDocument();
+    });
+
+    test('allows clicking step indicator to jump steps', () => {
+      render(<OnboardingFlow {...defaultProps} />);
+      const step3Indicator = screen.getByRole('button', { name: 'Step 3' });
+      fireEvent.click(step3Indicator);
+      expect(screen.getByText('Flexible Credit Lines')).toBeInTheDocument();
+    });
+  });
+
+  describe('keyboard focus (WCAG 2.1 AA — FWC26)', () => {
+    test('skip button is focusable', () => {
+      render(<OnboardingFlow {...defaultProps} />);
+      const skipBtn = screen.getByRole('button', { name: 'Skip onboarding' });
+      skipBtn.focus();
+      expect(document.activeElement).toBe(skipBtn);
+    });
+
+    test('next step button is focusable', () => {
+      render(<OnboardingFlow {...defaultProps} />);
+      const nextBtn = screen.getByRole('button', { name: 'Next step' });
+      nextBtn.focus();
+      expect(document.activeElement).toBe(nextBtn);
+    });
+
+    test('step indicator buttons are focusable', () => {
+      render(<OnboardingFlow {...defaultProps} />);
+      const indicators = screen.getAllByRole('button', { name: /^Step \d+$/ });
+      expect(indicators).toHaveLength(3);
+      indicators[0].focus();
+      expect(document.activeElement).toBe(indicators[0]);
+    });
+
+    test('all interactive elements are keyboard-reachable (skip, 3 indicators, back, next)', () => {
+      render(<OnboardingFlow {...defaultProps} />);
+      const interactive = screen.getAllByRole('button');
+      // 1 skip + 3 indicators + 1 back + 1 next = 6 buttons on step 1
+      expect(interactive).toHaveLength(6);
+      // All non-disabled buttons should accept programmatic focus
+      interactive.forEach((btn) => {
+        if (!(btn as HTMLButtonElement).disabled) {
+          btn.focus();
+          expect(document.activeElement).toBe(btn);
+        }
+      });
+    });
+
+    test('back button is disabled when on first step', () => {
+      render(<OnboardingFlow {...defaultProps} />);
+      const backBtn = screen.getByRole('button', { name: 'Go back' });
+      expect(backBtn).toBeDisabled();
+    });
+
+    test('skip button stays focusable across all steps', () => {
+      render(<OnboardingFlow {...defaultProps} />);
+      const skipBtn = screen.getByRole('button', { name: 'Skip onboarding' });
+      skipBtn.focus();
+      expect(document.activeElement).toBe(skipBtn);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Next step' }));
+      skipBtn.focus();
+      expect(document.activeElement).toBe(skipBtn);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Next step' }));
+      skipBtn.focus();
+      expect(document.activeElement).toBe(skipBtn);
+    });
+
+    test('all interactive elements have type="button" (prevents form submission)', () => {
+      render(<OnboardingFlow {...defaultProps} />);
+      const buttons = screen.getAllByRole('button');
+      buttons.forEach((btn) => {
+        expect(btn).toHaveAttribute('type', 'button');
+      });
+    });
+
+    test('step indicator buttons have aria-current for active step', () => {
+      render(<OnboardingFlow {...defaultProps} />);
+      const step1 = screen.getByRole('button', { name: 'Step 1' });
+      expect(step1).toHaveAttribute('aria-current', 'step');
+    });
   });
 
   describe('reduced-motion', () => {

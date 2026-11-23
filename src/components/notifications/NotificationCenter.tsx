@@ -13,9 +13,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNotifications } from '../../context/NotificationContext';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { useNotificationActionHandler } from '../../hooks/useNotificationActionHandler';
 import { useInertBackdrop } from '../../hooks/useInertBackdrop';
 import type { Notification, NotificationCategory } from '../../types/notification';
 import { CATEGORY_ICON, TYPE_COLOR, TYPE_ICON } from './notificationIcons';
+import { KbdHint } from '../KbdHint';
+import { useHotkey } from '../../lib/hotkeys';
 import './NotificationCenter.css';
 
 const PANEL_ID = 'notification-center';
@@ -68,6 +71,7 @@ const CATEGORIES: { value: NotificationCategory | 'all'; label: string }[] = [
   { value: 'credit_line', label: 'Credit Lines' },
   { value: 'risk_score',  label: 'Risk Score' },
   { value: 'rate_change', label: 'Rates' },
+  { value: 'auction',     label: 'Auctions' },
   { value: 'system',      label: 'System' },
 ];
 
@@ -80,6 +84,23 @@ const relativeTime = (iso: string): string => {
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
 };
+
+function isEditableElement(element: unknown): boolean {
+  if (!element || !(element instanceof HTMLElement)) return false;
+  const tag = element.tagName.toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+  return element.isContentEditable;
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (typeof document !== 'undefined' && isEditableElement(document.activeElement)) {
+    return true;
+  }
+  if (target && isEditableElement(target)) {
+    return true;
+  }
+  return false;
+}
 
 interface NotificationCenterProps {
   triggerRef?: React.RefObject<HTMLElement | null>;
@@ -117,6 +138,8 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     onEscape: closePanel,
   });
 
+  const { handleAction } = useNotificationActionHandler();
+
   useBodyScrollLock({ isLocked: isPanelOpen });
   useInertBackdrop({ isInert: isPanelOpen, modalId: PANEL_ID });
 
@@ -135,6 +158,8 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
   const filtered = filterByCategory(activeFilter);
   const dragStartY = useRef<number | null>(null);
   const panelElRef = useRef<HTMLDivElement | null>(null);
+  const emptyStateRef = useRef<HTMLDivElement | null>(null);
+  const itemRefs = useRef<(HTMLElement | null)[]>([]);
 
   const handleDragStart = (e: React.PointerEvent) => {
     dragStartY.current = e.clientY;
@@ -187,28 +212,49 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
   }, []);
 
   const handleMarkAllAsRead = useCallback(() => {
-    const prior = [...notifications];
+    const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
     const count = unreadCount;
+    let undone = false;
     const toastId = addToast({
       type: 'success',
       title: 'Marked all as read',
-      message: `${unreadCount} notification${unreadCount !== 1 ? 's' : ''}`,
+      message: `${count} notification${count !== 1 ? 's' : ''}`,
       action: {
         label: 'Undo',
         onClick: () => {
-          undoRead(prior.map(n => n.id));
+          if (undone) return;
+          undone = true;
+          undoRead(unreadIds);
           dismissToast(toastId);
         },
       },
       duration: 6000,
       saveToHistory: false,
+      bypassPreferences: true,
     });
     markAllAsRead();
     announce(count);
   }, [notifications, unreadCount, addToast, dismissToast, undoRead, markAllAsRead, announce]);
 
+  // Keyboard shortcut: Shift+R to mark all as read when panel is open
+  useHotkey({
+    combo: 'Shift+R',
+    scope: 'modal',
+    description: 'Mark all notifications as read',
+    enabled: isPanelOpen,
+    handler: (e) => {
+      if (unreadCount > 0) {
+        e.preventDefault();
+        handleMarkAllAsRead();
+      }
+    },
+  });
+
+  const pendingEmptyFocusRef = useRef(false);
+
   const handleClearAll = useCallback(() => {
     const prior = [...notifications];
+    let undone = false;
     const toastId = addToast({
       type: 'success',
       title: 'Cleared all notifications',
@@ -216,15 +262,26 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
       action: {
         label: 'Undo',
         onClick: () => {
+          if (undone) return;
+          undone = true;
           restoreNotifications(prior);
           dismissToast(toastId);
         },
       },
       duration: 6000,
       saveToHistory: false,
+      bypassPreferences: true,
     });
+    pendingEmptyFocusRef.current = true;
     clearAll();
   }, [notifications, addToast, dismissToast, restoreNotifications, clearAll]);
+
+  useEffect(() => {
+    if (pendingEmptyFocusRef.current && filtered.length === 0 && emptyStateRef.current) {
+      pendingEmptyFocusRef.current = false;
+      emptyStateRef.current.focus();
+    }
+  }, [filtered.length]);
 
   const handleItemClick = useCallback((notification: Notification) => {
     if (notification.read) {
@@ -233,6 +290,7 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     }
 
     markAsRead(notification.id);
+    let undone = false;
     const toastId = addToast({
       type: 'success',
       title: 'Marked as read',
@@ -240,14 +298,44 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
       action: {
         label: 'Undo',
         onClick: () => {
+          if (undone) return;
+          undone = true;
           undoRead([notification.id]);
           dismissToast(toastId);
         },
       },
       duration: 5500,
       saveToHistory: false,
+      bypassPreferences: true,
     });
   }, [markAsRead, addToast, dismissToast, undoRead]);
+
+  const handleItemKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLElement>, notification: Notification, index: number) => {
+      if (e.target !== e.currentTarget) return;
+
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        handleItemClick(notification);
+        return;
+      }
+
+      if (e.key === 'PageDown') {
+        e.preventDefault();
+        const next = itemRefs.current[index + 1];
+        if (next) next.focus();
+        return;
+      }
+
+      if (e.key === 'PageUp') {
+        e.preventDefault();
+        const prev = itemRefs.current[index - 1];
+        if (prev) prev.focus();
+        return;
+      }
+    },
+    [handleItemClick],
+  );
 
   return (
     <>
@@ -309,7 +397,7 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
           <div className="nc-header-left">
             <span className="nc-title">Notifications</span>
             {unreadCount > 0 && (
-              <span className="nc-badge" aria-label={`${unreadCount} unread`}>
+              <span className="nc-badge tabular-nums" aria-label={`${unreadCount} unread`}>
                 {unreadCount}
               </span>
             )}
@@ -330,7 +418,17 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
               disabled={unreadCount === 0}
               aria-label={`Mark all notifications as read${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
             >
-              Mark all read
+              <span className="nc-btn-content">
+                Mark all read
+                {unreadCount > 0 && (
+                  <KbdHint 
+                    keys={['Shift', 'R']} 
+                    variant="badge"
+                    className="nc-shortcut-hint"
+                    aria-label="Keyboard shortcut: Shift then R"
+                  />
+                )}
+              </span>
             </button>
             {notifications.length > 0 && (
               <button
@@ -395,19 +493,29 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
           aria-busy="false"
         >
           {filtered.length === 0 ? (
-            <div className="nc-empty" role="status">
+            <div
+              ref={emptyStateRef}
+              className="nc-empty"
+              role="status"
+              tabIndex={-1}
+            >
               <span className="nc-empty-icon" aria-hidden="true">🔔</span>
               <p>No notifications</p>
             </div>
           ) : (
-            filtered.map(n => {
+            filtered.map((n, index) => {
               const colors = TYPE_COLOR[n.type];
               return (
                 <article
                   key={n.id}
+                  ref={el => {
+                    itemRefs.current[index] = el;
+                  }}
+                  tabIndex={0}
                   className={`nc-item ${!n.read ? 'nc-item-unread' : ''}`}
-                  aria-label={`${n.title}${!n.read ? ', unread' : ''}`}
+                  aria-label={`${n.title}, ${n.read ? 'read' : 'unread'}`}
                   onClick={() => handleItemClick(n)}
+                  onKeyDown={e => handleItemKeyDown(e, n, index)}
                 >
                   <span
                     className="nc-item-icon"
@@ -420,7 +528,7 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
                     <div className="nc-item-header">
                       <span className="nc-item-title">{n.title}</span>
                       <time
-                        className="nc-item-time"
+                        className="nc-item-time tabular-nums"
                         dateTime={n.timestamp}
                         aria-label={`Received ${relativeTime(n.timestamp)}`}
                       >
@@ -428,16 +536,19 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
                       </time>
                     </div>
                     <p className="nc-item-message">{n.message}</p>
-                    {n.action && (
-                      <button
-                        className="nc-item-action"
-                        style={{ color: colors.text }}
-                        onClick={e => { e.stopPropagation(); n.action!.onClick(); }}
-                        aria-label={`${n.action.label} for notification: ${n.title}`}
-                      >
-                        {n.action.label} →
-                      </button>
-                    )}
+                    {n.action && (() => {
+                      const action = n.action;
+                      return (
+                        <button
+                          className="nc-item-action"
+                          style={{ color: colors.text }}
+                          onClick={e => { e.stopPropagation(); handleAction(action); }}
+                          aria-label={`${action.label} for notification: ${n.title}`}
+                        >
+                          {action.label} →
+                        </button>
+                      );
+                    })()}
                   </div>
                   {!n.read && (
                     <span className="nc-unread-dot" aria-hidden="true" />

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import {
   RepaymentSchedule,
   buildRepaymentScheduleFromLine,
@@ -8,6 +8,7 @@ import {
   type ScheduledRepayment,
 } from '../RepaymentSchedule';
 import type { CreditLine } from '../../types/creditLine';
+import * as icsUtils from '../../utils/ics';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -427,5 +428,56 @@ describe('buildRepaymentScheduleFromLines', () => {
 
   it('returns an empty array when no lines are passed', () => {
     expect(buildRepaymentScheduleFromLines([], FROZEN_NOW)).toEqual([]);
+  });
+});
+
+describe('RepaymentSchedule — Add to calendar (.ics export)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('exports unpaid installments and recurring autopay schedules and announces download', () => {
+    const downloadSpy = vi
+      .spyOn(icsUtils, 'downloadIcs')
+      .mockImplementation(() => {});
+
+    render(
+      <RepaymentSchedule
+        schedule={MIXED_SCHEDULE}
+        now={FROZEN_NOW}
+        autopaySchedules={[
+          {
+            lineId: 'line-ap',
+            lineName: 'Autopay Working Capital',
+            startDate: '2025-04-01',
+            amount: 1000,
+            frequency: 'monthly',
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add to calendar' }));
+
+    expect(downloadSpy).toHaveBeenCalledTimes(1);
+    const [filename, content] = downloadSpy.mock.calls[0];
+    expect(filename).toBe('creditra-repayment-schedule.ics');
+    // Unpaid installments are included; paid installments are excluded
+    expect(content).toContain('UID:upcoming-1-2025-03-20@creditra');
+    expect(content).not.toContain('UID:paid-1-2025-02-10@creditra');
+    // Autopay schedule is included as a recurring event
+    expect(content).toContain('UID:autopay-line-ap-2025-04-01@creditra');
+    expect(content).toContain('RRULE:FREQ=MONTHLY');
+    expect(content).toContain('BEGIN:VALARM');
+
+    // Live region announces the download
+    const statusRegions = screen.getAllByRole('status');
+    expect(
+      statusRegions.some((el) =>
+        /Downloaded creditra-repayment-schedule\.ics with 5 events/i.test(
+          el.textContent ?? '',
+        ),
+      ),
+    ).toBe(true);
   });
 });

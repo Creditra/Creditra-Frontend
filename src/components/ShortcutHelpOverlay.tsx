@@ -10,11 +10,16 @@
  *   - Keyboard trigger guarded against editable targets (see App.tsx)
  *   - Reduced-motion: entry animation suppressed (see ShortcutHelpOverlay.css)
  */
-import type { RefObject } from 'react';
+import { useMemo, type RefObject } from 'react';
 import { Link } from 'react-router-dom';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useInertBackdrop } from '../hooks/useInertBackdrop';
+import {
+  HOTKEY_SCOPE_LABELS,
+  HOTKEY_SCOPE_ORDER,
+  useRegisteredHotkeys,
+} from '../lib/hotkeys';
 import './ShortcutHelpOverlay.css';
 
 interface ShortcutHelpOverlayProps {
@@ -23,46 +28,6 @@ interface ShortcutHelpOverlayProps {
   /** Ref to the element that triggered the overlay; focus returns here on close. */
   triggerRef?: RefObject<HTMLElement | null>;
 }
-
-/** Shortcut data — one source of truth, grouped by feature area. */
-const SHORTCUT_GROUPS = [
-  {
-    title: 'Global',
-    shortcuts: [
-      { keys: ['?'], description: 'Open this keyboard shortcut guide' },
-      { keys: ['Esc'], description: 'Close the current dialog or overlay' },
-    ],
-  },
-  {
-    title: 'Navigation',
-    shortcuts: [
-      { keys: ['Tab'], description: 'Move focus to the next interactive element' },
-      { keys: ['Shift', 'Tab'], description: 'Move focus to the previous interactive element' },
-      { keys: ['Enter', 'Space'], description: 'Activate the focused button or link' },
-    ],
-  },
-  {
-    title: 'Wallet',
-    shortcuts: [
-      { keys: ['Tab'], description: 'Cycle through wallet controls and connection actions' },
-      { keys: ['Enter'], description: 'Activate the focused wallet action' },
-    ],
-  },
-  {
-    title: 'Wizard',
-    shortcuts: [
-      { keys: ['←'], description: 'Go to the previous onboarding step' },
-      { keys: ['→'], description: 'Advance to the next onboarding step' },
-    ],
-  },
-  {
-    title: 'Notifications',
-    shortcuts: [
-      { keys: ['Tab'], description: 'Move between tabs, preferences, and actions' },
-      { keys: ['Esc'], description: 'Close the notification center' },
-    ],
-  },
-] as const;
 
 export function ShortcutHelpOverlay({
   isOpen,
@@ -74,6 +39,17 @@ export function ShortcutHelpOverlay({
   const containerRef = useFocusTrap({ isActive: isOpen, triggerRef, onEscape: onClose });
   useBodyScrollLock({ isLocked: isOpen });
   useInertBackdrop({ isInert: isOpen, modalId: MODAL_ID });
+
+  const registeredHotkeys = useRegisteredHotkeys();
+  const shortcutGroups = useMemo(
+    () =>
+      HOTKEY_SCOPE_ORDER.map((scope) => ({
+        scope,
+        title: HOTKEY_SCOPE_LABELS[scope],
+        shortcuts: registeredHotkeys.filter((h) => h.scope === scope),
+      })).filter((group) => group.shortcuts.length > 0),
+    [registeredHotkeys],
+  );
 
   if (!isOpen) return null;
 
@@ -111,21 +87,21 @@ export function ShortcutHelpOverlay({
 
         {/* ── Shortcut groups ── */}
         <div className="shortcut-help-groups" role="list">
-          {SHORTCUT_GROUPS.map((group) => (
+          {shortcutGroups.map((group) => (
             <section
-              key={group.title}
+              key={group.scope}
               role="listitem"
-              aria-labelledby={`shortcut-group-${group.title}`}
+              aria-labelledby={`shortcut-group-${group.scope}`}
               className="shortcut-help-group"
             >
-              <h3 id={`shortcut-group-${group.title}`}>{group.title}</h3>
+              <h3 id={`shortcut-group-${group.scope}`}>{group.title}</h3>
               <ul>
                 {group.shortcuts.map((shortcut) => (
-                  <li key={`${group.title}-${shortcut.description}`}>
+                  <li key={shortcut.id}>
                     {/* Keys are decorative for sighted users; SR reads description only */}
                     <span className="shortcut-help-keys" aria-hidden="true">
-                      {shortcut.keys.map((key) => (
-                        <kbd key={key}>{key}</kbd>
+                      {shortcut.keys.map((key, index) => (
+                        <kbd key={`${key}-${index}`}>{key}</kbd>
                       ))}
                     </span>
                     <span>{shortcut.description}</span>

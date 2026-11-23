@@ -1,0 +1,178 @@
+.aging-page {
+  padding: 1.5rem;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.aging-page-header {
+  margin-bottom: 1.5rem;
+}
+
+.aging-page-header h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.aging-page-subtitle {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.aging-line-count {
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.aging-line-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.aging-line-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  transition: border-color 0.15s ease;
+}
+
+.aging-line-card:hover {
+  border-color: var(--accent);
+}
+
+.aging-line-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.aging-line-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.aging-line-name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.aging-line-id {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+}
+
+.aging-line-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.aging-line-metrics {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.aging-line-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.aging-line-metric-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.aging-line-metric-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.aging-line-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.aging-line-repay-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0.4rem 0.9rem;
+  border-radius: 6px;
+  color: var(--bg);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    filter 0.15s ease,
+    transform 0.15s ease;
+}
+
+.aging-line-repay-btn:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.aging-line-repay-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@media (max-width: 480px) {
+  .aging-page {
+    padding: 1rem;
+  }
+
+  .aging-page-header h1 {
+    font-size: 1.25rem;
+  }
+
+  .aging-line-header {
+    flex-direction: column;
+  }
+
+  .aging-line-metrics {
+    gap: 1rem;
+  }
+}
+
+[data-contrast="high"] .aging-line-card {
+  border-color: var(--border);
+  outline: 1px solid transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aging-line-card:hover {
+    border-color: var(--border);
+  }
+
+  .aging-line-repay-btn:hover {
+    transform: none;
+  }
+}

@@ -160,6 +160,8 @@ The table below is a full audit of every hard-coded value replaced in this PR.
 | `aria-disabled` mirrors `disabled` on action buttons | AmountInput, ConfirmationStep | 4.1.2 Name, Role, Value |
 | Credit-line list uses `<ul role="list">` / `<li>` | CreditLineSelector | 1.3.1 Info and Relationships |
 | Progress bars have `aria-label` describing the line name + percentage | CreditLineSelector, PreviewSection | 1.1.1 Non-text Content |
+| Reduced-motion: static clock icon replaces `dc-spinner-ring`; CSS kills `fadeInUp` / `dc-spin` under `prefers-reduced-motion` and `[data-motion="reduced"]` | DrawCreditPage + `DrawCreditPage.css` | 2.3.3 Animation from Interactions |
+| Keyboard-only `:focus-visible` rings for wizard controls (credit lines, presets, buttons, terms checkbox, AmountInput steppers, Contact support) | `src/styles/focus.css` + `DrawCreditPage` `.focus-ring` | 2.4.7 Focus Visible |
 
 ---
 

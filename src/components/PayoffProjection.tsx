@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { Calendar, TrendingDown, Clock, DollarSign, Pencil } from 'lucide-react';
+import { useId, useState, useMemo } from 'react';
+import { Calendar, TrendingDown, Clock, DollarSign, Info, Pencil } from 'lucide-react';
 import {
   computePayoffProjection,
   computeDefaultMonthlyPayment,
@@ -7,6 +7,15 @@ import {
   formatPayoffDate,
 } from '@/utils/payoffProjection';
 import { formatMoney } from '@/utils/amountValidation';
+import type { DayCountConvention } from '@/lib/interest';
+import { ProgressBar } from './ProgressBar';
+import type { ProgressBarVariant } from './ProgressBar';
+import { Tooltip } from './Tooltip';
+
+const DAY_COUNT_HELP_TEXT: Record<DayCountConvention, string> = {
+  'ACT/365': 'Simple interest calculated using actual elapsed days divided by a 365-day year.',
+  'ACT/360': 'Simple interest calculated using actual elapsed days divided by a 360-day year.',
+};
 
 interface PayoffProjectionProps {
   currentDebt: number;
@@ -14,6 +23,9 @@ interface PayoffProjectionProps {
   repayAmount: number;
   limit: number;
   nextPaymentAmount?: number;
+  accruedInterest?: number;
+  accruedDays?: number | null;
+  dayCount?: DayCountConvention;
 }
 
 export function PayoffProjection({
@@ -22,7 +34,11 @@ export function PayoffProjection({
   repayAmount,
   limit,
   nextPaymentAmount,
+  accruedInterest,
+  accruedDays,
+  dayCount = 'ACT/365',
 }: PayoffProjectionProps) {
+  const accruedLabelId = useId();
   const [isEditingPayment, setIsEditingPayment] = useState(false);
   const [customMonthlyPayment, setCustomMonthlyPayment] = useState<number | null>(null);
 
@@ -39,23 +55,22 @@ export function PayoffProjection({
   );
 
   const hasAmount = repayAmount > 0;
+  const showAccruedInterest =
+    accruedInterest !== undefined &&
+    Math.round(accruedInterest * 100) > 0 &&
+    accruedDays !== undefined &&
+    accruedDays !== null;
+  const daysLabel = accruedDays === 1 ? '1 day' : `${accruedDays} days`;
 
   const currentDate = formatPayoffDate(projection.currentMonths, false);
   const newDate = formatPayoffDate(projection.newMonths, projection.isFullPayoff);
 
-  const utilizationColor =
-    projection.currentUtilizationPct > 80
-      ? 'bg-red-500'
-      : projection.currentUtilizationPct > 50
-        ? 'bg-yellow-500'
-        : 'bg-green-500';
+  function utilizationVariant(pct: number): ProgressBarVariant {
+    if (pct > 80) return 'danger';
+    if (pct > 50) return 'warning';
+    return 'success';
+  }
 
-  const newUtilizationColor =
-    projection.newUtilizationPct > 80
-      ? 'bg-red-500'
-      : projection.newUtilizationPct > 50
-        ? 'bg-yellow-500'
-        : 'bg-green-500';
 
   return (
     <section
@@ -130,7 +145,7 @@ export function PayoffProjection({
                 <p className="text-xs font-medium text-muted">Months saved</p>
               </div>
               <p
-                className="mt-1 text-2xl font-bold text-accent"
+                className="mt-1 text-2xl font-bold text-accent num-tabular"
                 role="status"
                 aria-live="polite"
               >
@@ -148,7 +163,7 @@ export function PayoffProjection({
                 <p className="text-xs font-medium text-muted">Interest saved</p>
               </div>
               <p
-                className="mt-1 text-2xl font-bold text-success"
+                className="mt-1 text-2xl font-bold text-success num-tabular"
                 role="status"
                 aria-live="polite"
               >
@@ -166,34 +181,58 @@ export function PayoffProjection({
               <p className="text-xs font-medium text-muted">
                 Utilization
               </p>
-              <span className="text-xs text-muted">
+              <span className="text-xs text-muted num-tabular">
                 {projection.currentUtilizationPct}% → {projection.newUtilizationPct}%
               </span>
             </div>
-            <div className="relative h-2 w-full overflow-hidden rounded-full bg-border">
-              <div
-                className={`absolute left-0 top-0 h-full rounded-full transition-all duration-300 ${utilizationColor}`}
-                style={{ width: `${projection.currentUtilizationPct}%` }}
-                role="progressbar"
-                aria-valuenow={projection.currentUtilizationPct}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label="Current utilization"
-              />
-            </div>
-            <div className="relative h-2 w-full overflow-hidden rounded-full bg-border">
-              <div
-                className={`absolute left-0 top-0 h-full rounded-full transition-all duration-300 ${newUtilizationColor}`}
-                style={{ width: `${projection.newUtilizationPct}%` }}
-                role="progressbar"
-                aria-valuenow={projection.newUtilizationPct}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label="New utilization after repayment"
-              />
-            </div>
+            <ProgressBar
+              value={projection.currentUtilizationPct}
+              variant={utilizationVariant(projection.currentUtilizationPct)}
+              label="Current utilization"
+              size="md"
+            />
+            <ProgressBar
+              value={projection.newUtilizationPct}
+              variant={utilizationVariant(projection.newUtilizationPct)}
+              label="New utilization after repayment"
+              size="md"
+            />
           </div>
         </div>
+      )}
+
+      {showAccruedInterest && (
+        <dl
+          className="rounded-lg border border-border bg-background/40 p-3"
+          data-testid="payoff-accrued-interest"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <dt
+              id={accruedLabelId}
+              className="inline-flex items-center gap-1 font-medium text-muted"
+            >
+              <span>Interest accrued to date</span>
+              <Tooltip label={DAY_COUNT_HELP_TEXT[dayCount]}>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center rounded-full text-muted transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  aria-label={`About ${dayCount} day-count convention`}
+                >
+                  <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </Tooltip>
+            </dt>
+            <dd
+              aria-labelledby={accruedLabelId}
+              className="font-semibold text-foreground"
+            >
+              <span className="num-tabular">{formatMoney(accruedInterest)}</span>{' '}
+              <span className="font-normal text-muted">
+                ({daysLabel}, {dayCount})
+              </span>
+            </dd>
+          </div>
+        </dl>
       )}
 
       <div className="rounded-lg border border-border bg-background/40 p-3">
@@ -201,7 +240,7 @@ export function PayoffProjection({
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs font-medium text-muted">Monthly payment</p>
-              <p className="mt-0.5 text-sm font-semibold text-foreground">
+              <p className="mt-0.5 text-sm font-semibold text-foreground num-tabular">
                 {formatMoney(monthlyPayment)}
               </p>
             </div>

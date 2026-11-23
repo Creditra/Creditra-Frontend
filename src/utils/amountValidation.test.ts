@@ -1,9 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  CREDIT_RESERVE_LIMIT_RATIO,
+  CREDIT_RESERVE_MIN,
+  DEFAULT_REPAY_CONFIRM_THRESHOLD,
+  getCreditReserveFloor,
   getDrawAmountValidation,
   getRepayAmountValidation,
+  getRepayConfirmThreshold,
+  getWalletReserveFloor,
   REPAY_CONFIRM_THRESHOLD,
   requiresRepayConfirmation,
+  WALLET_RESERVE_MIN,
+  WALLET_RESERVE_RATIO,
 } from './amountValidation';
 
 describe('getDrawAmountValidation', () => {
@@ -24,6 +32,16 @@ describe('getDrawAmountValidation', () => {
     expect(result.feedback.severity).toBe('danger');
     expect(result.feedback.title).toBe('Exceeds available credit');
   });
+
+  it('reserves the 1% fee when calculating the maximum draw', () => {
+    const result = getDrawAmountValidation('35000', creditLine);
+    const maximum = getDrawAmountValidation('34653.47', creditLine);
+
+    expect(result.isValid).toBe(false);
+    expect(result.maxAmount).toBe(34653.47);
+    expect(result.feedback.message).toContain('$34,653.47');
+    expect(maximum.isValid).toBe(true);
+  });
 });
 
 describe('getRepayAmountValidation', () => {
@@ -41,6 +59,40 @@ describe('getRepayAmountValidation', () => {
     expect(result.isValid).toBe(true);
     expect(result.feedback.severity).toBe('warning');
     expect(result.feedback.title).toBe('Low wallet reserve');
+  });
+
+  it('computes the remaining debt exactly to the cent (decimal-safe)', () => {
+    // 10 - 9.99 in raw floats is 0.010000000000000016; the cents-based
+    // validation must surface a clean 0.01.
+    const result = getRepayAmountValidation('9.99', 10, 100);
+
+    expect(result.isValid).toBe(true);
+    expect(result.remainingDebt).toBe(0.01);
+    expect(result.remainingWalletBalance).toBe(90.01);
+  });
+
+  it('flags a repayment that fully clears the debt as exact full repayment', () => {
+    const result = getRepayAmountValidation('999.99', 999.99, 5000);
+
+    expect(result.isValid).toBe(true);
+    expect(result.remainingDebt).toBe(0);
+    expect(result.feedback.severity).toBe('success');
+    expect(result.feedback.title).toBe('Full repayment');
+  });
+
+  it('still flags an amount over the wallet as invalid (decimal-safe)', () => {
+    const result = getRepayAmountValidation('9.99', 5000, 9.98);
+
+    expect(result.isValid).toBe(false);
+    expect(result.feedback.severity).toBe('danger');
+    expect(result.feedback.title).toBe('Exceeds wallet balance');
+  });
+
+  it('treats an amount exactly equal to the wallet balance as valid', () => {
+    const result = getRepayAmountValidation('10.00', 10, 10.0);
+
+    expect(result.isValid).toBe(true);
+    expect(result.remainingWalletBalance).toBe(0);
   });
 });
 
@@ -80,6 +132,33 @@ describe('REPAY_CONFIRM_THRESHOLD', () => {
   });
 });
 
+describe('getRepayConfirmThreshold', () => {
+  it('defaults to 5000 when env variable is unset', () => {
+    expect(getRepayConfirmThreshold({})).toBe(5000);
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: undefined })).toBe(5000);
+  });
+
+  it('accepts 0 to disable the guard', () => {
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: '0' })).toBe(0);
+  });
+
+  it('falls back to 5000 for negative values', () => {
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: '-1' })).toBe(5000);
+  });
+
+  it('falls back to 5000 for non-numeric strings', () => {
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: 'abc' })).toBe(5000);
+  });
+
+  it('parses valid positive thresholds', () => {
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: '2500' })).toBe(2500);
+  });
+
+  it('uses default import.meta.env when called without arguments', () => {
+    expect(getRepayConfirmThreshold()).toBe(5000);
+  });
+});
+
 describe('requiresRepayConfirmation', () => {
   it('returns false for amounts below the threshold', () => {
     expect(requiresRepayConfirmation(4999)).toBe(false);
@@ -99,5 +178,38 @@ describe('requiresRepayConfirmation', () => {
   it('returns true for non-integer amounts at or above the threshold', () => {
     expect(requiresRepayConfirmation(5000.01)).toBe(true);
     expect(requiresRepayConfirmation(5250.50)).toBe(true);
+  });
+});
+
+describe('reserve floors and named constants', () => {
+  it('falls back to the named default repay threshold', () => {
+    expect(DEFAULT_REPAY_CONFIRM_THRESHOLD).toBe(5000);
+    expect(getRepayConfirmThreshold({})).toBe(DEFAULT_REPAY_CONFIRM_THRESHOLD);
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: 'abc' })).toBe(
+      DEFAULT_REPAY_CONFIRM_THRESHOLD,
+    );
+  });
+
+  it('uses the credit reserve minimum at the limit where 10% equals it', () => {
+    const boundaryLimit = CREDIT_RESERVE_MIN / CREDIT_RESERVE_LIMIT_RATIO;
+
+    expect(boundaryLimit).toBe(50000);
+    expect(getCreditReserveFloor(boundaryLimit, 35000)).toBe(CREDIT_RESERVE_MIN);
+    expect(getCreditReserveFloor(boundaryLimit + 10000, 35000)).toBe(6000);
+    expect(getCreditReserveFloor(boundaryLimit - 10000, 35000)).toBe(CREDIT_RESERVE_MIN);
+  });
+
+  it('caps the credit reserve at available credit when it is smaller than the floor', () => {
+    expect(getCreditReserveFloor(50000, CREDIT_RESERVE_MIN - 1)).toBe(CREDIT_RESERVE_MIN - 1);
+    expect(getCreditReserveFloor(50000, 0)).toBe(0);
+  });
+
+  it('uses the wallet reserve minimum at the balance where 10% equals it', () => {
+    const boundaryBalance = WALLET_RESERVE_MIN / WALLET_RESERVE_RATIO;
+
+    expect(boundaryBalance).toBe(1000);
+    expect(getWalletReserveFloor(boundaryBalance)).toBe(WALLET_RESERVE_MIN);
+    expect(getWalletReserveFloor(boundaryBalance + 1000)).toBe(200);
+    expect(getWalletReserveFloor(WALLET_RESERVE_MIN / 2)).toBe(WALLET_RESERVE_MIN / 2);
   });
 });

@@ -13,7 +13,7 @@
  *   Progress bar: role="progressbar" with valuenow/valuemin/valuemax
  *   WCAG 2.1 AA: 1.4.1, 2.1.1, 2.4.3, 4.1.2
  */
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useKyc } from '../context/KycContext';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
@@ -122,10 +122,33 @@ const DRAWER_ID = 'kyc-progress-drawer';
 
 export function KycDrawer({ isOpen, onClose, onResume, triggerRef }: KycDrawerProps) {
   const { steps, overallStatus, resumeStepId, completedCount } = useKyc();
+  const [showStickyActions, setShowStickyActions] = useState(false);
+  const bodyRef = useRef<HTMLElement | null>(null);
 
   const containerRef = useFocusTrap({ isActive: isOpen, triggerRef, onEscape: onClose });
   useBodyScrollLock({ isLocked: isOpen });
   useInertBackdrop({ isInert: isOpen, modalId: DRAWER_ID });
+
+  useEffect(() => {
+    if (!isOpen) {
+      setShowStickyActions(false);
+      return;
+    }
+
+    const scrollEl = bodyRef.current;
+    if (!scrollEl) return;
+
+    const updateStickyActions = () => {
+      setShowStickyActions(scrollEl.scrollTop > 24);
+    };
+
+    updateStickyActions();
+    scrollEl.addEventListener('scroll', updateStickyActions, { passive: true });
+
+    return () => {
+      scrollEl.removeEventListener('scroll', updateStickyActions);
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -220,7 +243,11 @@ export function KycDrawer({ isOpen, onClose, onResume, triggerRef }: KycDrawerPr
         </div>
 
         {/* ── Step list ── */}
-        <nav aria-label="KYC verification steps" className="kyc-drawer__body">
+        <nav
+          ref={bodyRef}
+          aria-label="KYC verification steps"
+          className="kyc-drawer__body"
+        >
           <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {steps.map((step, i) => (
               <StepRow
@@ -234,7 +261,10 @@ export function KycDrawer({ isOpen, onClose, onResume, triggerRef }: KycDrawerPr
         </nav>
 
         {/* ── Footer ── */}
-        <div className="kyc-drawer__footer">
+        <div
+          className={`kyc-drawer__footer ${showStickyActions ? 'kyc-drawer__footer--sticky-visible' : ''}`}
+          data-sticky-visible={showStickyActions ? 'true' : 'false'}
+        >
           <button
             type="button"
             className="kyc-drawer__resume-btn"

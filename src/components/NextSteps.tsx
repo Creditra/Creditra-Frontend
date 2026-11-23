@@ -1,8 +1,26 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Shield, Link2, Coins, CheckCircle, Clock, Lock } from "lucide-react";
+import {
+  Shield,
+  Link2,
+  Coins,
+  CheckCircle,
+  Clock,
+  Lock,
+  AlertTriangle,
+  BookOpen,
+  X,
+} from "lucide-react";
 import { useKyc } from "../context/KycContext";
 import { fetchLinkedAccounts } from "../services/linkedAccounts";
+import { useWalletIdentityKey } from "../hooks/useWalletIdentityKey";
+import { useCreditLines } from "../hooks/useCreditLines";
+import {
+  needsRiskEducationNudge,
+  RISK_EDUCATION_VERSION,
+} from "../state/riskEducation";
+import { getPaymentDueState, type PaymentDueKind } from "../lib/payment-due";
+import { readJson, writeJson } from "../utils/storage";
 import "./NextSteps.css";
 
 interface NextStepsProps {
@@ -10,10 +28,22 @@ interface NextStepsProps {
   totalUtilized: number;
 }
 
+/**
+ * Advance the wallet-scoped dismissal key. Scoped per wallet identity so a
+ * different borrower on the same browser still sees their own next steps.
+ */
+function dismissalStorageKey(owner: string | null): string | null {
+  return owner ? `creditra.next_steps_dismissed.${owner}` : null;
+}
+
 export function NextSteps({ totalAvailable, totalUtilized }: NextStepsProps) {
   const { overallStatus } = useKyc();
+  const owner = useWalletIdentityKey();
+  const { lines } = useCreditLines();
   const [hasLinkedAccount, setHasLinkedAccount] = useState<boolean | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDismissed, setIsDismissed] = useState(false);
+  const [needsRiskEducation, setNeedsRiskEducation] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -21,14 +51,14 @@ export function NextSteps({ totalAvailable, totalUtilized }: NextStepsProps) {
       .then((accounts) => {
         if (isMounted) {
           setHasLinkedAccount(accounts.length > 0);
-          setLoading(false);
+          setIsLoading(false);
         }
       })
       .catch((err) => {
         console.error("Failed to fetch linked accounts for NextSteps:", err);
         if (isMounted) {
           setHasLinkedAccount(false);
-          setLoading(false);
+          setIsLoading(false);
         }
       });
 
@@ -36,6 +66,43 @@ export function NextSteps({ totalAvailable, totalUtilized }: NextStepsProps) {
       isMounted = false;
     };
   }, []);
+
+  // Restore the per-wallet dismissal flag.
+  useEffect(() => {
+    const key = dismissalStorageKey(owner);
+    setIsDismissed(key ? readJson<boolean>(key, false) : false);
+  }, [owner]);
+
+  // Risk education is per-wallet and versioned; recompute when the wallet changes.
+  useEffect(() => {
+    setNeedsRiskEducation(
+      owner ? needsRiskEducationNudge(owner, RISK_EDUCATION_VERSION) : false,
+    );
+  }, [owner]);
+
+  const handleDismiss = () => {
+    const key = dismissalStorageKey(owner);
+    if (key) writeJson(key, true);
+    setIsDismissed(true);
+  };
+
+  // The most severe payment-due state across the borrower's credit lines.
+  const paymentDue: PaymentDueKind = useMemo(() => {
+    let worst: PaymentDueKind = "none";
+    for (const line of lines) {
+      const kind = getPaymentDueState(line);
+      if (kind === "overdue") return "overdue";
+      if (kind === "due_today") {
+        worst = "due_today";
+      } else if (kind === "upcoming" && worst === "none") {
+        worst = "upcoming";
+      }
+    }
+    return worst;
+  }, [lines]);
+
+  const hasPaymentStep = paymentDue === "overdue" || paymentDue === "due_today";
+  const isPaymentOverdue = paymentDue === "overdue";
 
   // 1. KYC Step State
   const isKycCompleted = overallStatus === "approved";
@@ -64,6 +131,22 @@ export function NextSteps({ totalAvailable, totalUtilized }: NextStepsProps) {
     ? "locked"
     : "todo";
 
+  // Step numbers reflect the rendered order, with any overdue/due-today
+  // payment step pinned to the front.
+  let stepCursor = 0;
+  const paymentStepNumber = hasPaymentStep ? ++stepCursor : 0;
+  const kycStepNumber = ++stepCursor;
+  const linkStepNumber = ++stepCursor;
+  const riskStepNumber = needsRiskEducation ? ++stepCursor : 0;
+  const drawStepNumber = ++stepCursor;
+
+  const allCompleted =
+    isKycCompleted &&
+    isLinkCompleted &&
+    isDrawCompleted &&
+    !hasPaymentStep &&
+    !needsRiskEducation;
+
   // Trigger the KYC drawer opening by simulating a click on the header's KYC button
   const handleTriggerKyc = () => {
     const kycButton = document.querySelector(".kyc-trigger-btn") as HTMLButtonElement;
@@ -72,8 +155,13 @@ export function NextSteps({ totalAvailable, totalUtilized }: NextStepsProps) {
     }
   };
 
+  // Dismissed or nothing left to do — the card stays out of the way.
+  if (isDismissed || allCompleted) {
+    return null;
+  }
+
   // If loading, render a skeleton state
-  if (loading || hasLinkedAccount === null) {
+  if (isLoading || hasLinkedAccount === null) {
     return (
       <div className="next-steps-card skeleton-loading" aria-busy="true" aria-label="Loading next steps">
         <div className="next-steps-header-skeleton" />
@@ -86,32 +174,61 @@ export function NextSteps({ totalAvailable, totalUtilized }: NextStepsProps) {
     );
   }
 
-  // If all steps are completed, we can show a success banner or hide it.
-  // The requirements say "Surface next actions ... based on state". Showing a "fully completed" state is great for UX.
-  const allCompleted = isKycCompleted && isLinkCompleted && isDrawCompleted;
-
   return (
-    <section
-      className={`next-steps-card ${allCompleted ? "next-steps-card--all-completed" : ""}`}
-      aria-labelledby="next-steps-title"
-    >
+    <section className="next-steps-card" aria-labelledby="next-steps-title">
       <div className="next-steps-header">
-        <h2 id="next-steps-title" className="next-steps-title">
-          {allCompleted ? "🎉 You're All Set!" : "⚡ Next Steps"}
-        </h2>
-        <p className="next-steps-subtitle">
-          {allCompleted
-            ? "You have completed all onboarding steps and drawn credit successfully."
-            : "Complete these actions to get started with your Creditra credit line."}
-        </p>
+        <div className="next-steps-header-text">
+          <h2 id="next-steps-title" className="next-steps-title">
+            ⚡ Next Steps
+          </h2>
+          <p className="next-steps-subtitle">
+            Complete these actions to get started with your Creditra credit line.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="next-steps-dismiss-btn focus-ring"
+          aria-label="Dismiss next steps"
+          onClick={handleDismiss}
+        >
+          <X className="next-steps-dismiss-icon" aria-hidden="true" />
+        </button>
       </div>
 
       <div className="next-steps-grid" role="list">
-        {/* Step 1: Verify KYC */}
+        {/* Payment due step — surfaced first when a payment is overdue or due today */}
+        {hasPaymentStep && (
+          <div
+            className="next-step-item next-step-item--todo"
+            role="listitem"
+            aria-label={`Step ${paymentStepNumber}: ${
+              isPaymentOverdue ? "Payment Overdue" : "Payment Due Today"
+            }. Status: Action Required`}
+          >
+            <div className="next-step-icon-container">
+              <AlertTriangle className="step-icon step-icon--todo" />
+            </div>
+            <div className="next-step-content">
+              <h3 className="step-label">
+                {isPaymentOverdue ? "Payment Overdue" : "Payment Due Today"}
+              </h3>
+              <p className="step-description">
+                {isPaymentOverdue
+                  ? "A scheduled payment is past due. Repay now to avoid further fees."
+                  : "A scheduled payment is due today. Repay now to stay current."}
+              </p>
+              <Link to="/repay" className="step-action-btn">
+                Repay Now
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* Verify KYC */}
         <div
           className={`next-step-item next-step-item--${kycStepStatus}`}
           role="listitem"
-          aria-label={`Step 1: Verify KYC. Status: ${
+          aria-label={`Step ${kycStepNumber}: Verify KYC. Status: ${
             kycStepStatus === "completed"
               ? "Completed"
               : kycStepStatus === "pending"
@@ -155,11 +272,11 @@ export function NextSteps({ totalAvailable, totalUtilized }: NextStepsProps) {
           </div>
         </div>
 
-        {/* Step 2: Link Account */}
+        {/* Link Account */}
         <div
           className={`next-step-item next-step-item--${linkStepStatus}`}
           role="listitem"
-          aria-label={`Step 2: Link Account. Status: ${
+          aria-label={`Step ${linkStepNumber}: Link Account. Status: ${
             linkStepStatus === "completed"
               ? "Completed"
               : linkStepStatus === "locked"
@@ -199,11 +316,33 @@ export function NextSteps({ totalAvailable, totalUtilized }: NextStepsProps) {
           </div>
         </div>
 
-        {/* Step 3: Draw Credit */}
+        {/* Risk education nudge — links to the existing /draw-credit?learn=1 entry point */}
+        {needsRiskEducation && (
+          <div
+            className="next-step-item next-step-item--todo"
+            role="listitem"
+            aria-label={`Step ${riskStepNumber}: Review Risk Education. Status: Action Required`}
+          >
+            <div className="next-step-icon-container">
+              <BookOpen className="step-icon step-icon--todo" />
+            </div>
+            <div className="next-step-content">
+              <h3 className="step-label">Review Risk Education</h3>
+              <p className="step-description">
+                Learn what a default is and how to avoid one before you borrow.
+              </p>
+              <Link to="/draw-credit?learn=1" className="step-action-btn">
+                Learn More
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* Draw Credit */}
         <div
           className={`next-step-item next-step-item--${drawStepStatus}`}
           role="listitem"
-          aria-label={`Step 3: Draw Credit. Status: ${
+          aria-label={`Step ${drawStepNumber}: Draw Credit. Status: ${
             drawStepStatus === "completed"
               ? "Completed"
               : drawStepStatus === "locked"

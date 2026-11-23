@@ -1,6 +1,8 @@
+import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import type { CreditLine } from '../types/creditLine';
 import { fmt, fmtDate } from '../utils/tokens';
+import './CompareLinesPanel.css';
 
 interface CompareLinesPanelProps {
   lines: CreditLine[];
@@ -8,36 +10,50 @@ interface CompareLinesPanelProps {
 }
 
 export default function CompareLinesPanel({ lines, onClose }: CompareLinesPanelProps) {
-  const [line1, line2] = lines;
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
-  const renderValue = (label: string, value1: any, value2: any, formatter?: (v: any) => string) => {
-    const v1 = formatter ? formatter(value1) : value1;
-    const v2 = formatter ? formatter(value2) : value2;
+  if (lines.length < 2) {
+    return null;
+  }
+
+  const [line1, line2] = [...lines].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+
+  const renderValue = (label: string, value1: unknown, value2: unknown, formatter?: (v: unknown) => string) => {
+    const v1 = formatter ? formatter(value1) : String(value1);
+    const v2 = formatter ? formatter(value2) : String(value2);
     const diff = v1 !== v2;
+
     return (
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', padding: '0.75rem 0', borderBottom: '1px solid var(--border)' }}>
         <div>
           <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginBottom: '0.25rem' }}>{label}</div>
-          <div style={{ fontWeight: 600, borderLeft: diff ? '3px solid var(--accent)' : '3px solid transparent', paddingLeft: '0.5rem' }}>{v1}</div>
+          <div style={{ fontWeight: 600, borderInlineStart: diff ? '3px solid var(--accent)' : '3px solid transparent', paddingInlineStart: '0.5rem' }}>{v1}</div>
         </div>
         <div>
           <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginBottom: '0.25rem' }}>{label}</div>
-          <div style={{ fontWeight: 600, borderLeft: diff ? '3px solid var(--accent)' : '3px solid transparent', paddingLeft: '0.5rem' }}>{v2}</div>
+          <div style={{ fontWeight: 600, borderInlineStart: diff ? '3px solid var(--accent)' : '3px solid transparent', paddingInlineStart: '0.5rem' }}>{v2}</div>
         </div>
       </div>
     );
   };
 
   return (
-    <div id="compare-panel" style={{
+    <div id="compare-panel" className="compare-lines-panel" style={{
       position: 'fixed',
       top: 0,
-      right: 0,
+      insetInlineEnd: 0,
       width: '480px',
       height: '100vh',
       background: 'var(--surface)',
-      borderLeft: '1px solid var(--border)',
-      boxShadow: '-4px 0 20px rgba(0,0,0,0.1)',
+
       display: 'flex',
       flexDirection: 'column',
       zIndex: 1000,

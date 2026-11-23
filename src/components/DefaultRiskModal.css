@@ -1,0 +1,338 @@
+/**
+ * DefaultRiskModal.css
+ * Styling for the GrantFox Default-Risk Education Gate modal dialog.
+ * Conforms to Creditra Design Tokens and WCAG 2.1 AA focus/contrast requirements.
+ */
+
+.default-risk-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  padding: 1rem;
+  animation: defaultRiskFadeIn 0.25s ease-out;
+}
+
+.default-risk-card {
+  background: var(--surface, #161b22);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 520px;
+  min-height: 480px;
+  padding: 2rem 2.25rem;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5), 0 0 1px rgba(255, 255, 255, 0.1);
+  animation: defaultRiskSlideUp 0.3s ease-out;
+  color: var(--text, #e6edf3);
+}
+
+/* Header badge & context */
+.default-risk-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.default-risk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  background: var(--warning-tint, rgba(210, 153, 34, 0.15));
+  color: var(--warning, #d29922);
+  border: 1px solid var(--warning-border, rgba(210, 153, 34, 0.35));
+}
+
+.default-risk-step-counter {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--muted, #8b949e);
+}
+
+/* Step Progress Indicator Bar */
+.default-risk-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+  position: relative;
+}
+
+.default-risk-indicator {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid var(--border, #30363d);
+  background: transparent;
+  color: var(--muted, #8b949e);
+  font-weight: 600;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s ease;
+  user-select: none;
+}
+
+.default-risk-indicator--active {
+  background: var(--accent, #58a6ff);
+  border-color: var(--accent, #58a6ff);
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(88, 166, 255, 0.4);
+}
+
+.default-risk-indicator--completed {
+  background: var(--success, #3fb950);
+  border-color: var(--success, #3fb950);
+  color: #ffffff;
+}
+
+.default-risk-connector {
+  flex: 1;
+  max-width: 48px;
+  height: 2px;
+  background: var(--border, #30363d);
+  transition: background-color 0.25s ease;
+}
+
+.default-risk-connector--active {
+  background: var(--success, #3fb950);
+}
+
+/* Step Content Section */
+.default-risk-content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-height: 230px;
+  justify-content: center;
+  padding: 0.5rem 0;
+}
+
+.default-risk-icon-wrapper {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+  transition: transform 0.25s ease;
+}
+
+.default-risk-icon-wrapper--info {
+  background: var(--accent-tint, rgba(88, 166, 255, 0.15));
+  color: var(--accent, #58a6ff);
+  border: 1px solid var(--accent-border, rgba(88, 166, 255, 0.35));
+}
+
+.default-risk-icon-wrapper--warning {
+  background: var(--error-tint, rgba(248, 81, 73, 0.15));
+  color: var(--danger, #f85149);
+  border: 1px solid var(--error-border, rgba(248, 81, 73, 0.35));
+}
+
+.default-risk-icon-wrapper--success {
+  background: var(--success-tint, rgba(63, 185, 80, 0.15));
+  color: var(--success, #3fb950);
+  border: 1px solid var(--success-border, rgba(63, 185, 80, 0.35));
+}
+
+.default-risk-title {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--text, #e6edf3);
+  margin: 0 0 0.75rem 0;
+  letter-spacing: -0.01em;
+}
+
+.default-risk-desc {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--muted, #8b949e);
+  margin: 0;
+  max-width: 440px;
+}
+
+/* Actions */
+.default-risk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border, #30363d);
+}
+
+.default-risk-btn-back {
+  background: transparent;
+  color: var(--text, #e6edf3);
+  border: 1px solid var(--border, #30363d);
+  padding: 0.625rem 1.5rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 100px;
+}
+
+.default-risk-btn-back:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--muted, #8b949e);
+}
+
+.default-risk-btn-back:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  outline: none !important;
+}
+
+.default-risk-btn-next {
+  background: var(--accent, #58a6ff);
+  color: #ffffff;
+  border: none;
+  padding: 0.625rem 1.75rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 120px;
+}
+
+.default-risk-btn-next:hover {
+  background: #4a8fd8;
+  box-shadow: 0 4px 12px rgba(88, 166, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+.default-risk-btn-confirm {
+  background: var(--success, #3fb950);
+  color: #ffffff;
+  border: none;
+  padding: 0.625rem 1.75rem;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 180px;
+}
+
+.default-risk-btn-confirm:hover {
+  background: #2ea043;
+  box-shadow: 0 4px 12px rgba(63, 185, 80, 0.35);
+  transform: translateY(-1px);
+}
+
+/* Accessible visible focus ring */
+.default-risk-btn-back:focus-visible,
+.default-risk-btn-next:focus-visible,
+.default-risk-btn-confirm:focus-visible {
+  outline: 2px solid var(--accent, #58a6ff) !important;
+  outline-offset: 2px !important;
+}
+
+/* Animations */
+@keyframes defaultRiskFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes defaultRiskSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .default-risk-overlay,
+  .default-risk-card,
+  .default-risk-indicator,
+  .default-risk-connector,
+  .default-risk-btn-back,
+  .default-risk-btn-next,
+  .default-risk-btn-confirm {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+[data-motion="reduced"] .default-risk-overlay,
+[data-motion="reduced"] .default-risk-card,
+[data-motion="reduced"] .default-risk-indicator,
+[data-motion="reduced"] .default-risk-connector,
+[data-motion="reduced"] .default-risk-btn-back,
+[data-motion="reduced"] .default-risk-btn-next,
+[data-motion="reduced"] .default-risk-btn-confirm {
+  animation: none !important;
+  transition: none !important;
+  transform: none !important;
+}
+
+.default-risk-header-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.default-risk-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #30363d);
+  background: transparent;
+  color: var(--muted, #8b949e);
+  cursor: pointer;
+}
+.default-risk-close:hover {
+  color: var(--text, #e6edf3);
+}
+.default-risk-close:focus-visible {
+  outline: 2px solid var(--accent, #58a6ff);
+  outline-offset: 2px;
+}
+@media (max-width: 480px) {
+  .default-risk-card {
+    padding: 1.25rem 1rem;
+    min-height: 0;
+  }
+  .default-risk-header {
+    gap: 0.5rem;
+  }
+  /* The numbered stepper already conveys progress on small screens. */
+  .default-risk-step-counter {
+    display: none;
+  }
+}

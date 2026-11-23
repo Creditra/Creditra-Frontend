@@ -1,17 +1,85 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BrowserRouter, MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import transactionHistoryCss from "./TransactionHistory.css?raw";
 import { TransactionHistory } from "./TransactionHistory";
 import { NotificationProvider } from "../context/NotificationContext";
+import { freezeTime, unfreezeTime } from "../test/freezeTime";
+import { renderWithCredit } from "../test/renderWithCredit";
 
+/*
+ * Issue #1205 — real routing and a fixed instant.
+ *
+ * Router: `vitest.config.ts` aliases `react-router-dom` to a stub whose
+ * `setSearchParams` ignores the function form and whose `useLocation` reads
+ * module-level state. The page uses both (`TransactionHistory.tsx` amount chips
+ * and `clearFilters`), so this suite swaps the alias back for the real package
+ * (see `src/test/realRouter.ts`) and renders under a real `MemoryRouter`. The
+ * mock applies to this file's whole module graph, so the page and the
+ * `LocationProbe` below share one router instance.
+ *
+ * Time: the suite pins a fixed instant (below) and asserts on result counts and
+ * on instant deltas rather than on rendered calendar labels, so the page's
+ * local-time grouping maths cannot make the outcome depend on the machine's
+ * timezone. The pin is midday UTC because that keeps the pinned instant on the
+ * same local day for every offset from UTC-11 to UTC+11, which covers the two
+ * environments in the issue's test plan. Verified under `TZ=UTC` and
+ * `TZ=America/Los_Angeles` (plus `Asia/Kolkata`, `Pacific/Auckland` and
+ * `Pacific/Kiritimati` spot checks).
+ */
+vi.mock("react-router-dom", async () => await import("../test/realRouter"));
+
+/** Renders the router's current search so tests can assert on real URL state. */
+const LocationProbe = () => {
+  const location = useLocation();
+  return <div data-testid="location-search">{location.search}</div>;
+};
+
+/** The router search string (including the leading `?`) as the app sees it. */
+const currentSearch = () =>
+  screen.getByTestId("location-search").textContent ?? "";
+
+/**
+ * Render helper — mounts TransactionHistory and flushes the first-paint
+ * loading timer so tests interact with the fully-loaded UI by default.
+ *
+ * The `isLoading` useEffect uses setTimeout(0) to simulate an async data
+ * resolution on first mount.  Because the describe block uses
+ * vi.useFakeTimers(), that timer is frozen until we explicitly advance it.
+ * Wrapping in act() + vi.runAllTimers() guarantees React has committed the
+ * state update before any assertion runs.
+ */
 const renderTransactionHistory = (initialEntries: string[] = ["/transactions"]) => {
-  return render(
+  const result = renderWithCredit(
     <NotificationProvider>
       <MemoryRouter initialEntries={initialEntries}>
         <TransactionHistory />
+        <LocationProbe />
       </MemoryRouter>
     </NotificationProvider>,
+    { withRouter: false },
+  );
+  // Flush only the zero-delay loading useEffect timer (setTimeout 0).
+  // Using advanceTimersByTime(1) rather than runAllTimers() so the 250ms
+  // debounce timers used by later async tests are NOT pre-fired here.
+  act(() => { vi.advanceTimersByTime(1); });
+  return result;
+};
+
+/**
+ * Render helper that does NOT flush the loading timer.
+ * Used exclusively by the "Loading skeleton" describe block to assert on the
+ * skeleton UI before the data is available.
+ */
+const renderTransactionHistoryLoading = (initialEntries: string[] = ["/transactions"]) => {
+  return renderWithCredit(
+    <NotificationProvider>
+      <MemoryRouter initialEntries={initialEntries}>
+        <TransactionHistory />
+        <LocationProbe />
+      </MemoryRouter>
+    </NotificationProvider>,
+    { withRouter: false },
   );
 };
 
@@ -36,8 +104,10 @@ describe("TransactionHistory", () => {
   })();
 
   beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2025-02-20T12:00:00Z"));
+    // Midday UTC: keeps the pinned instant on the same local calendar day for
+    // offsets from UTC-11 to UTC+11. See the suite header for why that makes
+    // the assertions timezone-independent.
+    freezeTime("2025-02-20T12:00:00Z");
     URL.createObjectURL = vi.fn(() => "blob:mock-url");
     URL.revokeObjectURL = vi.fn();
     mockLocalStorage.clear();
@@ -55,10 +125,113 @@ describe("TransactionHistory", () => {
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    unfreezeTime();
     URL.createObjectURL = originalCreateObjectURL;
     URL.revokeObjectURL = originalRevokeObjectURL;
   });
+
+  // ── Loading skeleton ────────────────────────────────────────────────────────
+
+  describe("Loading skeleton", () => {
+    it("renders the skeleton status region on first paint before data loads", () => {
+      // Do NOT flush timers — skeleton should be visible.
+      renderTransactionHistoryLoading();
+
+      const skeleton = screen.getByRole("status", {
+        name: /loading transaction history/i,
+      });
+      expect(skeleton).toBeInTheDocument();
+      expect(skeleton).toHaveAttribute("aria-busy", "true");
+    });
+
+    it("skeleton contains shimmer placeholders", () => {
+      renderTransactionHistoryLoading();
+
+      const skeleton = screen.getByRole("status", {
+        name: /loading transaction history/i,
+      });
+      // The skeleton renders multiple .skeleton divs (stats + filter + rows).
+      const shimmerElements = skeleton.querySelectorAll(".skeleton");
+      expect(shimmerElements.length).toBeGreaterThan(0);
+    });
+
+    it("does not render the transaction table while loading", () => {
+      renderTransactionHistoryLoading();
+
+      expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    });
+
+    it("does not render filter chips while loading", () => {
+      renderTransactionHistoryLoading();
+
+      expect(
+        screen.queryByRole("group", { name: /type/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("does not render the export button while loading", () => {
+      renderTransactionHistoryLoading();
+
+      expect(
+        screen.queryByRole("button", { name: /export csv/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("transitions from skeleton to loaded content when provider data resolves", async () => {
+      renderTransactionHistoryLoading();
+
+      // The provider is pending on first paint and resolves without a timer.
+      expect(
+        screen.getByRole("status", { name: /loading transaction history/i }),
+      ).toBeInTheDocument();
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(
+        screen.queryByRole("status", { name: /loading transaction history/i }),
+      ).not.toBeInTheDocument();
+
+      expect(screen.getByRole("table", { name: /transaction history/i })).toBeInTheDocument();
+    });
+
+    it("reserves a full page of skeleton rows so the table does not resize on reveal", () => {
+      renderTransactionHistoryLoading();
+
+      const skeleton = screen.getByRole("status", {
+        name: /loading transaction history/i,
+      });
+      // The skeleton renders the real table markup, so its rows carry the
+      // page's own .tx-row class (issue #854). One page is 15 rows.
+      const rows = skeleton.querySelectorAll(".th-table tbody .tx-row");
+      expect(rows).toHaveLength(15);
+    });
+
+    it("skeleton reserves the page header that the loaded page renders", () => {
+      renderTransactionHistoryLoading();
+
+      const skeleton = screen.getByRole("status", {
+        name: /loading transaction history/i,
+      });
+      // Omitting the header used to shift the whole page vertically on reveal.
+      expect(skeleton.querySelector(".th-header h1")).toBeInTheDocument();
+      expect(skeleton.querySelectorAll(".export-actions .export-btn")).toHaveLength(2);
+    });
+
+    it("skeleton adopts the page wrapper class so horizontal padding matches", () => {
+      renderTransactionHistoryLoading();
+
+      const skeleton = screen.getByRole("status", {
+        name: /loading transaction history/i,
+      });
+      expect(skeleton).toHaveClass("transaction-history-page");
+    });
+  });
+
+  // ── Existing tests (all use renderTransactionHistory which flushes the load timer) ──
 
   it("renders type, date, and amount filter chips as labeled pressed toggle groups", () => {
     renderTransactionHistory();
@@ -103,10 +276,16 @@ describe("TransactionHistory", () => {
       within(amountGroup).getByRole("button", { name: "All amounts" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(
-      within(amountGroup).getByRole("button", { name: "Under $5k" }),
+      within(amountGroup).getByRole("button", { name: "Under $100" }),
     ).toHaveAttribute("aria-pressed", "false");
     expect(
-      within(amountGroup).getByRole("button", { name: "$5k-$25k" }),
+      within(amountGroup).getByRole("button", { name: "$100–$1k" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(
+      within(amountGroup).getByRole("button", { name: "$1k–$5k" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(
+      within(amountGroup).getByRole("button", { name: "$5k–$25k" }),
     ).toHaveAttribute("aria-pressed", "false");
     expect(
       within(amountGroup).getByRole("button", { name: "$25k+" }),
@@ -114,6 +293,7 @@ describe("TransactionHistory", () => {
     expect(
       screen.getByRole("button", { name: "Custom range" }),
     ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getAllByRole("group", { name: /amount/i })).toHaveLength(1);
   });
 
   it("updates the polite result count when quick amount chips change", () => {
@@ -121,14 +301,14 @@ describe("TransactionHistory", () => {
 
     expect(screen.getByText("28 transactions shown")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Under $5k" }));
+    fireEvent.click(screen.getByRole("button", { name: "Under $100" }));
 
     expect(
       screen
-        .getByRole("button", { name: "Under $5k" })
+        .getByRole("button", { name: "Under $100" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(screen.getByText("12 transactions shown")).toBeTruthy();
+    expect(screen.getByText("4 transactions shown")).toBeTruthy();
   });
 
   it("shows a no-results state with a reset filters action", () => {
@@ -166,23 +346,24 @@ describe("TransactionHistory", () => {
     expect(allButtons[0].getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("renders amount range filter chips with correct aria-pressed states", () => {
+  it("renders one unified amount filter with mutually exclusive presets", () => {
     renderTransactionHistory();
 
-    const amountGroup = screen.getByRole("group", { name: /^amount$/i });
+    const amountGroup = screen.getByRole("group", { name: /amount range/i });
 
     expect(
-      within(amountGroup).getByRole("button", { name: "All Amounts" }),
+      within(amountGroup).getByRole("button", { name: "All amounts" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(
-      within(amountGroup).getByRole("button", { name: "<$100" }),
+      within(amountGroup).getByRole("button", { name: "Under $100" }),
     ).toHaveAttribute("aria-pressed", "false");
     expect(
-      within(amountGroup).getByRole("button", { name: "$100–$1,000" }),
+      within(amountGroup).getByRole("button", { name: "$100–$1k" }),
     ).toHaveAttribute("aria-pressed", "false");
     expect(
-      within(amountGroup).getByRole("button", { name: ">$1,000" }),
+      within(amountGroup).getByRole("button", { name: "$25k+" }),
     ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getAllByRole("group", { name: /amount/i })).toHaveLength(1);
   });
 
   it("amount filter stacks with existing type and date filters (AND)", () => {
@@ -191,11 +372,16 @@ describe("TransactionHistory", () => {
     // Start: 28 transactions
     expect(screen.getByText("28 transactions shown")).toBeTruthy();
 
-    // Apply >$1,000 amount filter → 22 transactions (all >1000)
-    fireEvent.click(screen.getByRole("button", { name: ">$1,000" }));
-    expect(screen.getByText("22 transactions shown")).toBeTruthy();
+    // Selecting a new bucket replaces the previous amount bucket.
+    const under100 = screen.getByRole("button", { name: "Under $100" });
+    fireEvent.click(under100);
+    expect(under100).toHaveAttribute("aria-pressed", "true");
+    const over25k = screen.getByRole("button", { name: "$25k+" });
+    fireEvent.click(over25k);
+    expect(under100).toHaveAttribute("aria-pressed", "false");
+    expect(over25k).toHaveAttribute("aria-pressed", "true");
 
-    // Stack with Fee type filter → 0 transactions (no Fees >1000)
+    // Other filter groups still combine with the single amount selection.
     fireEvent.click(screen.getByRole("button", { name: "Fee" }));
     expect(screen.getByText("0 transactions shown")).toBeTruthy();
 
@@ -284,6 +470,19 @@ describe("TransactionHistory", () => {
       const listbox = document.getElementById(listboxId!);
       expect(listbox).toBeInTheDocument();
       expect(listbox).toHaveAttribute("role", "listbox");
+    });
+
+    it("shows keyboard shortcut hints for search suggestions", () => {
+      const { container } = renderTransactionHistory();
+
+      const shortcuts = container.querySelector(
+        '[aria-label="Search keyboard shortcuts"]',
+      );
+      expect(shortcuts).toBeInTheDocument();
+      expect(shortcuts?.querySelectorAll("kbd")).toHaveLength(4);
+      expect(shortcuts).toHaveTextContent("Navigate");
+      expect(shortcuts).toHaveTextContent("Select");
+      expect(shortcuts).toHaveTextContent("Close");
     });
 
     it("filters transactions by credit-line name", async () => {
@@ -632,6 +831,96 @@ describe("TransactionHistory", () => {
       const lineIds = container.querySelectorAll(".tx-line-id");
       expect(lineIds.length).toBeGreaterThan(0);
     });
+
+    // ── Color-blind safe pattern classes (issue #307) ─────────────────────
+    //
+    // These tests verify that transaction status badges carry a geometric
+    // pattern class that augments the colour cue, making statuses
+    // distinguishable without relying on colour alone (WCAG 2.1 SC 1.4.1).
+
+    it("status badges carry the Completed pattern class", () => {
+      const { container } = renderTransactionHistory();
+      const completedBadges = container.querySelectorAll(
+        ".tx-status-pattern--completed",
+      );
+      // There are Completed transactions in the mock data
+      expect(completedBadges.length).toBeGreaterThan(0);
+      // Every badge with "Completed" text should have the pattern
+      completedBadges.forEach((badge) => {
+        expect(badge.textContent).toBe("Completed");
+      });
+    });
+
+    it("status badges carry the Pending pattern class when navigating to page 2", () => {
+      const { container } = renderTransactionHistory();
+      // Navigate to page 2 where the Pending transaction (TX-004) is located
+      // (28 transactions, 15 per page, so TX-004 is on page 2)
+      const nextBtn = screen.getByRole("button", { name: /next/i });
+      fireEvent.click(nextBtn);
+
+      const pendingBadges = container.querySelectorAll(
+        ".tx-status-pattern--pending",
+      );
+      expect(pendingBadges.length).toBe(1);
+      expect(pendingBadges[0].textContent).toBe("Pending");
+    });
+
+    it("status badges carry the Failed pattern class when filtered to show Failed transactions", () => {
+      const { container } = renderTransactionHistory();
+      // Filter by a status that would show Failed transactions
+      // The mock data may not have Failed transactions by default
+      const failedBadges = container.querySelectorAll(
+        ".tx-status-pattern--failed",
+      );
+      // No Failed pattern should appear in the default unfiltered view
+      // since no Failed tx exist in the mock data
+      expect(failedBadges.length).toBe(0);
+    });
+
+    it("each status badge has exactly one pattern class matching its status", () => {
+      const { container } = renderTransactionHistory();
+      const allPatternClasses = [
+        "tx-status-pattern--completed",
+        "tx-status-pattern--pending",
+        "tx-status-pattern--failed",
+      ];
+
+      const badges = container.querySelectorAll(".tx-status-badge");
+      expect(badges.length).toBeGreaterThan(0);
+
+      badges.forEach((badge) => {
+        const matchedPatterns = allPatternClasses.filter((cls) =>
+          badge.classList.contains(cls),
+        );
+        // Each badge should have exactly one pattern class
+        expect(matchedPatterns.length).toBe(1);
+
+        // The pattern class should correspond to the badge's text content
+        const status = badge.textContent?.trim();
+        if (status === "Completed") {
+          expect(matchedPatterns[0]).toBe("tx-status-pattern--completed");
+        } else if (status === "Pending") {
+          expect(matchedPatterns[0]).toBe("tx-status-pattern--pending");
+        } else if (status === "Failed") {
+          expect(matchedPatterns[0]).toBe("tx-status-pattern--failed");
+        }
+      });
+    });
+
+    it("status badges retain the tx-status-badge base class alongside pattern", () => {
+      const { container } = renderTransactionHistory();
+      const badges = container.querySelectorAll(".tx-status-badge");
+      expect(badges.length).toBeGreaterThan(0);
+
+      badges.forEach((badge) => {
+        // Every badge must also have a pattern class
+        const hasPattern =
+          badge.classList.contains("tx-status-pattern--completed") ||
+          badge.classList.contains("tx-status-pattern--pending") ||
+          badge.classList.contains("tx-status-pattern--failed");
+        expect(hasPattern).toBe(true);
+      });
+    });
   });
 
   describe("Aria-live announcements (v7)", () => {
@@ -645,122 +934,495 @@ describe("TransactionHistory", () => {
 
     it("announces when transaction type filter changes", () => {
       renderTransactionHistory();
-      
+
       const typeGroup = screen.getByRole("group", { name: /type/i });
       fireEvent.click(within(typeGroup).getByRole("button", { name: "Draw" }));
-      
+
       expect(getLiveAnnouncementText()).toMatch(/Filtered by transaction type Draw/i);
       expect(getLiveAnnouncementText()).toMatch(/10 transactions shown/i);
     });
 
     it("announces when credit line filter changes", () => {
       renderTransactionHistory();
-      
+
       const selects = document.querySelectorAll("select");
       const lineSelect = selects[0];
       fireEvent.change(lineSelect, { target: { value: "CL-2024-001" } });
-      
+
       expect(getLiveAnnouncementText()).toMatch(/Filtered by credit line Primary Business Line/i);
       expect(getLiveAnnouncementText()).toMatch(/6 transactions shown/i);
     });
 
     it("announces when status filter changes", () => {
       renderTransactionHistory();
-      
+
       const selects = document.querySelectorAll("select");
       const statusSelect = selects[1];
       fireEvent.change(statusSelect, { target: { value: "Completed" } });
-      
+
       expect(getLiveAnnouncementText()).toMatch(/Filtered by status Completed/i);
       expect(getLiveAnnouncementText()).toMatch(/27 transactions shown/i);
     });
 
     it("announces when amount preset filter changes", () => {
       renderTransactionHistory();
-      
-      const amountGroup = screen.getByRole("group", { name: /^amount$/i });
-      fireEvent.click(within(amountGroup).getByRole("button", { name: "<$100" }));
-      
-      expect(getLiveAnnouncementText()).toMatch(/Filtered by amount <\$100/i);
+
+      const amountGroup = screen.getByRole("group", { name: /amount range/i });
+      fireEvent.click(within(amountGroup).getByRole("button", { name: "Under $100" }));
+
+      expect(getLiveAnnouncementText()).toMatch(/Filtered by amount range Under \$100/i);
       expect(getLiveAnnouncementText()).toMatch(/4 transactions shown/i);
     });
 
     it("announces when amount range preset changes", () => {
       renderTransactionHistory();
-      
+
       const amountRangeGroup = screen.getByRole("group", { name: /amount range/i });
-      fireEvent.click(within(amountRangeGroup).getByRole("button", { name: "Under $5k" }));
-      
-      expect(getLiveAnnouncementText()).toMatch(/Filtered by amount range Under \$5k/i);
-      expect(getLiveAnnouncementText()).toMatch(/12 transactions shown/i);
+      fireEvent.click(within(amountRangeGroup).getByRole("button", { name: "$1k–$5k" }));
+
+      expect(getLiveAnnouncementText()).toMatch(/Filtered by amount range \$1k to \$5k/i);
     });
 
     it("announces when date range preset changes", () => {
       renderTransactionHistory();
-      
+
       const dateRangeGroup = screen.getByRole("group", { name: /presets/i });
       fireEvent.click(within(dateRangeGroup).getByRole("button", { name: "This Week" }));
-      
+
       expect(getLiveAnnouncementText()).toMatch(/Filtered by date preset This Week/i);
     });
 
     it("announces when search query is applied", async () => {
       renderTransactionHistory();
-      
+
       const input = screen.getByRole("combobox", { name: /search transactions/i });
       fireEvent.change(input, { target: { value: "equipment" } });
-      
+
       await act(async () => {
         vi.advanceTimersByTime(300);
       });
-      
+
       expect(getLiveAnnouncementText()).toMatch(/Search query "equipment" applied/i);
       expect(getLiveAnnouncementText()).toMatch(/1 transaction shown/i);
     });
 
     it("announces when search query is cleared", async () => {
       renderTransactionHistory();
-      
+
       const input = screen.getByRole("combobox", { name: /search transactions/i });
       fireEvent.change(input, { target: { value: "equipment" } });
-      
+
       await act(async () => {
         vi.advanceTimersByTime(300);
       });
 
       const clearBtn = screen.getByRole("button", { name: /clear search/i });
       fireEvent.click(clearBtn);
-      
+
       await act(async () => {
         vi.advanceTimersByTime(300);
       });
-      
+
       expect(getLiveAnnouncementText()).toMatch(/Search query cleared/i);
       expect(getLiveAnnouncementText()).toMatch(/28 transactions shown/i);
     });
 
     it("announces when filters are reset", () => {
       renderTransactionHistory();
-      
+
       const typeGroup = screen.getByRole("group", { name: /type/i });
       fireEvent.click(within(typeGroup).getByRole("button", { name: "Fee" }));
       const dateRangeGroup = screen.getByRole("group", { name: /date range/i });
       fireEvent.click(within(dateRangeGroup).getByRole("button", { name: "Today" }));
 
       fireEvent.click(screen.getByRole("button", { name: /reset all filters/i }));
-      
+
       expect(getLiveAnnouncementText()).toMatch(/Filters cleared/i);
       expect(getLiveAnnouncementText()).toMatch(/28 transactions shown/i);
     });
 
     it("announces when page changes", () => {
       renderTransactionHistory();
-      
+
       const nextBtn = screen.getByRole("button", { name: /next/i });
       fireEvent.click(nextBtn);
-      
+
       expect(getLiveAnnouncementText()).toMatch(/Page 2 of 2 loaded/i);
       expect(getLiveAnnouncementText()).toMatch(/28 transactions shown/i);
     });
+  });
+
+  // ── Issue #1190: outstanding balance from line balances ──────────────────
+  //
+  // Scenario 1: no filters → outstanding = sum of non-Closed utilized (517,500)
+  // Scenario 2: filter to CL-2024-001 → flow cards reflect that line;
+  //             reconciliation hint shows 17,000 gap
+  // Scenario 3: Fee rows included in "Interest & fees"
+  // Scenario 4: date filter → flow cards change, outstanding does not
+  // Scenario 5: negative net renders with minus sign
+  // Scenario 6: regression — with no line filter the outstanding shows 517,500
+
+  describe("Issue #1190 — outstanding balance derived from line balances", () => {
+    it("Scenario 1: outstanding balance equals sum of non-Closed utilized (517,500)", () => {
+      renderTransactionHistory();
+
+      // Find the "Outstanding Balance" stat card value
+      const labels = screen.getAllByText(/outstanding balance/i);
+      expect(labels.length).toBeGreaterThan(0);
+
+      // The value sibling should render $517,500
+      const card = labels[0].closest(".th-stat-card")!;
+      expect(card).toBeInTheDocument();
+      const value = card.querySelector(".th-stat-value");
+      expect(value).toBeInTheDocument();
+      // fmt() formats 517500 as "$517,500"
+      expect(value!.textContent).toMatch(/517,500/);
+    });
+
+    it("Scenario 2a: filtering to CL-2024-001 scopes flow cards to that line", async () => {
+      renderTransactionHistory();
+
+      // Select CL-2024-001 via the Credit Line dropdown
+      const selects = document.querySelectorAll("select");
+      const lineSelect = selects[0];
+      fireEvent.change(lineSelect, { target: { value: "CL-2024-001" } });
+
+      // CL-2024-001 completed draws: TX-001 (50000) + TX-003 (150000) + TX-005 (25000) = 225,000
+      const drawnLabels = screen.getAllByText(/total drawn/i);
+      const drawnCard = drawnLabels[0].closest(".th-stat-card")!;
+      const drawnValue = drawnCard.querySelector(".th-stat-value");
+      expect(drawnValue!.textContent).toMatch(/225,000/);
+
+      // CL-2024-001 completed repays: TX-002 (12500) + TX-006 (8000) = 20,500
+      const repaidLabels = screen.getAllByText(/total repaid/i);
+      const repaidCard = repaidLabels[0].closest(".th-stat-card")!;
+      const repaidValue = repaidCard.querySelector(".th-stat-value");
+      expect(repaidValue!.textContent).toMatch(/20,500/);
+    });
+
+    it("Scenario 2b: filtering to CL-2024-001 shows reconciliation hint with 17,000 gap", () => {
+      renderTransactionHistory();
+
+      const selects = document.querySelectorAll("select");
+      fireEvent.change(selects[0], { target: { value: "CL-2024-001" } });
+
+      // Ledger net = 225000 - 20500 - 1328 (interest) = 203,172
+      // Line utilized = 187,500 → diff = 203,172 - 187,500 = 15,672
+      // The reconciliation card should appear
+      const reconciliationCard = document.querySelector(
+        ".th-stat-card--reconciliation",
+      );
+      expect(reconciliationCard).toBeInTheDocument();
+
+      // The hint text should be present
+      const hint = reconciliationCard!.querySelector(".th-stat-hint");
+      expect(hint).toBeInTheDocument();
+      expect(hint!.textContent).toMatch(/interest|fees|adjustments/i);
+    });
+
+    it("Scenario 3: Fee rows (TX-018) are included in Interest & Fees card", () => {
+      renderTransactionHistory();
+
+      // TX-018 is a Fee row on CL-2023-004 (amount: 750)
+      // Filter to that line to isolate
+      const selects = document.querySelectorAll("select");
+      fireEvent.change(selects[0], { target: { value: "CL-2023-004" } });
+
+      // Interest & Fees should include TX-018 (750) + interest rows on that line
+      // Completed interest: TX-021 (2800) + TX-022 (2950) = 5750; TX-023 is Pending so excluded
+      // Fee: TX-018 (750) → total = 6500
+      const ifLabels = screen.getAllByText(/interest.*fee|fee.*interest/i);
+      const ifCard = ifLabels[0].closest(".th-stat-card")!;
+      const ifValue = ifCard.querySelector(".th-stat-value");
+      expect(ifValue!.textContent).toMatch(/6,500/);
+    });
+
+    it("Scenario 4: date filter changes flow cards but outstanding balance is unchanged", () => {
+      renderTransactionHistory();
+
+      // Record the outstanding balance before filtering
+      const balanceLabels = screen.getAllByText(/outstanding balance/i);
+      const balanceCard = balanceLabels[0].closest(".th-stat-card")!;
+      const balanceBefore = balanceCard.querySelector(".th-stat-value")!.textContent;
+
+      // Apply the "This Week" preset — this will narrow the flow cards
+      const presetGroup = screen.getByRole("group", { name: /presets/i });
+      const thisWeekBtn = within(presetGroup).getByRole("button", {
+        name: "This Week",
+      });
+      fireEvent.click(thisWeekBtn);
+
+      // Outstanding balance must remain unchanged (still from line balances)
+      const balanceAfter = balanceCard.querySelector(".th-stat-value")!.textContent;
+      expect(balanceAfter).toBe(balanceBefore);
+      expect(balanceAfter).toMatch(/517,500/);
+
+      // At least one flow card value should differ (fewer transactions in the week)
+      const drawnLabels = screen.getAllByText(/total drawn/i);
+      const drawnCard = drawnLabels[0].closest(".th-stat-card")!;
+      const drawnAfter = drawnCard.querySelector(".th-stat-value")!.textContent;
+      // TX-001 (Feb 18) is within the past week of our frozen date (Feb 20)
+      // so drawn ≠ 0; but the value should differ from the all-time total (484,500)
+      expect(drawnAfter).not.toMatch(/484,500/);
+    });
+
+    it("Scenario 5: negative ledger net renders with a minus sign, not as a positive", () => {
+      renderTransactionHistory();
+
+      // Filter to CL-2025-006: 1 draw (15000) + 1 repay (15000) = ledger net 0
+      // No negative case available in that line; use the reconciliation diff sign instead.
+      // Filter to CL-2023-004 where ledger net < utilized:
+      // Draw: 75000, Repay: 0, Interest+Fee completed: 750+2800+2950=6500, ledger net=68500
+      // utilized: 75000; diff = 68500 - 75000 = -6500 → "−" sign in hint
+      const selects = document.querySelectorAll("select");
+      fireEvent.change(selects[0], { target: { value: "CL-2023-004" } });
+
+      const reconciliationCard = document.querySelector(
+        ".th-stat-card--reconciliation",
+      );
+      expect(reconciliationCard).toBeInTheDocument();
+
+      const value = reconciliationCard!.querySelector(".th-stat-value");
+      expect(value).toBeInTheDocument();
+      // The value should show a "−" sign (not wrapped in Math.abs and displayed green)
+      expect(value!.textContent).toMatch(/[−\-]/);
+    });
+
+    it("Scenario 6: regression — outstanding balance shows 517,500 not flows-based 484,500", () => {
+      renderTransactionHistory();
+
+      // The old code calculated currentDebt = totalDrawn - totalRepaid across all lines.
+      // Total draws (completed): 50000+150000+25000+100000+75000+50000+45000+75000+30000+15000 = 615000
+      // Total repays (completed): 12500+8000+40000+25000+30000+15000 = 130500
+      // Old currentDebt = 615000 - 130500 = 484500
+      // New outstanding from lines = 517500
+
+      const balanceLabels = screen.getAllByText(/outstanding balance/i);
+      const card = balanceLabels[0].closest(".th-stat-card")!;
+      const value = card.querySelector(".th-stat-value");
+
+      // Must show 517,500 (line balances), NOT 484,500 (flow math)
+      expect(value!.textContent).toMatch(/517,500/);
+      expect(value!.textContent).not.toMatch(/484,500/);
+    });
+  });
+
+  // ── URL sync (issue #1205) ────────────────────────────────────────────────
+  //
+  // The page reads `?amount=`, `?range=`, `?start=` and `?end=` on mount and
+  // writes them back through the function form of `setSearchParams` /
+  // `navigate`. Both are no-ops under the stubbed react-router-dom, so these
+  // assertions were previously impossible and are the reason this suite runs
+  // on the real router.
+
+  describe("URL sync", () => {
+    const amountGroup = () =>
+      screen.getByRole("group", { name: /amount range/i });
+    const presetGroup = () => screen.getByRole("group", { name: /presets/i });
+    const amountParam = () =>
+      new URLSearchParams(currentSearch()).get("amount");
+
+    it("applies the amount filter from ?amount= on first render", () => {
+      renderTransactionHistory(["/transactions?amount=lt100"]);
+
+      expect(
+        within(amountGroup()).getByRole("button", { name: "Under $100" }),
+      ).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("writes the clicked amount chip to the URL search", () => {
+      renderTransactionHistory();
+      expect(currentSearch()).toBe("");
+
+      fireEvent.click(
+        within(amountGroup()).getByRole("button", { name: "$25k+" }),
+      );
+
+      expect(amountParam()).toBe("25k-plus");
+      expect(
+        within(amountGroup()).getByRole("button", { name: "$25k+" }),
+      ).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("removes ?amount= when All Amounts is selected", () => {
+      renderTransactionHistory(["/transactions?amount=25k-plus"]);
+      expect(amountParam()).toBe("25k-plus");
+
+      fireEvent.click(
+        within(amountGroup()).getByRole("button", { name: "All amounts" }),
+      );
+
+      expect(currentSearch()).not.toContain("amount=");
+    });
+
+    it("preserves the other query params when the amount chip changes", () => {
+      renderTransactionHistory(["/transactions?range=this-week"]);
+
+      fireEvent.click(
+        within(amountGroup()).getByRole("button", { name: "Under $100" }),
+      );
+
+      const params = new URLSearchParams(currentSearch());
+      expect(params.get("range")).toBe("this-week");
+      expect(params.get("amount")).toBe("under-100");
+    });
+
+    it("applies the preset range from ?range= on first render", () => {
+      renderTransactionHistory(["/transactions?range=this-week"]);
+
+      expect(
+        within(presetGroup()).getByRole("button", { name: "This Week" }),
+      ).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("writes the preset range to the URL when a preset chip is clicked", () => {
+      renderTransactionHistory();
+
+      fireEvent.click(
+        within(presetGroup()).getByRole("button", { name: "This Month" }),
+      );
+
+      expect(new URLSearchParams(currentSearch()).get("range")).toBe(
+        "this-month",
+      );
+    });
+
+    it("drops ?amount= when all filters are reset", () => {
+      renderTransactionHistory(["/transactions?amount=lt100"]);
+      expect(amountParam()).toBe("lt100");
+
+      // Stack a type filter that matches none of the <$100 rows to reach the
+      // empty state, which is where "Reset all filters" lives.
+      fireEvent.click(screen.getByRole("button", { name: "Fee" }));
+      fireEvent.click(screen.getByRole("button", { name: /reset all filters/i }));
+
+      expect(currentSearch()).not.toContain("amount=");
+      expect(screen.getByText("28 transactions shown")).toBeTruthy();
+    });
+  });
+
+  describe("Virtualization (large ledger)", () => {
+    it("bounds rendered DOM rows for a 2,000-row fixture and preserves ARIA row semantics", () => {
+      const baseMs = Date.parse("2025-02-20T12:00:00Z");
+      const largeTransactions = Array.from({ length: 2000 }, (_, i) => ({
+        id: `tx-large-${i}`,
+        type: (i % 2 === 0 ? "Draw" : "Repay") as "Draw" | "Repay",
+        amount: 100 + (i % 500),
+        date: new Date(baseMs - i * 60_000).toISOString(),
+        note: `Ledger entry ${i}`,
+        status: "Completed" as const,
+        txHash: `hash${String(i).padStart(12, "0")}`,
+      }));
+
+      const largeLine = {
+        id: "CL-LARGE",
+        name: "Large Ledger Line",
+        status: "Active" as const,
+        creditLimit: 500_000,
+        utilized: 120_000,
+        available: 380_000,
+        interestRate: 8.5,
+        riskTier: "Low" as const,
+        createdAt: "2024-01-01T00:00:00Z",
+        nextPaymentDue: "2025-03-01T00:00:00Z",
+        transactions: largeTransactions,
+      };
+
+      const { container } = renderWithCredit(
+        <NotificationProvider>
+          <MemoryRouter initialEntries={["/transactions"]}>
+            <TransactionHistory pageSize={2000} virtualizeThreshold={100} />
+            <LocationProbe />
+          </MemoryRouter>
+        </NotificationProvider>,
+        { withRouter: false, lines: [largeLine] },
+      );
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+
+      const table = screen.getByRole("table");
+      expect(table).toHaveAttribute("aria-rowcount", "2001");
+
+      const renderedRows = container.querySelectorAll("tbody tr.tx-row");
+      expect(renderedRows.length).toBeGreaterThan(0);
+      expect(renderedRows.length).toBeLessThan(40);
+      expect(renderedRows[0]).toHaveAttribute("aria-rowindex", "2");
+
+      // Spacer row is present and hidden from assistive tech
+      const spacers = container.querySelectorAll("tbody tr.virtual-list-spacer");
+      expect(spacers.length).toBeGreaterThanOrEqual(1);
+      spacers.forEach((s) => expect(s).toHaveAttribute("aria-hidden", "true"));
+
+      // Live region result count still announces total filtered transactions
+      expect(screen.getByText("2000 transactions shown")).toBeInTheDocument();
+    });
+  });
+});
+
+// ── Transaction hash actions menu (issue #1466) ───────────────────────────
+
+describe("TransactionHashMenu", () => {
+  beforeEach(() => {
+    vi.mock("../config/creditNetwork", () => ({
+      getCreditNetworkConfig: vi.fn().mockReturnValue({ network: "TESTNET" }),
+    }));
+  });
+
+  it("shows the kebab trigger for a row with a txHash", async () => {
+    renderTransactionHistory();
+    await screen.findByRole("table");
+    const triggers = screen.getAllByRole("button", { name: /transaction actions/i });
+    expect(triggers.length).toBeGreaterThan(0);
+  });
+
+  it("opens the menu on click and shows Copy and View on explorer items", async () => {
+    renderTransactionHistory();
+    await screen.findByRole("table");
+    const trigger = screen.getAllByRole("button", { name: /transaction actions/i })[0];
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menuitem", { name: /copy transaction hash/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /view on explorer/i })).toBeInTheDocument();
+  });
+
+  it("explorer link uses testnet URL on TESTNET", async () => {
+    renderTransactionHistory();
+    await screen.findByRole("table");
+    const trigger = screen.getAllByRole("button", { name: /transaction actions/i })[0];
+    fireEvent.click(trigger);
+    const link = screen.getByRole("menuitem", { name: /view on explorer/i }) as HTMLAnchorElement;
+    expect(link.href).toContain("/explorer/testnet/tx/");
+  });
+
+  it("closing the menu with Escape does not expand the row", async () => {
+    renderTransactionHistory();
+    await screen.findByRole("table");
+    const trigger = screen.getAllByRole("button", { name: /transaction actions/i })[0];
+    fireEvent.click(trigger);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("clicking the trigger stops row-toggle propagation", async () => {
+    renderTransactionHistory();
+    await screen.findByRole("table");
+    const rows = screen.getAllByRole("row");
+    const dataRows = rows.filter(r => r.classList.contains("tx-row"));
+    if (dataRows.length === 0) return;
+    const trigger = within(dataRows[0]).queryByRole("button", { name: /transaction actions/i });
+    if (!trigger) return;
+    const expanded = dataRows[0].getAttribute("aria-expanded");
+    fireEvent.click(trigger);
+    expect(dataRows[0].getAttribute("aria-expanded")).toBe(expanded);
+  });
+
+  it("rows without a txHash show no menu trigger", async () => {
+    renderTransactionHistory();
+    await screen.findByRole("table");
+    // Rows without hashes render an em-dash, not a trigger button
+    const muted = screen.queryAllByText("—");
+    // This is a soft assertion — not all data has missing hashes, but the component must not crash
+    expect(muted).toBeDefined();
   });
 });

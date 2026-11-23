@@ -1,0 +1,21 @@
+/* High‑contrast theme overrides (WCAG AAA, 7:1 minimum) */
+[data-contrast="high"] {
+  /* Backgrounds */
+  --bg: #000000;
+  --surface: #0a0a0a;
+  --surface-raised: #141414;
+  --surface-overlay: rgba(0, 0, 0, 0.92);
+
+  /* Borders – fully opaque white */
+  --border: #ffffff;
+
+  /* Typography */
+  --text: #ffffff;
+  --muted: #d4d4d4;
+
+  /* Semantic colours – ≥7:1 on black */
+  --accent: #7dd3fc;
+  --success: #86efac;
+  --warning: #fde047;
+  --error: #fca5a5;
+}

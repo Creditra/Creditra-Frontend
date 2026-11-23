@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="Digital Dragon #567">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#052e16"/><stop offset="1" stop-color="#0891b2"/></linearGradient>
+<radialGradient id="r" cx=".5" cy=".42" r=".5"><stop offset="0" stop-color="#fff" stop-opacity=".35"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>
+<rect width="400" height="400" fill="url(#g)"/><rect width="400" height="400" fill="url(#r)"/>
+<path d="M90 260 C 110 140, 210 90, 300 120 L 270 150 L 320 165 L 275 185 C 250 240, 170 260, 90 260 Z" fill="#22d3ee" fill-opacity=".85"/><path d="M140 230 l20 -40 l20 35 l20 -45 l20 40" stroke="#ecfeff" stroke-width="5" fill="none" stroke-linejoin="round"/><circle cx="255" cy="140" r="9" fill="#fef08a"/><path d="M110 250 L 60 300 L 120 280 Z" fill="#06b6d4"/>
+<text x="200" y="370" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,sans-serif" font-size="22" font-weight="700" fill="#fff" fill-opacity=".9">Digital Dragon #567</text>
+</svg>

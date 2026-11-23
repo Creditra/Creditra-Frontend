@@ -15,3 +15,26 @@
   flex-shrink: 0;
   stroke-width: 5px;
 }
+
+.aging-tag__shortcut {
+  margin-left: 0.25rem;
+}
+
+.aging-tag__shortcut .kbd-hint-key {
+  min-width: 1.1rem;
+  height: 1.1rem;
+  font-size: 0.6rem;
+  padding: 0 0.2rem;
+  border-radius: 2px;
+  background-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: inherit;
+  box-shadow: none;
+}
+
+[data-contrast="high"] .aging-tag__shortcut .kbd-hint-key {
+  background-color: var(--surface-raised, #141414);
+  border-color: var(--border, #ffffff);
+  color: var(--text, #ffffff);
+}
+

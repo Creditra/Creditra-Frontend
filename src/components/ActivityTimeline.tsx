@@ -4,7 +4,7 @@ import './ActivityTimeline.css';
 /**
  * Types for activity entries. Adjust according to your backend schema.
  */
-interface ActivityEntry {
+export interface ActivityEntry {
   id: string;
   type: string; // e.g., 'borrow', 'repay', 'payment'
   timestamp: string; // ISO date string
@@ -13,19 +13,38 @@ interface ActivityEntry {
 
 /**
  * ActivityTimeline component displays a list of user activities.
- * Currently uses a mock fetch; replace with real API call as needed.
+ * When `entries` is provided, renders those entries directly; otherwise
+ * falls back to the mock fetch.
  */
-const ActivityTimeline: React.FC = () => {
-  const [activities, setActivities] = useState<ActivityEntry[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+export interface ActivityTimelineProps {
+  filter?: string;
+  entries?: ActivityEntry[];
+}
+
+const ActivityTimeline: React.FC<ActivityTimelineProps> = ({ filter, entries }) => {
+  const [activities, setActivities] = useState<ActivityEntry[]>(entries ?? []);
+  const [isLoading, setIsLoading] = useState<boolean>(entries === undefined);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (entries !== undefined) {
+      setActivities(entries);
+      setIsLoading(false);
+      setError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setActivities([]);
+    setIsLoading(true);
+    setError(null);
+
     // TODO: replace mock data with real API call (e.g., fetch('/api/user/activity'))
     const fetchActivities = async () => {
       try {
         // Simulate network delay
         await new Promise(res => setTimeout(res, 500));
+        if (cancelled) return;
         const mockData: ActivityEntry[] = [
           {
             id: '1',
@@ -41,16 +60,20 @@ const ActivityTimeline: React.FC = () => {
           },
         ];
         setActivities(mockData);
-        setLoading(false);
+        setIsLoading(false);
       } catch (e) {
+        if (cancelled) return;
         setError('Failed to load activity');
-        setLoading(false);
+        setIsLoading(false);
       }
     };
     fetchActivities();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [filter, entries]);
 
-  if (loading) {
+  if (isLoading) {
     return <div className="activity-loading" aria-live="polite">Loading activity...</div>;
   }
 

@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { CreditLineDetailDrawer } from '../CreditLineDetailDrawer';
 import type { CreditLine } from '../../types/creditLine';
@@ -57,8 +58,15 @@ describe('CreditLineDetailDrawer', () => {
     vi.clearAllMocks();
   });
 
+  const renderDrawer = (line: CreditLine = mockCreditLine) =>
+    render(
+      <MemoryRouter>
+        <CreditLineDetailDrawer line={line} onClose={mockOnClose} />
+      </MemoryRouter>
+    );
+
   it('renders credit line details correctly', () => {
-    render(<CreditLineDetailDrawer line={mockCreditLine} onClose={mockOnClose} />);
+    renderDrawer();
 
     // Renders header information
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -81,24 +89,59 @@ describe('CreditLineDetailDrawer', () => {
     // Facility details
     expect(screen.getByText('710')).toBeInTheDocument();
     expect(screen.getByText('Accounts Receivable')).toBeInTheDocument();
+
+    // Action links
+    expect(screen.getByRole('link', { name: /Repay/i })).toHaveAttribute('href', '/repay?line=CL-TEST-001');
+    expect(screen.getByRole('link', { name: /Draw Credit/i })).toHaveAttribute('href', '/draw-credit?line=CL-TEST-001');
+    expect(screen.getByRole('link', { name: /Transactions/i })).toHaveAttribute('href', '/transactions?line=CL-TEST-001');
   });
 
   it('renders inline SVG sparkline and transaction history', () => {
-    render(<CreditLineDetailDrawer line={mockCreditLine} onClose={mockOnClose} />);
+    renderDrawer();
 
     // Sparkline trend is rendered
     expect(screen.getByLabelText('Sparkline showing credit line balance history')).toBeInTheDocument();
 
     // Transactions list
-    expect(screen.getByText('Draw')).toBeInTheDocument();
-    expect(screen.getByText('Repay')).toBeInTheDocument();
+    expect(screen.getAllByText('Draw').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Repay').length).toBeGreaterThan(0);
     expect(screen.getByText('Purchase inventory')).toBeInTheDocument();
     expect(screen.getByText('-$40,000')).toBeInTheDocument();
     expect(screen.getByText('+$10,000')).toBeInTheDocument();
   });
 
+  it('renders activity timeline and empty states when chart histories are absent', () => {
+    renderDrawer();
+
+    // Activity timeline combines transactions + statusHistory
+    expect(screen.getByRole('list', { name: /User activity timeline/i })).toBeInTheDocument();
+    expect(screen.getByText(/Status: Active — Line opened/i)).toBeInTheDocument();
+
+    // Graceful empty states when aprHistory and healthHistory are missing
+    expect(screen.getByText(/No APR history available/i)).toBeInTheDocument();
+    expect(screen.getByText(/No health factor history available/i)).toBeInTheDocument();
+  });
+
+  it('renders APR and Health Factor charts when fixture data exists', () => {
+    renderDrawer({
+      ...mockCreditLine,
+      aprHistory: [
+        { date: '2025-01-01', apr: 8.2 },
+        { date: '2025-02-01', apr: 8.5 },
+      ],
+      healthHistory: [
+        { date: '2025-01-01', value: 2.4 },
+        { date: '2025-02-01', value: 2.5 },
+      ],
+    });
+
+    expect(screen.queryByText(/No APR history available/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No health factor history available/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: /APR history time window/i })).toBeInTheDocument();
+  });
+
   it('calls onClose when clicking the close button', () => {
-    render(<CreditLineDetailDrawer line={mockCreditLine} onClose={mockOnClose} />);
+    renderDrawer();
 
     const closeBtn = screen.getByLabelText('Close details drawer');
     fireEvent.click(closeBtn);
@@ -107,7 +150,7 @@ describe('CreditLineDetailDrawer', () => {
   });
 
   it('calls onClose when Escape key is pressed', () => {
-    render(<CreditLineDetailDrawer line={mockCreditLine} onClose={mockOnClose} />);
+    renderDrawer();
 
     // Fire keydown Escape on document/dialog container
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape', code: 'Escape' });

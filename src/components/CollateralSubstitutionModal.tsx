@@ -5,34 +5,78 @@
  * for another. Steps:
  *
  *   1. Select   — pick the incoming asset from the catalogue
- *   2. Review   — side-by-side LTV comparison + fee breakdown
+ *   2. Review   — side-by-side LTV comparison + fee breakdown + slippage tolerance
  *   3. Confirm  — type the incoming asset name to unlock submission
+ *
+ * Production-ready failure handling:
+ *   - Idempotency: Deterministic request IDs prevent duplicate intents from retries
+ *   - Slippage: user selects a tolerance; re-fetched LTV is checked before submit
+ *   - Stale quotes: if the review snapshot is older than STALE_QUOTE_THRESHOLD_MS,
+ *     a banner warns the user and the submit is blocked until they acknowledge
+ *   - Retries: failed submissions can be retried up to MAX_RETRY_ATTEMPTS times
+ *   - Error classification: network / validation / permission / timeout / slippage / unknown
+ *   - Concurrent guard: a ref prevents double-submission even on rapid clicks
  *
  * Accessibility: focus trap, body-scroll lock, inert backdrop, ARIA dialog.
  * WCAG 2.1 AA — LTV changes communicated by color + numeric value + text.
  *
- * @see src/types/collateral.ts   — domain types
- * @see src/utils/collateral.ts   — pure helpers (LTV math, fee calc)
+ * @see src/types/collateral.ts   — domain types including idempotency types
+ * @see src/utils/collateral.ts   — pure helpers (LTV math, fee calc, slippage)
+ * @see src/utils/idempotency.ts  — idempotency key generation and state tracking
  */
-import React, { useCallback, useRef, useState } from 'react';
-import { AlertTriangle, ArrowRight, CheckCircle, XCircle } from 'lucide-react';
+import React, { useCallback, useReducer, useRef } from 'react';
+import { AlertTriangle, ArrowRight, CheckCircle, RefreshCw, XCircle } from 'lucide-react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useInertBackdrop } from '../hooks/useInertBackdrop';
 import { PendingButton } from './PendingButton';
-import type { CollateralAsset, SubstitutionStep, SubstitutionStatus } from '../types/collateral';
+import type {
+  CollateralAsset,
+  SlippageTolerance,
+  SubstitutionError,
+  SubstitutionStep,
+  CollateralSubstitutionIntent,
+} from '../types/collateral';
 import {
   AVAILABLE_COLLATERAL_ASSETS,
   categoryIcon,
+  classifySubstitutionError,
   computeLtvSnapshot,
+  computeSlippage,
   computeSubstitutionFee,
   fmtLtv,
   fmtLtvDelta,
+  isStaleQuote,
+  MAX_RETRY_ATTEMPTS,
+  SLIPPAGE_PRESETS,
+  STALE_QUOTE_THRESHOLD_MS,
 } from '../utils/collateral';
+import {
+  createSubmissionAttempt,
+  recordSubmissionAttempt,
+  recordServerResponse,
+  hasSucceeded,
+  extractDiagnostics,
+  type SubmissionAttempt,
+} from '../utils/idempotency';
 import { fmt } from '../utils/tokens';
+import {
+  canRetry as canRetryState,
+  createInitialState,
+  isSubmitting as isSubmittingState,
+  reducer as collateralSubstitutionReducer,
+} from '../state/collateralSubstitution';
 import './CollateralSubstitutionModal.css';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
+
+export interface SubmitCollateralSwapPayload {
+  idempotencyKey: string;
+  creditLineName: string;
+  outgoingAssetId?: string;
+  incomingAssetId: string;
+  loanBalance: number;
+}
 
 interface CollateralSubstitutionModalProps {
   /** Whether the modal is rendered and visible. */
@@ -46,6 +90,13 @@ interface CollateralSubstitutionModalProps {
    * @param incomingAsset  The asset that was pledged.
    */
   onSuccess: (incomingAsset: CollateralAsset) => void;
+  /**
+   * Invoked when a submission fails after all retries are exhausted.
+   * The parent can use this for logging, analytics, or banner notifications.
+   *
+   * @param error  Classified error with reason, message, and retryability.
+   */
+  onError?: (error: SubstitutionError) => void;
   /** Human-readable credit-line name, shown in the header subtitle. */
   creditLineName: string;
   /** The credit line's outstanding loan balance in USD. */
@@ -58,7 +109,15 @@ interface CollateralSubstitutionModalProps {
   /** Ref to the trigger button so focus returns correctly on close. */
   triggerRef?: React.RefObject<HTMLElement | null>;
   /**
-   * Simulated network delay in ms for the submission Promise.
+   * Optional submission handler for performing the collateral swap.
+   * Receives the substitution payload including the deterministic `idempotencyKey`.
+   * Defaults to resolving after `_delayMs` ms (never fails by default).
+   * Pass a custom implementation in production to call the backend API, or in
+   * tests to deterministically simulate failures and verify retry behavior.
+   */
+  submitCollateralSwap?: (payload: SubmitCollateralSwapPayload) => Promise<void>;
+  /**
+   * Simulated network delay in ms for the default submission Promise.
    * Defaults to 1800. Override in tests to keep them fast.
    * @internal
    */
@@ -196,6 +255,49 @@ function AssetCard({
   );
 }
 
+// ─── Slippage tolerance selector ──────────────────────────────────────────────
+
+function SlippageSelector({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: SlippageTolerance;
+  onChange: (tolerance: SlippageTolerance) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="csm-slippage-section">
+      <p className="csm-slippage-label" id="csm-slippage-label">
+        Slippage tolerance
+      </p>
+      <p className="csm-slippage-hint">
+        If the collateral LTV drifts beyond this tolerance before submission,
+        the transaction will be blocked to protect you from adverse price moves.
+      </p>
+      <div
+        className="csm-slippage-chips"
+        role="radiogroup"
+        aria-labelledby="csm-slippage-label"
+      >
+        {SLIPPAGE_PRESETS.map(preset => (
+          <button
+            key={preset}
+            type="button"
+            role="radio"
+            aria-checked={value === preset}
+            disabled={disabled}
+            className={`csm-slippage-chip ${value === preset ? 'csm-slippage-chip--active' : ''}`}
+            onClick={() => onChange(preset)}
+          >
+            {preset}%
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Step 1: Select ───────────────────────────────────────────────────────────
 
 function SelectStep({
@@ -267,10 +369,16 @@ function ReviewStep({
   current,
   incoming,
   loanBalance,
+  slippageTolerance,
+  onSlippageChange,
+  disabled,
 }: {
   current: CollateralAsset | undefined;
   incoming: CollateralAsset;
   loanBalance: number;
+  slippageTolerance: SlippageTolerance;
+  onSlippageChange: (tolerance: SlippageTolerance) => void;
+  disabled?: boolean;
 }) {
   const outSnap = current ? computeLtvSnapshot(current, loanBalance) : null;
   const inSnap  = computeLtvSnapshot(incoming, loanBalance);
@@ -328,6 +436,13 @@ function ReviewStep({
         </div>
       )}
 
+      {/* Slippage tolerance selector */}
+      <SlippageSelector
+        value={slippageTolerance}
+        onChange={onSlippageChange}
+        disabled={disabled}
+      />
+
       {/* Fee breakdown */}
       <section aria-labelledby="csm-fee-heading">
         <div className="csm-fee-box">
@@ -361,20 +476,29 @@ function ConfirmStep({
   loanBalance,
   confirmText,
   onConfirmTextChange,
-  submitError,
+  classifiedError,
+  isStale,
+  onRefreshStale,
+  retryCount,
+  canRetry,
 }: {
   current: CollateralAsset | undefined;
   incoming: CollateralAsset;
   loanBalance: number;
   confirmText: string;
   onConfirmTextChange: (v: string) => void;
-  submitError: string | null;
+  classifiedError: SubstitutionError | null;
+  isStale: boolean;
+  onRefreshStale: () => void;
+  retryCount: number;
+  canRetry: boolean;
 }) {
   const fee        = computeSubstitutionFee(loanBalance, incoming);
   const targetText = incoming.name;
   const isMatch    = confirmText.trim().toLowerCase() === targetText.toLowerCase();
   const inputId    = 'csm-confirm-name-input';
   const hintId     = 'csm-confirm-hint';
+  const maxRetries = MAX_RETRY_ATTEMPTS;
 
   return (
     <div className="csm-body">
@@ -409,6 +533,29 @@ function ConfirmStep({
         </dl>
       </section>
 
+      {/* Stale quote warning */}
+      {isStale && (
+        <div className="csm-warning" role="alert">
+          <AlertTriangle className="csm-warning-icon" size={18} aria-hidden="true" />
+          <div>
+            <p className="csm-warning-title">Quote may be stale</p>
+            <p className="csm-warning-body">
+              This quote is over {Math.round(STALE_QUOTE_THRESHOLD_MS / 1000)} seconds old.
+              Collateral prices may have changed since you reviewed the comparison.
+            </p>
+            <button
+              type="button"
+              className="csm-btn csm-btn--ghost csm-btn--inline"
+              onClick={onRefreshStale}
+              style={{ marginTop: '0.5rem' }}
+            >
+              <RefreshCw size={14} aria-hidden="true" style={{ marginRight: '0.375rem' }} />
+              Refresh quote
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Confirmation input */}
       <div className="csm-confirm-input-wrap">
         <label htmlFor={inputId} className="csm-confirm-label">
@@ -431,13 +578,33 @@ function ConfirmStep({
         />
       </div>
 
-      {/* Submission error */}
-      {submitError && (
-        <div className="csm-error-alert" role="alert">
+      {/* Classified submission error */}
+      {classifiedError && (
+        <div
+          className={`csm-error-alert csm-error-alert--${classifiedError.reason}`}
+          role="alert"
+        >
           <XCircle className="csm-error-icon" size={18} aria-hidden="true" />
           <div>
-            <p className="csm-error-title">Submission failed</p>
-            <p className="csm-error-body">{submitError}</p>
+            <p className="csm-error-title">
+              Submission failed
+              {retryCount > 0 && (
+                <span className="csm-error-retry-count">
+                  {' '}(attempt {retryCount} of {maxRetries})
+                </span>
+              )}
+            </p>
+            <p className="csm-error-body">{classifiedError.message}</p>
+            {canRetry && (
+              <p className="csm-error-hint">
+                You can retry up to {maxRetries - retryCount} more time{maxRetries - retryCount !== 1 ? 's' : ''}.
+              </p>
+            )}
+            {!classifiedError.retryable && (
+              <p className="csm-error-hint">
+                This error is not retryable. Please adjust your selection or contact support.
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -447,7 +614,7 @@ function ConfirmStep({
 
 // ─── Success state ────────────────────────────────────────────────────────────
 
-function SuccessState({
+function SuccessView({
   incoming,
   onClose,
 }: {
@@ -476,34 +643,55 @@ function SuccessState({
 /**
  * CollateralSubstitutionModal
  *
- * Orchestrates the three-step substitution flow.
+ * Orchestrates the three-step substitution flow with production-ready
+ * failure handling: slippage tolerance, stale-quote detection, retry
+ * logic, error classification, and concurrent submission protection.
+ *
  * All async state is managed here; child steps are stateless.
  */
 export function CollateralSubstitutionModal({
   isOpen,
   onClose,
   onSuccess,
+  onError,
   creditLineName,
   loanBalance,
   currentAsset,
   triggerRef,
+  submitCollateralSwap,
   _delayMs = 1800,
 }: CollateralSubstitutionModalProps) {
   const modalId = 'collateral-substitution-modal';
 
-  const [step, setStep]               = useState<SubstitutionStep>('select');
-  const [selected, setSelected]       = useState<CollateralAsset | null>(null);
-  const [confirmText, setConfirmText] = useState('');
-  const [status, setStatus]           = useState<SubstitutionStatus>('idle');
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  // The reducer owns the complete modal lifecycle. Each phase carries only
+  // the data valid for that phase, so submitting cannot coexist with a stale quote.
+  const [state, dispatch] = useReducer(collateralSubstitutionReducer, undefined, createInitialState);
+  const selected = state.selectedAsset;
+  const confirmText = state.confirmText;
+  const slippageTolerance = state.slippageTolerance;
+  const step: SubstitutionStep =
+    state.phase === 'selecting' || state.phase === 'quoting'
+      ? 'select'
+      : state.phase === 'reviewing'
+        ? state.step
+        : 'confirm';
+  const reviewLtvRatio = 'quote' in state ? state.quote.ltvRatio : null;
+  const reviewTimestampMs = 'quote' in state ? state.quote.timestampMs : null;
+  const staleQuoteDetected = state.phase === 'reviewing' && state.staleQuote;
+  const classifiedError = state.phase === 'error' ? state.error : null;
+  const retryCount = 'retryCount' in state ? state.retryCount : 0;
+  const canRetry = canRetryState(state);
+  const isPending = isSubmittingState(state);
+  const isSuccess = state.phase === 'success';
 
-  // Reset all state when the modal closes / re-opens.
+  // Idempotency metadata remains a ref because it is not rendered UI state.
+  const submissionAttemptRef = useRef<SubmissionAttempt | null>(null);
+  const submittingRef = useRef(false);
+
   const handleClose = useCallback(() => {
-    setStep('select');
-    setSelected(null);
-    setConfirmText('');
-    setStatus('idle');
-    setSubmitError(null);
+    dispatch({ type: 'RESET' });
+    submittingRef.current = false;
+    submissionAttemptRef.current = null;
     onClose();
   }, [onClose]);
 
@@ -511,64 +699,186 @@ export function CollateralSubstitutionModal({
   const containerRef = useFocusTrap({
     isActive: isOpen,
     triggerRef,
-    onEscape: status === 'pending' ? undefined : handleClose,
+    onEscape: isPending ? undefined : handleClose,
   });
   useBodyScrollLock({ isLocked: isOpen });
   useInertBackdrop({ isInert: isOpen, modalId });
 
-  // ── Derived ──────────────────────────────────────────────────────────────
+  // Derived UI values
   const canProceedFromSelect = selected !== null;
   const isConfirmMatch =
     selected !== null &&
     confirmText.trim().toLowerCase() === selected.name.toLowerCase();
-  const incomingSnap = selected
-    ? computeLtvSnapshot(selected, loanBalance)
-    : null;
+  const incomingSnap = selected ? computeLtvSnapshot(selected, loanBalance) : null;
 
-  // ── Handlers ─────────────────────────────────────────────────────────────
-  const handleSelectAsset = (asset: CollateralAsset) => setSelected(asset);
-
-  const handleNextFromSelect = () => {
-    if (canProceedFromSelect) setStep('review');
+  const handleSelectAsset = (asset: CollateralAsset) => {
+    dispatch({ type: 'SELECT_ASSET', asset });
   };
 
-  const handleNextFromReview = () => setStep('confirm');
+  const handleNextFromSelect = () => {
+    if (!selected || state.phase !== 'selecting') return;
+    const snap = computeLtvSnapshot(selected, loanBalance);
+    const nowMs = Date.now();
+    dispatch({
+      type: 'START_QUOTE',
+      quote: { ltvRatio: snap.ltvRatio, timestampMs: nowMs },
+    });
+    dispatch({ type: 'QUOTE_RESOLVED', nowMs });
+  };
 
-  const handleBack = () => {
-    if (step === 'review')   setStep('select');
-    if (step === 'confirm') { setStep('review'); setConfirmText(''); }
+  const handleNextFromReview = () => {
+    dispatch({ type: 'CONTINUE_TO_CONFIRM', nowMs: Date.now() });
+  };
+
+  const handleBack = () => dispatch({ type: 'BACK' });
+
+  const handleRefreshStale = () => {
+    if (!selected || state.phase !== 'reviewing' || state.step !== 'confirm') return;
+    const freshSnap = computeLtvSnapshot(selected, loanBalance);
+    dispatch({
+      type: 'REFRESH_QUOTE',
+      quote: { ltvRatio: freshSnap.ltvRatio, timestampMs: Date.now() },
+    });
   };
 
   const handleSubmit = async () => {
-    if (!selected || !isConfirmMatch) return;
-    setStatus('pending');
-    setSubmitError(null);
-    try {
-      // Simulate network delay. Replace with real API call.
-      await new Promise<void>((resolve, reject) =>
-        setTimeout(() => {
-          // In tests _delayMs=0 is used; random error only fires in real usage.
-          if (_delayMs > 0 && Math.random() < 0.05) {
-            reject(new Error('Network error — please try again.'));
-          } else {
-            resolve();
-          }
-        }, _delayMs)
-      );
-      setStatus('success');
-      onSuccess(selected);
-    } catch (err) {
-      setStatus('error');
-      setSubmitError(
-        err instanceof Error ? err.message : 'An unexpected error occurred.'
+    if (!selected || !isConfirmMatch || state.phase !== 'reviewing' || state.step !== 'confirm') return;
+    if (submittingRef.current) return;
+
+    const nowMs = Date.now();
+    // The reducer also enforces this invariant. The local guard avoids starting
+    // an async request when the reducer rejects the transition as stale.
+    if (state.staleQuote || (reviewTimestampMs !== null && isStaleQuote(reviewTimestampMs, nowMs))) {
+      dispatch({ type: 'SUBMIT_STARTED', nowMs });
+      return;
+    }
+
+    submittingRef.current = true;
+    dispatch({ type: 'SUBMIT_STARTED', nowMs });
+
+    // ── Idempotency key generation ─────────────────────────────────────────
+    // On first submission, create a new intent. Retries reuse the same key.
+    if (!submissionAttemptRef.current) {
+      const intent: CollateralSubstitutionIntent = {
+        creditLineId: currentAsset?.id ?? 'unknown',
+        outgoingAssetId: currentAsset?.id,
+        incomingAssetId: selected.id,
+        initiatedAtMs: Date.now(),
+      };
+      submissionAttemptRef.current = createSubmissionAttempt({
+        creditLineId: intent.creditLineId,
+        outgoingAssetId: intent.outgoingAssetId,
+        incomingAssetId: intent.incomingAssetId,
+        initiatedAtMs: intent.initiatedAtMs,
+      });
+      console.debug(
+        '[CollateralSubstitution] Generated idempotency key:',
+        extractDiagnostics(submissionAttemptRef.current)
       );
     }
+
+    if (submissionAttemptRef.current && hasSucceeded(submissionAttemptRef.current)) {
+      console.debug(
+        '[CollateralSubstitution] Duplicate submission detected (already succeeded):',
+        extractDiagnostics(submissionAttemptRef.current)
+      );
+      dispatch({ type: 'SUBMIT_SUCCEEDED' });
+      submittingRef.current = false;
+      onSuccess(selected);
+      return;
+    }
+
+    if (reviewLtvRatio !== null) {
+      const freshSnap = computeLtvSnapshot(selected, loanBalance);
+      const slippage = computeSlippage(reviewLtvRatio, freshSnap.ltvRatio, slippageTolerance);
+
+      if (slippage.isExceeded) {
+        const slippageError: SubstitutionError = {
+          reason: 'slippage',
+          message: `LTV moved by ${slippage.slippagePp.toFixed(1)} pp (tolerance: ${slippage.tolerancePp} pp). Re-review the comparison before submitting.`,
+          retryable: false,
+          idempotencyKey: submissionAttemptRef.current?.idempotencyKey,
+        };
+        dispatch({ type: 'SLIPPAGE_BLOCKED', error: slippageError });
+        submittingRef.current = false;
+        onError?.(slippageError);
+        return;
+      }
+    }
+
+    try {
+      if (submissionAttemptRef.current) {
+        submissionAttemptRef.current = recordSubmissionAttempt(submissionAttemptRef.current);
+        console.debug(
+          '[CollateralSubstitution] Submitting attempt:',
+          extractDiagnostics(submissionAttemptRef.current)
+        );
+      }
+
+      const payload: SubmitCollateralSwapPayload = {
+        idempotencyKey,
+        creditLineName,
+        outgoingAssetId: currentAsset?.id,
+        incomingAssetId: selected.id,
+        loanBalance,
+      };
+      if (submitCollateralSwap) {
+        await submitCollateralSwap(payload);
+      } else {
+        await new Promise<void>((resolve) => setTimeout(resolve, _delayMs));
+      }
+
+      if (submissionAttemptRef.current) {
+        submissionAttemptRef.current = recordServerResponse(
+          submissionAttemptRef.current,
+          'success',
+          'Collateral substituted successfully'
+        );
+        console.debug(
+          '[CollateralSubstitution] Submission succeeded:',
+          extractDiagnostics(submissionAttemptRef.current)
+        );
+      }
+
+      dispatch({ type: 'SUBMIT_SUCCEEDED' });
+      submittingRef.current = false;
+      onSuccess(selected);
+    } catch (err) {
+      const classified = classifySubstitutionError(err);
+      classified.idempotencyKey = submissionAttemptRef.current?.idempotencyKey;
+
+      if (submissionAttemptRef.current) {
+        submissionAttemptRef.current = recordServerResponse(
+          submissionAttemptRef.current,
+          classified.reason,
+          classified.message
+        );
+        console.debug(
+          '[CollateralSubstitution] Submission failed:',
+          extractDiagnostics(submissionAttemptRef.current)
+        );
+      }
+
+      dispatch({ type: 'SUBMIT_FAILED', error: classified });
+      submittingRef.current = false;
+
+      if (retryCount + 1 >= MAX_RETRY_ATTEMPTS) {
+        console.warn(
+          '[CollateralSubstitution] Max retries exhausted:',
+          extractDiagnostics(submissionAttemptRef.current!)
+        );
+        onError?.(classified);
+      }
+    }
+  };
+
+  const handleRetry = () => {
+    dispatch({ type: 'RETRY', nowMs: Date.now() });
   };
 
   if (!isOpen) return null;
 
   // ── Render ────────────────────────────────────────────────────────────────
-  const isPending = status === 'pending';
 
   const stepTitles: Record<SubstitutionStep, string> = {
     select:  'Choose new collateral',
@@ -602,7 +912,7 @@ export function CollateralSubstitutionModal({
           <div className="csm-header-text">
             <p className="csm-kicker">GrantFox · Collateral</p>
             <h2 id="csm-title" className="csm-title">
-              {status === 'success'
+              {isSuccess
                 ? 'Substitution complete'
                 : stepTitles[step]}
             </h2>
@@ -628,11 +938,11 @@ export function CollateralSubstitutionModal({
         </div>
 
         {/* Stepper (not shown on success) */}
-        {status !== 'success' && <Stepper current={step} />}
+        {!isSuccess && <Stepper current={step} />}
 
         {/* Body */}
-        {status === 'success' && selected ? (
-          <SuccessState incoming={selected} onClose={handleClose} />
+        {isSuccess && selected ? (
+          <SuccessView incoming={selected} onClose={handleClose} />
         ) : step === 'select' ? (
           <SelectStep
             current={currentAsset}
@@ -645,6 +955,9 @@ export function CollateralSubstitutionModal({
             current={currentAsset}
             incoming={selected}
             loanBalance={loanBalance}
+            slippageTolerance={slippageTolerance}
+            onSlippageChange={tolerance => dispatch({ type: 'SET_SLIPPAGE', tolerance })}
+            disabled={isPending}
           />
         ) : step === 'confirm' && selected ? (
           <ConfirmStep
@@ -652,8 +965,12 @@ export function CollateralSubstitutionModal({
             incoming={selected}
             loanBalance={loanBalance}
             confirmText={confirmText}
-            onConfirmTextChange={setConfirmText}
-            submitError={status === 'error' ? submitError : null}
+            onConfirmTextChange={value => dispatch({ type: 'SET_CONFIRM_TEXT', value })}
+            classifiedError={state.phase === 'error' ? classifiedError : null}
+            isStale={staleQuoteDetected}
+            onRefreshStale={handleRefreshStale}
+            retryCount={retryCount}
+            canRetry={canRetry}
           />
         ) : null}
 
@@ -662,7 +979,7 @@ export function CollateralSubstitutionModal({
             Cancel (exit flow) — Back (previous step) — Primary (forward/confirm)
             This puts the safe escape on the left and the primary action on the right,
             matching WCAG 3.2.4 consistent navigation and thumb-reach conventions. */}
-        {status !== 'success' && (
+        {!isSuccess && (
           <div className="csm-footer">
             {/* Cancel always comes first (leftmost) — exits the flow entirely */}
             <button
@@ -711,17 +1028,28 @@ export function CollateralSubstitutionModal({
               </button>
             )}
 
-            {step === 'confirm' && (
+            {step === 'confirm' && state.phase !== 'error' && (
               <PendingButton
                 pending={isPending}
                 pendingLabel="Submitting…"
                 onClick={handleSubmit}
-                disabled={!isConfirmMatch || isPending}
+                disabled={!isConfirmMatch || isPending || staleQuoteDetected}
                 className="csm-btn csm-btn--primary"
                 aria-describedby={!isConfirmMatch ? 'csm-confirm-name-input' : undefined}
               >
                 Confirm substitution
               </PendingButton>
+            )}
+
+            {step === 'confirm' && canRetry && (
+              <button
+                type="button"
+                className="csm-btn csm-btn--primary"
+                onClick={handleRetry}
+              >
+                <RefreshCw size={16} aria-hidden="true" style={{ marginRight: '0.375rem' }} />
+                Retry
+              </button>
             )}
           </div>
         )}

@@ -1,0 +1,131 @@
+/* SmartPayCTA.css
+ *
+ * Layout for the CTA action row and the subtle keyboard-shortcut hint
+ * chip shown next to the primary action. All colors/spacing come from
+ * design tokens in src/index.css (or KbdHint's own token-based styles).
+ */
+
+.smartpay-cta__action {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3, 0.75rem);
+}
+
+.smartpay-cta__shortcut-hint {
+  /* Recedes visually behind the primary action — hinted, not competing. */
+  opacity: 0.75;
+}
+
+@media (max-width: 480px) {
+  /* Shortcut chips describe a physical keyboard; not useful on touch-only
+     viewports, and crowds the primary action at this width. */
+  .smartpay-cta__shortcut-hint {
+    display: none;
+  }
+}
+
+@media (prefers-contrast: high) {
+  .smartpay-cta__shortcut-hint {
+    opacity: 1;
+  }
+}
+
+.smartpay-cta__optimiser {
+  margin-top: var(--space-4, 1rem);
+  margin-bottom: var(--space-4, 1rem);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 0.75rem);
+}
+
+.smartpay-cta__strategy-toggle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+}
+
+.smartpay-cta__strategy-btn {
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-md, 0.5rem);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.smartpay-cta__strategy-btn--active {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.smartpay-cta__rationale {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.smartpay-cta__table-wrap {
+  overflow-x: auto;
+}
+
+.smartpay-cta__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.smartpay-cta__table th,
+.smartpay-cta__table td {
+  padding: 0.5rem 0.625rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.smartpay-cta__table th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.smartpay-cta__line-name {
+  display: block;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.smartpay-cta__line-rationale {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.smartpay-cta__allocated {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.smartpay-cta__apply {
+  display: flex;
+  align-items: center;
+}
+
+.smartpay-cta__apply-btn {
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md, 0.5rem);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--background);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.smartpay-cta__apply-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
