@@ -1,6 +1,7 @@
 import React, { useCallback, useId } from 'react';
 import { COLOR } from '@/utils/tokens';
 import { formatUsd } from '@/utils/currency';
+import { Amount } from '../Amount';
 import type { ScheduleRow, TooltipData } from './types';
 
 const W = 600;
@@ -27,6 +28,8 @@ export interface RepaymentChartProps {
   tooltip: TooltipData | null;
   chartAriaLabel?: string;
   reducedMotion?: boolean;
+  /** Hides monetary labels and values when privacy mode is on. */
+  masked?: boolean;
 }
 
 export function RepaymentChart({
@@ -36,6 +39,7 @@ export function RepaymentChart({
   tooltip,
   chartAriaLabel,
   reducedMotion = false,
+  masked = false,
 }: RepaymentChartProps) {
   const chartPatternUid = useId().replace(/:/g, '');
   const gradPrincipalId = `rv-grad-principal-${chartPatternUid}`;
@@ -158,7 +162,9 @@ export function RepaymentChart({
       aria-valuemax={schedule.length > 0 ? schedule[schedule.length - 1].month : undefined}
       aria-valuetext={
         tooltip
-          ? `Month ${tooltip.month}: Principal remaining $${Math.round(tooltip.principal)}, cumulative interest $${Math.round(tooltip.cumulativeInterest)}`
+          ? masked
+            ? `Month ${tooltip.month}: amounts hidden for privacy`
+            : `Month ${tooltip.month}: Principal remaining $${Math.round(tooltip.principal)}, cumulative interest $${Math.round(tooltip.cumulativeInterest)}`
           : undefined
       }
       style={{ width: '100%', height: 'auto', overflow: 'visible' }}
@@ -219,7 +225,7 @@ export function RepaymentChart({
             fill={COLOR.muted}
             style={{ fontVariantNumeric: 'tabular-nums' }}
           >
-            {fmtK(value)}
+            {masked ? '••••' : fmtK(value)}
           </text>
         </g>
       ))}
@@ -324,10 +330,20 @@ export function TooltipBubble({ data }: { data: TooltipData }) {
         Month {data.month}
       </p>
       <p style={{ color: `var(--accent, ${COLOR.accent})` }}>
-        Principal remaining: {formatUsd(data.principal, { decimals: 0 })}
+        Principal remaining:{' '}
+        <Amount
+          value={data.principal}
+          format={(value) => formatUsd(value, { decimals: 0 })}
+          maskedLabel="Principal remaining hidden for privacy"
+        />
       </p>
       <p style={{ color: `var(--warning, ${COLOR.warning})` }}>
-        Cumulative interest: {formatUsd(data.cumulativeInterest, { decimals: 0 })}
+        Cumulative interest:{' '}
+        <Amount
+          value={data.cumulativeInterest}
+          format={(value) => formatUsd(value, { decimals: 0 })}
+          maskedLabel="Cumulative interest hidden for privacy"
+        />
       </p>
     </div>
   );

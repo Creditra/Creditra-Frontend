@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { COLOR } from '@/utils/tokens';
 import { formatUsd } from '@/utils/currency';
+import { usePrivacyMode } from '@/context/PrivacyContext';
+import { Amount } from '../Amount';
 import type { ScheduleRow } from './types';
 
 export interface ScenarioControlsProps {
@@ -9,12 +11,17 @@ export interface ScenarioControlsProps {
   limit?: number;
 }
 
+const fmt = (n: number) => formatUsd(n, { decimals: 2 });
+
 function SRTable({ schedule, caption }: { schedule: ScheduleRow[]; caption?: string }) {
+  const { privacyMode } = usePrivacyMode();
   const termMonths = schedule.length;
   const totalInterest = schedule[schedule.length - 1]?.cumulativeInterest ?? 0;
   const resolvedCaption =
     caption ??
-    `Monthly repayment schedule: ${termMonths} month${termMonths !== 1 ? 's' : ''}, ${formatUsd(totalInterest, { decimals: 0 })} total interest`;
+    `Monthly repayment schedule: ${termMonths} month${termMonths !== 1 ? 's' : ''}, ${
+      privacyMode ? 'amounts hidden for privacy' : `${formatUsd(totalInterest, { decimals: 0 })} total interest`
+    }`;
 
   return (
     <table
@@ -36,10 +43,10 @@ function SRTable({ schedule, caption }: { schedule: ScheduleRow[]; caption?: str
         {schedule.map((row) => (
           <tr key={row.month}>
             <td>{row.month}</td>
-            <td>{formatUsd(row.principalPaid, { decimals: 2 })}</td>
-            <td>{formatUsd(row.interest, { decimals: 2 })}</td>
-            <td>{formatUsd(row.principal, { decimals: 2 })}</td>
-            <td>{formatUsd(row.cumulativeInterest, { decimals: 2 })}</td>
+            <td><Amount value={row.principalPaid} format={fmt} maskedLabel="Principal paid hidden for privacy" /></td>
+            <td><Amount value={row.interest} format={fmt} maskedLabel="Interest paid hidden for privacy" /></td>
+            <td><Amount value={row.principal} format={fmt} maskedLabel="Remaining principal hidden for privacy" /></td>
+            <td><Amount value={row.cumulativeInterest} format={fmt} maskedLabel="Cumulative interest hidden for privacy" /></td>
           </tr>
         ))}
       </tbody>
@@ -94,13 +101,17 @@ function VisibleTable({ schedule, limit = 12 }: { schedule: ScheduleRow[]; limit
                 {row.month}
               </td>
               <td style={{ ...tdStyle, color: `var(--accent, ${COLOR.accent})` }}>
-                {formatUsd(row.principalPaid, { decimals: 2 })}
+                <Amount value={row.principalPaid} format={fmt} maskedLabel="Principal paid hidden for privacy" />
               </td>
               <td style={{ ...tdStyle, color: `var(--warning, ${COLOR.warning})` }}>
-                {formatUsd(row.interest, { decimals: 2 })}
+                <Amount value={row.interest} format={fmt} maskedLabel="Interest paid hidden for privacy" />
               </td>
-              <td style={tdStyle}>{formatUsd(row.principal, { decimals: 2 })}</td>
-              <td style={tdStyle}>{formatUsd(row.cumulativeInterest, { decimals: 2 })}</td>
+              <td style={tdStyle}>
+                <Amount value={row.principal} format={fmt} maskedLabel="Remaining principal hidden for privacy" />
+              </td>
+              <td style={tdStyle}>
+                <Amount value={row.cumulativeInterest} format={fmt} maskedLabel="Cumulative interest hidden for privacy" />
+              </td>
             </tr>
           ))}
         </tbody>

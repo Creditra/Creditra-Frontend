@@ -52,6 +52,7 @@ import {
   buildRepaymentScheduleFromLines,
 } from "../components/RepaymentSchedule";
 import { useReducedMotion } from "../context/ReducedMotionContext";
+import { Amount } from "../components/Amount";
 import {
   createStableOrder,
   getStablePage,
@@ -233,7 +234,7 @@ function CreditLineCard({
               className="cl-metric-value tabular-nums amount cl-amount"
               style={{ color: COLOR.accent }}
             >
-              {fmt(line.limit)}
+              <Amount value={line.limit} format={fmt} maskedLabel="Credit limit hidden for privacy" />
             </span>
           </div>
           <div className="cl-metric">
@@ -242,7 +243,7 @@ function CreditLineCard({
               className="cl-metric-value tabular-nums amount cl-amount"
               style={{ color: UTIL_COLOR[level] }}
             >
-              {fmt(line.utilized)}
+              <Amount value={line.utilized} format={fmt} maskedLabel="Utilized amount hidden for privacy" />
             </span>
           </div>
           <div className="cl-metric">
@@ -251,7 +252,7 @@ function CreditLineCard({
               className="cl-metric-value tabular-nums amount cl-amount"
               style={{ color: COLOR.success }}
             >
-              {fmt(line.limit - line.utilized)}
+              <Amount value={line.limit - line.utilized} format={fmt} maskedLabel="Available credit hidden for privacy" />
             </span>
           </div>
         </div>

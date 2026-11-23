@@ -28,11 +28,14 @@ function createSuccessSimulation(retval: xdr.ScVal): rpc.Api.SimulateTransaction
   };
 }
 
-function createErrorSimulation(error: string): rpc.Api.SimulateTransactionErrorResponse {
+function createErrorSimulation(
+  error: string,
+  events: rpc.Api.DiagnosticEvent[] = [],
+): rpc.Api.SimulateTransactionErrorResponse {
   return {
     id: 'sim-test-id',
     latestLedger: 12345,
-    events: [],
+    events,
     _parsed: true,
     error,
   };
@@ -292,6 +295,27 @@ describe('SorobanCreditDataSource', () => {
     expect(err).toBeInstanceOf(CreditDataError);
     expect(err.code).toBe('unavailable');
     expect(err.cause).toBe(originalError);
+  });
+
+  it('5b. Preserves simulation diagnostics in details so contract codes stay classifiable', async () => {
+    const originalError = 'Host function invocation failed: Error(Contract, #6)';
+    const diagnosticEvent = {
+      type: 'diagnostic',
+      contractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
+      topics: ['error'],
+      data: 'Error(Contract, #6)',
+    } as unknown as rpc.Api.DiagnosticEvent;
+    mockSimulateTransaction.mockResolvedValueOnce(
+      createErrorSimulation(originalError, [diagnosticEvent]),
+    );
+
+    const err = await adapter.listCreditLines(BORROWER).catch((e) => e);
+    expect(err).toBeInstanceOf(CreditDataError);
+    expect(err.cause).toBe(originalError);
+    expect(err.details).toEqual({
+      error: originalError,
+      events: [diagnosticEvent],
+    });
   });
 
   // ── Scenario 6 ──────────────────────────────────────────────────────────────
