@@ -9,6 +9,7 @@ import { ContrastProvider } from "./context/ContrastContext";
 import { KycProvider } from "./context/KycContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import { AuctionAlertWatcher } from "./components/AuctionAlertWatcher";
+import { CollateralAlertWatcher } from "./components/CollateralAlertWatcher";
 import { ReducedMotionProvider } from "./context/ReducedMotionContext";
 import { KycDrawer } from "./components/KycDrawer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -76,6 +77,7 @@ function AppShell() {
   return (
     <>
       <AuctionAlertWatcher />
+      <CollateralAlertWatcher />
       <RouteHeadProvider>
         <RouteAnnouncer />
         <div className="app">
