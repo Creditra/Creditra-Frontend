@@ -35,6 +35,8 @@ import { formatMoney } from "@/utils/amountValidation";
 import { useDebounceValue } from "@/hooks/useDebounceValue";
 import { useScrollCollapse } from "@/hooks/useScrollCollapse";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
+import { usePrivacyMode } from "@/context/PrivacyContext";
+import { Amount } from "@/components/Amount";
 import "./DrawSummaryBar.css";
 
 interface DrawSummaryBarProps {
@@ -86,17 +88,22 @@ export function DrawSummaryBar({
   const isVisible = !!creditLine && VISIBLE_STEPS.has(step);
   const isCollapsed = useScrollCollapse(isVisible);
   const prefersReducedMotion = usePrefersReducedMotion();
+  const { privacyMode } = usePrivacyMode();
 
   const summary =
     isVisible && creditLine ? computeSummary(creditLine, amount) : null;
-  const announcement = summary ? summary.announcement : "";
+  const announcement = summary
+    ? privacyMode
+      ? 'Draw summary: amount hidden.'
+      : summary.announcement
+    : "";
   const debouncedAnnouncement = useDebounceValue(announcement, 400);
 
   if (!isVisible || !summary || !creditLine) {
     return null;
   }
 
-  const { apr, newUtilizationPct, amountText } = summary;
+  const { apr, newUtilizationPct } = summary;
 
   return (
     <aside
@@ -125,7 +132,7 @@ export function DrawSummaryBar({
             ·
           </span>
           <span className="draw-summary-bar__peek-amount num-tabular">
-            {amountText}
+            <Amount value={Math.max(amount, 0)} format={formatMoney} maskedLabel="Draw amount hidden for privacy" />
           </span>
           <span className="draw-summary-bar__peek-sep" aria-hidden="true">
             ·
@@ -157,7 +164,7 @@ export function DrawSummaryBar({
               className="draw-summary-bar__value num-tabular"
               data-testid="draw-summary-amount"
             >
-              {amountText}
+              <Amount value={Math.max(amount, 0)} format={formatMoney} maskedLabel="Draw amount hidden for privacy" />
             </dd>
           </div>
           <div

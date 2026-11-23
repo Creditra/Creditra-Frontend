@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   formatCurrency,
   formatCompactCurrency,
+  formatUsd,
   roundToCents,
   computeMonthlyAccruedInterest,
   computeFullPayoffAmount,
@@ -156,5 +157,33 @@ describe('formatAmountInputValue', () => {
   it('formats with two fixed decimals', () => {
     expect(formatAmountInputValue(3030)).toBe('3030.00');
     expect(formatAmountInputValue(10.5)).toBe('10.50');
+  });
+});
+
+describe('formatUsd', () => {
+  it('formats with 2 decimals by default', () => {
+    expect(formatUsd(1234)).toBe('$1,234.00');
+    expect(formatUsd(1234.5)).toBe('$1,234.50');
+    expect(formatUsd(0)).toBe('$0.00');
+  });
+
+  it('formats with 0 decimals when requested', () => {
+    expect(formatUsd(1234.56, { decimals: 0 })).toBe('$1,235');
+    expect(formatUsd(0, { decimals: 0 })).toBe('$0');
+  });
+
+  it('formats negative values', () => {
+    expect(formatUsd(-42.5, { decimals: 2 })).toBe('-$42.50');
+    expect(formatUsd(-42.5, { decimals: 0 })).toBe('-$43');
+  });
+
+  it('formats large values with grouping separators', () => {
+    expect(formatUsd(12_345_678.9, { decimals: 2 })).toBe('$12,345,678.90');
+    expect(formatUsd(12_345_678.9, { decimals: 0 })).toBe('$12,345,679');
+  });
+
+  it('returns placeholder for non-finite numbers', () => {
+    expect(formatUsd(Number.NaN)).toBe('—');
+    expect(formatUsd(Number.POSITIVE_INFINITY)).toBe('—');
   });
 });

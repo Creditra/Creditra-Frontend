@@ -89,4 +89,30 @@ describe("CreditLineSelector — draw eligibility", () => {
 
     expect(results.violations).toHaveLength(0);
   });
+
+  it.each([
+    [0, "$0.00"],
+    [35000, "$35,000.00"],
+    [1250000.5, "$1,250,000.50"],
+    [42.75, "$42.75"],
+  ])(
+    "formats available balance %s as %s visually and in aria-label",
+    (available, expected) => {
+      const line: CreditLine = {
+        ...activeLine,
+        id: `cl-${available}`,
+        available,
+      };
+      renderSelector([line]);
+
+      expect(screen.getByText(expected)).toBeInTheDocument();
+      if (available > 0) {
+        expect(
+          screen.getByRole("button", {
+            name: `Select ${line.name} credit line, available balance ${expected}`,
+          }),
+        ).toBeInTheDocument();
+      }
+    },
+  );
 });

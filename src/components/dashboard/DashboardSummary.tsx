@@ -10,6 +10,7 @@ import { MOCK_ATTESTATIONS } from '../../data/mockData';
 import { useDashboardDataContext } from '../../hooks/useDashboardData';
 import { now as clockNow } from '../../lib/clock';
 import { COLOR, UTIL_COLOR, fmt } from '../../utils/tokens';
+import { Amount } from '../Amount';
 import type { RefObject } from 'react';
 
 export function DashboardSummary() {
@@ -77,7 +78,7 @@ export function DashboardSummary() {
                 />
               </p>
               <p className="value num-tabular" style={{ color: COLOR.accent }}>
-                {fmt(totalLimit)}
+                <Amount value={totalLimit} format={fmt} maskedLabel="Total credit limit hidden for privacy" />
               </p>
               <p className="sub">
                 Across {activeLinesOnly.length} active line
@@ -104,12 +105,12 @@ export function DashboardSummary() {
                 className="value num-tabular"
                 style={{ color: UTIL_COLOR[overallLevel] }}
               >
-                {fmt(totalUtilized)}
+                <Amount value={totalUtilized} format={fmt} maskedLabel="Total outstanding hidden for privacy" />
               </p>
               <p className="sub">{overallPct}% of active drawable limit</p>
               {creditSummary.delinquentOutstanding > 0 && (
                 <p className="sub">
-                  incl. {fmt(creditSummary.delinquentOutstanding)} on
+                  incl. <Amount value={creditSummary.delinquentOutstanding} format={fmt} maskedLabel="Delinquent outstanding hidden for privacy" /> on
                   suspended/defaulted lines · <Link to="/repay">Repay</Link>
                 </p>
               )}
@@ -126,7 +127,7 @@ export function DashboardSummary() {
                 />
               </p>
               <p className="value num-tabular" style={{ color: COLOR.success }}>
-                {fmt(totalAvailable)}
+                <Amount value={totalAvailable} format={fmt} maskedLabel="Available credit hidden for privacy" />
               </p>
               <p className="sub">From active lines only</p>
             </div>
@@ -205,7 +206,7 @@ export function DashboardSummaryMetrics({
           <div className="credit-breakdown-item">
             <p className="cb-label">Total Limit</p>
             <p className="cb-value num-tabular" style={{ color: COLOR.accent }}>
-              {fmt(totalLimit)}
+              <Amount value={totalLimit} format={fmt} maskedLabel="Total limit hidden for privacy" />
             </p>
           </div>
           <div className="credit-breakdown-item">
@@ -214,7 +215,7 @@ export function DashboardSummaryMetrics({
               className="cb-value num-tabular"
               style={{ color: UTIL_COLOR[overallLevel] }}
             >
-              {fmt(totalUtilized)}
+              <Amount value={totalUtilized} format={fmt} maskedLabel="Utilized amount hidden for privacy" />
             </p>
           </div>
           <div className="credit-breakdown-item">
@@ -223,7 +224,7 @@ export function DashboardSummaryMetrics({
               className="cb-value num-tabular"
               style={{ color: COLOR.success }}
             >
-              {fmt(totalAvailable)}
+              <Amount value={totalAvailable} format={fmt} maskedLabel="Available credit hidden for privacy" />
             </p>
           </div>
         </div>

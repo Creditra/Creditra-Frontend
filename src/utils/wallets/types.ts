@@ -18,18 +18,27 @@ export interface FreighterWallet {
   getPublicKey: () => Promise<string>;
   getNetwork: () => Promise<string>;
   switchNetwork?: (network: string) => Promise<void>;
+  /** Newer Freighter builds expose the full account list (non-interactive). */
+  getAddresses?: () => Promise<string[] | { addresses?: string[] }>;
+  getAccounts?: () => Promise<string[]>;
 }
 
 export interface AlbedoWallet {
   publicKey: (options: Record<string, never>) => Promise<{ pubkey: string }>;
+  getAddresses?: () => Promise<string[] | { addresses?: string[] }>;
+  getAccounts?: () => Promise<string[]>;
 }
 
 export interface XBullWallet {
   getPublicKey: () => Promise<string>;
+  getAddresses?: () => Promise<string[] | { addresses?: string[] }>;
+  getAccounts?: () => Promise<string[]>;
 }
 
 export interface RabetWallet {
   connect: () => Promise<{ publicKey: string }>;
+  getAddresses?: () => Promise<string[] | { addresses?: string[] }>;
+  getAccounts?: () => Promise<string[]>;
 }
 
 declare global {

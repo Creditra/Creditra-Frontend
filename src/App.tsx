@@ -1,4 +1,4 @@
-import { useRef, useState, lazy, Suspense } from "react";
+import { useRef, useState, useEffect, lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { CommandPalette } from "./components/CommandPalette";
 import { RouteAnnouncer, RouteHeadProvider } from "./components/RouteAnnouncer";
@@ -6,6 +6,7 @@ import { WalletProvider } from "./context/WalletContext";
 import { CreditDataProvider } from "./context/CreditDataContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { ContrastProvider } from "./context/ContrastContext";
+import { PrivacyModeProvider, usePrivacyMode } from "./context/PrivacyContext";
 import { KycProvider } from "./context/KycContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import { AuctionAlertWatcher } from "./components/AuctionAlertWatcher";
@@ -17,13 +18,17 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ShortcutHelpOverlay } from "./components/ShortcutHelpOverlay";
 import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
 import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatchBanner";
+import { StaleDataBanner } from "./components/StaleDataBanner";
 import { ToastContainer } from "./components/notifications/ToastContainer";
 import { BannerAlerts } from "./components/notifications/BannerAlert";
 import { Header } from "./layouts/Header";
 import { Skeleton } from "./components/Skeleton";
 import { useHotkey } from "./lib/hotkeys";
+import { useNotifications } from "./context/NotificationContext";
+import { useCreditData } from "./context/CreditDataContext";
+import { registerEventSubscribers } from "./lib/event-subscribers";
 
-import { ROUTE_MANIFEST } from "./routes/manifest";
+import { getEnabledRoutes } from "./routes/manifest";
 
 // ── Code-split route components (non-critical for first paint) ────────────────
 const NotFound = lazy(() => import("./pages/NotFound").then(m => ({ default: m.NotFound })));
@@ -43,7 +48,11 @@ function RouteLoadingFallback() {
 
 function AppShell() {
   const navigate = useNavigate();
-  usePaymentReminders();
+  const { privacyMode, togglePrivacyMode } = usePrivacyMode();
+  const { addToast } = useNotifications();
+  const { refetch } = useCreditData();
+
+  useEffect(() => registerEventSubscribers({ addToast, refetch }), [addToast, refetch]);
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [openedFromSettingsLink, setOpenedFromSettingsLink] = useState(false);
   const [isKycDrawerOpen, setIsKycDrawerOpen] = useState(false);
@@ -104,9 +113,10 @@ function AppShell() {
           <main className="main">
             <BannerAlerts />
             <NetworkMismatchBanner />
+            <StaleDataBanner />
             <Suspense fallback={<RouteLoadingFallback />}>
               <Routes>
-                {ROUTE_MANIFEST.map((route) => {
+                {getEnabledRoutes().map((route) => {
                   const RouteComponent = route.Component;
                   return (
                     <Route
@@ -137,6 +147,17 @@ function AppShell() {
             isOpen={isPaletteOpen}
             onClose={() => setIsPaletteOpen(false)}
             triggerRef={paletteTriggerRef}
+            extraItems={[
+              {
+                id: "toggle-privacy-mode",
+                label: "Toggle privacy mode",
+                description: privacyMode
+                  ? "Show balances and amounts again"
+                  : "Mask balances and amounts across the app",
+                icon: privacyMode ? "🙈" : "👁️",
+                action: togglePrivacyMode,
+              },
+            ]}
           />
           <ToastContainer />
         </div>
@@ -153,16 +174,18 @@ function AppShell() {
  *   <ErrorBoundary>      — catches render errors in everything below
  *     <ThemeProvider>    — colour-scheme (light/dark) preference
  *       <ContrastProvider> — high-contrast override, [data-contrast="high"]
- *         <WalletProvider> — wallet lifecycle visible to every route
- *           <CreditDataProvider> — wallet-scoped credit line and transaction data
- *             <BrowserRouter>
- *             <header />   — persistent nav chrome
- *             <main>
- *               <Routes /> — current route
- *             </main>
- *             </BrowserRouter>
- *           </CreditDataProvider>
- *         </WalletProvider>
+ *         <PrivacyModeProvider> — app-wide amount masking, [data-privacy-mode="on"]
+ *           <WalletProvider> — wallet lifecycle visible to every route
+ *             <CreditDataProvider> — wallet-scoped credit line and transaction data
+ *               <BrowserRouter>
+ *               <header />   — persistent nav chrome
+ *               <main>
+ *                 <Routes /> — current route
+ *               </main>
+ *               </BrowserRouter>
+ *             </CreditDataProvider>
+ *           </WalletProvider>
+ *         </PrivacyModeProvider>
  *       </ContrastProvider>
  *     </ThemeProvider>
  *   </ErrorBoundary>
@@ -174,19 +197,21 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <ContrastProvider>
-          <WalletProvider>
-            <CreditDataProvider>
-              <KycProvider>
-                <NotificationProvider>
-                  <ReducedMotionProvider>
-                    <BrowserRouter>
-                      <AppShell />
-                    </BrowserRouter>
-                  </ReducedMotionProvider>
-                </NotificationProvider>
-              </KycProvider>
-            </CreditDataProvider>
-          </WalletProvider>
+          <PrivacyModeProvider>
+            <WalletProvider>
+              <NotificationProvider>
+                <CreditDataProvider>
+                  <KycProvider>
+                    <ReducedMotionProvider>
+                      <BrowserRouter>
+                        <AppShell />
+                      </BrowserRouter>
+                    </ReducedMotionProvider>
+                  </KycProvider>
+                </CreditDataProvider>
+              </NotificationProvider>
+            </WalletProvider>
+          </PrivacyModeProvider>
         </ContrastProvider>
       </ThemeProvider>
     </ErrorBoundary>

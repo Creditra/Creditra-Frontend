@@ -1,4 +1,6 @@
+import { useEffect, useState, type ReactNode } from 'react';
 import { CopyToClipboard } from '../components/CopyToClipboard';
+import { NextSteps } from '../components/NextSteps';
 import { DashboardActivity } from '../components/dashboard/DashboardActivity';
 import { DashboardCompare } from '../components/dashboard/DashboardCompare';
 import {
@@ -11,12 +13,16 @@ import { KbdHint } from '../components/KbdHint';
 import { LiveRegion } from '../components/LiveRegion';
 import { NoLines } from '../components/illustrations';
 import { HealthTipsPanel } from '../components/HealthTipsPanel';
-import {
-  DashboardDataProvider,
-  useDashboardDataContext,
-} from '../hooks/useDashboardData';
+import { DashboardDataProvider, useDashboardDataContext } from '../hooks/useDashboardData';
 import { useCompareSelection } from '../hooks/useCompareSelection';
 import { useDashboardTour } from '../hooks/useDashboardTour';
+import { useWalletIdentityKey } from '../hooks/useWalletIdentityKey';
+import {
+  loadDashboardLayout,
+  resetDashboardLayout,
+  saveDashboardLayout,
+  type DashboardLayout,
+} from '../state/dashboardLayout';
 import './Dashboard.css';
 import '../styles/focus.css';
 
@@ -41,17 +47,88 @@ function DashboardContent() {
     isConnected,
     truncAddr,
     hasLines,
+    totalAvailable,
+    totalUtilized,
   } = useDashboardDataContext();
   const compareSelection = useCompareSelection();
   const dashboardTour = useDashboardTour();
+  const walletKey = useWalletIdentityKey();
+  const [isCustomising, setIsCustomising] = useState(false);
+  const [layoutAnnouncement, setLayoutAnnouncement] = useState('');
+
+  const cardRegistry: Array<{ id: string; title: string; component: ReactNode }> = [
+    { id: 'summary', title: 'Credit overview', component: <DashboardSummary /> },
+    {
+      id: 'next-steps',
+      title: 'Next steps',
+      component: <NextSteps totalAvailable={totalAvailable} totalUtilized={totalUtilized} />,
+    },
+    {
+      id: 'credit-details',
+      title: 'Credit details',
+      component: (
+        <div>
+          <DashboardSummaryMetrics
+            isExplainOpen={dashboardTour.isExplainOpen}
+            explainTriggerRef={dashboardTour.explainTriggerRef}
+            openExplain={dashboardTour.openExplain}
+          />
+          <DashboardCompare {...compareSelection} />
+        </div>
+      ),
+    },
+    { id: 'activity', title: 'Activity', component: <DashboardActivity /> },
+    { id: 'health-tips', title: 'Health tips', component: <HealthTipsPanel /> },
+  ];
+  const cardIds = cardRegistry.map((card) => card.id);
+  const [layout, setLayout] = useState<DashboardLayout>(() =>
+    loadDashboardLayout(walletKey, cardIds),
+  );
+
+  useEffect(() => {
+    setLayout(loadDashboardLayout(walletKey, cardIds));
+  }, [walletKey]);
+
+  const updateLayout = (next: DashboardLayout, announcement: string) => {
+    const saved = saveDashboardLayout(walletKey, next, cardIds);
+    setLayout(saved);
+    setLayoutAnnouncement(announcement);
+  };
+
+  const moveCard = (id: string, direction: -1 | 1) => {
+    const index = layout.order.indexOf(id);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= layout.order.length) return;
+    const order = [...layout.order];
+    [order[index], order[nextIndex]] = [order[nextIndex], order[index]];
+    const card = cardRegistry.find((item) => item.id === id);
+    updateLayout(
+      { ...layout, order },
+      `${card?.title ?? id} moved ${direction === -1 ? 'up' : 'down'}.`,
+    );
+  };
+
+  const toggleHidden = (id: string) => {
+    const hidden = layout.hidden.includes(id)
+      ? layout.hidden.filter((hiddenId) => hiddenId !== id)
+      : [...layout.hidden, id];
+    const card = cardRegistry.find((item) => item.id === id);
+    updateLayout(
+      { ...layout, hidden },
+      hidden.includes(id) ? `${card?.title ?? id} hidden.` : `${card?.title ?? id} restored.`,
+    );
+  };
+
+  const resetLayout = () => {
+    const reset = resetDashboardLayout(walletKey, cardIds);
+    setLayout(reset);
+    setLayoutAnnouncement('Dashboard layout reset to default.');
+  };
 
   if ((status === 'success' && !hasLines) || status === 'idle') {
     return (
       <>
-        <LiveRegion
-          message={announcement || statusAnnouncement}
-          aria-live="polite"
-        />
+        <LiveRegion message={announcement || statusAnnouncement} aria-live="polite" />
         <div className="dashboard-header">
           <div>
             <h1
@@ -62,12 +139,7 @@ function DashboardContent() {
               }}
             >
               Dashboard
-              <KbdHint
-                keys={['Cmd', 'K']}
-                separator="+"
-                label="Command Palette"
-                variant="badge"
-              />
+              <KbdHint keys={['Cmd', 'K']} separator="+" label="Command Palette" variant="badge" />
             </h1>
             <p className="subtitle">Your credit overview at a glance</p>
           </div>
@@ -84,9 +156,7 @@ function DashboardContent() {
               <span
                 className={`network-badge ${wallet.network === 'TESTNET' ? 'testnet' : 'mainnet'}`}
                 title={
-                  wallet.network === 'TESTNET'
-                    ? 'Testnet (no real funds)'
-                    : 'Mainnet (real funds)'
+                  wallet.network === 'TESTNET' ? 'Testnet (no real funds)' : 'Mainnet (real funds)'
                 }
                 aria-label={
                   wallet.network === 'TESTNET'
@@ -125,10 +195,7 @@ function DashboardContent() {
       {status === 'error' && (
         <div role="alert" className="dashboard-error-card">
           <p>{creditError?.message ?? 'Unable to load credit data.'}</p>
-          <button
-            type="button"
-            onClick={() => void refetchCreditLines().catch(() => undefined)}
-          >
+          <button type="button" onClick={() => void refetchCreditLines().catch(() => undefined)}>
             Retry
           </button>
         </div>
@@ -144,12 +211,7 @@ function DashboardContent() {
             }}
           >
             Dashboard
-            <KbdHint
-              keys={['Cmd', 'K']}
-              separator="+"
-              label="Command Palette"
-              variant="badge"
-            />
+            <KbdHint keys={['Cmd', 'K']} separator="+" label="Command Palette" variant="badge" />
           </h1>
           <p className="subtitle">Your credit overview at a glance</p>
         </div>
@@ -166,9 +228,7 @@ function DashboardContent() {
             <span
               className={`network-badge ${wallet.network === 'TESTNET' ? 'testnet' : 'mainnet'}`}
               title={
-                wallet.network === 'TESTNET'
-                  ? 'Testnet (no real funds)'
-                  : 'Mainnet (real funds)'
+                wallet.network === 'TESTNET' ? 'Testnet (no real funds)' : 'Mainnet (real funds)'
               }
               aria-label={
                 wallet.network === 'TESTNET'
@@ -186,27 +246,77 @@ function DashboardContent() {
         )}
       </div>
 
-      <DashboardSummary />
-      {/*
-        Next Steps card — tells the borrower what to do next. Self-hides when
-        every step is complete or the borrower dismisses it, so it never
-        competes with the summary cards once the account is fully set up.
-      */}
-      <NextSteps totalAvailable={totalAvailable} totalUtilized={totalUtilized} />
-
-
-      <div className="dashboard-grid">
-        <div>
-          <DashboardSummaryMetrics
-            isExplainOpen={dashboardTour.isExplainOpen}
-            explainTriggerRef={dashboardTour.explainTriggerRef}
-            openExplain={dashboardTour.openExplain}
-          />
-          <DashboardCompare {...compareSelection} />
-        </div>
-        <DashboardActivity />
-        <HealthTipsPanel />
+      <div className="dashboard-customise-bar">
+        <button
+          type="button"
+          className="dashboard-customise-button"
+          aria-pressed={isCustomising}
+          onClick={() => {
+            setIsCustomising((current) => !current);
+            setLayoutAnnouncement(
+              isCustomising ? 'Customisation mode closed.' : 'Customisation mode opened.',
+            );
+          }}
+        >
+          {isCustomising ? 'Done' : 'Customise'}
+        </button>
+        {isCustomising && (
+          <>
+            <button type="button" onClick={resetLayout}>
+              Reset layout
+            </button>
+            <div className="dashboard-card-controls" aria-label="Dashboard card layout">
+              {layout.order.map((id, index) => {
+                const card = cardRegistry.find((item) => item.id === id);
+                const isHidden = layout.hidden.includes(id);
+                return (
+                  <div className="dashboard-card-control" key={id}>
+                    <span>{card?.title ?? id}</span>
+                    <button
+                      type="button"
+                      aria-label={`Move ${card?.title ?? id} up`}
+                      disabled={index === 0}
+                      onClick={() => moveCard(id, -1)}
+                    >
+                      Move up
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Move ${card?.title ?? id} down`}
+                      disabled={index === layout.order.length - 1}
+                      onClick={() => moveCard(id, 1)}
+                    >
+                      Move down
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`${isHidden ? 'Restore' : 'Hide'} ${card?.title ?? id}`}
+                      onClick={() => toggleHidden(id)}
+                    >
+                      {isHidden ? 'Restore' : 'Hide'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
+      <LiveRegion
+        message={layoutAnnouncement}
+        aria-live="polite"
+        id="dashboard-layout-announcement"
+      />
+
+      {layout.order.map((cardId) => {
+        if (layout.hidden.includes(cardId)) return null;
+        const card = cardRegistry.find((c) => c.id === cardId);
+        return card ? (
+          <div key={card.id} className="dashboard-card">
+            {card.component}
+          </div>
+        ) : null;
+      })}
 
       <DashboardTourSection
         isExplainOpen={dashboardTour.isExplainOpen}

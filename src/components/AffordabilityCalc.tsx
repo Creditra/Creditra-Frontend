@@ -3,7 +3,7 @@
  *
  * Estimates the maximum monthly repayment a borrower can comfortably afford.
  *
- * Calculation (28/36 rule — industry-standard):
+ * Calculation (28/36 rule – industry-standard):
  *   maxAffordable = (monthlyIncome × 0.36) − monthlyObligations
  *
  * The 36 % cap covers total debt payments. Result is clamped to ≥ 0.
@@ -22,7 +22,20 @@ import { formatMoney } from '@/utils/amountValidation';
 export const DEBT_RATIO = 0.36;
 
 /**
- * Pure calculation — exported so it can be unit-tested independently.
+ * Strict currency parser — accepts only strings matching `^\d+(\.\d{1,2})?$`.
+ *
+ * Returns the parsed number on success, or `null` for any input that would be
+ * silently mangled by `parseFloat` (e.g. `"12abc"`, `"1e3"`, `"-5"`, `""`).
+ */
+export function parseStrictAmount(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null;
+  const value = Number(trimmed);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+/**
+ * Pure calculation – exported so it can be unit-tested independently.
  * Returns the max affordable monthly repayment (never negative).
  */
 export function calcMaxAffordable(income: number, obligations: number): number {
@@ -45,19 +58,38 @@ export interface AffordabilityCalcProps {
 export function AffordabilityCalc({ onApply }: AffordabilityCalcProps) {
   const incomeId = useId();
   const obligationsId = useId();
+  const incomeErrorId = useId();
+  const obligationsErrorId = useId();
 
   const [incomeStr, setIncomeStr] = useState('');
   const [obligationsStr, setObligationsStr] = useState('');
 
-  const income = parseFloat(incomeStr) || 0;
-  const obligations = parseFloat(obligationsStr) || 0;
+  // Only show validation errors after the user has blurred the field once.
+  const [incomeTouched, setIncomeTouched] = useState(false);
+  const [obligationsTouched, setObligationsTouched] = useState(false);
+
+  const incomeParsed = parseStrictAmount(incomeStr);
+  const obligationsParsed = parseStrictAmount(obligationsStr);
+
+  const incomeError =
+    incomeTouched && incomeStr !== '' && incomeParsed === null
+      ? 'Enter a valid amount (e.g. 5000 or 5000.00).'
+      : null;
+
+  const obligationsError =
+    obligationsTouched && obligationsStr !== '' && obligationsParsed === null
+      ? 'Enter a valid amount (e.g. 1200 or 1200.50).'
+      : null;
+
+  const income = incomeParsed ?? 0;
+  const obligations = obligationsParsed ?? 0;
 
   const maxAffordable = useMemo(
     () => calcMaxAffordable(income, obligations),
     [income, obligations],
   );
 
-  const hasResult = income > 0;
+  const hasResult = incomeParsed !== null && incomeParsed > 0;
 
   return (
     <section
@@ -94,16 +126,29 @@ export function AffordabilityCalc({ onApply }: AffordabilityCalcProps) {
             </span>
             <input
               id={incomeId}
-              type="number"
-              min={0}
-              step={1}
+              type="text"
+              inputMode="decimal"
               value={incomeStr}
               onChange={(e) => setIncomeStr(e.target.value)}
-              placeholder="0"
-              className="w-full rounded-lg border border-border bg-background py-2 pl-7 pr-3 text-sm text-foreground outline-none transition-colors focus:ring-2 focus:ring-accent"
+              onBlur={() => setIncomeTouched(true)}
+              placeholder="0.00"
               aria-label="Monthly income in US dollars"
+              aria-invalid={incomeError !== null || undefined}
+              aria-describedby={incomeError ? incomeErrorId : undefined}
+              className={`w-full rounded-lg border bg-background py-2 pl-7 pr-3 text-sm text-foreground outline-none transition-colors focus:ring-2 focus:ring-accent ${
+                incomeError ? 'border-error' : 'border-border'
+              }`}
             />
           </div>
+          {incomeError && (
+            <p
+              id={incomeErrorId}
+              role="alert"
+              className="mt-1 text-xs text-error"
+            >
+              {incomeError}
+            </p>
+          )}
         </div>
 
         {/* Current monthly obligations (rent, loans, etc.) */}
@@ -123,20 +168,33 @@ export function AffordabilityCalc({ onApply }: AffordabilityCalcProps) {
             </span>
             <input
               id={obligationsId}
-              type="number"
-              min={0}
-              step={1}
+              type="text"
+              inputMode="decimal"
               value={obligationsStr}
               onChange={(e) => setObligationsStr(e.target.value)}
-              placeholder="0"
-              className="w-full rounded-lg border border-border bg-background py-2 pl-7 pr-3 text-sm text-foreground outline-none transition-colors focus:ring-2 focus:ring-accent"
+              onBlur={() => setObligationsTouched(true)}
+              placeholder="0.00"
               aria-label="Current monthly obligations in US dollars"
+              aria-invalid={obligationsError !== null || undefined}
+              aria-describedby={obligationsError ? obligationsErrorId : undefined}
+              className={`w-full rounded-lg border bg-background py-2 pl-7 pr-3 text-sm text-foreground outline-none transition-colors focus:ring-2 focus:ring-accent ${
+                obligationsError ? 'border-error' : 'border-border'
+              }`}
             />
           </div>
+          {obligationsError && (
+            <p
+              id={obligationsErrorId}
+              role="alert"
+              className="mt-1 text-xs text-error"
+            >
+              {obligationsError}
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Result — only shown once the user has entered income */}
+      {/* Result – only shown once the user has entered a valid income */}
       {hasResult && (
         <div
           className="mt-3 flex items-center justify-between gap-3 rounded-lg p-3"
