@@ -72,3 +72,6 @@ export const dashboardValuesLastVisitKey = (owner: string): string =>
 
 export const dashboardSessionActiveKey = (owner: string): string =>
   `creditra_dashboard_session_active.${owner}`;
+
+/** App-wide privacy mode preference (`PrivacyContext`). */
+export const PRIVACY_MODE_STORAGE_KEY = 'creditra.privacy_mode';

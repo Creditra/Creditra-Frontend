@@ -4,6 +4,7 @@ import { WalletConnectionModal } from './WalletConnectionModal';
 import { OnboardingFlow } from './OnboardingFlow';
 import { WalletQrCode } from './WalletQrCode';
 import { CopyToClipboard } from './CopyToClipboard';
+import { Amount } from './Amount';
 import { formatRelative } from '../utils/dates';
 import { useDetectedWallets } from '../hooks/useDetectedWallets';
 import './WalletButton.css';
@@ -124,7 +125,12 @@ const ConnectedWalletDropdown = () => {
   const balanceDisplay = balances ? balances.map((b, i) => (
     <div key={i} className="balance-item">
       <span className="label">Balance ({b.asset}):</span>
-      <span className="value">{b.balance}</span>
+      <Amount
+        className="value"
+        value={b.balance}
+        format={(v) => String(v)}
+        maskedLabel={`${b.asset} balance hidden for privacy`}
+      />
     </div>
   )) : <span className="value">Unknown</span>;
 

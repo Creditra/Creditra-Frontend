@@ -6,6 +6,7 @@ import { WalletProvider } from "./context/WalletContext";
 import { CreditDataProvider } from "./context/CreditDataContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { ContrastProvider } from "./context/ContrastContext";
+import { PrivacyModeProvider, usePrivacyMode } from "./context/PrivacyContext";
 import { KycProvider } from "./context/KycContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import { AuctionAlertWatcher } from "./components/AuctionAlertWatcher";
@@ -41,6 +42,7 @@ function RouteLoadingFallback() {
 
 function AppShell() {
   const navigate = useNavigate();
+  const { privacyMode, togglePrivacyMode } = usePrivacyMode();
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [openedFromSettingsLink, setOpenedFromSettingsLink] = useState(false);
   const [isKycDrawerOpen, setIsKycDrawerOpen] = useState(false);
@@ -133,6 +135,17 @@ function AppShell() {
             isOpen={isPaletteOpen}
             onClose={() => setIsPaletteOpen(false)}
             triggerRef={paletteTriggerRef}
+            extraItems={[
+              {
+                id: "toggle-privacy-mode",
+                label: "Toggle privacy mode",
+                description: privacyMode
+                  ? "Show balances and amounts again"
+                  : "Mask balances and amounts across the app",
+                icon: privacyMode ? "🙈" : "👁️",
+                action: togglePrivacyMode,
+              },
+            ]}
           />
           <ToastContainer />
         </div>
@@ -149,16 +162,18 @@ function AppShell() {
  *   <ErrorBoundary>      — catches render errors in everything below
  *     <ThemeProvider>    — colour-scheme (light/dark) preference
  *       <ContrastProvider> — high-contrast override, [data-contrast="high"]
- *         <WalletProvider> — wallet lifecycle visible to every route
- *           <CreditDataProvider> — wallet-scoped credit line and transaction data
- *             <BrowserRouter>
- *             <header />   — persistent nav chrome
- *             <main>
- *               <Routes /> — current route
- *             </main>
- *             </BrowserRouter>
- *           </CreditDataProvider>
- *         </WalletProvider>
+ *         <PrivacyModeProvider> — app-wide amount masking, [data-privacy-mode="on"]
+ *           <WalletProvider> — wallet lifecycle visible to every route
+ *             <CreditDataProvider> — wallet-scoped credit line and transaction data
+ *               <BrowserRouter>
+ *               <header />   — persistent nav chrome
+ *               <main>
+ *                 <Routes /> — current route
+ *               </main>
+ *               </BrowserRouter>
+ *             </CreditDataProvider>
+ *           </WalletProvider>
+ *         </PrivacyModeProvider>
  *       </ContrastProvider>
  *     </ThemeProvider>
  *   </ErrorBoundary>
@@ -170,19 +185,21 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <ContrastProvider>
-          <WalletProvider>
-            <CreditDataProvider>
-              <KycProvider>
-                <NotificationProvider>
-                  <ReducedMotionProvider>
-                    <BrowserRouter>
-                      <AppShell />
-                    </BrowserRouter>
-                  </ReducedMotionProvider>
-                </NotificationProvider>
-              </KycProvider>
-            </CreditDataProvider>
-          </WalletProvider>
+          <PrivacyModeProvider>
+            <WalletProvider>
+              <CreditDataProvider>
+                <KycProvider>
+                  <NotificationProvider>
+                    <ReducedMotionProvider>
+                      <BrowserRouter>
+                        <AppShell />
+                      </BrowserRouter>
+                    </ReducedMotionProvider>
+                  </NotificationProvider>
+                </KycProvider>
+              </CreditDataProvider>
+            </WalletProvider>
+          </PrivacyModeProvider>
         </ContrastProvider>
       </ThemeProvider>
     </ErrorBoundary>

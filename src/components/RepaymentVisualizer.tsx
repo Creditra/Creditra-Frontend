@@ -30,6 +30,8 @@ import { COLOR } from '@/utils/tokens';
 import { KbdHint } from './KbdHint';
 import { LiveRegion } from './LiveRegion';
 import { useReducedMotion } from '@/context/ReducedMotionContext';
+import { usePrivacyMode } from '@/context/PrivacyContext';
+import { Amount } from './Amount';
 import { EmptyState } from './EmptyState';
 import { NoDataGraph } from './illustrations';
 import { Skeleton } from './Skeleton';
@@ -167,9 +169,11 @@ interface ChartProps {
    * `ReducedMotionContext` (which also responds to the OS media query).
    */
   reducedMotion?: boolean;
+  /** Hides monetary labels and values when privacy mode is on. */
+  masked?: boolean;
 }
 
-function StackedAreaChart({ schedule, tooltipId, onTooltip, tooltip, chartAriaLabel, reducedMotion = false }: ChartProps) {
+function StackedAreaChart({ schedule, tooltipId, onTooltip, tooltip, chartAriaLabel, reducedMotion = false, masked = false }: ChartProps) {
   const chartPatternUid = useId().replace(/:/g, '');
   const gradPrincipalId = `rv-grad-principal-${chartPatternUid}`;
   const gradInterestId = `rv-grad-interest-${chartPatternUid}`;
@@ -285,7 +289,9 @@ function StackedAreaChart({ schedule, tooltipId, onTooltip, tooltip, chartAriaLa
       aria-valuemax={schedule.length > 0 ? schedule[schedule.length - 1].month : undefined}
       aria-valuetext={
         tooltip
-          ? `Month ${tooltip.month}: Principal remaining $${Math.round(tooltip.principal)}, cumulative interest $${Math.round(tooltip.cumulativeInterest)}`
+          ? masked
+            ? `Month ${tooltip.month}: amounts hidden for privacy`
+            : `Month ${tooltip.month}: Principal remaining $${Math.round(tooltip.principal)}, cumulative interest $${Math.round(tooltip.cumulativeInterest)}`
           : undefined
       }
       style={{ width: '100%', height: 'auto', overflow: 'visible' }}
@@ -337,7 +343,7 @@ function StackedAreaChart({ schedule, tooltipId, onTooltip, tooltip, chartAriaLa
             x={PAD.left - 6} y={y + 4} textAnchor="end" fontSize="10" fill={COLOR.muted}
             style={{ fontVariantNumeric: 'tabular-nums' }}
           >
-            {fmtK(value)}
+            {masked ? '••••' : fmtK(value)}
           </text>
         </g>
       ))}
@@ -418,10 +424,16 @@ function TooltipBubble({ data }: { data: TooltipData }) {
     >
       <p style={{ fontWeight: 'var(--font-semibold)', marginBottom: 'var(--space-1)' }}>Month {data.month}</p>
       <p style={{ color: `var(--accent, ${COLOR.accent})` }}>
-        Principal remaining: {fmt(data.principal)}
+        Principal remaining:{' '}
+        <Amount value={data.principal} format={fmt} maskedLabel="Principal remaining hidden for privacy" />
       </p>
       <p style={{ color: `var(--warning, ${COLOR.warning})` }}>
-        Cumulative interest: {fmt(data.cumulativeInterest)}
+        Cumulative interest:{' '}
+        <Amount
+          value={data.cumulativeInterest}
+          format={fmt}
+          maskedLabel="Cumulative interest hidden for privacy"
+        />
       </p>
     </div>
   );
@@ -435,6 +447,7 @@ interface SRTableProps {
 }
 
 function SRTable({ schedule, caption }: SRTableProps) {
+  const { privacyMode } = usePrivacyMode();
   const fmt = (n: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n);
 
@@ -445,7 +458,9 @@ function SRTable({ schedule, caption }: SRTableProps) {
   const totalInterest = schedule[schedule.length - 1]?.cumulativeInterest ?? 0;
   const resolvedCaption =
     caption ??
-    `Monthly repayment schedule: ${termMonths} month${termMonths !== 1 ? 's' : ''}, ${fmtShort(totalInterest)} total interest`;
+    `Monthly repayment schedule: ${termMonths} month${termMonths !== 1 ? 's' : ''}, ${
+      privacyMode ? 'amounts hidden for privacy' : `${fmtShort(totalInterest)} total interest`
+    }`;
 
   return (
     <table
@@ -467,10 +482,10 @@ function SRTable({ schedule, caption }: SRTableProps) {
         {schedule.map((row) => (
           <tr key={row.month}>
             <td>{row.month}</td>
-            <td>{fmt(row.principalPaid)}</td>
-            <td>{fmt(row.interest)}</td>
-            <td>{fmt(row.principal)}</td>
-            <td>{fmt(row.cumulativeInterest)}</td>
+            <td><Amount value={row.principalPaid} format={fmt} maskedLabel="Principal paid hidden for privacy" /></td>
+            <td><Amount value={row.interest} format={fmt} maskedLabel="Interest paid hidden for privacy" /></td>
+            <td><Amount value={row.principal} format={fmt} maskedLabel="Remaining principal hidden for privacy" /></td>
+            <td><Amount value={row.cumulativeInterest} format={fmt} maskedLabel="Cumulative interest hidden for privacy" /></td>
           </tr>
         ))}
       </tbody>
@@ -555,13 +570,13 @@ function VisibleTable({ schedule, limit = 12 }: VisibleTableProps) {
                 {row.month}
               </td>
               <td style={{ ...tdStyle, color: `var(--accent, ${COLOR.accent})` }}>
-                {fmt(row.principalPaid)}
+                <Amount value={row.principalPaid} format={fmt} maskedLabel="Principal paid hidden for privacy" />
               </td>
               <td style={{ ...tdStyle, color: `var(--warning, ${COLOR.warning})` }}>
-                {fmt(row.interest)}
+                <Amount value={row.interest} format={fmt} maskedLabel="Interest paid hidden for privacy" />
               </td>
-              <td style={tdStyle}>{fmt(row.principal)}</td>
-              <td style={tdStyle}>{fmt(row.cumulativeInterest)}</td>
+              <td style={tdStyle}><Amount value={row.principal} format={fmt} maskedLabel="Remaining principal hidden for privacy" /></td>
+              <td style={tdStyle}><Amount value={row.cumulativeInterest} format={fmt} maskedLabel="Cumulative interest hidden for privacy" /></td>
             </tr>
           ))}
         </tbody>
@@ -670,8 +685,15 @@ function buildLiveMessage(
   tooltip: TooltipData | null,
   termMonths: number,
   totalInterest: number,
+  masked = false,
 ): string {
   if (schedule.length === 0) return '';
+
+  if (masked) {
+    return tooltip
+      ? `Month ${tooltip.month}: amounts hidden for privacy.`
+      : `Repayment plan: ${termMonths} month${termMonths !== 1 ? 's' : ''}. Amounts hidden for privacy.`;
+  }
 
   if (tooltip) {
     return `Month ${tooltip.month}: principal remaining ${usdFmt.format(tooltip.principal)}, cumulative interest ${usdFmt.format(tooltip.cumulativeInterest)}.`;
@@ -734,6 +756,7 @@ export function RepaymentVisualizer({
   // Detect reduced-motion preference from OS or in-app override.
   // When true, the chart renders statically (no CSS animations).
   const { isReducedMotionActive } = useReducedMotion();
+  const { privacyMode } = usePrivacyMode();
 
   const schedule = useMemo(
     () => buildSchedule(principal, apr, monthlyPayment, maxMonths),
@@ -773,8 +796,8 @@ export function RepaymentVisualizer({
 
   // ── ARIA live-region announcement ──
   const liveMessage = useMemo(() => {
-    return buildLiveMessage(schedule, tooltip, termMonths, totalInterest);
-  }, [schedule, tooltip, termMonths, totalInterest]);
+    return buildLiveMessage(schedule, tooltip, termMonths, totalInterest, privacyMode);
+  }, [schedule, tooltip, termMonths, totalInterest, privacyMode]);
 
   if (loading === true || bootstrapping) {
     return <RepaymentVisualizerSkeleton />;
@@ -812,11 +835,17 @@ export function RepaymentVisualizer({
         {schedule.length > 0 && (
           <p style={{ fontSize: 'var(--text-xs)', color: `var(--muted, ${COLOR.muted})`, margin: 0, fontVariantNumeric: 'tabular-nums' }}>
             {termMonths} month{termMonths !== 1 ? 's' : ''} ·{' '}
-            {new Intl.NumberFormat('en-US', {
-              style: 'currency',
-              currency: 'USD',
-              maximumFractionDigits: 0,
-            }).format(totalInterest)}{' '}
+            <Amount
+              value={totalInterest}
+              format={(value) =>
+                new Intl.NumberFormat('en-US', {
+                  style: 'currency',
+                  currency: 'USD',
+                  maximumFractionDigits: 0,
+                }).format(value)
+              }
+              maskedLabel="Total interest hidden for privacy"
+            />{' '}
             total interest
           </p>
         )}
@@ -841,6 +870,7 @@ export function RepaymentVisualizer({
               tooltip={tooltip}
               chartAriaLabel={chartAriaLabel}
               reducedMotion={isReducedMotionActive}
+              masked={privacyMode}
             />
 
             {/* Tooltip bubble — positioned absolutely over chart */}

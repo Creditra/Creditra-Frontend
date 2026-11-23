@@ -12,6 +12,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { CopyToClipboard } from "../components/CopyToClipboard";
+import { Amount } from "../components/Amount";
 import { type DatePreset } from "../components/DateRangeChips";
 import {
   AmountRangeChips,
@@ -264,7 +265,9 @@ function TransactionRow({
           }}
         >
           {isNegative ? "-" : tx.type === "Draw" ? "+" : ""}
-          {isNegative ? fmt(tx.amount) : tx.amount > 0 ? fmt(tx.amount) : ""}
+          {isNegative || tx.amount > 0 ? (
+            <Amount value={tx.amount} format={fmt} maskedLabel="Transaction amount hidden for privacy" />
+          ) : null}
         </td>
         <td className="tx-line">
           <span className="tx-line-name">{tx.lineName}</span>
@@ -335,7 +338,7 @@ function TransactionRow({
                       }}
                     >
                       {isNegative ? "-" : "+"}
-                      {fmt(tx.amount)}
+                      <Amount value={tx.amount} format={fmt} maskedLabel="Transaction amount hidden for privacy" />
                     </span>
                   </div>
                   <div className="tx-detail-item">
@@ -1357,9 +1360,11 @@ export function TransactionHistory({
                   stats.outstandingBalance > 0 ? COLOR.danger : COLOR.success,
               }}
             >
-              {stats.outstandingBalance > 0
-                ? fmt(stats.outstandingBalance)
-                : fmt(0)}
+              <Amount
+                value={stats.outstandingBalance > 0 ? stats.outstandingBalance : 0}
+                format={fmt}
+                maskedLabel="Outstanding balance hidden for privacy"
+              />
             </span>
           </div>
         </div>
@@ -1381,7 +1386,7 @@ export function TransactionHistory({
               className="th-stat-value num-tabular"
               style={{ color: COLOR.accent }}
             >
-              {fmt(stats.totalDrawn)}
+              <Amount value={stats.totalDrawn} format={fmt} maskedLabel="Total drawn hidden for privacy" />
             </span>
           </div>
         </div>
@@ -1401,7 +1406,7 @@ export function TransactionHistory({
               className="th-stat-value num-tabular"
               style={{ color: COLOR.success }}
             >
-              {fmt(stats.totalRepaid)}
+              <Amount value={stats.totalRepaid} format={fmt} maskedLabel="Total repaid hidden for privacy" />
             </span>
           </div>
         </div>
@@ -1424,7 +1429,7 @@ export function TransactionHistory({
               className="th-stat-value num-tabular"
               style={{ color: COLOR.warning }}
             >
-              {fmt(stats.totalInterestAndFees)}
+              <Amount value={stats.totalInterestAndFees} format={fmt} maskedLabel="Interest and fees hidden for privacy" />
             </span>
           </div>
         </div>
@@ -1460,7 +1465,7 @@ export function TransactionHistory({
                   style={{ color: COLOR.muted }}
                 >
                   {diff > 0 ? "+" : "−"}
-                  {fmt(absDiff)}{" "}
+                  <Amount value={absDiff} format={fmt} maskedLabel="Balance difference hidden for privacy" />{" "}
                   <span style={{ fontSize: "0.75em" }}>difference</span>
                 </span>
                 <span className="th-stat-hint">
