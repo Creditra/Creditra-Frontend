@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { suggestRoute } from "../utils/suggestRoute";
 import "./ErrorPage.css";
 
 /**
@@ -18,6 +19,8 @@ import "./ErrorPage.css";
  * Both keep keyboard semantics native (button + link).
  */
 export function NotFound() {
+  const { pathname } = useLocation();
+  const suggestion = suggestRoute(pathname);
   // Checked after mount to avoid SSR mismatch on history.length
   const [canGoBack, setCanGoBack] = useState(false);
 
@@ -57,6 +60,19 @@ export function NotFound() {
         <p className="error-message">
           The page you're looking for doesn't exist or has been moved.
         </p>
+
+        {suggestion && (
+          <p className="error-details">
+            Did you mean{" "}
+            <Link
+              to={suggestion.path}
+              aria-label={`Go to ${suggestion.pageName} (${suggestion.path})`}
+            >
+              {suggestion.pageName} ({suggestion.path})
+            </Link>
+            ?
+          </p>
+        )}
 
         <div className="error-actions">
           {canGoBack ? (
