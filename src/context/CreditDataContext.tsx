@@ -18,7 +18,8 @@ import {
 } from '../services/credit/eventPoller';
 import { formatCurrency } from '../utils/currency';
 import { MOCK_CREDIT_LINES } from '../data/mockData';
-import type { CreditLine } from '../types/creditLine';
+import type { CreditLine, CreditLineStatus } from '../types/creditLine';
+import { emit } from '../lib/event-bus';
 import type { WalletInfo } from '../types/wallet';
 
 export type CreditDataStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -97,6 +98,7 @@ export function CreditDataProvider({ children, source }: CreditDataProviderProps
     lastUpdatedAt: null,
   });
   const inFlightRef = useRef(new Map<number, Promise<CreditLine[]>>());
+  const knownStatusesRef = useRef(new Map<string, CreditLineStatus>());
 
   const load = useCallback(async (): Promise<CreditLine[]> => {
     if (!owner || !identity || identityRef.current !== identity) return [];
@@ -113,6 +115,19 @@ export function CreditDataProvider({ children, source }: CreditDataProviderProps
     }));
     const request = Promise.resolve().then(() => dataSource.listCreditLines(owner)).then((lines) => {
       if (generationRef.current === generation && identityRef.current === identity) {
+        for (const line of lines) {
+          const statusKey = `${identity}:${line.id}`;
+          const previousStatus = knownStatusesRef.current.get(statusKey);
+          if (previousStatus && previousStatus !== line.status) {
+            emit('line:statusChanged', {
+              creditLineId: line.id,
+              previousStatus,
+              status: line.status,
+            });
+          }
+          knownStatusesRef.current.set(statusKey, line.status);
+        }
+
         setStored({
           identity,
           status: 'success',

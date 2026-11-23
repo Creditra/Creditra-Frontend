@@ -1,4 +1,4 @@
-import { useRef, useState, lazy, Suspense } from "react";
+import { useRef, useState, useEffect, lazy, Suspense } from "react";
 import { BrowserRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { CommandPalette } from "./components/CommandPalette";
 import { RouteAnnouncer, RouteHeadProvider } from "./components/RouteAnnouncer";
@@ -21,6 +21,9 @@ import { BannerAlerts } from "./components/notifications/BannerAlert";
 import { Header } from "./layouts/Header";
 import { Skeleton } from "./components/Skeleton";
 import { useHotkey } from "./lib/hotkeys";
+import { useNotifications } from "./context/NotificationContext";
+import { useCreditData } from "./context/CreditDataContext";
+import { registerEventSubscribers } from "./lib/event-subscribers";
 
 import { getEnabledRoutes } from "./routes/manifest";
 
@@ -42,6 +45,10 @@ function RouteLoadingFallback() {
 
 function AppShell() {
   const navigate = useNavigate();
+  const { addToast } = useNotifications();
+  const { refetch } = useCreditData();
+
+  useEffect(() => registerEventSubscribers({ addToast, refetch }), [addToast, refetch]);
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [openedFromSettingsLink, setOpenedFromSettingsLink] = useState(false);
   const [isKycDrawerOpen, setIsKycDrawerOpen] = useState(false);

@@ -42,6 +42,7 @@ import { RepayPreviewModal } from '@/components/RepayPreviewModal';
 import { CopyToClipboard } from '@/components/CopyToClipboard';
 import { Tooltip } from '@/components/Tooltip';
 import { submitRepayment } from '@/services/repayService';
+import { emit } from '@/lib/event-bus';
 import { motionClasses, useReducedMotion } from '@/context/ReducedMotionContext';
 import { useWallet, walletIdentityKey } from '@/context/WalletContext';
 import { useCreditLine, useCreditLines } from '@/hooks/useCreditLines';
@@ -456,6 +457,14 @@ export default function RepayPage() {
         nextPaymentAmount: selectedLine.nextPaymentAmount,
       });
     }
+    emit('repay:success', {
+      transactionId,
+      creditLineId: selectedLine.id,
+      creditLineName: selectedLine.name,
+      amount,
+      remainingDebt,
+      timestamp,
+    });
     navigate(`/repay/success?tx=${encodeURIComponent(transactionId)}`, {
       state: {
         amount,
