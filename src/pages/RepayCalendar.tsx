@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { COLOR } from '../utils/tokens';
 import { parseLocalDate } from '../utils/dates';
+import { formatCurrency } from '../utils/currency';
 
 function formatEventDate(dateStr: string): string {
   const parsed = parseLocalDate(dateStr);
@@ -63,14 +64,16 @@ export interface RepayCalendarProps {
 }
 
 /**
- * RepayCalendar — repayment schedule calendar with a live region.
+ * RepayCalendar — repayment schedule calendar.
  *
  * Renders an ordered list of upcoming repayment events with accessible
- * date labels and amounts. Uses `aria-live="polite"` so assistive
- * technology announces changes to the schedule.
+ * date labels and two-decimal currency amounts. Announces schedule count
+ * changes via a visually hidden `role="status"` element instead of making
+ * the entire list a live region.
  *
  * WCAG 2.1 AA:
- * - Live region announces schedule updates to screen readers.
+ * - A concise, visually hidden `role="status"` region announces schedule
+ *   count updates without re-reading every list item.
  * - Each event row uses semantic markup for date and amount.
  * - All numeric values use `font-variant-numeric: tabular-nums`.
  */
@@ -83,14 +86,21 @@ export function RepayCalendar({
     .filter(Boolean)
     .join(' ');
 
+  const statusMessage =
+    events.length === 0
+      ? 'No upcoming repayments'
+      : `${events.length} upcoming ${events.length === 1 ? 'repayment' : 'repayments'}`;
+
   return (
     <section
       className={classes}
       aria-label="Repayment calendar"
-      aria-live="polite"
-      aria-atomic="true"
     >
       <h2 className="repay-calendar__title">Upcoming Payments</h2>
+
+      <div className="sr-only" role="status">
+        {statusMessage}
+      </div>
 
       {events.length === 0 ? (
         <p className="repay-calendar__empty">No upcoming payments.</p>
@@ -117,7 +127,7 @@ export function RepayCalendar({
                 </span>
               )}
               <span className="repay-calendar__amount num-tabular">
-                ${event.amount.toLocaleString()}
+                {formatCurrency(event.amount)}
               </span>
             </li>
           ))}

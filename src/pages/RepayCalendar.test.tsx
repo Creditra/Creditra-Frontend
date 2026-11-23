@@ -19,10 +19,45 @@ describe('RepayCalendar', () => {
     expect(screen.getByText('No upcoming payments.')).toBeInTheDocument();
   });
 
-  it('uses aria-live="polite" region', () => {
+  it('does not wrap the list in aria-live and announces count via a visually hidden status region', () => {
     render(<RepayCalendar events={sampleEvents} />);
     const section = screen.getByLabelText('Repayment calendar');
-    expect(section).toHaveAttribute('aria-live', 'polite');
+    expect(section).not.toHaveAttribute('aria-live');
+    expect(section).not.toHaveAttribute('aria-atomic');
+
+    const list = screen.getByRole('list');
+    expect(list).not.toHaveAttribute('aria-live');
+    expect(list).not.toHaveAttribute('aria-atomic');
+
+    const status = screen.getByRole('status');
+    expect(status).toHaveClass('sr-only');
+    expect(status).toHaveTextContent('2 upcoming repayments');
+  });
+
+  it('announces empty and singular counts in the status region', () => {
+    const { rerender } = render(<RepayCalendar events={[]} />);
+    expect(screen.getByRole('status')).toHaveTextContent('No upcoming repayments');
+
+    rerender(
+      <RepayCalendar
+        events={[{ date: '2026-08-01', amount: 1234.5, label: 'Single payment' }]}
+      />,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('1 upcoming repayment');
+  });
+
+  it('formats amounts with currency symbol and two decimal places', () => {
+    const events = [
+      { date: '2026-08-01', amount: 1234.5, label: 'Standard payment' },
+      { date: '2026-08-02', amount: 0, label: 'Zero payment' },
+      { date: '2026-08-03', amount: 1000000.1, label: 'Large payment' },
+      { date: '2026-08-04', amount: 1500, label: 'Whole dollar payment' },
+    ];
+    render(<RepayCalendar events={events} />);
+    expect(screen.getByText('$1,234.50')).toBeInTheDocument();
+    expect(screen.getByText('$0.00')).toBeInTheDocument();
+    expect(screen.getByText('$1,000,000.10')).toBeInTheDocument();
+    expect(screen.getByText('$1,500.00')).toBeInTheDocument();
   });
 
   it('renders children below the calendar', () => {
