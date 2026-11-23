@@ -388,3 +388,32 @@ src/
 ├── data/                Static fixtures (mirrors backend shape)
 └── test/                Vitest setup
 ```
+
+---
+
+## Money handling
+
+All monetary arithmetic uses the exact `Money` type from `src/utils/money.ts` (`{ units: bigint, decimals: number, asset: string }`). Never add `CreditLine.limit` or `CreditLine.utilized` as plain JS numbers — float addition of many sub-cent values drifts by up to 1 ULP per operation.
+
+**Canonical pattern**
+
+```ts
+import { lineMoney } from '@/lib/credit-summary';
+import { add, roundMoneyToCents, toDisplayNumber } from '@/utils/money';
+
+const total = lines.reduce((sum, l) => add(sum, lineMoney(l.utilized)), ZERO);
+const display = toDisplayNumber(roundMoneyToCents(total)); // safe for rendering
+```
+
+**Key functions**
+
+| Function | Location | Purpose |
+|----------|----------|---------|
+| `lineMoney(value)` | `src/lib/credit-summary.ts` | Convert a `CreditLine` number field to `Money` via `parseMoney` on a fixed-precision string |
+| `summarizeCreditLinesExact(lines)` | `src/lib/credit-summary.ts` | Exact `Money` aggregation of credit-line totals |
+| `summarizeCreditLines(lines)` | `src/lib/credit-summary.ts` | Number-based API (delegates to exact variant internally) |
+| `utilisationBps(utilized, limit)` | `src/lib/credit-summary.ts` | Utilisation as integer basis points — no float division |
+| `parseMoney`, `add`, `sub`, `mulRate` | `src/utils/money.ts` | Core exact arithmetic |
+| `roundMoneyToCents` | `src/utils/money.ts` | Round to 2 dp before display |
+
+**Naming note**: `formatMiney` and `formatMineyCents` in `src/utils/money.ts` are typo-aliases preserved for backward compatibility. Prefer `formatMoney` and `formatMoneyCents` in new code.
