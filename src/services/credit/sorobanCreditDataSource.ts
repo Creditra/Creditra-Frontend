@@ -39,9 +39,9 @@ const DEFAULT_RETRY_BASE_DELAY_MS = 250;
 const DEFAULT_RETRY_MAX_DELAY_MS = 2_000;
 
 export class SorobanCreditDataSource implements CreditDataSource {
-  private readonly server: rpc.Server;
+  readonly server: rpc.Server;
   private readonly networkPassphrase: string;
-  private readonly contractId: string;
+  readonly contractId: string;
   private readonly defaultTimeoutMs: number;
   private readonly retryAttempts: number;
   private readonly retryBaseDelayMs: number;

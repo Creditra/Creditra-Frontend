@@ -8,8 +8,15 @@ import {
   type ReactNode,
 } from 'react';
 import { walletIdentityKey, useWallet } from './WalletContext';
+import { NotificationContext, type AddToastOptions } from './NotificationContext';
 import { createCreditDataSource } from '../services/credit';
 import type { CreditDataSource } from '../services/credit/CreditDataSource';
+import { SorobanCreditDataSource } from '../services/credit/sorobanCreditDataSource';
+import {
+  startCreditEventPoller,
+  type CreditDomainEvent,
+} from '../services/credit/eventPoller';
+import { formatCurrency } from '../utils/currency';
 import { MOCK_CREDIT_LINES } from '../data/mockData';
 import type { CreditLine } from '../types/creditLine';
 import type { WalletInfo } from '../types/wallet';
@@ -32,6 +39,34 @@ const CreditDataContext = createContext<CreditDataState | null>(null);
 interface CreditDataProviderProps {
   children: ReactNode;
   source?: CreditDataSource;
+}
+
+function toCreditEventToast(event: CreditDomainEvent): AddToastOptions {
+  if (event.kind === 'draw') {
+    return {
+      type: 'info',
+      category: 'transaction',
+      title: 'Credit drawn',
+      message: `${formatCurrency(event.amount ?? 0)} was drawn from your credit line.`,
+      saveToHistory: true,
+    };
+  }
+  if (event.kind === 'repay') {
+    return {
+      type: 'success',
+      category: 'transaction',
+      title: 'Repayment received',
+      message: `${formatCurrency(event.amount ?? 0)} was repaid on your credit line.`,
+      saveToHistory: true,
+    };
+  }
+  return {
+    type: event.status === 'Active' ? 'info' : 'warning',
+    category: 'credit_line',
+    title: 'Credit line status changed',
+    message: `Your credit line is now ${event.status ?? 'updated'}.`,
+    saveToHistory: true,
+  };
 }
 
 interface StoredState {
@@ -119,6 +154,25 @@ export function CreditDataProvider({ children, source }: CreditDataProviderProps
     }
     void load().catch(() => undefined);
   }, [identity, load, owner]);
+
+  const addToast = useContext(NotificationContext)?.addToast;
+  const addToastRef = useRef(addToast);
+  useEffect(() => {
+    addToastRef.current = addToast;
+  }, [addToast]);
+
+  useEffect(() => {
+    if (!owner || !(dataSource instanceof SorobanCreditDataSource)) return;
+    return startCreditEventPoller({
+      server: dataSource.server,
+      contractId: dataSource.contractId,
+      borrower: owner,
+      onEvents: (events) => {
+        void load().catch(() => undefined);
+        events.forEach((event) => addToastRef.current?.(toCreditEventToast(event)));
+      },
+    });
+  }, [dataSource, load, owner]);
 
   const refetch = useCallback(() => load(), [load]);
   const setLines = useCallback((lines: CreditLine[]) => {
