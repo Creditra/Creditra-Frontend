@@ -70,12 +70,34 @@ describe('sorobanAdapter', () => {
     it('populates nextPaymentAmount when nextPaymentAmountI128 is supplied', () => {
       const result = mapCreditLine({
         ...requiredOnly,
-        nextPaymentAmountI128: '2500000000',
+        nextPaymentAmountI128: '1500000',
       });
 
       expect(result.nextPaymentAmount).toEqual({
-        units: 2_500_000_000n,
-        decimals: 7,
+        units: 1_500_000n,
+        decimals: SOROBAN_TOKEN_DECIMALS,
+        asset: 'USDC',
+      });
+    });
+
+    it('handles zero and negative nextPaymentAmountI128 values', () => {
+      const zeroResult = mapCreditLine({
+        ...requiredOnly,
+        nextPaymentAmountI128: '0',
+      });
+      expect(zeroResult.nextPaymentAmount).toEqual({
+        units: 0n,
+        decimals: SOROBAN_TOKEN_DECIMALS,
+        asset: 'USDC',
+      });
+
+      const negativeResult = mapCreditLine({
+        ...requiredOnly,
+        nextPaymentAmountI128: '-1500000',
+      });
+      expect(negativeResult.nextPaymentAmount).toEqual({
+        units: -1_500_000n,
+        decimals: SOROBAN_TOKEN_DECIMALS,
         asset: 'USDC',
       });
     });

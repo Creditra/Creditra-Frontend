@@ -39,9 +39,11 @@ import {
 } from '@/components/TypedAmountConfirm';
 import { KbdHint } from '@/components/KbdHint';
 import { RepayPreviewModal } from '@/components/RepayPreviewModal';
+import { AffordabilityCalc } from '@/components/AffordabilityCalc';
 import { CopyToClipboard } from '@/components/CopyToClipboard';
 import { Tooltip } from '@/components/Tooltip';
 import { submitRepayment } from '@/services/repayService';
+import { emit } from '@/lib/event-bus';
 import { motionClasses, useReducedMotion } from '@/context/ReducedMotionContext';
 import { useWallet, walletIdentityKey } from '@/context/WalletContext';
 import { useCreditLine, useCreditLines } from '@/hooks/useCreditLines';
@@ -65,6 +67,7 @@ import {
 } from '@/state/repayDraft';
 import { useDraftSaveStatus } from '@/hooks/useDraftSaveStatus';
 import { DraftSavedIndicator } from '@/components/DraftSavedIndicator';
+import { PendingButton } from '@/components/PendingButton';
 
 /**
  * Reason a saved draft was discarded instead of being offered for recovery.
@@ -455,6 +458,14 @@ export default function RepayPage() {
         nextPaymentAmount: selectedLine.nextPaymentAmount,
       });
     }
+    emit('repay:success', {
+      transactionId,
+      creditLineId: selectedLine.id,
+      creditLineName: selectedLine.name,
+      amount,
+      remainingDebt,
+      timestamp,
+    });
     navigate(`/repay/success?tx=${encodeURIComponent(transactionId)}`, {
       state: {
         amount,
@@ -1236,15 +1247,6 @@ export default function RepayPage() {
                   } ${motionClasses(isReducedMotionActive, 'transition duration-200 ease-in-out')}`}
                 />
               </button>
-                      const planned = appliedPlan?.allocations.find((a) => a.lineId === cl.id);
-                      if (planned && planned.amount > 0) {
-                        setAmountStr(planned.amount.toFixed(2));
-                        setSrAnnouncement(
-                          `Selected ${cl.name}. Prefilled ${formatMoney(planned.amount)} from your ${appliedPlan?.strategy} plan.`,
-                        );
-                      } else {
-                        setSrAnnouncement(`Selected ${cl.name}. Choose a repayment amount.`);
-                      }
             </div>
 
             {isMultiLineMode ? (
@@ -1771,7 +1773,7 @@ export default function RepayPage() {
                 })}
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     );
@@ -2074,6 +2076,26 @@ export default function RepayPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* AffordabilityCalc disclosure – collapsed by default so it
+                    doesn't obscure the amount input, but keyboard-accessible
+                    via the native <details>/<summary> element. onApply fills
+                    amountStr (respecting existing amount validation). */}
+                <details className="rounded-lg border border-border bg-surface">
+                  <summary className="cursor-pointer select-none list-none px-4 py-3 text-xs font-semibold uppercase text-muted [&::-webkit-details-marker]:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+                    <span className="flex items-center gap-2">
+                      <span>Affordability Calculator</span>
+                      <span className="text-muted font-normal normal-case">(optional)</span>
+                    </span>
+                  </summary>
+                  <div className="border-t border-border">
+                    <AffordabilityCalc
+                      onApply={(suggested) => {
+                        setAmountStr(suggested.toFixed(2));
+                      }}
+                    />
+                  </div>
+                </details>
 
                 <div className="rounded-lg border border-border bg-surface p-4">
                   <p className="text-xs font-semibold uppercase text-muted">
@@ -2385,17 +2407,23 @@ export default function RepayPage() {
                   Back <KbdHint keys={['Esc']} />
                 </span>
               </button>
-              <button
-                type="button"
-                onClick={handleConfirm}
-                disabled={isReviewConfirmDisabled}
-                aria-disabled={isReviewConfirmDisabled || undefined}
-                className={`rp-confirm-btn flex-[2] rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${motionClasses(isReducedMotionActive, 'transition-all hover:brightness-110')}`}
-              >
-                <span className="flex items-center justify-center gap-2">
-                  Confirm Repayment <KbdHint keys={['Enter']} />
-                </span>
-              </button>
+              <div className="flex-[2] flex flex-col">
+                <PendingButton
+                  type="button"
+                  onClick={handleConfirm}
+                  pending={false}
+                  pendingLabel="Confirming..."
+                  disabled={isReviewConfirmDisabled}
+                  aria-disabled={isReviewConfirmDisabled || undefined}
+                  requiresOnline
+                  offlineReason="You're offline — reconnect to repay"
+                  className={`rp-confirm-btn w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${motionClasses(isReducedMotionActive, 'transition-all hover:brightness-110')}`}
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    Confirm Repayment <KbdHint keys={['Enter']} />
+                  </span>
+                </PendingButton>
+              </div>
             </div>
             <DraftSavedIndicator
               status={draftSave.status}

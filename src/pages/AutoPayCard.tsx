@@ -1,5 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AutopaySchedule, type AutopayFrequency } from '../components/AutopaySchedule';
+import {
+  getNextScheduledPayment,
+  useAutopaySchedulesForWallet,
+} from '../state/autopay';
+import { fmt } from '../utils/tokens';
 import './AutopayPage.css';
 
 interface AutoPayCardProps {
@@ -11,6 +16,8 @@ interface AutoPayCardProps {
   onPreviewRowChange?: (index: number | null) => void;
   creditLineName?: string;
   creditLineBalance?: number;
+  walletKey?: string | null;
+  creditLineId?: string;
 }
 
 /**
@@ -38,8 +45,15 @@ export function AutoPayCard({
   onPreviewRowChange,
   creditLineName,
   creditLineBalance,
+  walletKey = null,
+  creditLineId,
 }: AutoPayCardProps) {
   const [focused, setFocused] = useState(false);
+  const { activeSchedules } = useAutopaySchedulesForWallet(walletKey);
+  const nextScheduled = useMemo(
+    () => getNextScheduledPayment(activeSchedules, creditLineId),
+    [activeSchedules, creditLineId],
+  );
 
   const containerClasses = [
     'card',
@@ -73,6 +87,30 @@ export function AutoPayCard({
         cursor: 'pointer',
       }}
     >
+      {nextScheduled && (
+        <div
+          className="autopay-page__next-scheduled"
+          role="status"
+          aria-live="polite"
+          style={{
+            marginBottom: 'var(--space-4)',
+            padding: 'var(--space-3)',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--border)',
+            background: 'var(--accent-tint)',
+            fontSize: 'var(--text-sm)',
+          }}
+        >
+          <strong>Next scheduled payment:</strong> {fmt(nextScheduled.amount)} on{' '}
+          <time dateTime={nextScheduled.date}>
+            {new Date(`${nextScheduled.date}T00:00:00`).toLocaleDateString('en-US', {
+              month: 'long',
+              day: 'numeric',
+              year: 'numeric',
+            })}
+          </time>
+        </div>
+      )}
       {hasValidPreview ? (
         <>
           <AutopaySchedule

@@ -1,7 +1,7 @@
 .toast-container {
   position: fixed;
   top: 1.25rem;
-  right: 1.25rem;
+  inset-inline-end: 1.25rem;
   z-index: 9999;
   display: flex;
   flex-direction: column;
@@ -26,7 +26,7 @@
     /* Clear the top notch / status bar */
     top: calc(1rem + var(--sat, 0px));
     /* Clear the right edge (landscape notch) */
-    right: calc(1rem + var(--sar, 0px));
+    inset-inline-end: calc(1rem + var(--sar, 0px));
     /* Keep width constrained to the safe viewport */
     max-width: calc(100vw - 2rem - var(--sal, 0px) - var(--sar, 0px));
   }
@@ -46,7 +46,7 @@
    * Initial state is hidden; .toast-enter flips to visible.
    */
   opacity: 0;
-  transform: translateX(24px);
+  transform: translateX(var(--toast-enter-offset, 24px));
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
@@ -65,7 +65,7 @@
 
   .toast-item.toast-leave {
     opacity: 0;
-    transform: translateX(24px);
+    transform: translateX(var(--toast-enter-offset, 24px));
     /*
      * Explicitly re-declare so the leave duration (0.3 s) takes
      * precedence over the enter duration (0.25 s) without a specificity
@@ -245,4 +245,18 @@
   .toast-progress-fill {
     transition: width 0.05s linear;
   }
+}
+
+
+/* Enter from the logical inline end rather than the physical right edge. */
+[dir="rtl"] .toast-container {
+  --toast-enter-offset: -24px;
+}
+
+.toast-action__arrow {
+  display: inline-block;
+}
+
+[dir="rtl"] .toast-action__arrow {
+  transform: scaleX(-1);
 }

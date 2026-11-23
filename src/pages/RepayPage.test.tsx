@@ -32,8 +32,11 @@ vi.mock('../context/ReducedMotionContext', () => ({
 vi.mock('../context/ThemeContext', () => ({
   useTheme: () => ({ theme: 'default' }),
   ThemeProvider: ({ children }: { children: ReactNode }) => children,
+}));
+
 vi.mock('../context/WalletContext', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../context/WalletContext')>();
+  return {
     ...actual,
     useWallet: () => ({
       wallet: {
@@ -63,17 +66,28 @@ const { mockWallet, mockBalances, mockRefreshBalance } = vi.hoisted(() => {
   }];
   return {
     mockWallet: {
+      publicKey: 'GAABC1234567890ABCDEF',
+      network: 'TESTNET',
+    },
     mockBalances: balances,
     mockRefreshBalance: async () => balances,
   };
 });
 
-    wallet: mockWallet,
-    balances: mockBalances,
-    refreshBalance: mockRefreshBalance,
-  walletIdentityKey: (wallet: { publicKey: string; network: string } | null) =>
-    wallet ? `undefined:${wallet.publicKey}:${wallet.network}` : null,
-}));
+vi.mock('../context/WalletContext', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../context/WalletContext')>();
+  return {
+    ...actual,
+    useWallet: () => ({
+      wallet: mockWallet,
+      status: 'connected',
+      balances: mockBalances,
+      refreshBalance: mockRefreshBalance,
+    }),
+    walletIdentityKey: (wallet: { publicKey: string; network: string } | null) =>
+      wallet ? `undefined:${wallet.publicKey}:${wallet.network}` : null,
+  };
+});
 
 vi.mock('../utils/storage', () => ({
   readJson: vi.fn((_key: string, fallback: unknown) => fallback),

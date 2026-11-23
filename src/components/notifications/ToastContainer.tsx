@@ -72,9 +72,8 @@ export function ToastItem({
         .join(" ")}
       style={{
         borderColor: colors.border,
-        /* Left accent bar reinforces severity via color in addition to the
-           icon, satisfying WCAG 1.4.1 (Use of Color). */
-        borderLeft: `4px solid ${colors.icon}`,
+        /* Logical accent bar reinforces severity without assuming LTR. */
+        borderInlineStart: `4px solid ${colors.icon}`,
       }}
       role={isUrgent ? "alert" : "status"}
       aria-live={isUrgent ? "assertive" : "polite"}
@@ -118,7 +117,7 @@ export function ToastItem({
             handleDismiss();
           }}
         >
-          {toast.action.label} →
+          {toast.action.label} <span className="toast-action__arrow" aria-hidden="true">→</span>
         </button>
       )}
 

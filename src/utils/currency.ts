@@ -1,4 +1,5 @@
 import { getAccruedInterest, type InterestBearingLine } from '../lib/interest';
+import { getNumberFormat } from './formatters';
 
 /**
  * Lightweight currency formatting helpers.
@@ -93,7 +94,7 @@ function createCurrencyFormatter(
   const safeCurrency = resolveCurrencyCode(currency);
 
   try {
-    return new Intl.NumberFormat(safeLocale, {
+    return getNumberFormat(safeLocale, {
       ...options,
       style: 'currency',
       currency: safeCurrency,
@@ -101,14 +102,14 @@ function createCurrencyFormatter(
   } catch {
     // Retry with DEFAULT_LOCALE first, then DEFAULT_CURRENCY.
     try {
-      return new Intl.NumberFormat(DEFAULT_LOCALE, {
+      return getNumberFormat(DEFAULT_LOCALE, {
         ...options,
         style: 'currency',
         currency: safeCurrency,
       });
     } catch {
       try {
-        return new Intl.NumberFormat(DEFAULT_LOCALE, {
+        return getNumberFormat(DEFAULT_LOCALE, {
           ...options,
           style: 'currency',
           currency: DEFAULT_CURRENCY,

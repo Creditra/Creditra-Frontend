@@ -8,10 +8,18 @@ import {
   type ReactNode,
 } from 'react';
 import { walletIdentityKey, useWallet } from './WalletContext';
+import { NotificationContext, type AddToastOptions } from './NotificationContext';
 import { createCreditDataSource } from '../services/credit';
 import type { CreditDataSource } from '../services/credit/CreditDataSource';
+import { SorobanCreditDataSource } from '../services/credit/sorobanCreditDataSource';
+import {
+  startCreditEventPoller,
+  type CreditDomainEvent,
+} from '../services/credit/eventPoller';
+import { formatCurrency } from '../utils/currency';
 import { MOCK_CREDIT_LINES } from '../data/mockData';
-import type { CreditLine } from '../types/creditLine';
+import type { CreditLine, CreditLineStatus } from '../types/creditLine';
+import { emit } from '../lib/event-bus';
 import type { WalletInfo } from '../types/wallet';
 
 export type CreditDataStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -32,6 +40,34 @@ const CreditDataContext = createContext<CreditDataState | null>(null);
 interface CreditDataProviderProps {
   children: ReactNode;
   source?: CreditDataSource;
+}
+
+function toCreditEventToast(event: CreditDomainEvent): AddToastOptions {
+  if (event.kind === 'draw') {
+    return {
+      type: 'info',
+      category: 'transaction',
+      title: 'Credit drawn',
+      message: `${formatCurrency(event.amount ?? 0)} was drawn from your credit line.`,
+      saveToHistory: true,
+    };
+  }
+  if (event.kind === 'repay') {
+    return {
+      type: 'success',
+      category: 'transaction',
+      title: 'Repayment received',
+      message: `${formatCurrency(event.amount ?? 0)} was repaid on your credit line.`,
+      saveToHistory: true,
+    };
+  }
+  return {
+    type: event.status === 'Active' ? 'info' : 'warning',
+    category: 'credit_line',
+    title: 'Credit line status changed',
+    message: `Your credit line is now ${event.status ?? 'updated'}.`,
+    saveToHistory: true,
+  };
 }
 
 interface StoredState {
@@ -62,6 +98,7 @@ export function CreditDataProvider({ children, source }: CreditDataProviderProps
     lastUpdatedAt: null,
   });
   const inFlightRef = useRef(new Map<number, Promise<CreditLine[]>>());
+  const knownStatusesRef = useRef(new Map<string, CreditLineStatus>());
 
   const load = useCallback(async (): Promise<CreditLine[]> => {
     if (!owner || !identity || identityRef.current !== identity) return [];
@@ -78,6 +115,19 @@ export function CreditDataProvider({ children, source }: CreditDataProviderProps
     }));
     const request = Promise.resolve().then(() => dataSource.listCreditLines(owner)).then((lines) => {
       if (generationRef.current === generation && identityRef.current === identity) {
+        for (const line of lines) {
+          const statusKey = `${identity}:${line.id}`;
+          const previousStatus = knownStatusesRef.current.get(statusKey);
+          if (previousStatus && previousStatus !== line.status) {
+            emit('line:statusChanged', {
+              creditLineId: line.id,
+              previousStatus,
+              status: line.status,
+            });
+          }
+          knownStatusesRef.current.set(statusKey, line.status);
+        }
+
         setStored({
           identity,
           status: 'success',
@@ -119,6 +169,25 @@ export function CreditDataProvider({ children, source }: CreditDataProviderProps
     }
     void load().catch(() => undefined);
   }, [identity, load, owner]);
+
+  const addToast = useContext(NotificationContext)?.addToast;
+  const addToastRef = useRef(addToast);
+  useEffect(() => {
+    addToastRef.current = addToast;
+  }, [addToast]);
+
+  useEffect(() => {
+    if (!owner || !(dataSource instanceof SorobanCreditDataSource)) return;
+    return startCreditEventPoller({
+      server: dataSource.server,
+      contractId: dataSource.contractId,
+      borrower: owner,
+      onEvents: (events) => {
+        void load().catch(() => undefined);
+        events.forEach((event) => addToastRef.current?.(toCreditEventToast(event)));
+      },
+    });
+  }, [dataSource, load, owner]);
 
   const refetch = useCallback(() => load(), [load]);
   const setLines = useCallback((lines: CreditLine[]) => {

@@ -7,6 +7,7 @@
 
 import React, { useState, useRef, useCallback, useId, useMemo, useEffect } from 'react';
 import { COLOR } from '@/utils/tokens';
+import { getNumberFormat } from '@/utils/formatters';
 import { formatUsd } from '@/utils/currency';
 import { KbdHint } from './KbdHint';
 import { LiveRegion } from './LiveRegion';
@@ -48,6 +49,10 @@ export interface RepaymentVisualizerProps {
   loading?: boolean;
 }
 
+    getNumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+    getNumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n);
+    getNumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+    getNumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n);
 function EmptyStatePrompt() {
   return (
     <EmptyState
@@ -225,6 +230,7 @@ export function RepaymentVisualizer({
             }}
           >
             {termMonths} month{termMonths !== 1 ? 's' : ''} ·{' '}
+            {getNumberFormat('en-US', {
             {formatUsd(totalInterest, { decimals: 0 })} total interest
           </p>
         )}
