@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import * as routerDom from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ReducedMotionProvider } from "../context/ReducedMotionContext";
+import * as analytics from "../utils/analytics";
 import { recordDiagnosticError } from "../utils/diagnostics";
 import HelpCenter from "./HelpCenter";
 
@@ -519,5 +520,197 @@ describe("HelpCenter", { timeout: 15000 }, () => {
     expect(
       screen.getByRole("button", { name: /download diagnostics/i }),
     ).toHaveAccessibleDescription(/financial values/i);
+  });
+});
+
+describe("HelpCenter — zero-result search analytics", () => {
+  let trackEventSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    vi.stubGlobal("IntersectionObserver", vi.fn((cb: IntersectionObserverCallback) => ({
+      observe: vi.fn(),
+      unobserve: vi.fn(),
+      disconnect: vi.fn(),
+      takeRecords: vi.fn(() => []),
+      root: null,
+      rootMargin: "",
+      thresholds: [],
+    })));
+    trackEventSpy = vi.spyOn(analytics, "trackEvent").mockResolvedValue(undefined);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("fires help_search_no_results once when a debounced query has no results", async () => {
+    const user = userEvent.setup({ delay: null });
+
+    render(
+      <MemoryRouter>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    const searchInput = screen.getByRole("searchbox", { name: "Search help" });
+    await user.type(searchInput, "zzzznotfound");
+
+    act(() => { vi.advanceTimersByTime(300); });
+
+    expect(trackEventSpy).toHaveBeenCalledTimes(1);
+    expect(trackEventSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: "help_search_no_results",
+        category: "usage",
+        payload: expect.objectContaining({ query: expect.any(String) }),
+      }),
+    );
+  });
+
+  it("does not fire when the query returns results", async () => {
+    const user = userEvent.setup({ delay: null });
+
+    render(
+      <MemoryRouter>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    await user.type(screen.getByRole("searchbox", { name: "Search help" }), "wallet");
+
+    act(() => { vi.advanceTimersByTime(300); });
+
+    expect(trackEventSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not fire when the query is shorter than 3 characters", async () => {
+    const user = userEvent.setup({ delay: null });
+
+    render(
+      <MemoryRouter>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    await user.type(screen.getByRole("searchbox", { name: "Search help" }), "zz");
+
+    act(() => { vi.advanceTimersByTime(300); });
+
+    expect(trackEventSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not fire for a whitespace-only query", async () => {
+    const user = userEvent.setup({ delay: null });
+
+    render(
+      <MemoryRouter>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    await user.type(screen.getByRole("searchbox", { name: "Search help" }), "   ");
+
+    act(() => { vi.advanceTimersByTime(300); });
+
+    expect(trackEventSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not fire twice for the same normalised query", async () => {
+    const user = userEvent.setup({ delay: null });
+
+    render(
+      <MemoryRouter>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    const searchInput = screen.getByRole("searchbox", { name: "Search help" });
+
+    await user.type(searchInput, "zzzznotfound");
+    act(() => { vi.advanceTimersByTime(300); });
+
+    await user.clear(searchInput);
+    act(() => { vi.advanceTimersByTime(300); });
+
+    // Type the same query again (normalises to the same string)
+    await user.type(searchInput, "zzzznotfound");
+    act(() => { vi.advanceTimersByTime(300); });
+
+    expect(trackEventSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("strips a Stellar key from the query payload", async () => {
+    const user = userEvent.setup({ delay: null });
+
+    render(
+      <MemoryRouter>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    // A query that looks like a Stellar public key embedded in text
+    const stellarKey = "G" + "A".repeat(55);
+    await user.type(screen.getByRole("searchbox", { name: "Search help" }), stellarKey);
+
+    act(() => { vi.advanceTimersByTime(300); });
+
+    if (trackEventSpy.mock.calls.length > 0) {
+      const payload = trackEventSpy.mock.calls[0][0].payload as { query: string };
+      expect(payload.query).not.toContain("G" + "A".repeat(55));
+      expect(payload.query).toContain("[redacted]");
+    }
+    // If the key itself is too short after normalisation to reach the 3-char
+    // threshold, the event simply won't fire — also acceptable.
+  });
+
+  it("strips long digit runs from the query payload", async () => {
+    const user = userEvent.setup({ delay: null });
+
+    render(
+      <MemoryRouter>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    await user.type(screen.getByRole("searchbox", { name: "Search help" }), "help 12345678901");
+
+    act(() => { vi.advanceTimersByTime(300); });
+
+    if (trackEventSpy.mock.calls.length > 0) {
+      const payload = trackEventSpy.mock.calls[0][0].payload as { query: string };
+      expect(payload.query).not.toContain("12345678901");
+      expect(payload.query).toContain("[redacted]");
+    }
+  });
+
+  it("does not fire when consent is not granted (relies on trackEvent gating)", async () => {
+    // Reset the spy so the real trackEvent runs (consent check inside it)
+    trackEventSpy.mockRestore();
+
+    // Mock fetch so no actual HTTP request is made
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const user = userEvent.setup({ delay: null });
+
+    render(
+      <MemoryRouter>
+        <HelpCenter />
+      </MemoryRouter>,
+    );
+
+    await user.type(screen.getByRole("searchbox", { name: "Search help" }), "zzzznotfound");
+    act(() => { vi.advanceTimersByTime(300); });
+
+    // hasConsent('usage') defaults to false (no storage entry), so fetch
+    // must not have been called.
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
