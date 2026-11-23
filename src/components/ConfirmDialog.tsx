@@ -14,9 +14,7 @@
  */
 
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { useFocusTrap } from '../hooks/useFocusTrap';
-import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
-import { useInertBackdrop } from '../hooks/useInertBackdrop';
+import { Modal } from './Modal';
 import './ConfirmDialog.css';
 
 export interface ConfirmOptions {
@@ -64,84 +62,61 @@ export function ConfirmDialog({
   triggerRef,
 }: ConfirmDialogProps) {
   const reactId = useId();
-  const modalId = `confirm-dialog-portal-${reactId}`;
   const titleId = `confirm-dialog-title-${reactId}`;
   const bodyId = `confirm-dialog-body-${reactId}`;
+  const modalId = `confirm-dialog-portal-${reactId}`;
   const cancelBtnRef = useRef<HTMLButtonElement>(null);
-
-  const containerRef = useFocusTrap({
-    isActive: isOpen,
-    triggerRef,
-    onEscape: onCancel,
-  });
-
-  useBodyScrollLock({ isLocked: isOpen });
-  useInertBackdrop({ isInert: isOpen, modalId });
-
-  // Focus the least destructive action (Cancel) immediately on open, in addition
-  // to useFocusTrap's 50ms deferred focus, so synchronous assertions and
-  // immediate keyboard interactions land on Cancel right away.
-  useEffect(() => {
-    if (isOpen) {
-      cancelBtnRef.current?.focus();
-    }
-  }, [isOpen]);
 
   if (!isOpen) return null;
 
   return (
-    <div id={modalId} className="confirm-dialog-portal" data-testid="confirm-dialog-portal">
-      {/* Backdrop: click cancels */}
-      <div
-        className="confirm-dialog-backdrop"
-        data-testid="confirm-dialog-backdrop"
-        aria-hidden="true"
-        onClick={onCancel}
-      />
+    <Modal
+      isOpen
+      id={modalId}
+      role="alertdialog"
+      triggerRef={triggerRef}
+      initialFocusRef={cancelBtnRef}
+      onEscape={onCancel}
+      onBackdropClick={onCancel}
+      ariaLabelledBy={titleId}
+      ariaDescribedBy={bodyId}
+      overlayClassName="confirm-dialog-portal"
+      dialogClassName="confirm-dialog"
+      backdropClassName="confirm-dialog-backdrop"
+      backdropTestId="confirm-dialog-backdrop"
+      dataTestId="confirm-dialog-portal"
+    >
+      <h2 id={titleId} className="confirm-dialog__title">
+        {title}
+      </h2>
 
-      {/* Alert dialog container */}
-      <div
-        ref={containerRef}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={bodyId}
-        className="confirm-dialog"
-      >
-        <h2 id={titleId} className="confirm-dialog__title">
-          {title}
-        </h2>
+      <p id={bodyId} className="confirm-dialog__body">
+        {body}
+      </p>
 
-        <p id={bodyId} className="confirm-dialog__body">
-          {body}
-        </p>
+      <div className="confirm-dialog__footer">
+        <button
+          ref={cancelBtnRef}
+          type="button"
+          className="confirm-dialog__btn confirm-dialog__btn--cancel btn-secondary btn-sm"
+          onClick={onCancel}
+        >
+          {cancelLabel}
+        </button>
 
-        {/* Button order: Cancel (exit) -> Primary/Destructive (confirm)
-            See docs/BUTTON_ORDER.md */}
-        <div className="confirm-dialog__footer">
-          <button
-            ref={cancelBtnRef}
-            type="button"
-            className="confirm-dialog__btn confirm-dialog__btn--cancel btn-secondary btn-sm"
-            onClick={onCancel}
-          >
-            {cancelLabel}
-          </button>
-
-          <button
-            type="button"
-            className={`confirm-dialog__btn ${
-              variant === 'danger'
-                ? 'confirm-dialog__btn--danger btn-danger btn-sm'
-                : 'confirm-dialog__btn--primary btn-sm'
-            }`}
-            onClick={onConfirm}
-          >
-            {confirmLabel}
-          </button>
-        </div>
+        <button
+          type="button"
+          className={`confirm-dialog__btn ${
+            variant === 'danger'
+              ? 'confirm-dialog__btn--danger btn-danger btn-sm'
+              : 'confirm-dialog__btn--primary btn-sm'
+          }`}
+          onClick={onConfirm}
+        >
+          {confirmLabel}
+        </button>
       </div>
-    </div>
+    </Modal>
   );
 }
 
