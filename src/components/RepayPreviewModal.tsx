@@ -19,6 +19,7 @@ import {
 import {
   roundToCents,
 } from '../utils/currency';
+import { getNumberFormat } from '../utils/formatters';
 import { allocateRepayment } from '../lib/repay-allocation';
 import { getAccruedInterest, getAccruedInterestDays } from '../lib/interest';
 import {
@@ -67,7 +68,7 @@ export interface RepayPreviewModalProps {
 }
 
 const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', {
+  getNumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
     maximumFractionDigits: 2,
