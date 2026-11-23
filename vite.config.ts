@@ -2,9 +2,44 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import tailwindcss from "@tailwindcss/vite";
+import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    VitePWA({
+      registerType: "prompt",
+      // Use the static public/manifest.webmanifest linked in index.html
+      manifest: false,
+      injectRegister: false,
+      includeAssets: ["favicon.svg", "manifest.webmanifest", "icons/*.png"],
+      devOptions: {
+        enabled: false,
+      },
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,webmanifest,woff2}"],
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        navigateFallback: "/index.html",
+        navigateFallbackDenylist: [/^\/api\//],
+        runtimeCaching: [
+          {
+            // Never cache backend API requests
+            urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
+            handler: "NetworkOnly",
+          },
+          {
+            // Never cache Stellar Horizon, Soroban RPC, or wallet RPC endpoints
+            urlPattern: ({ url }) =>
+              /(horizon|soroban|rpc|stellar\.org|freighter|albedo|lobstr|rabet|xbull)/i.test(
+                url.hostname + url.pathname,
+              ),
+            handler: "NetworkOnly",
+          },
+        ],
+      },
+    }),
+  ],
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
   },
