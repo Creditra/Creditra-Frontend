@@ -1,4 +1,5 @@
 import { ComponentType, lazy, LazyExoticComponent } from 'react';
+import { isFeatureEnabled, type FeatureFlag } from '../config/features';
 
 export interface PaletteNav {
   label: string;
@@ -19,6 +20,7 @@ export interface RouteManifestEntry {
   load: () => Promise<{ default: ComponentType<any> }>;
   Component: LazyExoticComponent<ComponentType<any>>;
   nav?: RouteNav;
+  feature?: FeatureFlag;
 }
 
 export const ROUTE_MANIFEST: RouteManifestEntry[] = [
@@ -265,4 +267,44 @@ export const ROUTE_MANIFEST: RouteManifestEntry[] = [
       },
     },
   },
+  {
+    path: '/collateral-swap',
+    pageName: 'Collateral Swap',
+    description: 'Swap collateral assets within an existing Creditra credit line without closing your position.',
+    load: () => import('../pages/CollateralSwap'),
+    Component: lazy(() => import('../pages/CollateralSwap')),
+    feature: 'collateralSwap',
+    nav: {
+      header: true,
+      headerLabel: 'Collateral Swap',
+      palette: {
+        label: 'Collateral Swap',
+        icon: '🔄',
+        description: 'Swap collateral assets',
+      },
+    },
+  },
+  {
+    path: '/autopay',
+    pageName: 'Autopay',
+    description: 'Configure and manage scheduled automatic repayments for your Creditra credit lines.',
+    load: () => import('../pages/AutopayPage'),
+    Component: lazy(() => import('../pages/AutopayPage')),
+    feature: 'autopay',
+    nav: {
+      header: true,
+      headerLabel: 'Autopay',
+      palette: {
+        label: 'Autopay',
+        icon: '🔁',
+        description: 'Configure automatic repayments',
+      },
+    },
+  },
 ];
+
+export function getEnabledRoutes(): RouteManifestEntry[] {
+  return ROUTE_MANIFEST.filter(
+    (route) => !route.feature || isFeatureEnabled(route.feature),
+  );
+}

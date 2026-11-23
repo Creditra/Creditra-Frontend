@@ -7,7 +7,7 @@ import {
   ROUTE_METADATA,
   RouteAnnouncer,
 } from "./RouteAnnouncer";
-import { ROUTE_MANIFEST } from "../routes/manifest";
+import { getEnabledRoutes } from "../routes/manifest";
 
 const renderRouteAnnouncer = (path: string) =>
   render(
@@ -26,7 +26,7 @@ describe("RouteAnnouncer", () => {
     getDescriptionMeta()?.remove();
   });
 
-  it.each(ROUTE_MANIFEST)(
+  it.each(getEnabledRoutes())(
     "sets title, meta description, and polite announcement for manifest route $path",
     async (route) => {
       renderRouteAnnouncer(route.path);
