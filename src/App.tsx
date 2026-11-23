@@ -9,6 +9,7 @@ import { ContrastProvider } from "./context/ContrastContext";
 import { KycProvider } from "./context/KycContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import { AuctionAlertWatcher } from "./components/AuctionAlertWatcher";
+import { usePaymentReminders } from "./hooks/usePaymentReminders";
 import { CollateralAlertWatcher } from "./components/CollateralAlertWatcher";
 import { ReducedMotionProvider } from "./context/ReducedMotionContext";
 import { KycDrawer } from "./components/KycDrawer";
@@ -42,6 +43,7 @@ function RouteLoadingFallback() {
 
 function AppShell() {
   const navigate = useNavigate();
+  usePaymentReminders();
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [openedFromSettingsLink, setOpenedFromSettingsLink] = useState(false);
   const [isKycDrawerOpen, setIsKycDrawerOpen] = useState(false);
