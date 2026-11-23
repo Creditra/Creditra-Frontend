@@ -143,6 +143,31 @@ npm run build
 A successful `tsc -b` means the type graph is consistent. A successful `vite build` means
 the bundle is sound. Run both before opening a PR.
 
+### Integration (Soroban contract decoding)
+
+```bash
+npm run test:integration   # requires SOROBAN_RPC_URL, NETWORK_PASSPHRASE, CREDIT_CONTRACT_ID
+```
+
+Tests decoding of real ScVal output from a deployed Soroban contract. These are opt-in
+and skipped when the fixture contract is not running.
+
+**Local setup:**
+
+```bash
+# Terminal 1: start sandbox
+docker run --rm -p 8000:8000 stellar/quickstart --local --enable-soroban-rpc
+
+# Terminal 2: deploy fixture contract
+bash scripts/deploy-fixture-contract.sh
+
+# Terminal 3: run tests
+npm run test:integration
+```
+
+The deploy script will export `SOROBAN_RPC_URL`, `NETWORK_PASSPHRASE`, and
+`CREDIT_CONTRACT_ID` for the test runner.
+
 ### End-to-end (planned)
 
 A Playwright setup is the next testing investment. The five flows we want covered:
@@ -193,3 +218,51 @@ If any of these fail, the PR is not mergeable. Pre-existing failures inherited f
 do not block docs-only or comment-only PRs (see [`CONTRIBUTING.md`](CONTRIBUTING.md)),
 but they must not be worsened. The diff has to be neutral or positive on the test count
 and on the type-check.
+
+### Integration tests in CI
+
+The optional Soroban integration suite runs only when explicitly triggered or when a
+PR author opts in. It requires a `stellar/quickstart` service container. See
+[Notes for Contributors](#notes-for-contributors) for the proposed workflow job.
+
+## 7. Soroban contract integration tests
+
+The `tests/integration/` suite verifies that `SorobanCreditDataSource` decodes real
+ScVal output from a deployed Soroban contract, not just mocked `rpc.Server` objects.
+
+### Running locally
+
+Start a Soroban sandbox in one terminal:
+
+```bash
+docker run --rm -p 8000:8000 stellar/quickstart --local --enable-soroban-rpc
+```
+
+Deploy the fixture contract in another:
+
+```bash
+bash scripts/deploy-fixture-contract.sh
+```
+
+This script:
+- Waits for the RPC server to be ready
+- Builds a minimal Rust fixture contract with `get_lines_by_borrower` and `get_line`
+- Deploys it to the sandbox via `soroban contract deploy`
+- Exports `SOROBAN_RPC_URL`, `NETWORK_PASSPHRASE`, and `CREDIT_CONTRACT_ID`
+
+Then run the tests:
+
+```bash
+npm run test:integration
+```
+
+The tests will skip gracefully if the env vars are not set.
+
+### Test coverage
+
+- **i128 boundary values:** max positive and min negative i128 values round-trip without loss of precision
+- **Empty borrower:** querying with an empty string returns `not_found` cleanly
+- **Missing line ID:** querying a non-existent line returns `not_found` cleanly
+- **Timeout behavior:** slow RPC responses abort cleanly
+- **AbortController:** cancellation terminates without dangling connections
+- **Multiple lines:** decoding preserves order and identity across line arrays
