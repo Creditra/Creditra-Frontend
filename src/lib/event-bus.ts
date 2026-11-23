@@ -38,7 +38,7 @@ export function on<K extends AppEventName>(
     listeners.set(event, eventListeners);
   }
 
-  const typedListener = listener as EventListener;
+  const typedListener = listener as unknown as EventListener;
   eventListeners.add(typedListener);
   return () => off(event, listener);
 }
@@ -50,7 +50,7 @@ export function off<K extends AppEventName>(
   const eventListeners = listeners.get(event);
   if (!eventListeners) return;
 
-  eventListeners.delete(listener as EventListener);
+  eventListeners.delete(listener as unknown as EventListener);
   if (eventListeners.size === 0) listeners.delete(event);
 }
 

@@ -59,8 +59,8 @@ describe("typed app event bus", () => {
     };
     const succeedingListener = vi.fn();
 
-    on("draw:success", throwingListener);
-    on("draw:success", succeedingListener);
+    const unsubscribeThrowing = on("draw:success", throwingListener);
+    const unsubscribeSucceeding = on("draw:success", succeedingListener);
 
     emit("draw:success", {
       transactionId: "draw-2",
@@ -72,5 +72,7 @@ describe("typed app event bus", () => {
 
     expect(failure).toHaveBeenCalledTimes(1);
     expect(succeedingListener).toHaveBeenCalledTimes(1);
+    unsubscribeThrowing();
+    unsubscribeSucceeding();
   });
 });
