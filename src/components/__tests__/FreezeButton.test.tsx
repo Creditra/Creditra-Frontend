@@ -1,6 +1,6 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { FreezeButton } from '../FreezeButton';
 
 describe('FreezeButton', () => {
@@ -217,6 +217,59 @@ describe('FreezeButton', () => {
       expect(
         screen.getByRole('button', { name: /confirm unfreeze/i }),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe('offline state', () => {
+    beforeEach(() => {
+      Object.defineProperty(window.navigator, 'onLine', {
+        configurable: true,
+        value: true,
+      });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window.navigator, 'onLine', {
+        configurable: true,
+        value: true,
+      });
+    });
+
+    it('disables Freeze button with accessible reason when offline and re-enables when back online', () => {
+      Object.defineProperty(window.navigator, 'onLine', {
+        configurable: true,
+        value: false,
+      });
+
+      render(<FreezeButton {...defaultProps} frozen={false} />);
+
+      const btn = screen.getByRole('button', { name: /freeze test credit line/i });
+      expect(btn).toBeDisabled();
+      expect(btn).toHaveAttribute('aria-disabled', 'true');
+      expect(btn).toHaveAccessibleDescription("You're offline — reconnect to freeze");
+
+      act(() => {
+        Object.defineProperty(window.navigator, 'onLine', {
+          configurable: true,
+          value: true,
+        });
+        window.dispatchEvent(new Event('online'));
+      });
+
+      expect(btn).toBeEnabled();
+    });
+
+    it('shows unfreeze offline reason when frozen=true and offline', () => {
+      Object.defineProperty(window.navigator, 'onLine', {
+        configurable: true,
+        value: false,
+      });
+
+      render(<FreezeButton {...defaultProps} frozen={true} />);
+
+      const btn = screen.getByRole('button', { name: /unfreeze test credit line/i });
+      expect(btn).toBeDisabled();
+      expect(btn).toHaveAccessibleDescription("You're offline — reconnect to unfreeze");
     });
   });
 });
