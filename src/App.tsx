@@ -173,17 +173,17 @@ function App() {
       <ThemeProvider>
         <ContrastProvider>
           <WalletProvider>
-            <CreditDataProvider>
-              <KycProvider>
-                <NotificationProvider>
+            <NotificationProvider>
+              <CreditDataProvider>
+                <KycProvider>
                   <ReducedMotionProvider>
                     <BrowserRouter>
                       <AppShell />
                     </BrowserRouter>
                   </ReducedMotionProvider>
-                </NotificationProvider>
-              </KycProvider>
-            </CreditDataProvider>
+                </KycProvider>
+              </CreditDataProvider>
+            </NotificationProvider>
           </WalletProvider>
         </ContrastProvider>
       </ThemeProvider>
