@@ -21,7 +21,7 @@ import { Header } from "./layouts/Header";
 import { Skeleton } from "./components/Skeleton";
 import { useHotkey } from "./lib/hotkeys";
 
-import { ROUTE_MANIFEST } from "./routes/manifest";
+import { getEnabledRoutes } from "./routes/manifest";
 
 // ── Code-split route components (non-critical for first paint) ────────────────
 const NotFound = lazy(() => import("./pages/NotFound").then(m => ({ default: m.NotFound })));
@@ -102,7 +102,7 @@ function AppShell() {
             <NetworkMismatchBanner />
             <Suspense fallback={<RouteLoadingFallback />}>
               <Routes>
-                {ROUTE_MANIFEST.map((route) => {
+                {getEnabledRoutes().map((route) => {
                   const RouteComponent = route.Component;
                   return (
                     <Route
