@@ -35,13 +35,10 @@
  *     color changes to convey completion state. Visible focus rings inherit `2px solid var(--accent)`.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle, AlertTriangle, ShieldCheck, Check, X } from 'lucide-react';
-import { useFocusTrap } from '@/hooks/useFocusTrap';
-import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
-import { useInertBackdrop } from '@/hooks/useInertBackdrop';
+import { Modal } from './Modal';
 import { useReducedMotion } from '@/context/ReducedMotionContext';
 import './DefaultRiskModal.css';
 
@@ -107,16 +104,6 @@ export function DefaultRiskModal({
     }
   }, [isOpen]);
 
-  // Hook integrations: Focus trap, body scroll lock, and inert backdrop
-  const dialogRef = useFocusTrap({
-    isActive: isOpen,
-    triggerRef,
-    // Escape is handled by handleDialogKeyDown (dismisses only when onDismiss is provided).
-  });
-
-  useBodyScrollLock({ isLocked: isOpen });
-  useInertBackdrop({ isInert: isOpen, modalId: MODAL_ID });
-
   const isFirstStep = currentStep === 0;
   const isLastStep = currentStep === STEPS.length - 1;
   const activeStep = STEPS[currentStep];
@@ -137,37 +124,22 @@ export function DefaultRiskModal({
     }
   }, [isFirstStep]);
 
-  // Intercept keyboard events inside the modal to block Escape key dismissal
-  const handleDialogKeyDown = useCallback((event: React.KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      onDismiss?.();
-    }
-  }, [onDismiss]);
-
   if (!isOpen) return null;
 
-  return createPortal(
-    <div
+  return (
+    <Modal
+      isOpen={isOpen}
       id={MODAL_ID}
-      className="default-risk-overlay"
-      role="presentation"
-      onClick={(e) => {
-        e.stopPropagation();
-        if (e.target === e.currentTarget) onDismiss?.();
-      }}
+      triggerRef={triggerRef}
+      onEscape={onDismiss}
+      onBackdropClick={onDismiss}
+      closeOnEscape={Boolean(onDismiss)}
+      closeOnBackdropClick={Boolean(onDismiss)}
+      ariaLabelledBy="default-risk-step-title"
+      ariaDescribedBy="default-risk-step-desc"
+      overlayClassName="default-risk-overlay"
+      dialogClassName="default-risk-card"
     >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="default-risk-step-title"
-        aria-describedby="default-risk-step-desc"
-        className="default-risk-card"
-        onKeyDown={handleDialogKeyDown}
-        onClick={(e) => e.stopPropagation()}
-      >
         {/* Screen Reader Live Region for Step Transitions */}
         <div className="sr-only" aria-live="polite" aria-atomic="true">
           Step {currentStep + 1} of {STEPS.length}: {activeStep.title}
@@ -293,8 +265,6 @@ export function DefaultRiskModal({
             {isLastStep ? 'I Understand – Proceed' : 'Next'}
           </button>
         </footer>
-      </div>
-    </div>,
-    document.body
+    </Modal>
   );
 }
