@@ -5,6 +5,8 @@ import type { CreditLine, Transaction } from '../types/creditLine';
 import type { WalletInfo } from '../types/wallet';
 import { useCreditData } from '../context/CreditDataContext';
 
+
+
 export interface UseCreditLinesResult {
   status: 'idle' | 'loading' | 'success' | 'error';
   lines: CreditLine[];
