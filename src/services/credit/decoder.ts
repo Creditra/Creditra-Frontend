@@ -11,21 +11,44 @@ const VALID_STATUSES: Set<string> = new Set<CreditLineStatus>([
 
 const STROOPS_PER_UNIT = 10_000_000n;
 
+export type DecodeLosslessAmountOptions = {
+  /**
+   * Unit used when `raw` is a JavaScript number. Bigints are always interpreted
+   * as stroops because Soroban i128 values are decoded as bigint.
+   */
+  numberUnit?: 'units' | 'stroops';
+};
+
 /**
- * Losslessly decode a contract amount into standard currency units.
+ * Decode a contract amount into standard currency units for display.
  *
- * Contract amounts are represented as i128 (decoded as bigint in stroops, 1e7 base units).
- * This function scales the amount in BigInt BEFORE converting to Number to avoid precision
- * loss above Number.MAX_SAFE_INTEGER.
+ * Soroban i128 amounts arrive as bigint values expressed in stroops (10^7
+ * stroops per unit). The bigint arithmetic and decimal representation remain
+ * exact until the final conversion to JavaScript number. That final conversion
+ * is rounded to the nearest representable IEEE-754 number, so values beyond
+ * Number's safe integer precision are suitable for display but are not a
+ * lossless representation for further financial arithmetic.
+ *
+ * JavaScript numbers default to already being expressed in standard units.
+ * Pass `{ numberUnit: 'stroops' }` when a numeric input is expressed in
+ * stroops and should be scaled by 10^7.
  */
-export function decodeLosslessAmount(raw: unknown): number {
+export function decodeLosslessAmount(
+  raw: unknown,
+  { numberUnit = 'units' }: DecodeLosslessAmountOptions = {},
+): number {
   if (typeof raw === 'bigint') {
-    const whole = raw / STROOPS_PER_UNIT;
-    const fraction = raw % STROOPS_PER_UNIT;
-    return Number(whole) + Number(fraction) / 10_000_000;
+    const negative = raw < 0n;
+    const absolute = negative ? -raw : raw;
+    const whole = absolute / STROOPS_PER_UNIT;
+    const fraction = absolute % STROOPS_PER_UNIT;
+    const decimal = `${negative ? '-' : ''}${whole.toString()}.${fraction
+      .toString()
+      .padStart(7, '0')}`;
+    return Number(decimal);
   }
   if (typeof raw === 'number' && Number.isFinite(raw)) {
-    return raw;
+    return numberUnit === 'stroops' ? raw / Number(STROOPS_PER_UNIT) : raw;
   }
   throw new CreditDataError(
     'invalid_response',
