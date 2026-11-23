@@ -48,15 +48,8 @@ export interface UseCreditTransactionsResult {
 }
 
 let legacyLines: CreditLine[] = [...MOCK_CREDIT_LINES];
-let legacyRefetchError: Error | null = null;
-export const setMockRefetchError = (error: Error | null) => { legacyRefetchError = error; };
-export const getMockRefetchError = () => legacyRefetchError;
 export const setGlobalCreditLines = (lines: CreditLine[]) => { legacyLines = [...lines]; };
 export const getGlobalCreditLines = () => legacyLines;
-export const resetGlobalCreditLines = () => {
-  legacyLines = [...MOCK_CREDIT_LINES];
-  legacyRefetchError = null;
-};
 
 function paginateTransactions(
   transactions: CreditTransaction[],

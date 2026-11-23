@@ -3,7 +3,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { RequestEvaluation } from '../RequestEvaluation';
 import { creditService } from '@/services/credit';
-import { resetGlobalCreditLines, getGlobalCreditLines } from '@/hooks/useCreditLines';
+import { getGlobalCreditLines } from '@/hooks/useCreditLines';
+import { resetGlobalCreditLines } from '@/test/creditLinesTestHelpers';
 
 const mockWallet = {
   publicKey: 'GBZXTESTWALLETADDRESS12345',
