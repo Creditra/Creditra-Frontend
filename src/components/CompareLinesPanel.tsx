@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import type { CreditLine } from '../types/creditLine';
 import { fmt, fmtDate } from '../utils/tokens';
@@ -8,6 +9,20 @@ interface CompareLinesPanelProps {
 }
 
 export default function CompareLinesPanel({ lines, onClose }: CompareLinesPanelProps) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  if (lines.length < 2) {
+    return null;
+  }
+
   const [line1, line2] = [...lines].sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
   const renderValue = (label: string, value1: unknown, value2: unknown, formatter?: (v: unknown) => string) => {
