@@ -271,3 +271,56 @@ describe("App Styling and Accessibility", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("Feature-flagged routes", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    window.history.pushState({}, "", "/");
+  });
+
+  it("renders 404 for /collateral-swap and /autopay when flags are unset and hides them from nav", async () => {
+    window.history.pushState({}, "", "/autopay");
+    const { unmount } = render(<App />);
+
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).queryByRole("link", { name: "Autopay" })).not.toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: "Collateral Swap" })).not.toBeInTheDocument();
+
+    expect(await screen.findByText(/page not found/i)).toBeInTheDocument();
+    expect(document.title).toBe("Creditra · Not Found");
+    unmount();
+
+    window.history.pushState({}, "", "/collateral-swap");
+    render(<App />);
+    expect(await screen.findByText(/page not found/i)).toBeInTheDocument();
+    expect(document.title).toBe("Creditra · Not Found");
+  });
+
+  it("enables /autopay route, header link, and announcer metadata when VITE_FEATURE_AUTOPAY=true", async () => {
+    vi.stubEnv("VITE_FEATURE_AUTOPAY", "true");
+    window.history.pushState({}, "", "/autopay");
+    render(<App />);
+
+    const nav = screen.getByRole("navigation");
+    const autopayLink = within(nav).getByRole("link", { name: "Autopay" });
+    expect(autopayLink).toHaveAttribute("href", "/autopay");
+    expect(within(nav).queryByRole("link", { name: "Collateral Swap" })).not.toBeInTheDocument();
+
+    expect(await screen.findByRole("heading", { level: 1 })).toBeInTheDocument();
+    expect(document.title).toBe("Creditra · Autopay");
+  });
+
+  it("enables /collateral-swap route, header link, and announcer metadata when VITE_FEATURE_COLLATERAL_SWAP=true", async () => {
+    vi.stubEnv("VITE_FEATURE_COLLATERAL_SWAP", "true");
+    window.history.pushState({}, "", "/collateral-swap");
+    render(<App />);
+
+    const nav = screen.getByRole("navigation");
+    const swapLink = within(nav).getByRole("link", { name: "Collateral Swap" });
+    expect(swapLink).toHaveAttribute("href", "/collateral-swap");
+    expect(within(nav).queryByRole("link", { name: "Autopay" })).not.toBeInTheDocument();
+
+    expect(await screen.findByRole("heading", { level: 1 })).toBeInTheDocument();
+    expect(document.title).toBe("Creditra · Collateral Swap");
+  });
+});
