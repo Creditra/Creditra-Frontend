@@ -29,8 +29,8 @@ export function useNotificationActionHandler() {
   const handleAction = useCallback((action: NotificationActionDescriptor) => {
     if (!action) return;
     if (action.kind === 'route') {
-      // Ensure same‑origin relative path, start with '/' and no protocol.
-      if (action.to.startsWith('/') && !action.to.includes('://')) {
+      // Ensure same‑origin relative path: starts with single '/' and has no protocol.
+      if (action.to.startsWith('/') && !action.to.startsWith('//') && !action.to.includes('://')) {
         navigate(action.to);
       } else {
         console.warn('Invalid route action ignored:', action.to);
