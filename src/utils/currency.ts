@@ -13,6 +13,38 @@ const DEFAULT_CURRENCY = 'USD';
 const INVALID_AMOUNT_PLACEHOLDER = '—';
 const ISO_CURRENCY_RE = /^[A-Za-z]{3}$/;
 
+const usdFormatterCache = new Map<number, Intl.NumberFormat>();
+
+function getUsdFormatter(decimals: number): Intl.NumberFormat {
+  const cached = usdFormatterCache.get(decimals);
+  if (cached) return cached;
+  const formatter = new Intl.NumberFormat(DEFAULT_LOCALE, {
+    style: 'currency',
+    currency: DEFAULT_CURRENCY,
+    maximumFractionDigits: decimals,
+  });
+  usdFormatterCache.set(decimals, formatter);
+  return formatter;
+}
+
+/**
+ * Format a numeric amount as en-US USD currency using a cached
+ * `Intl.NumberFormat` instance.
+ *
+ * @param amount   - Numeric amount to format.
+ * @param options  - `{ decimals }` controls `maximumFractionDigits` (default `2`).
+ */
+export function formatUsd(
+  amount: number,
+  options?: { decimals?: number },
+): string {
+  if (!Number.isFinite(amount)) {
+    return INVALID_AMOUNT_PLACEHOLDER;
+  }
+  const decimals = options?.decimals ?? 2;
+  return getUsdFormatter(decimals).format(amount);
+}
+
 /**
  * Normalize and validate a BCP 47 locale tag for `Intl.NumberFormat`,
  * falling back to `DEFAULT_LOCALE` when missing, malformed, or unsupported.
