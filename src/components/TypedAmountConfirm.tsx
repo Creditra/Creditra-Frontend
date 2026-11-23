@@ -2,13 +2,17 @@ import { useEffect, useId, useState, type RefObject } from 'react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useInertBackdrop } from '../hooks/useInertBackdrop';
-import { formatMoney, requiresRepayConfirmation } from '../utils/amountValidation';
+import {
+  formatMoney,
+  parseAmountInput,
+  requiresRepayConfirmation,
+} from '../utils/amountValidation';
 import { PendingButton } from './PendingButton';
 import './TypedAmountConfirm.css';
 
 /** Parse a user-typed currency string into a numeric amount. */
 export function parseTypedAmount(value: string): number {
-  return Number.parseFloat(value) || 0;
+  return parseAmountInput(value, { allowCommas: false }) ?? 0;
 }
 
 /** Returns true when the typed value exactly matches the expected amount. */

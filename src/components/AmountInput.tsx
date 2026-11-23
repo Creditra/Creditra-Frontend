@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   formatMoney,
   getDrawAmountValidation,
+  parseAmountInput,
 } from "../utils/amountValidation";
 import { FormMessage } from "./FormMessage";
 import { KbdHint } from "./KbdHint";
@@ -151,7 +152,7 @@ export function AmountInput({
 
   useEffect(() => {
     if (isLoading || !creditLine) return;
-    const numAmount = parseFloat(amount) || 0;
+    const numAmount = parseAmountInput(amount) ?? 0;
     onAmountChange?.(numAmount);
   }, [amount, onAmountChange, isLoading, creditLine]);
 
@@ -166,7 +167,7 @@ export function AmountInput({
     (direction: "up" | "down") => {
       if (!creditLine) return;
       setAmount((prev) => {
-        const current = parseFloat(prev) || 0;
+        const current = parseAmountInput(prev) ?? 0;
         const maxAmount = creditLine ? getDrawAmountValidation("", creditLine).maxAmount : 0;
         const next = direction === "up"
           ? Math.min(current + STEP_AMOUNT, maxAmount)
@@ -185,12 +186,12 @@ export function AmountInput({
     const sanitized = pastedText.replace(/[$,\s]/g, "");
     
     // Validate if it's a valid number
-    if (sanitized === "" || isNaN(parseFloat(sanitized))) {
+    const numValue = parseAmountInput(sanitized);
+    if (sanitized === "" || numValue === null) {
       setPasteAnnouncement("Invalid amount pasted. Please enter a numeric value.");
       return;
     }
     
-    const numValue = parseFloat(sanitized);
     setAmount(sanitized);
     setPasteAnnouncement(`Pasted value sanitized to ${formatMoney(numValue)}`);
 
@@ -228,7 +229,7 @@ export function AmountInput({
     return <AmountInputSkeleton />;
   }
 
-  const numAmount = parseFloat(amount) || 0;
+  const numAmount = parseAmountInput(amount) ?? 0;
   const validation = getDrawAmountValidation(amount, creditLine);
   const toneBySeverity = {
     info: {
