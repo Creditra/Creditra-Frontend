@@ -29,6 +29,7 @@ import {
   getDrawEligibility,
   type DrawIneligibilityReason,
 } from "@/lib/draw-eligibility";
+import { formatCurrency } from "../utils/currency";
 
 interface CreditLineSelectorProps {
   /** Credit lines the user can choose from (eligible or not). */
@@ -149,7 +150,7 @@ export function CreditLineSelector({
                 aria-label={
                   copy
                     ? `${line.name} credit line unavailable: ${copy.message}`
-                    : `Select ${line.name} credit line, available balance $${line.available.toLocaleString()}`
+                    : `Select ${line.name} credit line, available balance ${formatCurrency(line.available)}`
                 }
                 className="dc-credit-line-item"
               >
@@ -165,7 +166,7 @@ export function CreditLineSelector({
                           Available:
                         </span>
                         <span className="dc-credit-line-item__value tabular-nums">
-                          ${line.available.toLocaleString()}
+                          {formatCurrency(line.available)}
                         </span>
                       </div>
 

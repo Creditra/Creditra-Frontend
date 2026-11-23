@@ -5,9 +5,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import "@testing-library/jest-dom";
 import { NotFound } from "./NotFound";
 
-function renderNotFound() {
+function renderNotFound(initialEntries: string[] = ["/"]) {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={initialEntries}>
       <NotFound />
     </MemoryRouter>
   );
@@ -85,5 +85,35 @@ describe("NotFound", () => {
   it("matches snapshot without history", () => {
     setHistoryLength(1);
     expect(renderNotFound().asFragment()).toMatchSnapshot();
+  });
+
+  it('renders a "Did you mean" suggestion link for a mistyped route before the back button', () => {
+    setHistoryLength(3);
+    renderNotFound(["/transaction"]);
+
+    expect(screen.getByText(/did you mean/i)).toBeInTheDocument();
+    const suggestionLink = screen.getByRole("link", {
+      name: /go to transaction history \(\/transactions\)/i,
+    });
+    expect(suggestionLink).toHaveAttribute("href", "/transactions");
+
+    const backButton = screen.getByRole("button", { name: /go back/i });
+    expect(
+      suggestionLink.compareDocumentPosition(backButton) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it("suggests /settings when visiting /settngs", () => {
+    renderNotFound(["/settngs"]);
+    const suggestionLink = screen.getByRole("link", {
+      name: /go to settings \(\/settings\)/i,
+    });
+    expect(suggestionLink).toHaveAttribute("href", "/settings");
+  });
+
+  it("renders no suggestion for an unrelated path", () => {
+    renderNotFound(["/zzzz-qq"]);
+    expect(screen.queryByText(/did you mean/i)).not.toBeInTheDocument();
   });
 });

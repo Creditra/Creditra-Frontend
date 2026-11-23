@@ -52,6 +52,7 @@ import {
   buildRepaymentScheduleFromLines,
 } from "../components/RepaymentSchedule";
 import { useReducedMotion } from "../context/ReducedMotionContext";
+import { Amount } from "../components/Amount";
 import {
   createStableOrder,
   getStablePage,
@@ -65,6 +66,12 @@ import {
 const CreditLineDetailDrawer = lazy(() =>
   import("../components/CreditLineDetailDrawer").then((m) => ({
     default: m.CreditLineDetailDrawer,
+  })),
+);
+
+const AprHistoryChart = lazy(() =>
+  import("../components/AprHistoryChart").then((m) => ({
+    default: m.AprHistoryChart,
   })),
 );
 
@@ -164,6 +171,7 @@ function CreditLineCard({
   const level = getUtilizationLevel(line.utilized, line.limit);
   const swapTriggerRef = useRef<HTMLButtonElement>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const isDefaulted = line.status === "Defaulted";
   const transitionContext = { statusHistory: line.statusHistory };
@@ -226,7 +234,7 @@ function CreditLineCard({
               className="cl-metric-value tabular-nums amount cl-amount"
               style={{ color: COLOR.accent }}
             >
-              {fmt(line.limit)}
+              <Amount value={line.limit} format={fmt} maskedLabel="Credit limit hidden for privacy" />
             </span>
           </div>
           <div className="cl-metric">
@@ -235,7 +243,7 @@ function CreditLineCard({
               className="cl-metric-value tabular-nums amount cl-amount"
               style={{ color: UTIL_COLOR[level] }}
             >
-              {fmt(line.utilized)}
+              <Amount value={line.utilized} format={fmt} maskedLabel="Utilized amount hidden for privacy" />
             </span>
           </div>
           <div className="cl-metric">
@@ -244,7 +252,7 @@ function CreditLineCard({
               className="cl-metric-value tabular-nums amount cl-amount"
               style={{ color: COLOR.success }}
             >
-              {fmt(line.limit - line.utilized)}
+              <Amount value={line.limit - line.utilized} format={fmt} maskedLabel="Available credit hidden for privacy" />
             </span>
           </div>
         </div>
@@ -317,6 +325,33 @@ function CreditLineCard({
       <div className="cl-card-detail">
         <RepaymentPlanChart line={line} />
       </div>
+
+      <div className="cl-card-expand-row">
+        <button
+          type="button"
+          className="cl-expand-btn focus-ring"
+          aria-expanded={isExpanded}
+          aria-controls={`cl-expanded-${line.id}`}
+          onClick={() => setIsExpanded((prev) => !prev)}
+        >
+          {isExpanded ? "Hide APR history" : "Show APR history"}
+        </button>
+      </div>
+
+      {isExpanded && (
+        <div id={`cl-expanded-${line.id}`} className="cl-card-expanded">
+          {line.aprHistory && line.aprHistory.length > 0 && (
+            <div className="cl-apr-history">
+              <Suspense fallback={null}>
+                <AprHistoryChart
+                  history={line.aprHistory}
+                  lineId={line.id}
+                />
+              </Suspense>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

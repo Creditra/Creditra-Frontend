@@ -11,13 +11,18 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
+import { MoreHorizontal, Copy, ExternalLink } from "lucide-react";
 import { CopyToClipboard } from "../components/CopyToClipboard";
+import { Amount } from "../components/Amount";
 import { type DatePreset } from "../components/DateRangeChips";
 import {
   AmountRangeChips,
   type AmountRangePreset,
 } from "../components/AmountRangeChips";
 import { useDebounceValue } from "../hooks/useDebounceValue";
+import { getExplorerBaseUrl } from "../utils/wallet";
+import { getCreditNetworkConfig } from "../config/creditNetwork";
+import { copyTextToClipboard } from "../utils/clipboard";
 import { downloadCsv } from "../utils/csv";
 import {
   buildTransactionCsv,
@@ -199,6 +204,118 @@ const getDateGroup = (iso: string): string => {
   return getCalendarGroup(iso, clockNow());
 };
 
+function getExplorerUrl(txHash: string): string {
+  let network = "PUBLIC";
+  try {
+    network = getCreditNetworkConfig().network;
+  } catch {
+    // ConfigError on bad env — fall back to PUBLIC
+  }
+  return `${getExplorerBaseUrl(network)}/${encodeURIComponent(txHash)}`;
+}
+
+function TransactionHashMenu({ txHash }: { txHash: string }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  async function handleCopy() {
+    await copyTextToClipboard(txHash);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    setOpen(false);
+  }
+
+  return (
+    <div
+      className="tx-hash-menu-wrapper"
+      ref={menuRef}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span className="tx-hash-truncated">
+        {txHash.slice(0, 8)}...{txHash.slice(-6)}
+      </span>
+      <button
+        ref={triggerRef}
+        className="tx-hash-menu-trigger"
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-label="Transaction actions"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((o) => !o);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((o) => !o);
+          }
+        }}
+      >
+        <MoreHorizontal className="w-4 h-4" aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          className="tx-hash-menu"
+          role="menu"
+          aria-orientation="vertical"
+          aria-label="Transaction hash actions"
+        >
+          <button
+            role="menuitem"
+            className="tx-hash-menu-item"
+            onClick={handleCopy}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleCopy(); }
+            }}
+          >
+            <Copy className="w-4 h-4" aria-hidden="true" />
+            {copied ? "Copied!" : "Copy transaction hash"}
+          </button>
+          <a
+            role="menuitem"
+            className="tx-hash-menu-item"
+            href={getExplorerUrl(txHash)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setOpen(false)}
+          >
+            <ExternalLink className="w-4 h-4" aria-hidden="true" />
+            View on explorer
+          </a>
+        </div>
+      )}
+      {copied && (
+        <span role="status" aria-live="polite" className="sr-only">
+          Copied
+        </span>
+      )}
+    </div>
+  );
+}
+
 function TransactionRow({
   tx,
   expanded,
@@ -264,7 +381,9 @@ function TransactionRow({
           }}
         >
           {isNegative ? "-" : tx.type === "Draw" ? "+" : ""}
-          {isNegative ? fmt(tx.amount) : tx.amount > 0 ? fmt(tx.amount) : ""}
+          {isNegative || tx.amount > 0 ? (
+            <Amount value={tx.amount} format={fmt} maskedLabel="Transaction amount hidden for privacy" />
+          ) : null}
         </td>
         <td className="tx-line">
           <span className="tx-line-name">{tx.lineName}</span>
@@ -283,22 +402,7 @@ function TransactionRow({
         </td>
         <td className="tx-hash">
           {tx.txHash ? (
-            <div className="tx-hash-actions">
-              <a
-                href={`https://stellar.expert/tx/${tx.txHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="tx-hash-link"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {tx.txHash.slice(0, 8)}...{tx.txHash.slice(-6)}
-              </a>
-              <CopyToClipboard
-                value={tx.txHash}
-                ariaLabel={`Copy transaction hash for ${tx.id}`}
-                stopPropagation
-              />
-            </div>
+            <TransactionHashMenu txHash={tx.txHash} />
           ) : (
             <span className="tx-hash-muted">—</span>
           )}
@@ -335,7 +439,7 @@ function TransactionRow({
                       }}
                     >
                       {isNegative ? "-" : "+"}
-                      {fmt(tx.amount)}
+                      <Amount value={tx.amount} format={fmt} maskedLabel="Transaction amount hidden for privacy" />
                     </span>
                   </div>
                   <div className="tx-detail-item">
@@ -364,7 +468,7 @@ function TransactionRow({
                       <span className="label">Transaction Hash</span>
                       <div className="value tx-detail-hash">
                         <a
-                          href={`https://stellar.expert/tx/${tx.txHash}`}
+                          href={getExplorerUrl(tx.txHash)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="tx-hash-full"
@@ -1357,9 +1461,11 @@ export function TransactionHistory({
                   stats.outstandingBalance > 0 ? COLOR.danger : COLOR.success,
               }}
             >
-              {stats.outstandingBalance > 0
-                ? fmt(stats.outstandingBalance)
-                : fmt(0)}
+              <Amount
+                value={stats.outstandingBalance > 0 ? stats.outstandingBalance : 0}
+                format={fmt}
+                maskedLabel="Outstanding balance hidden for privacy"
+              />
             </span>
           </div>
         </div>
@@ -1381,7 +1487,7 @@ export function TransactionHistory({
               className="th-stat-value num-tabular"
               style={{ color: COLOR.accent }}
             >
-              {fmt(stats.totalDrawn)}
+              <Amount value={stats.totalDrawn} format={fmt} maskedLabel="Total drawn hidden for privacy" />
             </span>
           </div>
         </div>
@@ -1401,7 +1507,7 @@ export function TransactionHistory({
               className="th-stat-value num-tabular"
               style={{ color: COLOR.success }}
             >
-              {fmt(stats.totalRepaid)}
+              <Amount value={stats.totalRepaid} format={fmt} maskedLabel="Total repaid hidden for privacy" />
             </span>
           </div>
         </div>
@@ -1424,7 +1530,7 @@ export function TransactionHistory({
               className="th-stat-value num-tabular"
               style={{ color: COLOR.warning }}
             >
-              {fmt(stats.totalInterestAndFees)}
+              <Amount value={stats.totalInterestAndFees} format={fmt} maskedLabel="Interest and fees hidden for privacy" />
             </span>
           </div>
         </div>
@@ -1460,7 +1566,7 @@ export function TransactionHistory({
                   style={{ color: COLOR.muted }}
                 >
                   {diff > 0 ? "+" : "−"}
-                  {fmt(absDiff)}{" "}
+                  <Amount value={absDiff} format={fmt} maskedLabel="Balance difference hidden for privacy" />{" "}
                   <span style={{ fontSize: "0.75em" }}>difference</span>
                 </span>
                 <span className="th-stat-hint">

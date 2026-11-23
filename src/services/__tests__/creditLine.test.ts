@@ -15,10 +15,10 @@ import {
   getLineFromStore,
 } from '../creditLine';
 import {
-  resetGlobalCreditLines,
   getGlobalCreditLines,
   setGlobalCreditLines,
 } from '../../hooks/useCreditLines';
+import { resetGlobalCreditLines } from '../../test/creditLinesTestHelpers';
 import type { CreditLine } from '../../types/creditLine';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
