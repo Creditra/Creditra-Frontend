@@ -10,16 +10,28 @@
  *   Bands:  ≥ 2.0 safe (success) · 1.25–2.0 caution (warning) · < 1.25 risk (danger)
  *
  * Accessibility:
- *   - role="img" + aria-labelledby on the SVG
- *   - sr-only table mirrors every data point
+ *   - role="img" + aria-labelledby on the SVG via ChartFrame
+ *   - keyboard-focusable points with live tooltip via ChartTooltip
+ *   - sr-only table mirrors every data point via ChartDataTable
  *   - prefers-reduced-motion disables the entrance stroke animation
  *   - Colour is paired with a text label (WCAG 1.4.1)
  *
  * Design tokens: stroke colours come from COLOR in utils/tokens.ts.
  */
 
-import { useId, useMemo } from 'react';
+import { useMemo } from 'react';
 import { COLOR } from '../utils/tokens';
+import {
+  ChartFrame,
+  ChartTooltip,
+  ChartTooltipPoints,
+  ChartDataTable,
+  createLinearScale,
+  buildLinePath,
+  buildAreaPath,
+  useChartTooltip,
+} from './charts';
+import type { ChartTooltipPoint } from './charts';
 import './HealthFactorChart.css';
 
 export interface HealthFactorPoint {
@@ -100,6 +112,7 @@ export function buildHealthHistory(
 const W_DEFAULT = 220;
 const H_DEFAULT = 64;
 const PAD = { top: 8, right: 8, bottom: 8, left: 8 };
+const TABLE_COLUMNS = [{ header: 'Date' }, { header: 'Health factor' }] as const;
 
 export function HealthFactorChart({
   data,
@@ -109,40 +122,65 @@ export function HealthFactorChart({
   height = H_DEFAULT,
   className = '',
 }: HealthFactorChartProps) {
-  const titleId = useId();
-  const descId = useId();
   const band = healthBand(current);
   const stroke = healthBandColor(band);
 
-  const { path, area, min, max } = useMemo(() => {
+  const { path, area, min, max, guideY, tooltipPoints } = useMemo(() => {
     if (!data.length) {
-      return { path: '', area: '', min: 0, max: 1 };
+      return {
+        path: '',
+        area: '',
+        min: 0,
+        max: 1,
+        guideY: PAD.top,
+        tooltipPoints: [] as ChartTooltipPoint[],
+      };
     }
+
     const values = data.map((d) => d.value);
     const minV = Math.min(...values, 1);
     const maxV = Math.max(...values, 2.5);
-    const range = maxV - minV || 1;
-    const innerW = width - PAD.left - PAD.right;
-    const innerH = height - PAD.top - PAD.bottom;
+    const baselineY = height - PAD.bottom;
 
-    const coords = data.map((d, i) => {
-      const x =
-        PAD.left +
-        (data.length === 1 ? innerW / 2 : (i / (data.length - 1)) * innerW);
-      const y = PAD.top + innerH - ((d.value - minV) / range) * innerH;
-      return [x, y] as const;
-    });
+    const xScale = createLinearScale(
+      [0, Math.max(data.length - 1, 1)],
+      [PAD.left, width - PAD.right],
+    );
+    const yScale = createLinearScale([minV, maxV], [baselineY, PAD.top]);
 
-    const line = coords
-      .map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x},${y}`)
-      .join(' ');
-    const areaPath =
-      line +
-      ` L${coords[coords.length - 1][0]},${PAD.top + innerH}` +
-      ` L${coords[0][0]},${PAD.top + innerH} Z`;
+    const coords = data.map((d, i) => ({
+      x: data.length === 1 ? (PAD.left + (width - PAD.right)) / 2 : xScale(i),
+      y: yScale(d.value),
+      point: d,
+    }));
 
-    return { path: line, area: areaPath, min: minV, max: maxV };
+    return {
+      path: buildLinePath(coords),
+      area: buildAreaPath(coords, baselineY),
+      min: minV,
+      max: maxV,
+      guideY: yScale(1.25),
+      tooltipPoints: coords.map((c) => ({
+        key: c.point.date,
+        x: c.x,
+        y: c.y,
+        label: c.point.date,
+        value: c.point.value.toFixed(2),
+      })),
+    };
   }, [data, width, height]);
+
+  const { activeIndex, setActiveIndex, activePoint } =
+    useChartTooltip(tooltipPoints);
+
+  const tableRows = useMemo(
+    () =>
+      data.map((p) => ({
+        key: p.date,
+        cells: [p.date, p.value.toFixed(2)],
+      })),
+    [data],
+  );
 
   if (!data.length) {
     return (
@@ -164,70 +202,59 @@ export function HealthFactorChart({
         </span>
       </figcaption>
 
-      <svg
-        width={width}
-        height={height}
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-labelledby={`${titleId} ${descId}`}
-        className="hf-chart__svg"
-      >
-        <title id={titleId}>
-          Health factor trend for {lineName}
-        </title>
-        <desc id={descId}>
-          Current health factor {current.toFixed(2)} ({healthBandLabel(band)}).
-          Range {min.toFixed(2)} to {max.toFixed(2)} across {data.length} samples.
-        </desc>
+      <div className="chart-frame-wrapper">
+        <ChartFrame
+          width={width}
+          height={height}
+          explicitDimensions
+          title={`Health factor trend for ${lineName}`}
+          description={`Current health factor ${current.toFixed(2)} (${healthBandLabel(band)}). Range ${min.toFixed(2)} to ${max.toFixed(2)} across ${data.length} samples.`}
+          className="hf-chart__svg"
+        >
+          {/* Caution threshold guide at HF = 1.25 */}
+          <line
+            className="hf-chart__guide"
+            x1={PAD.left}
+            x2={width - PAD.right}
+            y1={guideY}
+            y2={guideY}
+            stroke={COLOR.warning}
+            strokeDasharray="4 3"
+            strokeWidth={1}
+            opacity={0.45}
+            aria-hidden="true"
+          />
 
-        {/* Caution threshold guide at HF = 1.25 */}
-        <line
-          className="hf-chart__guide"
-          x1={PAD.left}
-          x2={width - PAD.right}
-          y1={PAD.top + ((max - 1.25) / (max - min || 1)) * (height - PAD.top - PAD.bottom)}
-          y2={PAD.top + ((max - 1.25) / (max - min || 1)) * (height - PAD.top - PAD.bottom)}
-          stroke={COLOR.warning}
-          strokeDasharray="4 3"
-          strokeWidth={1}
-          opacity={0.45}
-          aria-hidden="true"
-        />
+          <path
+            d={area}
+            fill={stroke}
+            fillOpacity={0.12}
+            aria-hidden="true"
+            className="hf-chart__area"
+          />
+          <path
+            d={path}
+            fill="none"
+            stroke={stroke}
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="hf-chart__line"
+          />
+          <ChartTooltipPoints
+            points={tooltipPoints}
+            activeIndex={activeIndex}
+            onActiveChange={setActiveIndex}
+          />
+        </ChartFrame>
+        <ChartTooltip point={activePoint} />
+      </div>
 
-        <path
-          d={area}
-          fill={stroke}
-          fillOpacity={0.12}
-          aria-hidden="true"
-          className="hf-chart__area"
-        />
-        <path
-          d={path}
-          fill="none"
-          stroke={stroke}
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="hf-chart__line"
-        />
-      </svg>
-
-      <table className="sr-only" aria-label={`Health factor history for ${lineName}`}>
-        <thead>
-          <tr>
-            <th scope="col">Date</th>
-            <th scope="col">Health factor</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((p) => (
-            <tr key={p.date}>
-              <td>{p.date}</td>
-              <td>{p.value.toFixed(2)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <ChartDataTable
+        ariaLabel={`Health factor history for ${lineName}`}
+        columns={TABLE_COLUMNS}
+        rows={tableRows}
+      />
     </figure>
   );
 }
