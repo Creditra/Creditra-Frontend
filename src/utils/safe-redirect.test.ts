@@ -86,8 +86,68 @@ describe('safeReturnPath', () => {
     expect(safeReturnPath(123)).toBe('/linked-accounts');
   });
 
-  it('logs a warning in development with the rejected value', () => {
-    safeReturnPath('https://evil.example/x');
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('https://evil.example/x'));
+  it('logs a warning in development with the rejection reason without logging the rejected value', () => {
+    safeReturnPath('//evil.com?token=abc123');
+    expect(warnSpy).toHaveBeenCalledWith('[safeReturnPath] rejected redirect: not-relative');
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('//evil.com?token=abc123'));
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('abc123'));
+  });
+
+  it('logs distinct reasons for each rejection branch', () => {
+    warnSpy.mockClear();
+    safeReturnPath(123);
+    expect(warnSpy).toHaveBeenLastCalledWith('[safeReturnPath] rejected redirect: not-a-string');
+
+    warnSpy.mockClear();
+    safeReturnPath('/profile' + 'x'.repeat(600));
+    expect(warnSpy).toHaveBeenLastCalledWith('[safeReturnPath] rejected redirect: too-long');
+
+    warnSpy.mockClear();
+    safeReturnPath('https://evil.example');
+    expect(warnSpy).toHaveBeenLastCalledWith('[safeReturnPath] rejected redirect: not-relative');
+
+    warnSpy.mockClear();
+    safeReturnPath('/profile\u0000secret');
+    expect(warnSpy).toHaveBeenLastCalledWith('[safeReturnPath] rejected redirect: control-characters');
+
+    warnSpy.mockClear();
+    setLocationOrigin('invalid-origin');
+    safeReturnPath('/profile');
+    expect(warnSpy).toHaveBeenLastCalledWith('[safeReturnPath] rejected redirect: parse-error');
+    setLocationOrigin(ORIGIN);
+
+    warnSpy.mockClear();
+    const urlSpy = vi.spyOn(globalThis, 'URL').mockImplementationOnce(
+      () => ({ origin: 'http://other.example' } as unknown as URL)
+    );
+    safeReturnPath('/profile');
+    expect(warnSpy).toHaveBeenLastCalledWith('[safeReturnPath] rejected redirect: cross-origin');
+    urlSpy.mockRestore();
+
+    warnSpy.mockClear();
+    safeReturnPath('/unknown-route');
+    expect(warnSpy).toHaveBeenLastCalledWith('[safeReturnPath] rejected redirect: not-allowlisted');
+  });
+
+  it('does not log any part of rejected inputs across edge cases', () => {
+    warnSpy.mockClear();
+
+    const edgeCases = [
+      { toString: () => 'token=object-secret-token' },
+      '/profile?token=very-long-query-token&pad=' + 'x'.repeat(600),
+      '/unknown#token=hash-secret-token',
+      '//evil.com?token=abc123',
+    ];
+
+    for (const input of edgeCases) {
+      safeReturnPath(input);
+    }
+
+    const allLogged = warnSpy.mock.calls.map((c) => String(c[0])).join(' ');
+    expect(allLogged).not.toContain('object-secret-token');
+    expect(allLogged).not.toContain('very-long-query-token');
+    expect(allLogged).not.toContain('hash-secret-token');
+    expect(allLogged).not.toContain('evil.com');
+    expect(allLogged).not.toContain('abc123');
   });
 });
