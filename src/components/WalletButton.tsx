@@ -15,6 +15,8 @@ import './WalletButton.css';
 const ConnectedWalletDropdown = () => {
   const {
     wallet,
+    accounts,
+    switchAccount,
     disconnect,
     isRemembered,
     forgetRememberedChoice,
@@ -80,6 +82,19 @@ const ConnectedWalletDropdown = () => {
     setShowQr(false);
   };
 
+  const handleSwitchAccount = (publicKey: string) => {
+    if (!wallet || publicKey === wallet.publicKey) return;
+    switchAccount(publicKey);
+    setAnnounceMsg(`Switched to account ${formatPublicAddress(publicKey)}`);
+    if (announceTimeoutRef.current !== null) {
+      clearTimeout(announceTimeoutRef.current);
+    }
+    announceTimeoutRef.current = setTimeout(() => {
+      setAnnounceMsg('');
+      announceTimeoutRef.current = null;
+    }, 3000);
+  };
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
@@ -136,6 +151,39 @@ const ConnectedWalletDropdown = () => {
             <span className="label">Network:</span>
             <span className="value">{wallet.network}</span>
           </div>
+          {accounts.length > 1 && (
+            <div
+              className="dropdown-item dropdown-accounts"
+              role="group"
+              aria-label="Wallet accounts"
+            >
+              <span className="label">Account:</span>
+              <ul className="account-list">
+                {accounts.map((account) => {
+                  const isActive = account === wallet.publicKey;
+                  return (
+                    <li key={account}>
+                      <button
+                        type="button"
+                        className={`account-option${isActive ? ' account-option--active' : ''}`}
+                        role="menuitemradio"
+                        aria-checked={isActive}
+                        onClick={() => handleSwitchAccount(account)}
+                      >
+                        <span className="account-option-address">
+                          {formatPublicAddress(account)}
+                        </span>
+                        {isActive && (
+                          <span className="account-option-check" aria-hidden="true">✓</span>
+                        )}
+                        {isActive && <span className="sr-only">(active account)</span>}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
           <div className="dropdown-item" role="menuitem">
             <span className="label">Balance:</span>
             <div className="balance-list">{balanceDisplay}</div>

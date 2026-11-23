@@ -8,6 +8,7 @@ import {
 import { readJson, writeJson, removeKey } from './storage';
 import { isValidAccountId } from './strkey';
 import { getCreditNetworkConfig } from '../config/creditNetwork';
+import { getWalletAdapter } from './wallets';
 
 // Re-export types for convenience
 export {
@@ -112,6 +113,10 @@ export const classifyWalletError = (raw: unknown): WalletConnectError => {
 //                                   on reconnect, so it never sits in storage.
 //   creditra-wallet-recent      — `WalletType[]` ordered MRU list.
 //   creditra-wallet-remember    — `boolean` opt-in flag for auto-reconnect.
+//   creditra-wallet-account     — `{ v: 1, type, publicKey }`, written only
+//                                   when the user explicitly picks one of
+//                                   several accounts, so the choice can be
+//                                   restored on the next visit.
 //
 // The remaining two keys are legacy and only ever read once, to migrate and
 // then delete them (see `getStoredWallet`):
@@ -121,6 +126,7 @@ export const classifyWalletError = (raw: unknown): WalletConnectError => {
 const STORAGE_KEY_INFO = 'creditra-wallet-info';
 const STORAGE_KEY_RECENT = 'creditra-wallet-recent';
 const STORAGE_KEY_REMEMBER = 'creditra-wallet-remember';
+const STORAGE_KEY_ACCOUNT = 'creditra-wallet-account';
 const STORAGE_KEY_PREFERENCE_LEGACY = 'wallet_preference';
 const STORAGE_KEY_INFO_LEGACY = 'wallet_info';
 
@@ -235,6 +241,121 @@ export const connectWallet = async (type: WalletType): Promise<WalletInfo> => {
   }
 };
 
+// ─── Multi-account discovery ─────────────────────────────────────────────────
+
+/**
+ * Read an account list from a wallet API that may return either a bare
+ * `string[]` or an object with an `addresses` array (Freighter's newer
+ * `getAddresses` shape). Anything unexpected yields an empty list so a
+ * feature-detection miss never breaks a connection.
+ */
+async function readAccountList(
+  discover: (() => Promise<unknown>) | undefined,
+): Promise<string[]> {
+  if (typeof discover !== 'function') return [];
+  try {
+    const result = await discover();
+    if (typeof result === 'string') {
+      return [result];
+    }
+    if (Array.isArray(result)) {
+      return result.filter((value): value is string => typeof value === 'string');
+    }
+    if (result && typeof result === 'object') {
+      const addresses = (result as { addresses?: unknown }).addresses;
+      if (Array.isArray(addresses)) {
+        return addresses.filter((value): value is string => typeof value === 'string');
+      }
+    }
+  } catch {
+    // Extensions throw for unsupported calls or when access is denied; the
+    // caller falls back to the single connected key.
+  }
+  return [];
+}
+
+const dedupeAccounts = (accounts: string[]): string[] => [
+  ...new Set(accounts.filter((account) => isValidAccountId(account))),
+];
+
+/**
+ * Discover the accounts a wallet currently exposes.
+ *
+ * Feature-detects wallet APIs so this works with older extensions:
+ * - Freighter: `getAddresses()` → `getAccounts()` → `getPublicKey()`.
+ * - Albedo / xBull / Rabet: only dedicated `getAccounts`/`getAddresses`
+ *   methods are used. Calling `publicKey()`/`connect()` again would prompt the
+ *   user, which is not acceptable for a passive account listing.
+ *
+ * Returns `[]` when the wallet is absent or exposes nothing beyond the key the
+ * caller already has. Callers should treat an empty list as "single account".
+ */
+export const getAccounts = async (type: WalletType): Promise<string[]> => {
+  if (!isWalletInstalled(type)) return [];
+
+  if (type === 'freighter' && window.freighter) {
+    const freighter = window.freighter;
+    const discoverers = [freighter.getAddresses, freighter.getAccounts, freighter.getPublicKey];
+    for (const discover of discoverers) {
+      const accounts = dedupeAccounts(
+        await readAccountList(discover ? discover.bind(freighter) : undefined),
+      );
+      if (accounts.length > 0) return accounts;
+    }
+    return [];
+  }
+
+  const wallet = type === 'albedo'
+    ? window.albedo
+    : type === 'xbull'
+      ? window.xBullSDK
+      : type === 'rabet'
+        ? window.rabet
+        : undefined;
+
+  if (!wallet) return [];
+
+  const discover = wallet.getAddresses ?? wallet.getAccounts;
+  return dedupeAccounts(
+    await readAccountList(discover ? discover.bind(wallet) : undefined),
+  );
+};
+
+// ─── Last selected account ───────────────────────────────────────────────────
+
+interface StoredAccount {
+  v: 1;
+  type: WalletType;
+  publicKey: string;
+}
+
+/**
+ * Remember the account the user explicitly picked when their wallet exposed
+ * more than one. Only written on an explicit switch, so single-account users
+ * never have an address persisted.
+ */
+export const saveLastAccount = (type: WalletType, publicKey: string): void => {
+  if (!SUPPORTED_WALLET_TYPES.has(type) || !isValidAccountId(publicKey)) return;
+  const stored: StoredAccount = { v: 1, type, publicKey };
+  writeJson(STORAGE_KEY_ACCOUNT, stored);
+};
+
+/** Read the remembered account for `type`, or `null` when none/invalid. */
+export const getLastAccount = (type: WalletType): string | null => {
+  const raw = readJson<unknown>(STORAGE_KEY_ACCOUNT, null);
+  if (!raw || typeof raw !== 'object') return null;
+  const record = raw as Partial<StoredAccount>;
+  if (record.type !== type) return null;
+  return typeof record.publicKey === 'string' && isValidAccountId(record.publicKey)
+    ? record.publicKey
+    : null;
+};
+
+/** Drop the remembered account (called on disconnect). */
+export const clearLastAccount = (): void => {
+  removeKey(STORAGE_KEY_ACCOUNT);
+};
+
 // ─── Connection lifecycle helpers ────────────────────────────────────────────
 
 /**
@@ -254,6 +375,7 @@ export const disconnectWallet = () => {
   removeKey(STORAGE_KEY_INFO_LEGACY);
   removeKey(STORAGE_KEY_PREFERENCE_LEGACY);
   removeKey(STORAGE_KEY_REMEMBER);
+  removeKey(STORAGE_KEY_ACCOUNT);
 };
 
 /**

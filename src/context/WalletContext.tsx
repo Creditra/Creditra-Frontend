@@ -92,6 +92,14 @@
  *      extension's state out from under the app — nothing else in this file
  *      would otherwise notice the identity changed, and (1) never fires.
  *
+ * Multi-account wallets (#1374)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * `getAccounts()` discovers every account a wallet exposes (feature-detected;
+ * single-account wallets yield just the connected key). `switchAccount()`
+ * changes `wallet.publicKey` in place, which reuses invariant (1) above to
+ * re-scope balances, the SSE subscription and per-wallet drafts. An explicit
+ * choice is persisted per wallet type and restored on the next connect.
+ *
  * exported for tests: `walletIdentityKey`
  */
 
@@ -115,6 +123,9 @@ import {
   isWalletRemembered,
   setWalletRemembered,
   classifyWalletError,
+  getAccounts,
+  getLastAccount,
+  saveLastAccount,
 } from '../utils/wallet';
 import { getCreditNetworkConfig } from '../config/creditNetwork';
 import { isValidAccountId } from '../utils/strkey';
@@ -179,6 +190,48 @@ const requireValidWalletInfo = (wallet: WalletInfo): WalletInfo => {
   return wallet;
 };
 
+/**
+ * Discover every account the wallet exposes and make sure the connected key is
+ * present. Returns a de-duplicated list with the extension's active key first.
+ *
+ * `getAccounts` is feature-detected and failure-tolerant: older extensions
+ * (and test doubles that stub only the connect surface) simply yield the single
+ * connected key.
+ */
+async function discoverAccounts(type: WalletType, activePublicKey: string): Promise<string[]> {
+  let discovered: string[] = [];
+  if (typeof getAccounts === 'function') {
+    try {
+      discovered = await getAccounts(type);
+    } catch {
+      discovered = [];
+    }
+  }
+  const ordered = [activePublicKey, ...discovered];
+  return ordered.filter(
+    (key, index) => isValidAccountId(key) && ordered.indexOf(key) === index,
+  );
+}
+
+/**
+ * Pick the account to activate. An explicitly remembered choice wins when the
+ * wallet still exposes it; otherwise the extension's active key is used.
+ * `keepCurrent` lets a re-ping retain the account the user already selected.
+ */
+function resolveActiveKey(
+  type: WalletType,
+  accounts: string[],
+  extensionKey: string,
+  keepCurrent?: string | null,
+): string {
+  if (keepCurrent && accounts.includes(keepCurrent)) return keepCurrent;
+  if (typeof getLastAccount === 'function') {
+    const remembered = getLastAccount(type);
+    if (remembered && accounts.includes(remembered)) return remembered;
+  }
+  return extensionKey;
+}
+
 /** Optional second-arg bag for `connect()`. */
 export interface ConnectOptions {
   /**
@@ -200,6 +253,21 @@ export type ConnectResult =
 interface WalletContextType {
   /** The currently connected wallet, or `null` when disconnected. */
   wallet: WalletInfo | null;
+  /**
+   * Every account the connected wallet exposes, with the active account first.
+   * Always contains at least the connected key while `wallet` is non-null;
+   * wallets that expose only one account produce a single-element list.
+   */
+  accounts: string[];
+  /**
+   * Make another account from `accounts` the active one without disconnecting.
+   *
+   * This is an app-level selection: the wallet extension still decides which
+   * key signs. Balances, SSE subscriptions and per-wallet drafts are re-scoped
+   * automatically because they key off `walletIdentityKey`. No-op for an
+   * unknown key or the already-active account.
+   */
+  switchAccount: (publicKey: string) => void;
   /** Coarse connection-lifecycle state. UI consumers branch on this for spinners and badges. */
   status: ConnectionStatus;
   /**
@@ -319,6 +387,9 @@ export const WalletProvider = ({
   initialWallet?: WalletInfo | null;
 }) => {
   const [wallet, setWallet] = useState<WalletInfo | null>(() => initialWallet ?? null);
+  const [accounts, setAccounts] = useState<string[]>(() =>
+    initialWallet ? [initialWallet.publicKey] : [],
+  );
   const [status, setStatus] = useState<ConnectionStatus>(() => initialWallet ? 'connected' : 'disconnected');
   const [error, setError] = useState<WalletError | null>(null);
   const [reconnectTimedOut, setReconnectTimedOut] = useState(false);
@@ -330,6 +401,7 @@ export const WalletProvider = ({
   useEffect(() => {
     if (initialWallet === undefined) return;
     setWallet(initialWallet);
+    setAccounts(initialWallet ? [initialWallet.publicKey] : []);
     setStatus(initialWallet ? 'connected' : 'disconnected');
   }, [initialWallet]);
 
@@ -399,6 +471,7 @@ export const WalletProvider = ({
       disconnectWallet();
       setIsRemembered(false);
       setWallet(null);
+      setAccounts([]);
       setStatus('disconnected');
     }, sessionTimeoutMs);
   }, [clearSessionTimers, sessionTimeoutMs]);
@@ -431,8 +504,11 @@ export const WalletProvider = ({
 
       try {
         const walletInfo = requireValidWalletInfo(await connectWallet(type));
+        const discovered = await discoverAccounts(type, walletInfo.publicKey);
+        const activeKey = resolveActiveKey(type, discovered, walletInfo.publicKey);
         clearReconnectTimeout();
-        setWallet(walletInfo);
+        setAccounts(discovered);
+        setWallet(activeKey === walletInfo.publicKey ? walletInfo : { ...walletInfo, publicKey: activeKey });
         setStatus('connected');
         setReconnectTimedOut(false);
         saveWalletPreference(walletInfo);
@@ -451,6 +527,7 @@ export const WalletProvider = ({
         setError(err as WalletError);
         setStatus('error');
         setWallet(null);
+        setAccounts([]);
       }
     },
     [clearReconnectTimeout, timeoutMs, startSessionTimers, clearSessionTimers],
@@ -492,16 +569,21 @@ export const WalletProvider = ({
 
     try {
       const walletInfo = requireValidWalletInfo(await connectWallet(type));
-      setWallet(walletInfo);
+      const discovered = await discoverAccounts(type, walletInfo.publicKey);
+      const activeKey = resolveActiveKey(type, discovered, walletInfo.publicKey);
+      const activeWallet =
+        activeKey === walletInfo.publicKey ? walletInfo : { ...walletInfo, publicKey: activeKey };
+      setAccounts(discovered);
+      setWallet(activeWallet);
       setStatus('connected');
-      saveWalletPreference(walletInfo);
+      saveWalletPreference(activeWallet);
       // Always promote the wallet to the front of MRU so the modal can
       // surface it first, regardless of the remember-flag decision.
       recordRecentWallet(type);
       setWalletRemembered(shouldRemember);
       setIsRemembered(shouldRemember);
       startSessionTimers();
-      return { ok: true, wallet: walletInfo };
+      return { ok: true, wallet: activeWallet };
     } catch (err) {
       // Ensure the error is properly classified
       const walletError = err instanceof WalletConnectError 
@@ -511,6 +593,7 @@ export const WalletProvider = ({
       setError(walletError);
       setStatus('error');
       setWallet(null);
+      setAccounts([]);
       clearSessionTimers();
       setSessionTimeoutWarning(false);
       // Don't write any remembered state on failure: leaving stale
@@ -533,12 +616,33 @@ export const WalletProvider = ({
     disconnectWallet();
     clearSessionTimers();
     setWallet(null);
+    setAccounts([]);
     setStatus('disconnected');
     setError(null);
     setReconnectTimedOut(false);
     setSessionTimeoutWarning(false);
     setIsRemembered(false);
   };
+
+  // ── Account switching ──────────────────────────────────────────────────────
+
+  /**
+   * Activate another account exposed by the current wallet. Updating `wallet`
+   * is enough to re-scope everything derived from the identity: the
+   * cache-invalidation effect below clears `balances`, the Horizon stream
+   * re-subscribes, and per-wallet drafts key off `walletIdentityKey`.
+   */
+  const switchAccount = useCallback(
+    (publicKey: string) => {
+      if (!wallet || !isValidAccountId(publicKey)) return;
+      if (wallet.publicKey === publicKey || !accounts.includes(publicKey)) return;
+      setWallet({ ...wallet, publicKey });
+      if (typeof saveLastAccount === 'function') {
+        saveLastAccount(wallet.type, publicKey);
+      }
+    },
+    [wallet, accounts],
+  );
 
   // ── "Forget remembered choice" (privacy control, not disconnect) ───────────
 
@@ -583,9 +687,19 @@ export const WalletProvider = ({
     const id = ++attemptRef.current;
     try {
       const walletInfo = requireValidWalletInfo(await connectWallet(stored.type));
-      setWallet(walletInfo);
+      const discovered = await discoverAccounts(stored.type, walletInfo.publicKey);
+      const activeKey = resolveActiveKey(
+        stored.type,
+        discovered,
+        walletInfo.publicKey,
+        wallet.publicKey,
+      );
+      const activeWallet =
+        activeKey === walletInfo.publicKey ? walletInfo : { ...walletInfo, publicKey: activeKey };
+      setAccounts(discovered);
+      setWallet(activeWallet);
       setStatus('connected');
-      saveWalletPreference(walletInfo);
+      saveWalletPreference(activeWallet);
       startSessionTimers(); // full timer restart
     } catch (err) {
       if (id !== attemptRef.current) return;
@@ -594,6 +708,7 @@ export const WalletProvider = ({
       setError(err as WalletError);
       setStatus('error');
       setWallet(null);
+      setAccounts([]);
     }
   }, [wallet, startSessionTimers, clearSessionTimers]);
 
@@ -747,8 +862,17 @@ export const WalletProvider = ({
     try {
       const fresh = await connectWallet(wallet.type);
       if (!isValidAccountId(fresh.publicKey)) return;
-      if (walletIdentityKey(fresh) !== walletIdentityKey(wallet)) {
-        setWallet(fresh);
+      const discovered = await discoverAccounts(wallet.type, fresh.publicKey);
+      const activeKey = resolveActiveKey(
+        wallet.type,
+        discovered,
+        fresh.publicKey,
+        wallet.publicKey,
+      );
+      const next = activeKey === fresh.publicKey ? fresh : { ...fresh, publicKey: activeKey };
+      setAccounts(discovered);
+      if (walletIdentityKey(next) !== walletIdentityKey(wallet)) {
+        setWallet(next);
       }
     } catch (e) {
       console.error('Failed to refresh wallet identity', e);
@@ -810,6 +934,8 @@ export const WalletProvider = ({
     <WalletContext.Provider
       value={{
         wallet,
+        accounts,
+        switchAccount,
         status,
         error,
         reconnectTimedOut,
