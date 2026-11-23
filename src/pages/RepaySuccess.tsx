@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Home, RefreshCw } from 'lucide-react';
-import { RepaySuccessShareCard } from '@/components/RepaySuccessShareCard';
-import { PayoffProjection } from '@/components/PayoffProjection';
+import { RefreshCw } from 'lucide-react';
+import { SuccessStep } from '@/components/repay/SuccessStep';
 import { creditDataSource, type RepaymentTransaction } from '@/services/creditDataSource';
 import { useWallet } from '@/context/WalletContext';
-import { formatMoney } from '@/utils/amountValidation';
 
 /**
  * Shape of the optional navigation state used for an immediate render while
@@ -237,12 +235,6 @@ export default function RepaySuccess() {
     return freshNavigationState;
   }, [freshNavigationState, ownedTransaction, status]);
 
-  const newUtilizationPct = displayState
-    ? displayState.limit > 0
-      ? Math.round((displayState.remainingDebt / displayState.limit) * 100)
-      : 0
-    : 0;
-
   if (status === 'pending' && ownedTransaction) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-8 text-center" role="status" aria-live="polite">
@@ -322,145 +314,19 @@ export default function RepaySuccess() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-6 sm:py-8">
-      <div role="status" aria-live="polite">
-        {/* ── Header ──────────────────────────────────────────────────────── */}
-        <button
-          type="button"
-          onClick={() => navigate('/repay')}
-          className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          Back to repayment
-        </button>
-
-        <header className="mb-8 space-y-2 text-center">
-          <p className="text-xs font-semibold uppercase text-muted">
-            Repayment Complete
-          </p>
-          <h1 className="text-2xl font-bold text-foreground sm:text-3xl">
-            You repaid {formatMoney(displayState.amount)}!
-          </h1>
-          <p className="text-sm text-muted">
-            {displayState.creditLineName} &middot; Your transaction was successful.
-          </p>
-        </header>
-
-        {/* ── Shareable success card ───────────────────────────────────────── */}
-        <RepaySuccessShareCard
-          amount={displayState.amount}
-          creditLineName={displayState.creditLineName}
-          transactionId={displayState.transactionId}
-          timestamp={new Date(displayState.timestamp)}
-          onClose={undefined}
-        />
-
-        {/* ── Repayment summary ────────────────────────────────────────────── */}
-        <div className="mt-6 rounded-lg border border-border bg-surface p-4">
-          <h2 className="mb-3 text-sm font-semibold text-foreground">
-            Repayment Summary
-          </h2>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted">Amount repaid</span>
-              <span className="font-semibold text-foreground">
-                {formatMoney(displayState.amount)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted">Remaining debt</span>
-              <span
-                className={`font-semibold ${
-                  displayState.remainingDebt === 0
-                    ? 'text-success'
-                    : 'text-foreground'
-                }`}
-              >
-                {formatMoney(displayState.remainingDebt)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted">Credit line utilization</span>
-              <span className="font-semibold text-foreground">
-                Reduced to {newUtilizationPct}%
-              </span>
-            </div>
-
-            {/* Utilization bars — before/after */}
-            <div className="pt-2">
-              <p className="mb-1 text-xs text-muted">Before repayment</p>
-              <div
-                className="h-2 w-full overflow-hidden rounded-full bg-border"
-                role="progressbar"
-                aria-valuenow={100}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label="Utilization before repayment at 100%"
-              >
-                <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: '100%',
-                    background:
-                      displayState.remainingDebt === 0
-                        ? 'var(--success, #3fb950)'
-                        : 'var(--warning, #d29922)',
-                  }}
-                />
-              </div>
-            </div>
-            <div>
-              <p className="mb-1 text-xs text-muted">After repayment</p>
-              <div
-                className="h-2 w-full overflow-hidden rounded-full bg-border"
-                role="progressbar"
-                aria-valuenow={newUtilizationPct}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label={`Utilization after repayment at ${newUtilizationPct}%`}
-              >
-                <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${Math.max(newUtilizationPct, displayState.remainingDebt > 0 ? 2 : 0)}%`,
-                    background:
-                      displayState.remainingDebt === 0
-                        ? 'var(--success, #3fb950)'
-                        : 'var(--accent, #58a6ff)',
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Payoff projection ────────────────────────────────────────────── */}
-        <PayoffProjection
-          currentDebt={displayState.remainingDebt}
-          apr={displayState.apr}
-          repayAmount={0}
-          limit={displayState.limit}
-          nextPaymentAmount={displayState.nextPaymentAmount}
-        />
-
-        {/* ── Actions ──────────────────────────────────────────────────────── */}
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-          <button
-            type="button"
-            onClick={handleDashboard}
-            className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-background transition-all hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          >
-            <Home className="h-4 w-4" aria-hidden="true" />
-            Back to Dashboard
-          </button>
-          <button
-            type="button"
-            onClick={handleNewRepay}
-            className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 py-3 text-sm font-semibold text-foreground transition-all hover:bg-border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          >
-            Make another repayment
-          </button>
-        </div>
-      </div>
+      <SuccessStep
+        amount={displayState.amount}
+        creditLineName={displayState.creditLineName}
+        transactionId={displayState.transactionId}
+        timestamp={displayState.timestamp}
+        remainingDebt={displayState.remainingDebt}
+        limit={displayState.limit}
+        apr={displayState.apr}
+        nextPaymentAmount={displayState.nextPaymentAmount}
+        onBack={() => navigate('/repay')}
+        onDashboard={handleDashboard}
+        onNewRepay={handleNewRepay}
+      />
     </main>
   );
 }
