@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MoreHorizontal, ArrowUpCircle, ArrowDownCircle, Calendar, Info, Snowflake } from 'lucide-react';
+import { MoreHorizontal, ArrowUpCircle, ArrowDownCircle, Calendar, Info, Snowflake, Shield } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 interface CreditLineRowMenuProps {
@@ -12,6 +12,7 @@ interface CreditLineRowMenuProps {
   onDetails?: (lineId: string) => void;
   onFreeze?: (lineId: string) => void;
   onUnfreeze?: (lineId: string) => void;
+  onAdjustCollateral?: (lineId: string) => void;
 }
 
 /**
@@ -35,6 +36,7 @@ export function CreditLineRowMenu({
   onDetails,
   onFreeze,
   onUnfreeze,
+  onAdjustCollateral,
 }: CreditLineRowMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -132,6 +134,21 @@ export function CreditLineRowMenu({
             <Calendar className="w-4 h-4" />
             Schedule
           </button>
+
+          {/* Adjust Collateral */}
+          {onAdjustCollateral && (
+            <button
+              onClick={() => {
+                setIsOpen(false);
+                onAdjustCollateral(lineId);
+              }}
+              className="flex w-full items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-accent/10 hover:text-accent transition-colors text-left"
+              role="menuitem"
+            >
+              <Shield className="w-4 h-4" />
+              Adjust Collateral
+            </button>
+          )}
 
           {/* Details */}
           <button

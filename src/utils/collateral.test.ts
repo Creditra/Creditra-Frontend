@@ -7,6 +7,8 @@ import { describe, it, expect } from 'vitest';
 import {
   computeLtvSnapshot,
   computeSubstitutionFee,
+  computeMaxWithdrawable,
+  computeCollateralAdjustment,
   computeSlippage,
   isWithinSlippage,
   isStaleQuote,
@@ -402,3 +404,87 @@ describe('classifySubstitutionError', () => {
     expect(result.retryable).toBe(true);
   });
 });
+
+// ─── computeMaxWithdrawable ──────────────────────────────────────────────────
+
+describe('computeMaxWithdrawable', () => {
+  it('allows full collateral withdrawal when loan balance is 0', () => {
+    const max = computeMaxWithdrawable(CRYPTO_ASSET, 0);
+    expect(max).toBe(400_000);
+  });
+
+  it('calculates withdrawable headroom when under max LTV', () => {
+    // CRYPTO_ASSET has value 400,000, maxLtv 0.70.
+    // Loan balance 140,000 => min required collateral = 140,000 / 0.70 = 200,000
+    // Max withdrawable = 400,000 - 200,000 = 200,000
+    const max = computeMaxWithdrawable(CRYPTO_ASSET, 140_000);
+    expect(max).toBe(200_000);
+  });
+
+  it('returns 0 when current LTV is at or exceeds maxLtvRatio', () => {
+    // Loan balance 280,000 => 280,000 / 400,000 = 70% (exactly maxLtv)
+    const maxAt = computeMaxWithdrawable(CRYPTO_ASSET, 280_000);
+    expect(maxAt).toBe(0);
+
+    // Loan balance 300,000 => 75% > 70%
+    const maxOver = computeMaxWithdrawable(CRYPTO_ASSET, 300_000);
+    expect(maxOver).toBe(0);
+  });
+
+  it('accepts raw numbers for collateral value and maxLtvRatio', () => {
+    const max = computeMaxWithdrawable(500_000, 200_000, 0.80);
+    // min required = 200,000 / 0.80 = 250,000
+    // max withdrawable = 500,000 - 250,000 = 250,000
+    expect(max).toBe(250_000);
+  });
+
+  it('handles zero collateral value gracefully', () => {
+    expect(computeMaxWithdrawable(0, 100_000, 0.70)).toBe(0);
+  });
+});
+
+// ─── computeCollateralAdjustment ─────────────────────────────────────────────
+
+describe('computeCollateralAdjustment', () => {
+  it('correctly calculates metrics for adding collateral', () => {
+    // Current: value 400,000, loan 200,000 => LTV 50%
+    const res = computeCollateralAdjustment(CRYPTO_ASSET, 200_000, 'add', 100_000);
+    expect(res.isValid).toBe(true);
+    expect(res.isBreachingMaxLtv).toBe(false);
+    expect(res.adjustedCollateralValue).toBe(500_000);
+    expect(res.adjustedSnapshot.ltvRatio).toBeCloseTo(0.40); // 200k / 500k = 40%
+  });
+
+  it('correctly calculates safe withdrawal', () => {
+    // Current: value 400,000, loan 140,000 => maxWithdrawable is 200,000
+    const res = computeCollateralAdjustment(CRYPTO_ASSET, 140_000, 'withdraw', 100_000);
+    expect(res.isValid).toBe(true);
+    expect(res.isBreachingMaxLtv).toBe(false);
+    expect(res.adjustedCollateralValue).toBe(300_000);
+    expect(res.adjustedSnapshot.ltvRatio).toBeCloseTo(140_000 / 300_000);
+  });
+
+  it('flags unsafe withdrawal that breaches max LTV ceiling', () => {
+    // Current: value 400,000, loan 140,000 => maxWithdrawable is 200,000
+    // Withdrawing 250,000 would leave 150,000 collateral => LTV 140/150 = 93.3% > 70%
+    const res = computeCollateralAdjustment(CRYPTO_ASSET, 140_000, 'withdraw', 250_000);
+    expect(res.isValid).toBe(false);
+    expect(res.isBreachingMaxLtv).toBe(true);
+    expect(res.errorMessage).toContain('Withdrawal exceeds safe limit');
+  });
+
+  it('flags withdrawal exceeding total collateral', () => {
+    const res = computeCollateralAdjustment(CRYPTO_ASSET, 50_000, 'withdraw', 500_000);
+    expect(res.isValid).toBe(false);
+    expect(res.errorMessage).toContain('exceeds total pledged collateral');
+  });
+
+  it('flags 0 or negative amount as invalid', () => {
+    const resZero = computeCollateralAdjustment(CRYPTO_ASSET, 100_000, 'add', 0);
+    expect(resZero.isValid).toBe(false);
+
+    const resNegative = computeCollateralAdjustment(CRYPTO_ASSET, 100_000, 'withdraw', -50);
+    expect(resNegative.isValid).toBe(false);
+  });
+});
+

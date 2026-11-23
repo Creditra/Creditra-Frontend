@@ -347,3 +347,107 @@ export function classifySubstitutionError(
     retryable: template.retryable,
   };
 }
+
+// ─── Collateral Adjustment Calculations ─────────────────────────────────────
+
+export type CollateralAdjustMode = 'add' | 'withdraw';
+
+export interface CollateralAdjustmentResult {
+  mode: CollateralAdjustMode;
+  amount: number;
+  currentSnapshot: LtvSnapshot;
+  adjustedSnapshot: LtvSnapshot;
+  adjustedCollateralValue: number;
+  maxWithdrawable: number;
+  isValid: boolean;
+  isBreachingMaxLtv: boolean;
+  errorMessage?: string;
+}
+
+/**
+ * Compute the maximum collateral value that can be withdrawn from a position
+ * without breaching the asset's maximum LTV ratio.
+ *
+ * @param assetOrValue  The collateral asset or its current market value in USD.
+ * @param loanBalance   The outstanding loan balance in USD.
+ * @param maxLtvRatio   The maximum permitted LTV ratio (0-1), required if assetOrValue is a number.
+ */
+export function computeMaxWithdrawable(
+  assetOrValue: CollateralAsset | number,
+  loanBalance: number,
+  maxLtvRatio?: number,
+): number {
+  const collateralValue = typeof assetOrValue === 'number' ? assetOrValue : assetOrValue.value;
+  const ratio = typeof assetOrValue === 'number' ? (maxLtvRatio ?? 1) : assetOrValue.maxLtvRatio;
+  if (collateralValue <= 0 || ratio <= 0) return 0;
+  if (loanBalance <= 0) return Math.max(0, Math.floor(collateralValue * 100) / 100);
+
+  // To maintain LTV <= maxLtvRatio: loanBalance / (collateralValue - withdrawAmount) <= maxLtvRatio
+  // => withdrawAmount <= collateralValue - (loanBalance / maxLtvRatio)
+  const minRequiredCollateral = loanBalance / ratio;
+  const maxWithdrawable = Math.max(0, collateralValue - minRequiredCollateral);
+  return Math.min(collateralValue, Math.floor(maxWithdrawable * 100) / 100);
+}
+
+/**
+ * Compute the adjusted LTV snapshot and safety metrics for adding or withdrawing collateral.
+ *
+ * @param asset         The current collateral asset.
+ * @param loanBalance   The outstanding loan balance in USD.
+ * @param mode          'add' to top up collateral, 'withdraw' to remove collateral.
+ * @param amount        The adjustment amount in USD.
+ */
+export function computeCollateralAdjustment(
+  asset: CollateralAsset,
+  loanBalance: number,
+  mode: CollateralAdjustMode,
+  amount: number,
+): CollateralAdjustmentResult {
+  const currentSnapshot = computeLtvSnapshot(asset, loanBalance);
+  const maxWithdrawable = computeMaxWithdrawable(asset, loanBalance);
+  const safeAmount = Math.max(0, amount);
+
+  let adjustedCollateralValue: number;
+  if (mode === 'add') {
+    adjustedCollateralValue = asset.value + safeAmount;
+  } else {
+    adjustedCollateralValue = Math.max(0, asset.value - safeAmount);
+  }
+
+  const adjustedAsset: CollateralAsset = {
+    ...asset,
+    value: adjustedCollateralValue,
+  };
+  const adjustedSnapshot = computeLtvSnapshot(adjustedAsset, loanBalance);
+
+  let isValid = true;
+  let isBreachingMaxLtv = false;
+  let errorMessage: string | undefined;
+
+  if (amount <= 0 || Number.isNaN(amount)) {
+    isValid = false;
+    errorMessage = 'Enter an amount greater than 0.';
+  } else if (mode === 'withdraw') {
+    if (amount > asset.value) {
+      isValid = false;
+      errorMessage = 'Withdrawal amount exceeds total pledged collateral.';
+    } else if (amount > maxWithdrawable || adjustedSnapshot.isOverLtv) {
+      isValid = false;
+      isBreachingMaxLtv = true;
+      errorMessage = `Withdrawal exceeds safe limit. Maximum withdrawable amount is $${maxWithdrawable.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} to maintain safe LTV of ${fmtLtv(asset.maxLtvRatio)}.`;
+    }
+  }
+
+  return {
+    mode,
+    amount,
+    currentSnapshot,
+    adjustedSnapshot,
+    adjustedCollateralValue,
+    maxWithdrawable,
+    isValid,
+    isBreachingMaxLtv,
+    errorMessage,
+  };
+}
+
