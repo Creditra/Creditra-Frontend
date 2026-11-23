@@ -15,6 +15,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ShortcutHelpOverlay } from "./components/ShortcutHelpOverlay";
 import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
 import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatchBanner";
+import { StaleDataBanner } from "./components/StaleDataBanner";
 import { ToastContainer } from "./components/notifications/ToastContainer";
 import { BannerAlerts } from "./components/notifications/BannerAlert";
 import { Header } from "./layouts/Header";
@@ -100,6 +101,7 @@ function AppShell() {
           <main className="main">
             <BannerAlerts />
             <NetworkMismatchBanner />
+            <StaleDataBanner />
             <Suspense fallback={<RouteLoadingFallback />}>
               <Routes>
                 {ROUTE_MANIFEST.map((route) => {
