@@ -68,68 +68,19 @@ export function useRouteHead(): RouteHeadContextValue {
   return useContext(defaultRouteHeadContext);
 }
 
-type RouteMetadata = {
+import { getEnabledRoutes } from "../routes/manifest";
+
+export type RouteMetadata = {
   path: string;
   pageName: string;
   description: string;
 };
 
-export const ROUTE_METADATA: RouteMetadata[] = [
-  {
-    path: "/landing",
-    pageName: "Landing",
-    description:
-      "Explore Creditra's credit marketplace for borrowers and liquidity providers.",
-  },
-  {
-    path: "/",
-    pageName: "Dashboard",
-    description:
-      "Review your Creditra portfolio, credit utilization, risk score, and repayment activity.",
-  },
-  {
-    path: "/credit-lines",
-    pageName: "Credit Lines",
-    description:
-      "Manage available Creditra credit lines, balances, limits, and repayment status.",
-  },
-  {
-    path: "/draw-credit",
-    pageName: "Draw Credit",
-    description:
-      "Select an active credit line and draw available funds from your Creditra account.",
-  },
-  {
-    path: "/draw-credit/success",
-    pageName: "Draw Credit Success",
-    description:
-      "Review confirmation details for your completed Creditra credit draw.",
-  },
-  {
-    path: "/open-credit",
-    pageName: "Request Evaluation",
-    description:
-      "Request a Creditra credit evaluation to open a new borrower credit line.",
-  },
-  {
-    path: "/transactions",
-    pageName: "Transaction History",
-    description:
-      "Search, filter, and export your Creditra deposits, draws, repayments, and fees.",
-  },
-  {
-    path: "/help",
-    pageName: "Help Center",
-    description:
-      "Find Creditra support articles, wallet guidance, FAQs, and product walkthroughs.",
-  },
-  {
-    path: "/dutch-auctions",
-    pageName: "Dutch Auctions",
-    description:
-      "Monitor Creditra Dutch auction opportunities, bids, clearing prices, and market activity.",
-  },
-];
+export const ROUTE_METADATA: RouteMetadata[] = getEnabledRoutes().map((r) => ({
+  path: r.path,
+  pageName: r.pageName,
+  description: r.description,
+}));
 
 export const NOT_FOUND_METADATA: Omit<RouteMetadata, "path"> = {
   pageName: "Not Found",
@@ -139,10 +90,17 @@ export const NOT_FOUND_METADATA: Omit<RouteMetadata, "path"> = {
 
 const titleFor = (pageName: string) => `Creditra · ${pageName}`;
 
-const getRouteMetadata = (pathname: string) =>
-  ROUTE_METADATA.find((route) =>
+const getRouteMetadata = (pathname: string) => {
+  const matched = getEnabledRoutes().find((route) =>
     matchPath({ path: route.path, end: true }, pathname),
-  ) ?? NOT_FOUND_METADATA;
+  );
+  if (!matched) return NOT_FOUND_METADATA;
+  return {
+    path: matched.path,
+    pageName: matched.pageName,
+    description: matched.description,
+  };
+};
 
 export function RouteAnnouncer() {
   const location = useLocation();

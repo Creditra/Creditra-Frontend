@@ -171,6 +171,26 @@
     line-height: var(--lh-display);
 }
 
+/* Scope qualifier appended to flow card labels ("in selected range") */
+.th-stat-scope {
+    font-size: 0.6rem;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--muted);
+    opacity: 0.75;
+    margin-left: var(--space-xs);
+    white-space: nowrap;
+}
+
+/* Sub-text below the reconciliation hint value */
+.th-stat-hint {
+    font-size: 0.65rem;
+    line-height: var(--lh-small);
+    color: var(--muted);
+    opacity: 0.8;
+    margin-top: var(--space-xs);
+}
+
 /* ─── Filters ───────────────────────────────────────────────────────────────── */
 
 .th-filters {
@@ -514,6 +534,32 @@
     animation-delay: 0.3s;
 }
 
+.th-table-container--virtualized {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.th-table-container--virtualized .th-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+.virtual-list-spacer,
+.virtual-list-spacer td {
+    pointer-events: none;
+    border: none;
+    padding: 0;
+    background: transparent;
+}
+
+@media print {
+    .th-table-container--virtualized {
+        max-height: none;
+        overflow: visible;
+    }
+}
+
 .th-table {
     width: 100%;
     border-collapse: collapse;
@@ -545,6 +591,11 @@
 
 .tx-row:hover {
     background: rgba(88, 166, 255, 0.04);
+}
+
+.tx-row:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
 }
 
 .tx-row.expanded {
@@ -1169,4 +1220,73 @@
     .th-search-shortcuts {
         justify-content: flex-start;
     }
+}
+
+/* Transaction hash actions menu (issue #1466) */
+.tx-hash-menu-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.tx-hash-truncated {
+  font-size: 0.75rem;
+  font-family: monospace;
+  color: var(--muted, #888);
+}
+
+.tx-hash-menu-trigger {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.2rem;
+  border-radius: 4px;
+  color: var(--muted, #888);
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+
+.tx-hash-menu-trigger:hover,
+.tx-hash-menu-trigger:focus-visible {
+  color: var(--foreground, #fff);
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: 2px;
+}
+
+.tx-hash-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 200px;
+  background: var(--surface, #18181b);
+  border: 1px solid var(--border, #27272a);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 50;
+  padding: 4px 0;
+}
+
+.tx-hash-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--foreground, #e4e4e7);
+  text-decoration: none;
+  transition: background 0.1s;
+}
+
+.tx-hash-menu-item:hover,
+.tx-hash-menu-item:focus-visible {
+  background: var(--accent, #6366f1)1a;
+  color: var(--accent, #6366f1);
+  outline: none;
 }

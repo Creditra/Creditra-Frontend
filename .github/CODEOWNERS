@@ -9,7 +9,6 @@
 
 package.json          @greatest0fallt1me
 package-lock.json     @greatest0fallt1me
-pnpm-lock.yaml        @greatest0fallt1me
 yarn.lock             @greatest0fallt1me
 bun.lock              @greatest0fallt1me
 .npmrc                @greatest0fallt1me

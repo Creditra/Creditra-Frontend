@@ -11,6 +11,7 @@ import type { CreditLine } from '@/types/draw-credit.types';
 const creditLine: CreditLine = {
   id: 'line-1',
   name: 'Test Line',
+  status: "Active",
   limit: 10000,
   available: 4000,
   utilization: 60,
@@ -62,5 +63,17 @@ describe('glossed credit terms', () => {
     expect(microcopy).toContain('Utilization is the percentage of your available credit that is currently being used.');
     expect(microcopy).toContain('A reserve is the portion of your credit line that should stay untouched for safety and flexibility.');
     expect(microcopy).toContain('A term is a defined period or condition of your credit agreement.');
+  });
+});
+
+describe('PreviewSection currency formatting', () => {
+  it.each([
+    [0, '$0.00'],
+    [1000, '$1,000.00'],
+    [1250000.5, '$1,250,000.50'],
+    [42.75, '$42.75'],
+  ])('formats draw amount %s as %s', (amount, expected) => {
+    render(<PreviewSection creditLine={creditLine} amount={amount} />);
+    expect(screen.getByText(expected)).toBeInTheDocument();
   });
 });

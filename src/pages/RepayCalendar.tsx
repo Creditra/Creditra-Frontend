@@ -1,5 +1,18 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { COLOR } from '../utils/tokens';
+import { parseLocalDate } from '../utils/dates';
+import { buildIcs, downloadIcs, type IcsEventInput } from '../utils/ics';
+import type { AutopayFrequency } from '../lib/autopay-schedule';
+import { formatCurrency } from '../utils/currency';
+
+function formatEventDate(dateStr: string): string {
+  const parsed = parseLocalDate(dateStr);
+  if (!parsed) return dateStr;
+  return parsed.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+}
 
 /** Repayment status for a single calendar event. */
 export type RepayEventStatus = 'upcoming' | 'due-soon' | 'paid' | 'overdue';
@@ -10,6 +23,22 @@ export interface RepayCalendarEvent {
   label: string;
   /** Optional repayment status; renders a status chip when provided. */
   status?: RepayEventStatus;
+  /** Optional credit line identifier for deterministic `.ics` UIDs. */
+  lineId?: string;
+  /** Optional autopay recurrence frequency exported as an RFC 5545 `RRULE`. */
+  frequency?: AutopayFrequency;
+}
+
+function toIcsEvent(event: RepayCalendarEvent, index: number): IcsEventInput {
+  const lineId = event.lineId ?? event.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `payment-${index}`;
+  const formattedAmount = `$${event.amount.toLocaleString()}`;
+  return {
+    lineId,
+    date: event.date,
+    summary: `${event.label} — ${formattedAmount}`,
+    description: `Creditra repayment due: ${event.label} (${formattedAmount})`,
+    frequency: event.frequency,
+  };
 }
 
 /**
@@ -53,14 +82,16 @@ export interface RepayCalendarProps {
 }
 
 /**
- * RepayCalendar — repayment schedule calendar with a live region.
+ * RepayCalendar — repayment schedule calendar.
  *
  * Renders an ordered list of upcoming repayment events with accessible
- * date labels and amounts. Uses `aria-live="polite"` so assistive
- * technology announces changes to the schedule.
+ * date labels and two-decimal currency amounts. Announces schedule count
+ * changes via a visually hidden `role="status"` element instead of making
+ * the entire list a live region.
  *
  * WCAG 2.1 AA:
- * - Live region announces schedule updates to screen readers.
+ * - A concise, visually hidden `role="status"` region announces schedule
+ *   count updates without re-reading every list item.
  * - Each event row uses semantic markup for date and amount.
  * - All numeric values use `font-variant-numeric: tabular-nums`.
  */
@@ -69,18 +100,59 @@ export function RepayCalendar({
   className = '',
   children,
 }: RepayCalendarProps) {
+  const [announcement, setAnnouncement] = useState('');
   const classes = ['card', 'repay-calendar', className]
     .filter(Boolean)
     .join(' ');
+
+  const handleExportAll = () => {
+    const icsEvents = events.map((event, idx) => toIcsEvent(event, idx));
+    const content = buildIcs(icsEvents);
+    const filename = 'creditra-repayments.ics';
+    downloadIcs(filename, content);
+    setAnnouncement(
+      `Downloaded ${filename} with ${events.length} ${events.length === 1 ? 'payment' : 'payments'}.`,
+    );
+  };
+
+  const handleExportOne = (event: RepayCalendarEvent, idx: number) => {
+    const icsEvent = toIcsEvent(event, idx);
+    const content = buildIcs([icsEvent]);
+    const filename = `creditra-${icsEvent.lineId}-${event.date}.ics`;
+    downloadIcs(filename, content);
+    setAnnouncement(`Downloaded ${filename} for ${event.label}.`);
+  };
+
+  const statusMessage =
+    events.length === 0
+      ? 'No upcoming repayments'
+      : `${events.length} upcoming ${events.length === 1 ? 'repayment' : 'repayments'}`;
 
   return (
     <section
       className={classes}
       aria-label="Repayment calendar"
-      aria-live="polite"
-      aria-atomic="true"
     >
-      <h2 className="repay-calendar__title">Upcoming Payments</h2>
+      <div className="repay-calendar__header">
+        <h2 className="repay-calendar__title">Upcoming Payments</h2>
+        {events.length > 0 && (
+          <button
+            type="button"
+            className="repay-calendar__export-btn"
+            onClick={handleExportAll}
+          >
+            Add to calendar
+          </button>
+        )}
+      </div>
+
+      <p className="sr-only" role="status" aria-live="polite">
+        {announcement}
+      </p>
+
+      <div className="sr-only" role="status">
+        {statusMessage}
+      </div>
 
       {events.length === 0 ? (
         <p className="repay-calendar__empty">No upcoming payments.</p>
@@ -92,10 +164,7 @@ export function RepayCalendar({
                 dateTime={event.date}
                 className="repay-calendar__date num-tabular"
               >
-                {new Date(event.date).toLocaleDateString(undefined, {
-                  month: 'short',
-                  day: 'numeric',
-                })}
+                {formatEventDate(event.date)}
               </time>
               <span className="repay-calendar__label">{event.label}</span>
               {event.status && (
@@ -110,8 +179,16 @@ export function RepayCalendar({
                 </span>
               )}
               <span className="repay-calendar__amount num-tabular">
-                ${event.amount.toLocaleString()}
+                {formatCurrency(event.amount)}
               </span>
+              <button
+                type="button"
+                className="repay-calendar__event-export-btn"
+                aria-label={`Add ${event.label} on ${formatEventDate(event.date)} to calendar`}
+                onClick={() => handleExportOne(event, idx)}
+              >
+                Add to calendar
+              </button>
             </li>
           ))}
         </ol>

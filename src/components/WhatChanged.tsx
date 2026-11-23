@@ -1,6 +1,34 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type KeyboardEvent } from "react";
 import { COLOR } from "../utils/tokens";
+import { DASHBOARD_VALUES_STABLE_KEY } from "../constants/storageKeys";
+import { readVersioned, writeVersioned } from "../utils/storage";
+import {
+  dashboardSessionActiveKey,
+  dashboardValuesLastVisitKey,
+  dashboardValuesStableKey,
+} from "../constants/storageKeys";
+import { useWalletIdentityKey } from "../hooks/useWalletIdentityKey";
+import { readJson, readSessionJson, writeJson, writeSessionJson } from "../utils/storage";
 import "./WhatChanged.css";
+
+const DASHBOARD_VALUES_SCHEMA_VERSION = 1;
+
+function isMetricRecord(data: unknown): data is Record<string, number> {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+  return Object.values(data as Record<string, unknown>).every(
+    (v) => typeof v === "number" && Number.isFinite(v),
+  );
+}
+
+function migrateDashboardValues(
+  raw: unknown,
+  fromVersion: number,
+): Record<string, number> | undefined {
+  if (fromVersion === 0 && isMetricRecord(raw)) {
+    return raw;
+  }
+  return undefined;
+}
 
 interface WhatChangedProps {
   metricId: string;
@@ -9,64 +37,94 @@ interface WhatChangedProps {
   label?: string;
 }
 
+function isDashboardValues(value: unknown): value is Record<string, number> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every((item) => typeof item === "number")
+  );
+}
+
 /**
  * An inline tooltip component that detects if a metric has changed since the user's last visit.
  * Surfaces a tooltip on hover or long-press.
  */
 export function WhatChanged({ metricId, currentValue, format, label }: WhatChangedProps) {
-  const [prevValue, setPrevValue] = useState<number | null>(null);
+  const owner = useWalletIdentityKey();
+  const [previous, setPrevious] = useState<{ owner: string; value: number } | null>(null);
   const [showTooltip, setShowTooltip] = useState(false);
-  const touchTimer = useRef<any>(null);
+  const [dismissed, setDismissed] = useState(false);
+  const touchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const focused = useRef(false);
+  const hovered = useRef(false);
 
   useEffect(() => {
+    return () => {
+      if (touchTimer.current !== null) clearTimeout(touchTimer.current);
+      if (touchHideTimer.current !== null) clearTimeout(touchHideTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    setPrevious(null);
+    if (!owner) return;
+
+    const stableKey = dashboardValuesStableKey(owner);
+    const lastVisitKey = dashboardValuesLastVisitKey(owner);
+    const sessionActiveKey = dashboardSessionActiveKey(owner);
+
     // Check if the session is already active
-    const sessionActive = sessionStorage.getItem("creditra_dashboard_session_active");
-    
-    let lastVisitData: Record<string, number> = {};
-    const localSaved = localStorage.getItem("creditra_dashboard_values_stable");
-    if (localSaved) {
-      try {
-        lastVisitData = JSON.parse(localSaved);
-      } catch (e) {
-        console.error("Failed to parse stable dashboard values", e);
-      }
-    }
+    const sessionActive = readSessionJson<boolean>(sessionActiveKey, false);
+    const storedData = readJson<unknown>(stableKey, {});
+    const lastVisitData = isDashboardValues(storedData) ? storedData : {};
+    const lastVisitData = readVersioned<Record<string, number>>(
+      DASHBOARD_VALUES_STABLE_KEY,
+      {
+        version: DASHBOARD_VALUES_SCHEMA_VERSION,
+        fallback: {},
+        migrate: migrateDashboardValues,
+        validate: isMetricRecord,
+      },
+    );
 
     if (!sessionActive) {
       // First render of this session:
       // Save stable values from last visit to sessionStorage for reference during this session
-      sessionStorage.setItem("creditra_dashboard_values_last_visit", JSON.stringify(lastVisitData));
+      writeSessionJson(lastVisitKey, lastVisitData);
       
       // Save current values to localStorage for the next visit
       const newStableData = { ...lastVisitData, [metricId]: currentValue };
-      localStorage.setItem("creditra_dashboard_values_stable", JSON.stringify(newStableData));
+      writeVersioned(DASHBOARD_VALUES_STABLE_KEY, newStableData, {
+        version: DASHBOARD_VALUES_SCHEMA_VERSION,
+      });
+      writeJson(stableKey, newStableData);
       
-      sessionStorage.setItem("creditra_dashboard_session_active", "true");
+      writeSessionJson(sessionActiveKey, true);
       
       if (metricId in lastVisitData) {
-        setPrevValue(lastVisitData[metricId]);
+        setPrevious({ owner, value: lastVisitData[metricId] });
       }
     } else {
       // Session is active: read the last visit's value from sessionStorage
-      const sessionSaved = sessionStorage.getItem("creditra_dashboard_values_last_visit");
-      if (sessionSaved) {
-        try {
-          const sessionData = JSON.parse(sessionSaved);
-          if (metricId in sessionData) {
-            setPrevValue(sessionData[metricId]);
-          }
-        } catch (e) {
-          console.error("Failed to parse session dashboard values", e);
-        }
+      const savedSessionData = readSessionJson<unknown>(lastVisitKey, {});
+      const sessionData = isDashboardValues(savedSessionData) ? savedSessionData : {};
+      if (metricId in sessionData) {
+        setPrevious({ owner, value: sessionData[metricId] });
       }
       
       // Update the localStorage stable value so that the latest value is saved for the next visit
       const newStableData = { ...lastVisitData, [metricId]: currentValue };
-      localStorage.setItem("creditra_dashboard_values_stable", JSON.stringify(newStableData));
+      writeVersioned(DASHBOARD_VALUES_STABLE_KEY, newStableData, {
+        version: DASHBOARD_VALUES_SCHEMA_VERSION,
+      });
+      writeJson(stableKey, newStableData);
     }
-  }, [metricId, currentValue]);
+  }, [owner, metricId, currentValue]);
 
-  if (prevValue === null || prevValue === currentValue) {
+  const prevValue = previous?.owner === owner ? previous.value : null;
+  if (!owner || prevValue === null || prevValue === currentValue) {
     return null;
   }
 
@@ -82,7 +140,10 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
       }).format(val);
     }
     if (format === "percent") {
-      return `${val}%`;
+      const formatted = new Intl.NumberFormat("en-US", {
+        maximumFractionDigits: 2,
+      }).format(val);
+      return `${formatted}%`;
     }
     return val.toString();
   };
@@ -92,20 +153,59 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
     return isPositive ? `+${formatted}` : `-${formatted}`;
   };
 
-  // Long-press handling for mobile devices
+  const handleMouseEnter = () => {
+    hovered.current = true;
+    setDismissed(false);
+    setShowTooltip(true);
+  };
+
+  const handleMouseLeave = () => {
+    hovered.current = false;
+    // A pointer leaving must not hide a tooltip still held open by focus.
+    if (!focused.current) setShowTooltip(false);
+  };
+
+  const handleFocus = () => {
+    focused.current = true;
+    setDismissed(false);
+    setShowTooltip(true);
+  };
+
+  const handleBlur = () => {
+    focused.current = false;
+    if (!hovered.current) setShowTooltip(false);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLSpanElement>) => {
+    if (event.key === "Escape" && showTooltip) {
+      // Keep keyboard focus on the trigger; suppress the focus-visible CSS
+      // rule until another focus or hover interaction deliberately reopens it.
+      setDismissed(true);
+      setShowTooltip(false);
+    }
+  };
+
+  // Retain mobile long-press and its two-second grace period.
   const handleTouchStart = () => {
+    if (touchTimer.current !== null) clearTimeout(touchTimer.current);
+    if (touchHideTimer.current !== null) clearTimeout(touchHideTimer.current);
     touchTimer.current = setTimeout(() => {
+      touchTimer.current = null;
+      setDismissed(false);
       setShowTooltip(true);
+      touchTimer.current = null;
     }, 500);
   };
 
   const handleTouchEnd = () => {
-    if (touchTimer.current) {
+    if (touchTimer.current !== null) {
       clearTimeout(touchTimer.current);
+      touchTimer.current = null;
     }
-    // Keep visible briefly for better UX on tap/long-press
-    setTimeout(() => {
-      setShowTooltip(false);
+    if (touchHideTimer.current !== null) clearTimeout(touchHideTimer.current);
+    touchHideTimer.current = setTimeout(() => {
+      touchHideTimer.current = null;
+      if (!focused.current && !hovered.current) setShowTooltip(false);
     }, 2000);
   };
 
@@ -125,17 +225,21 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
   return (
     <span 
       className="what-changed-wrapper"
-      onMouseEnter={() => setShowTooltip(true)}
-      onMouseLeave={() => setShowTooltip(false)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       <span
         tabIndex={0}
         className="what-changed-trigger"
         role="button"
-        aria-label={`What changed for ${label || metricId}`}
-        aria-describedby={tooltipId}
+        aria-label={`${label || metricId} changed from ${formatVal(prevValue)} to ${formatVal(currentValue)} (change ${formatDiff(diff)})`}
+        aria-describedby={showTooltip ? tooltipId : undefined}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
         style={{ color: iconColor }}
       >
         <span className="what-changed-arrow" aria-hidden="true">{arrowIcon}</span>
@@ -145,7 +249,8 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
       <span 
         id={tooltipId} 
         role="tooltip" 
-        className={`what-changed-tooltip ${showTooltip ? "is-visible" : ""}`}
+        className={`what-changed-tooltip ${showTooltip ? "is-visible" : ""} ${dismissed ? "is-dismissed" : ""}`}
+        aria-hidden={!showTooltip}
         style={{ borderLeftColor: iconColor }}
       >
         <span className="tooltip-title">Since last visit:</span>

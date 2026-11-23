@@ -33,7 +33,7 @@ export const TRANSACTION_SKELETON_ROWS = 15;
  *     `padding: 0 var(--space-xl) var(--space-2xl)`, so the content shifted
  *     horizontally too;
  *   - the filter bar was a single row of four 36px bars while the real filter
- *     bar renders seven labelled groups that wrap over several rows;
+ *     bar renders five labelled groups that wrap over several rows;
  *   - the "table" was a flexbox imitation with its own breakpoints (960/640px)
  *     rather than the real table's (1400/1024/768/480/360px).
  *
@@ -241,18 +241,13 @@ export function TransactionHistorySkeleton({
       </div>
 
       {/* ── Filter bar ──────────────────────────────────────────────────────
-          Mirrors all seven groups the loaded page renders.  The old skeleton
+          Mirrors all five groups the loaded page renders.  The old skeleton
           showed a single 36px-tall row here, which under-reserved the filter
           bar by several hundred pixels once it wrapped. */}
       <div className="th-filters" aria-hidden="true">
         <FilterSelectGroup label="Credit Line" value="All Credit Lines" />
 
         <ChipFilterGroup label="Type" chips={['All', 'Draw', 'Repay', 'Fee', 'Interest']} />
-
-        <ChipFilterGroup
-          label="Amount"
-          chips={['All Amounts', '<$100', '$100–$1,000', '>$1,000']}
-        />
 
         <FilterSelectGroup label="Status" value="All Statuses" />
 
@@ -297,7 +292,16 @@ export function TransactionHistorySkeleton({
             <span className="th-filter-label">
               <SkeletonLine>Amount range</SkeletonLine>
             </span>
-            <ChipRow chips={['All amounts', 'Under $5k', '$5k-$25k', '$25k+']} />
+            <ChipRow
+              chips={[
+                'All amounts',
+                'Under $100',
+                '$100–$1k',
+                '$1k–$5k',
+                '$5k–$25k',
+                '$25k+',
+              ]}
+            />
             <div className="amount-range-actions">
               <span className="amount-range-custom-trigger">
                 <SkeletonLine>Custom range</SkeletonLine>

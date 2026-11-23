@@ -185,6 +185,31 @@ describe("TransactionStatus — pattern fills (WCAG 1.4.1)", () => {
       expect(screen.getByRole("heading", { name: /draw successful/i })).toBeInTheDocument();
     });
 
+    it("shows ledger confirmation copy when a transaction hash is available", () => {
+      render(
+        <TransactionStatus
+          transaction={{ ...success, txHash: "stellar-tx-hash" }}
+          onNewDraw={() => {}}
+        />,
+      );
+      expect(
+        screen.getByText(/your draw is confirmed on the stellar ledger/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/waiting for ledger confirmation/i),
+      ).not.toBeInTheDocument();
+    });
+
+    it("waits for ledger confirmation when no transaction hash is available", () => {
+      render(<TransactionStatus transaction={success} onNewDraw={() => {}} />);
+      expect(
+        screen.getByText("Waiting for ledger confirmation."),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/your draw is confirmed on the stellar ledger/i),
+      ).not.toBeInTheDocument();
+    });
+
     it("6c. error renders 'Draw Failed' heading", () => {
       render(<TransactionStatus transaction={error} onNewDraw={() => {}} />);
       expect(screen.getByRole("heading", { name: /draw failed/i })).toBeInTheDocument();
@@ -211,6 +236,25 @@ describe("TransactionStatus — pattern fills (WCAG 1.4.1)", () => {
       // Query all SVG elements with aria-hidden to confirm at least one exists.
       const hiddenIcons = document.querySelectorAll("svg[aria-hidden='true']");
       expect(hiddenIcons.length).toBeGreaterThan(0);
+    });
+  });
+
+  // ─── 8. Currency formatting (issue #1488) ──────────────────────────────────
+
+  describe("currency formatting", () => {
+    it.each([
+      [0, "$0.00"],
+      [1000, "$1,000.00"],
+      [1250000.5, "$1,250,000.50"],
+      [42.75, "$42.75"],
+    ])("formats amount %s as %s", (amount, expected) => {
+      render(
+        <TransactionStatus
+          transaction={{ ...success, amount }}
+          onNewDraw={() => {}}
+        />,
+      );
+      expect(screen.getByText(expected)).toBeInTheDocument();
     });
   });
 });

@@ -72,9 +72,8 @@ export function ToastItem({
         .join(" ")}
       style={{
         borderColor: colors.border,
-        /* Left accent bar reinforces severity via color in addition to the
-           icon, satisfying WCAG 1.4.1 (Use of Color). */
-        borderLeft: `4px solid ${colors.icon}`,
+        /* Logical accent bar reinforces severity without assuming LTR. */
+        borderInlineStart: `4px solid ${colors.icon}`,
       }}
       role={isUrgent ? "alert" : "status"}
       aria-live={isUrgent ? "assertive" : "polite"}
@@ -118,7 +117,7 @@ export function ToastItem({
             handleDismiss();
           }}
         >
-          {toast.action.label} →
+          {toast.action.label} <span className="toast-action__arrow" aria-hidden="true">→</span>
         </button>
       )}
 
@@ -139,15 +138,14 @@ export function ToastContainer() {
 
   return (
     /*
-     * role="log" marks this region as an ordered sequence of status
-     * messages so AT users can revisit the list without losing their
-     * reading position (WCAG 4.1.3).
+     * Plain landmark-free wrapper:
+     * Does NOT declare role="status", role="log", or aria-live so screen readers
+     * do not announce the container or re-read the entire stack on changes.
+     * Exactly one live region per toast is provided by ToastItem children.
      */
     <div
       className="toast-container"
-      role="log"
       aria-label="Notifications"
-      aria-live="polite"
     >
       {toasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onDismiss={dismissToast} />

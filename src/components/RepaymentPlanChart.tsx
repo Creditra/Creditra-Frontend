@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { COLOR } from '../utils/tokens';
+import { getNumberFormat } from '../utils/formatters';
 import './RepaymentPlanChart.css';
 import type { CreditLine } from '../types/creditLine';
 
@@ -18,7 +19,7 @@ interface RepaymentPoint {
 const WEEKS = 12;
 
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat('en-US', {
+  return getNumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
     maximumFractionDigits: 0,

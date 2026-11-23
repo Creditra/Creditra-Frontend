@@ -486,3 +486,21 @@ padding-top: var(--sat);
 5. Every affected component CSS file references the relevant `--sa*` token.
 
 Live `env()` resolution on a physical iOS device is validated by the Playwright E2E suite.
+
+
+## Logical properties
+
+Use CSS logical properties for layout that follows the document's writing
+direction. Prefer `margin-inline-start/end`, `padding-inline`,
+`border-inline-start/end`, `inset-inline-start/end`, and
+`text-align: start/end` over physical left/right declarations. Use
+`inset-inline` for paired inline edges and `padding-block` or
+`margin-block` for the block axis. These declarations preserve the existing
+LTR appearance while allowing the browser to mirror the layout when the root
+document uses `dir="rtl"`.
+
+Directional motion and decorative details need an explicit RTL treatment when
+their physical transform or shadow does not automatically follow writing
+direction. Platform safe-area environment variables such as
+`safe-area-inset-left` and `safe-area-inset-right` are physical APIs; map
+them to logical custom properties or swap their values under `[dir="rtl"]`.

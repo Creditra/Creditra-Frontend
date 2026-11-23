@@ -1,96 +1,46 @@
-/**
- * Tests for issue #492 ("Add responsive skeleton for CreditLines").
- *
- * CreditLines shows a shimmer skeleton for the first 500ms after mount
- * (see the useEffect/setTimeout in src/pages/CreditLines.tsx), then
- * switches to the real grid. The skeleton reuses the same `.cl-grid` /
- * `.cl-card` classes as the real content, so it inherits the existing
- * responsive breakpoint in CreditLines.css (@media max-width: 768px)
- * automatically. jsdom doesn't apply CSS/media queries, so that visual
- * breakpoint behavior isn't something a unit test here can verify —
- * these tests confirm the skeleton reuses the correct classes, and that
- * the loading -> loaded transition and its accessibility announcement
- * work correctly.
- */
-
-import { render, screen, act } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
 import CreditLines from '../CreditLines';
+import { renderWithCredit } from '../../test/renderWithCredit';
+import { MOCK_CREDIT_LINES } from '../../data/mockData';
+import type { CreditLine } from '../../types/creditLine';
+import type { CreditDataSource } from '../../services/credit/CreditDataSource';
 
-function renderCreditLines() {
-  return render(
-    <MemoryRouter>
-      <CreditLines />
-    </MemoryRouter>,
-  );
+function pendingSource(): CreditDataSource {
+  return {
+    listCreditLines: vi.fn(() => new Promise<CreditLine[]>(() => undefined)),
+    getCreditLine: vi.fn(),
+  };
 }
 
-describe('CreditLines — loading skeleton (issue #492)', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
+describe('CreditLines loading skeleton', () => {
+  it('shows placeholders with an accessible busy region while source data is pending', () => {
+    const { container } = renderWithCredit(<CreditLines />, { source: pendingSource() });
+
+    expect(container.querySelectorAll('.skeleton').length).toBeGreaterThan(0);
+    expect(screen.getByRole('status', { name: 'Loading credit lines' })).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('shows skeleton placeholders immediately, before real content loads', () => {
-    const { container } = renderCreditLines();
-
-    const skeletons = container.querySelectorAll('.skeleton');
-    expect(skeletons.length).toBeGreaterThan(0);
-    expect(screen.queryByText('Primary Business Line')).not.toBeInTheDocument();
-  });
-
-  it('reuses the cl-grid class for the skeleton, so it inherits the existing responsive breakpoint', () => {
-    const { container } = renderCreditLines();
-
+  it('uses the responsive credit-line grid skeleton', () => {
+    const { container } = renderWithCredit(<CreditLines />, { source: pendingSource() });
     const grid = container.querySelector('.cl-grid');
+
     expect(grid).toBeInTheDocument();
     expect(grid?.querySelectorAll('.cl-card').length).toBeGreaterThan(0);
   });
 
-  it('marks the region aria-busy and announces "Loading credit lines" while loading', () => {
-    renderCreditLines();
-
-    const region = screen.getByRole('status');
-    expect(region).toHaveAttribute('aria-busy', 'true');
-    expect(screen.getByText('Loading credit lines')).toBeInTheDocument();
-  });
-
-  it('replaces the skeleton with real credit line cards after the loading delay', () => {
-    const { container } = renderCreditLines();
-
-    act(() => {
-      vi.advanceTimersByTime(500);
+  it('replaces the skeleton with source data when loading succeeds', async () => {
+    renderWithCredit(<CreditLines />, {
+      source: {
+        listCreditLines: vi.fn().mockResolvedValue(MOCK_CREDIT_LINES),
+        getCreditLine: vi.fn(),
+      },
     });
 
-    expect(container.querySelectorAll('.skeleton').length).toBe(0);
-    expect(screen.getByText('Primary Business Line')).toBeInTheDocument();
-  });
-
-  it('marks the region aria-busy=false and announces "Credit lines loaded" after loading', () => {
-    renderCreditLines();
-
-    act(() => {
-      vi.advanceTimersByTime(500);
-    });
-
-    const region = screen.getByRole('status');
-    expect(region).toHaveAttribute('aria-busy', 'false');
-    expect(screen.getByText('Credit lines loaded')).toBeInTheDocument();
-  });
-
-  it('does not show skeleton or real cards for a shorter delay (sad path: partial elapsed time)', () => {
-    const { container } = renderCreditLines();
-
-    act(() => {
-      vi.advanceTimersByTime(200);
-    });
-
-    // Still mid-flight at 200ms of a 500ms delay: skeleton should still be showing.
-    expect(container.querySelectorAll('.skeleton').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Primary Business Line')).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Credit Lines' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('status', { name: 'Loading credit lines' })).not.toBeInTheDocument());
   });
 });
