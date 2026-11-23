@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useNotifications } from '../context/NotificationContext';
+import { usePageVisible } from '../hooks/usePageVisible';
 import { MOCK_DUTCH_AUCTIONS } from '../data/mockDutchAuctions';
 import { claimAlert, listAlerts, AUCTION_ALERTS_CHANGE_EVENT, AUCTION_ALERTS_STORAGE_KEY } from '../state/auctionAlerts';
 
@@ -16,8 +17,11 @@ export function calculateAuctionPriceStroops(auction: (typeof MOCK_DUTCH_AUCTION
 export function AuctionAlertWatcher() {
   const { addToast } = useNotifications();
   const navigate = useNavigate();
+  const isVisible = usePageVisible();
 
   useEffect(() => {
+    if (!isVisible) return;
+
     let interval: ReturnType<typeof setInterval> | undefined;
     const check = () => {
       const alerts = listAlerts();
@@ -67,7 +71,7 @@ export function AuctionAlertWatcher() {
       window.removeEventListener(AUCTION_ALERTS_CHANGE_EVENT, syncInterval);
       if (interval) clearInterval(interval);
     };
-  }, [addToast, navigate]);
+  }, [addToast, navigate, isVisible]);
 
   return null;
 }

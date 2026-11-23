@@ -11,6 +11,7 @@ import type {
   PurchaseReceipt,
 } from '../lib/dutch-auction-purchase';
 import { getEffectiveStatus } from '../lib/dutch-auction-lifecycle';
+import { usePageVisible } from '../hooks/usePageVisible';
 import { WalletProvider } from '../context/WalletContext';
 import {
   type DutchAuctionSortOption,
@@ -103,14 +104,17 @@ export const DutchAuctionsView: React.FC = () => {
     }
   }, [hasInvalidStatus, hasInvalidSort, searchParams, setSearchParams]);
 
-  // Clock tick for decaying prices, ticking at most once per second
+  // Clock tick for decaying prices, ticking at most once per second while tab is visible
+  const isVisible = usePageVisible();
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
+    if (!isVisible) return;
+    setNowMs(Date.now());
     const timer = window.setInterval(() => {
       setNowMs(Date.now());
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [isVisible]);
 
   const filteredAuctions = useMemo(() => {
     return MOCK_DUTCH_AUCTIONS.filter((auction) => {
