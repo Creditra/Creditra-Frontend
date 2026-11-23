@@ -9,6 +9,8 @@ describe('AccessibleTooltip', () => {
   it('connects the focusable help trigger to tooltip content', () => {
     render(<AccessibleTooltip label="Explain this field." />);
 
+
+    
     const trigger = screen.getByLabelText('More information');
     const tooltip = screen.getByRole('tooltip');
 
