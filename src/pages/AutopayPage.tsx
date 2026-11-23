@@ -1,4 +1,5 @@
 import { useState, useId, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useUnsavedChangesGuard } from '../hooks/useUnsavedChangesGuard';
 import { FormField } from '../components/FormField';
 import './AutopayPage.css';
 import { PendingButton } from '../components/PendingButton';
@@ -188,6 +189,15 @@ export default function AutopayPage() {
       }
     };
   }, []);
+
+  // Warn on unload while the form holds unsaved input.
+  const isFormDirty =
+    (form.amount !== EMPTY_FORM.amount ||
+      form.creditLineId !== EMPTY_FORM.creditLineId ||
+      form.startDate !== EMPTY_FORM.startDate ||
+      form.endDate !== EMPTY_FORM.endDate) &&
+    !submitted;
+  useUnsavedChangesGuard(isFormDirty);
 
   // ─── Derived ──────────────────────────────────────────────────────────────
 

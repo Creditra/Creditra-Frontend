@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { AlertCircle, AlertTriangle, CheckCircle, Info, ArrowLeft, RefreshCw, X } from 'lucide-react';
 import { Skeleton } from '@/components/Skeleton';
 import { PayoffProjection } from '@/components/PayoffProjection';
@@ -214,6 +215,10 @@ export default function RepayPage() {
   const helpTriggerRef = useRef<HTMLButtonElement>(null);
   const previewTriggerRef = useRef<HTMLButtonElement>(null);
   const { isReducedMotionActive } = useReducedMotion();
+
+  // Warn on unload while the form holds an unsaved amount. The page navigates
+  // away on success, so checking amountStr alone is sufficient.
+  useUnsavedChangesGuard(amountStr !== '' && !isSubmittingRef.current);
 
   // ── Repayable lines — single predicate used by picker and deep-link ──
   // Issue #1185: getRepayableLines (utilized > 0 && status !== Closed) replaces
