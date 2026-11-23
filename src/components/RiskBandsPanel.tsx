@@ -3,6 +3,7 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { RISK_COLOR, COLOR } from '../utils/tokens';
 
 import { RiskBand, RiskBandLevel } from './RiskBand';
+import './RiskBandsPanel.css';
 
 interface RiskBandData {
   name: string;
@@ -81,6 +82,7 @@ export function RiskBandsPanel({ isOpen, onClose, triggerRef }: RiskBandsPanelPr
 
   return (
     <div 
+      className="risk-bands-panel"
       style={{ 
         position: 'fixed', 
         inset: 0, 
@@ -222,18 +224,6 @@ export function RiskBandsPanel({ isOpen, onClose, triggerRef }: RiskBandsPanelPr
           </button>
         </div>
       </div>
-
-      <style>{`
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
-        
-        @media (prefers-reduced-motion: reduce) {
-          div {
-            animation: none !important;
-            transition: none !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }
