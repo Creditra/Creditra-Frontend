@@ -115,4 +115,20 @@ describe("cooperative ? shortcut (#1173)", () => {
       screen.getByRole("button", { name: /contact support/i }),
     ).toHaveFocus();
   });
+
+  it("fires global ? shortcut when focus is on a checkbox input (#1477)", () => {
+    window.history.pushState({}, "", "/");
+    const { container } = render(<App />);
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    container.appendChild(checkbox);
+    checkbox.focus();
+
+    fireEvent.keyDown(checkbox, { key: "?", code: "Slash" });
+
+    expect(
+      screen.getByRole("dialog", { name: /move around faster/i }),
+    ).toBeInTheDocument();
+  });
 });
