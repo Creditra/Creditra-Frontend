@@ -155,4 +155,53 @@ describe('DutchAuctions purchase flow', () => {
     expect(alertSpy).not.toHaveBeenCalled();
     alertSpy.mockRestore();
   });
+
+  it('pauses page and card timers while hidden and resyncs on return', () => {
+    const setVisibilityState = (state: DocumentVisibilityState) => {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        value: state,
+      });
+      Object.defineProperty(document, 'hidden', {
+        configurable: true,
+        value: state !== 'visible',
+      });
+    };
+
+    vi.useFakeTimers();
+    try {
+      setVisibilityState('visible');
+      vi.mocked(useWallet).mockReturnValue(mockWallet() as any);
+
+      const { unmount } = render(<DutchAuctions />);
+      // Both DutchAuctions page and DutchAuctionCard have active 1s intervals while visible
+      expect(vi.getTimerCount()).toBeGreaterThanOrEqual(2);
+
+      // Hide the tab: all intervals must be cleared
+      act(() => {
+        setVisibilityState('hidden');
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      expect(vi.getTimerCount()).toBe(0);
+
+      // Advance time while hidden — no timers fire
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(vi.getTimerCount()).toBe(0);
+
+      // Return to visible: timers restart and resync immediately
+      act(() => {
+        setVisibilityState('visible');
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      expect(vi.getTimerCount()).toBeGreaterThanOrEqual(2);
+
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      setVisibilityState('visible');
+      vi.useRealTimers();
+    }
+  });
 });
