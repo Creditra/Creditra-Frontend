@@ -1088,3 +1088,187 @@ describe('NotificationCenter keyboard navigation and focus stability', () => {
     expect(document.activeElement).toBe(emptyStatus);
   });
 });
+
+describe('NotificationCenter search and severity filter', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation(() => ({
+        matches: false,
+        media: '',
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+    localStorage.setItem(
+      'creditra_notifications',
+      JSON.stringify([
+        {
+          id: 'n1',
+          type: 'success',
+          category: 'transaction',
+          title: 'Payment received',
+          message: 'Your payment of $100.00 was settled',
+          timestamp: new Date(1000).toISOString(),
+          read: false,
+        },
+        {
+          id: 'n2',
+          type: 'error',
+          category: 'transaction',
+          title: 'Transfer failed [ERR-42]',
+          message: 'Wire transfer could not complete',
+          timestamp: new Date(2000).toISOString(),
+          read: false,
+        },
+        {
+          id: 'n3',
+          type: 'warning',
+          category: 'credit_line',
+          title: 'Línea de crédito actualizada',
+          message: 'Tu límite fue incrementado',
+          timestamp: new Date(3000).toISOString(),
+          read: false,
+        },
+        {
+          id: 'n4',
+          type: 'danger',
+          category: 'risk_score',
+          title: 'Margin call',
+          message: 'Collateral ratio is critical',
+          timestamp: new Date(4000).toISOString(),
+          read: true,
+        },
+      ]),
+    );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    localStorage.clear();
+  });
+
+  it('narrows by title/message case- and accent-insensitively and updates count aria-label', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderOpenPanel();
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    const feed = screen.getByRole('feed');
+    expect(feed).toHaveAttribute('aria-label', '4 notifications');
+
+    const searchInput = screen.getByLabelText('Search notifications');
+    await user.type(searchInput, 'linea de credito');
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    expect(screen.getByText('Línea de crédito actualizada')).toBeInTheDocument();
+    expect(feed).toHaveAttribute('aria-label', '1 matching notification');
+
+    // Clear search returns full list
+    await user.clear(searchInput);
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(screen.getAllByRole('article')).toHaveLength(4);
+    expect(feed).toHaveAttribute('aria-label', '4 notifications');
+  });
+
+  it('combines severity type select, category tab, and search query', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderOpenPanel();
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    // Select Transactions category tab
+    await user.click(screen.getByRole('tab', { name: 'Transactions' }));
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+
+    // Narrow further by severity type = error
+    const typeSelect = screen.getByLabelText('Filter notifications by severity');
+    await user.selectOptions(typeSelect, 'error');
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    expect(screen.getByText('Transfer failed [ERR-42]')).toBeInTheDocument();
+
+    // Reset severity type back to all
+    await user.selectOptions(typeSelect, 'all');
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+  });
+
+  it('shows "No results for your search" when filters yield no matches and handles regex characters', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderOpenPanel();
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    const searchInput = screen.getByLabelText('Search notifications');
+    await user.type(searchInput, '[ERR-42]');
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+
+    await user.clear(searchInput);
+    await user.type(searchInput, 'no-match-.*$');
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(screen.getByText('No results for your search')).toBeInTheDocument();
+    expect(screen.getByRole('feed')).toHaveAttribute('aria-label', 'No results for your search');
+  });
+
+  it('does not trigger Shift+R shortcut while typing in the search input', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderOpenPanel();
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(screen.getByLabelText('3 unread')).toBeInTheDocument();
+
+    const searchInput = screen.getByLabelText('Search notifications');
+    searchInput.focus();
+    await user.keyboard('{Shift>}R{/Shift}');
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+
+    // Unread count should still be 3 (Shift+R was ignored in editable input)
+    expect(screen.getByLabelText('3 unread')).toBeInTheDocument();
+  });
+
+  it('closes the panel when Escape is pressed while the search input is focused', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderOpenPanel();
+
+    await user.click(screen.getByRole('button', { name: 'Open panel' }));
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    const searchInput = screen.getByLabelText('Search notifications');
+    searchInput.focus();
+    expect(document.activeElement).toBe(searchInput);
+
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog', { hidden: true })).toHaveAttribute('aria-hidden', 'true');
+  });
+});
