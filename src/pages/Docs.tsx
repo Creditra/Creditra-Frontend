@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-const SECTIONS: { id?: string; title: string; body: string; to?: string; cta?: string }[] = [
+export const SECTIONS: { id?: string; title: string; body: string; to?: string; cta?: string }[] = [
   {
     title: "What is Creditra?",
     body: "Creditra is a decentralized, risk-priced credit protocol on Stellar. Credit lines are underwritten from on-chain behaviour rather than overcollateralization, and priced dynamically by risk score.",
