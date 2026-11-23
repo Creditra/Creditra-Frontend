@@ -1,20 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { http, HttpResponse } from 'msw';
+import { server } from '../../mocks/server';
 import { trackEvent, hasConsent, redactFinancialData } from '../analytics';
 import * as storage from '../storage';
 import { AnalyticsPreferences } from '../../types/analytics';
 
-// Mock storage and fetch
 vi.mock('../storage', () => ({
   readJson: vi.fn(),
 }));
 
-const mockFetch = vi.fn();
-global.fetch = mockFetch;
-
 describe('Analytics Engine', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mockFetch.mockResolvedValue({ ok: true, status: 200 });
   });
 
   afterEach(() => {
@@ -101,19 +98,18 @@ describe('Analytics Engine', () => {
       current.amount = 100;
 
       const redacted = redactFinancialData(deepObject) as any;
-      // It should cap at depth 10
       let depthCount = 0;
       let node = redacted;
       while (node.next) {
         depthCount++;
         node = node.next;
         if (node === '[REDACTED]') {
-            break;
+          break;
         }
       }
       expect(depthCount).toBeLessThanOrEqual(10);
     });
-    
+
     it('handles null and undefined', () => {
       expect(redactFinancialData(null)).toBeNull();
       expect(redactFinancialData(undefined)).toBeUndefined();
@@ -122,6 +118,14 @@ describe('Analytics Engine', () => {
 
   describe('trackEvent', () => {
     it('does not send event if consent is missing', async () => {
+      let requestCount = 0;
+      server.use(
+        http.post('/api/analytics', () => {
+          requestCount += 1;
+          return HttpResponse.json({ accepted: true }, { status: 202 });
+        }),
+      );
+
       vi.mocked(storage.readJson).mockReturnValue({
         usage: false,
         performance: false,
@@ -135,10 +139,18 @@ describe('Analytics Engine', () => {
         payload: { amount: 100 },
       });
 
-      expect(mockFetch).not.toHaveBeenCalled();
+      expect(requestCount).toBe(0);
     });
 
     it('sends redacted event if consent is granted', async () => {
+      let capturedBody: any = null;
+      server.use(
+        http.post('/api/analytics', async ({ request }) => {
+          capturedBody = await request.json();
+          return HttpResponse.json({ accepted: true }, { status: 202 });
+        }),
+      );
+
       vi.mocked(storage.readJson).mockReturnValue({
         usage: true,
         performance: false,
@@ -152,14 +164,11 @@ describe('Analytics Engine', () => {
         payload: { amount: 100, safe: true },
       });
 
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      const fetchArgs = mockFetch.mock.calls[0];
-      expect(fetchArgs[0]).toBe('/api/analytics');
-      const body = JSON.parse(fetchArgs[1].body);
-      expect(body.event).toBe('TestEvent');
-      expect(body.category).toBe('usage');
-      expect(body.payload.amount).toBe('[REDACTED]');
-      expect(body.payload.safe).toBe(true);
+      expect(capturedBody).not.toBeNull();
+      expect(capturedBody.event).toBe('TestEvent');
+      expect(capturedBody.category).toBe('usage');
+      expect(capturedBody.payload.amount).toBe('[REDACTED]');
+      expect(capturedBody.payload.safe).toBe(true);
     });
 
     it('silently recovers and logs on fetch failure', async () => {
@@ -170,7 +179,9 @@ describe('Analytics Engine', () => {
         feature_flags: false,
       } as AnalyticsPreferences);
 
-      mockFetch.mockRejectedValue(new Error('Network Error'));
+      server.use(
+        http.post('/api/analytics', () => HttpResponse.error()),
+      );
       const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       await trackEvent({
@@ -178,18 +189,27 @@ describe('Analytics Engine', () => {
         category: 'usage',
       });
 
-      expect(consoleSpy).toHaveBeenCalledWith('[Analytics] Failed to send event "FailEvent" in category "usage".');
-      
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[Analytics] Failed to send event "FailEvent" in category "usage".',
+      );
+
       consoleSpy.mockRestore();
     });
-    
+
     it('aborts cleanly on invalid events', async () => {
+      let requestCount = 0;
+      server.use(
+        http.post('/api/analytics', () => {
+          requestCount += 1;
+          return HttpResponse.json({ accepted: true }, { status: 202 });
+        }),
+      );
       const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       await trackEvent(null as any);
       expect(consoleSpy).toHaveBeenCalledWith('[Analytics] Invalid event payload');
-      expect(mockFetch).not.toHaveBeenCalled();
-      
+      expect(requestCount).toBe(0);
+
       consoleSpy.mockRestore();
     });
   });
