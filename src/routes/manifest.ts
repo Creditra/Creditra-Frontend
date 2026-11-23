@@ -250,6 +250,20 @@ export const ROUTE_MANIFEST: RouteManifestEntry[] = [
     Component: lazy(() => import('../pages/KycPage').then((m) => ({ default: m.KycPage }))),
   },
   {
+    path: '/statements',
+    pageName: 'Monthly Statements',
+    description: 'View per-credit-line monthly statements with opening balance, draws, repayments, interest, fees and closing balance. Download as CSV or print.',
+    load: () => import('../pages/Statements').then((m) => ({ default: m.Statements })),
+    Component: lazy(() => import('../pages/Statements').then((m) => ({ default: m.Statements }))),
+    nav: {
+      palette: {
+        label: 'Monthly Statements',
+        icon: '🗒️',
+        description: 'View monthly credit-line statements',
+      },
+    },
+  },
+  {
     path: '/docs',
     pageName: 'Documentation',
     description: 'Access Creditra protocol documentation, guides, and developer resources.',
