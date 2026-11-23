@@ -14,6 +14,7 @@
 import type { CreditLineStatus, UtilizationLevel } from '../types/creditLine';
 import type { AttestationStatus } from '../types/attestation';
 import type React from 'react';
+import { getNumberFormat } from './formatters';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@ export const btn = {
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
 export const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+  getNumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
 
 export const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -123,14 +124,38 @@ export const relativeTime = (iso: string): string => {
 // ─── Utilization helpers ──────────────────────────────────────────────────────
 
 export const getUtilizationLevel = (utilized: number, limit: number): UtilizationLevel => {
-  const pct = utilized / limit;
+  const pct = limit === 0 ? 0 : utilized / limit;
   if (pct < 0.4) return 'low';
   if (pct < 0.75) return 'medium';
   return 'high';
 };
 
 export const utilizationPct = (utilized: number, limit: number) =>
-  limit === 0 ? 0 : Math.round((utilized / limit) * 100);
+  limit <= 0 ? 0 : Math.round((utilized / limit) * 100);
+
+export interface UtilizationDisplay {
+  /** True utilization percentage (may exceed 100 when over limit). */
+  pct: number;
+  /** Bar fill width, clamped to 0–100. */
+  barPct: number;
+  /** Semantic level derived from the true percentage. */
+  level: UtilizationLevel;
+  /** Amount by which utilized exceeds limit (0 when at or under limit). */
+  overLimitBy: number;
+  /** Remaining available credit, clamped at 0. */
+  available: number;
+}
+
+export const getUtilizationDisplay = (utilized: number, limit: number): UtilizationDisplay => {
+  const pct = utilizationPct(utilized, limit);
+  return {
+    pct,
+    barPct: Math.min(100, Math.max(0, pct)),
+    level: getUtilizationLevel(utilized, limit),
+    overLimitBy: limit > 0 ? Math.max(0, utilized - limit) : 0,
+    available: limit > 0 ? Math.max(0, limit - utilized) : 0,
+  };
+};
 
 // ─── Per-line accent stripe palette ──────────────────────────────────────────
 //

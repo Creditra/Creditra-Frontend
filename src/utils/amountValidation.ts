@@ -11,6 +11,8 @@
  * and the backend will reject anything that slips through here. See
  * `docs/UX_RATIONALE.md` "Inline validation, not submit-time validation".
  */
+import { getDrawFee } from '@/lib/draw-credit-pricing';
+
 export type ValidationSeverity = 'info' | 'success' | 'warning' | 'danger';
 
 /**
@@ -49,6 +51,21 @@ export interface RepayAmountValidationResult {
 const MIN_AMOUNT = 1;
 const MIN_AMOUNT_CENTS = MIN_AMOUNT * 100;
 
+/** Fallback USD threshold protecting against accidental large repayments. */
+export const DEFAULT_REPAY_CONFIRM_THRESHOLD = 5000;
+
+/** Minimum USD credit reserve protecting against fully drawing the available line. */
+export const CREDIT_RESERVE_MIN = 5000;
+
+/** Fraction of the USD credit limit protected as an available reserve (10%). */
+export const CREDIT_RESERVE_LIMIT_RATIO = 0.1;
+
+/** Minimum USD wallet reserve protecting against spending the entire balance. */
+export const WALLET_RESERVE_MIN = 100;
+
+/** Fraction of the USD wallet balance protected as a reserve (10%). */
+export const WALLET_RESERVE_RATIO = 0.1;
+
 /** Convert a dollar amount to whole cents (integer-exact). */
 const toCents = (dollars: number): number => Math.round(dollars * 100);
 
@@ -67,6 +84,18 @@ const parseAmountToCents = (input: string): number => {
 };
 
 /**
+ * Resolves the confirmation threshold from the given environment (defaults to `import.meta.env`).
+ * Falls back to DEFAULT_REPAY_CONFIRM_THRESHOLD when absent, negative, or unparseable.
+ */
+export function getRepayConfirmThreshold(
+  env: Record<string, any> = import.meta.env,
+): number {
+  const raw = env?.VITE_REPAY_CONFIRM_THRESHOLD;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_REPAY_CONFIRM_THRESHOLD;
+}
+
+/**
  * Threshold above which repayments require the user to type the exact amount
  * in a confirmation field before the "Confirm Repayment" button enables.
  *
@@ -74,11 +103,7 @@ const parseAmountToCents = (input: string): number => {
  * non-negative number). Falls back to 5 000 when the variable is absent or
  * cannot be parsed. Set the variable to "0" to disable the guard entirely.
  */
-export const REPAY_CONFIRM_THRESHOLD = (() => {
-  const raw = import.meta.env.VITE_REPAY_CONFIRM_THRESHOLD;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 5000;
-})();
+export const REPAY_CONFIRM_THRESHOLD = getRepayConfirmThreshold();
 
 /**
  * Returns `true` when `amount` meets or exceeds `REPAY_CONFIRM_THRESHOLD`,
@@ -97,10 +122,34 @@ export const formatMoney = (amount: number) =>
   }).format(amount);
 
 export const getCreditReserveFloor = (limit: number, available: number) =>
-  Math.min(available, Math.max(5000, Math.round(limit * 0.1)));
+  Math.min(
+    available,
+    Math.max(CREDIT_RESERVE_MIN, Math.round(limit * CREDIT_RESERVE_LIMIT_RATIO)),
+  );
 
 export const getWalletReserveFloor = (walletBalance: number) =>
-  Math.min(walletBalance, Math.max(100, Math.round(walletBalance * 0.1)));
+  Math.min(
+    walletBalance,
+    Math.max(WALLET_RESERVE_MIN, Math.round(walletBalance * WALLET_RESERVE_RATIO)),
+  );
+
+const getMaximumDraw = (available: number): number => {
+  const availableCents = Math.max(toCents(available), 0);
+  let low = 0;
+  let high = availableCents;
+
+  while (low < high) {
+    const amountCents = Math.ceil((low + high) / 2);
+    const feeCents = toCents(getDrawFee(fromCents(amountCents)));
+    if (amountCents + feeCents <= availableCents) {
+      low = amountCents;
+    } else {
+      high = amountCents - 1;
+    }
+  }
+
+  return fromCents(low);
+};
 
 /**
  * Validate a user-entered draw amount against a credit line and produce
@@ -116,13 +165,17 @@ export function getDrawAmountValidation(
 ): DrawAmountValidationResult {
   const amount = Number.parseFloat(amountInput) || 0;
   const hasEnteredAmount = amountInput.trim() !== '';
-  const remainingCredit = Math.max(creditLine.available - amount, 0);
+  const maxAmount = getMaximumDraw(creditLine.available);
+  const remainingCredit = Math.max(
+    creditLine.available - amount - getDrawFee(amount),
+    0,
+  );
   const recommendedReserve = getCreditReserveFloor(creditLine.limit, creditLine.available);
 
   let feedback: ValidationFeedback = {
     severity: 'info',
     title: 'Visible constraints',
-    message: `Draw between ${formatMoney(MIN_AMOUNT)} and ${formatMoney(creditLine.available)}. Keep some available credit in reserve for fees or urgent liquidity.`,
+    message: `Draw between ${formatMoney(MIN_AMOUNT)} and ${formatMoney(maxAmount)}. The maximum includes the 1% fee.`,
   };
 
   if (hasEnteredAmount && amount < MIN_AMOUNT) {
@@ -131,11 +184,11 @@ export function getDrawAmountValidation(
       title: 'Minimum amount required',
       message: `Enter at least ${formatMoney(MIN_AMOUNT)} to continue.`,
     };
-  } else if (hasEnteredAmount && amount > creditLine.available) {
+  } else if (hasEnteredAmount && amount > maxAmount) {
     feedback = {
       severity: 'danger',
       title: 'Exceeds available credit',
-      message: `Reduce the draw to ${formatMoney(creditLine.available)} or less.`,
+      message: `Reduce the draw to ${formatMoney(maxAmount)} or less, including the 1% fee.`,
     };
   } else if (hasEnteredAmount && remainingCredit === 0) {
     feedback = {
@@ -160,9 +213,9 @@ export function getDrawAmountValidation(
   return {
     amount,
     hasEnteredAmount,
-    isValid: hasEnteredAmount && amount >= MIN_AMOUNT && amount <= creditLine.available,
+    isValid: hasEnteredAmount && amount >= MIN_AMOUNT && amount <= maxAmount,
     minAmount: MIN_AMOUNT,
-    maxAmount: creditLine.available,
+    maxAmount,
     remainingCredit,
     recommendedReserve,
     feedback,

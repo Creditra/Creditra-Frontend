@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { RepayCalendar } from './RepayCalendar';
+import * as icsUtils from '../utils/ics';
 
 describe('RepayCalendar', () => {
   const sampleEvents = [
@@ -19,10 +20,45 @@ describe('RepayCalendar', () => {
     expect(screen.getByText('No upcoming payments.')).toBeInTheDocument();
   });
 
-  it('uses aria-live="polite" region', () => {
+  it('does not wrap the list in aria-live and announces count via a visually hidden status region', () => {
     render(<RepayCalendar events={sampleEvents} />);
     const section = screen.getByLabelText('Repayment calendar');
-    expect(section).toHaveAttribute('aria-live', 'polite');
+    expect(section).not.toHaveAttribute('aria-live');
+    expect(section).not.toHaveAttribute('aria-atomic');
+
+    const list = screen.getByRole('list');
+    expect(list).not.toHaveAttribute('aria-live');
+    expect(list).not.toHaveAttribute('aria-atomic');
+
+    const status = screen.getByRole('status');
+    expect(status).toHaveClass('sr-only');
+    expect(status).toHaveTextContent('2 upcoming repayments');
+  });
+
+  it('announces empty and singular counts in the status region', () => {
+    const { rerender } = render(<RepayCalendar events={[]} />);
+    expect(screen.getByRole('status')).toHaveTextContent('No upcoming repayments');
+
+    rerender(
+      <RepayCalendar
+        events={[{ date: '2026-08-01', amount: 1234.5, label: 'Single payment' }]}
+      />,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('1 upcoming repayment');
+  });
+
+  it('formats amounts with currency symbol and two decimal places', () => {
+    const events = [
+      { date: '2026-08-01', amount: 1234.5, label: 'Standard payment' },
+      { date: '2026-08-02', amount: 0, label: 'Zero payment' },
+      { date: '2026-08-03', amount: 1000000.1, label: 'Large payment' },
+      { date: '2026-08-04', amount: 1500, label: 'Whole dollar payment' },
+    ];
+    render(<RepayCalendar events={events} />);
+    expect(screen.getByText('$1,234.50')).toBeInTheDocument();
+    expect(screen.getByText('$0.00')).toBeInTheDocument();
+    expect(screen.getByText('$1,000,000.10')).toBeInTheDocument();
+    expect(screen.getByText('$1,500.00')).toBeInTheDocument();
   });
 
   it('renders children below the calendar', () => {
@@ -72,5 +108,106 @@ describe('RepayCalendar', () => {
     const chips = document.querySelectorAll('.repay-calendar__status-chip');
     const labels = Array.from(chips).map((chip) => chip.textContent);
     expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it('renders date-only string 2025-03-01 as March 1 regardless of timezone', () => {
+    render(
+      <RepayCalendar
+        events={[{ date: '2025-03-01', amount: 500, label: 'March payment' }]}
+      />,
+    );
+    const timeEl = document.querySelector('time');
+    expect(timeEl).not.toBeNull();
+    expect(timeEl!.textContent).toMatch(/Mar\s+1|1\s+Mar/i);
+    expect(timeEl!.textContent).not.toMatch(/Feb\s+28|28\s+Feb/i);
+  });
+
+  it('renders raw string fallback for invalid dates instead of Invalid Date', () => {
+    render(
+      <RepayCalendar
+        events={[{ date: 'TBD', amount: 500, label: 'Pending date' }]}
+      />,
+    );
+    const timeEl = document.querySelector('time');
+    expect(timeEl).not.toBeNull();
+    expect(timeEl!.textContent).toBe('TBD');
+    expect(timeEl!.textContent).not.toContain('Invalid Date');
+  });
+
+  describe('Add to calendar (.ics export)', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('exports all upcoming events and announces download in live region', () => {
+      const downloadSpy = vi
+        .spyOn(icsUtils, 'downloadIcs')
+        .mockImplementation(() => {});
+
+      render(
+        <RepayCalendar
+          events={[
+            {
+              date: '2026-08-01',
+              amount: 1500,
+              label: 'Working Capital',
+              lineId: 'wc-1',
+            },
+            {
+              date: '2026-09-01',
+              amount: 750,
+              label: 'Autopay Line',
+              lineId: 'ap-1',
+              frequency: 'monthly',
+            },
+          ]}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add to calendar' }));
+
+      expect(downloadSpy).toHaveBeenCalledTimes(1);
+      const [filename, content] = downloadSpy.mock.calls[0];
+      expect(filename).toBe('creditra-repayments.ics');
+      expect(content).toContain('UID:wc-1-2026-08-01@creditra');
+      expect(content).toContain('UID:ap-1-2026-09-01@creditra');
+      expect(content).toContain('RRULE:FREQ=MONTHLY');
+      expect(content).toContain('BEGIN:VALARM');
+
+      expect(screen.getByRole('status')).toHaveTextContent(
+        /Downloaded creditra-repayments\.ics with 2 payments/i,
+      );
+    });
+
+    it('exports a single event when its row button is clicked', () => {
+      const downloadSpy = vi
+        .spyOn(icsUtils, 'downloadIcs')
+        .mockImplementation(() => {});
+
+      render(
+        <RepayCalendar
+          events={[
+            {
+              date: '2026-08-01',
+              amount: 1500,
+              label: 'Equipment Line',
+              lineId: 'eq-1',
+            },
+          ]}
+        />,
+      );
+
+      fireEvent.click(
+        screen.getByRole('button', { name: /Add Equipment Line on .* to calendar/i }),
+      );
+
+      expect(downloadSpy).toHaveBeenCalledTimes(1);
+      const [filename, content] = downloadSpy.mock.calls[0];
+      expect(filename).toBe('creditra-eq-1-2026-08-01.ics');
+      expect(content).toContain('UID:eq-1-2026-08-01@creditra');
+      expect(screen.getByRole('status')).toHaveTextContent(
+        /Downloaded creditra-eq-1-2026-08-01\.ics/i,
+      );
+    });
   });
 });

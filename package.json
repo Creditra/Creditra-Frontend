@@ -9,14 +9,19 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest",
+
     "test:integration": "vitest --config vitest.integration.config.ts --run"
+
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
+
   },
   "dependencies": {
+    "@stellar/stellar-sdk": "^17.2.1",
     "@tailwindcss/vite": "^4.2.1",
     "framer-motion": "^12.34.3",
     "lean-qr": "^2.7.2",
     "lucide-react": "^0.575.0",
-    "magic-string": "^0.30.21",
     "next": "^16.2.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -24,8 +29,6 @@
     "tailwindcss": "^4.2.1"
   },
   "devDependencies": {
-    "@axe-core/react": "^4.12.1",
-    "@rollup/wasm-node": "^4.62.2",
     "@testing-library/jest-dom": "^6.0.0",
     "@testing-library/react": "^14.0.0",
     "@testing-library/user-event": "^14.6.1",
@@ -33,6 +36,7 @@
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.2.19",
     "@vitejs/plugin-react": "^4.2.1",
+    "@vitest/coverage-v8": "^3.2.4",
     "axe-core": "^4.12.1",
     "jsdom": "^23.0.0",
     "typescript": "~5.2.2",

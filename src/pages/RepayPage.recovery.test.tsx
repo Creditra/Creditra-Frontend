@@ -15,9 +15,59 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import RepayPage from './RepayPage';
-import { saveRepayDraft, clearRepayDraft, MAX_AGE_MS } from '@/state/repayDraft';
+import {
+  saveRepayDraft,
+  clearRepayDraft,
+  MAX_AGE_MS,
+  type RepayDraftState,
+} from '@/state/repayDraft';
+import { creditDataSource } from '@/services/creditDataSource';
+import RepaySuccess from './RepaySuccess';
+
+/** Must match the walletIdentityKey of the mocked wallet below. */
+const OWNER = 'undefined:GAABC1234567890ABCDEF:TESTNET';
+const OTHER_OWNER = 'undefined:GDIFFERENTWALLETKEY:TESTNET';
+
+/** Draft payload with sensible defaults; every call is owner-scoped (issue #1188). */
+function draftState(
+  overrides: Partial<Omit<RepayDraftState, 'savedAt'>> = {},
+): Omit<RepayDraftState, 'savedAt'> {
+  return {
+    step: 'input',
+    creditLineId: 'CL-2024-001',
+    amountStr: '5000',
+    confirmAmountStr: '',
+    isAutoSchedule: false,
+    owner: OWNER,
+    ...overrides,
+  };
+}
+
+/** Seed the raw localStorage entry (bypasses TS types — simulates tampered/legacy data). */
+function saveRepayDraftRaw(state: Record<string, unknown>) {
+  localStorage.setItem(
+    'creditra_repay_draft',
+    JSON.stringify({
+      state: { savedAt: new Date().toISOString(), ...state },
+      timestamp: Date.now(),
+    }),
+  );
+}
+
+/** Reset mutable mock line data between tests. */
+function resetLines() {
+  linesHolder.current = null;
+}
+
+/**
+ * Flush pending promise chains (the review-step balance refresh) while fake
+ * timers are active, so `reviewBalance` settles before assertions.
+ */
+async function flushAsync() {
+  await act(async () => {});
+}
 
 // ── Module mocks ─────────────────────────────────────────────────────────
 
@@ -28,61 +78,86 @@ vi.mock('../context/ReducedMotionContext', () => ({
   motionClasses: (_isActive: boolean, classes: string) => classes,
 }));
 
-vi.mock('../context/WalletContext', () => ({
-  useWallet: () => ({
-    wallet: {
+// Stable mock identities: the real WalletContext keeps references stable, and
+// fresh objects per render would re-fire the review-balance effect every render.
+const { mockWallet, mockBalances, mockRefreshBalance } = vi.hoisted(() => {
+  const balances = [
+    {
+      asset: 'USDC',
+      issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      balance: '50000.0000000',
+    },
+  ];
+  return {
+    mockWallet: {
       publicKey: 'GAABC1234567890ABCDEF',
       network: 'TESTNET',
-    },
-    status: 'connected',
-  }),
+    } as { publicKey: string; network: string },
+    mockBalances: balances,
+    mockRefreshBalance: async () => balances,
+  };
+});
+
+vi.mock('../context/ThemeContext', () => ({
+  useTheme: () => ({ theme: 'default' }),
+  ThemeProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-vi.mock('../data/mockData', () => ({
-  MOCK_CREDIT_LINES: [
-    {
-      id: 'CL-2024-001',
-      name: 'Primary Business Line',
-      status: 'Active',
-      limit: 500000,
-      utilized: 187500,
-      apr: 8.5,
-      riskScore: 720,
-      collateral: 'Commercial Real Estate',
-      openedAt: '2024-03-15',
-      updatedAt: '2025-02-20T14:32:00Z',
-      nextPaymentDate: '2025-03-01',
-      nextPaymentAmount: 3200,
-      transactions: [],
-      statusHistory: [],
-      aprHistory: [],
-    },
-    {
-      id: 'CL-2024-002',
-      name: 'Secondary Line',
-      status: 'Active',
-      limit: 100000,
-      utilized: 45000,
-      apr: 12.0,
-      riskScore: 680,
-      collateral: 'None',
-      openedAt: '2024-06-01',
-      updatedAt: '2025-02-20T14:32:00Z',
-      nextPaymentDate: '2025-03-15',
-      nextPaymentAmount: 1200,
-      transactions: [],
-      statusHistory: [],
-      aprHistory: [],
-    },
-  ],
+vi.mock('../context/WalletContext', () => ({
+  useWallet: () => ({
+    wallet: mockWallet,
+    status: 'connected',
+    balances: mockBalances,
+    refreshBalance: mockRefreshBalance,
+  }),
+  walletIdentityKey: (wallet: { publicKey: string; network: string } | null) =>
+    wallet ? `undefined:${wallet.publicKey}:${wallet.network}` : null,
 }));
+
+// Mutable line data so tests can simulate a provider refetch that changes a
+// line's outstanding debt while the page is mounted (issue #1188, row 3).
+const { linesHolder } = vi.hoisted(() => ({
+  linesHolder: { current: null as import('@/types/creditLine').CreditLine[] | null },
+}));
+
+vi.mock('../data/mockData', async () => {
+  const { REPAY_TEST_CREDIT_LINES } = await import('@/test/fixtures/repayCreditLines');
+  const buildLines = () => [
+    ...REPAY_TEST_CREDIT_LINES.map((l) => ({ ...l })),
+    {
+      ...REPAY_TEST_CREDIT_LINES[0],
+      id: 'CL-CLOSED-001',
+      name: 'Closed Line',
+      status: 'Closed' as const,
+      utilized: 0,
+    },
+    {
+      ...REPAY_TEST_CREDIT_LINES[0],
+      id: 'CL-DEBT-10K',
+      name: 'Ten K Debt Line',
+      limit: 50000,
+      utilized: 10000,
+      apr: 8.5,
+      nextPaymentAmount: 500,
+    },
+  ];
+  return {
+    get MOCK_CREDIT_LINES() {
+      if (linesHolder.current === null) linesHolder.current = buildLines();
+      return linesHolder.current;
+    },
+  };
+});
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 function renderWithLine(initialEntries = ['/?line=CL-2024-001']) {
   const result = render(
     <MemoryRouter initialEntries={initialEntries}>
-      <RepayPage />
+      <Routes>
+        <Route path="/repay/success" element={<RepaySuccess />} />
+        <Route path="*" element={<RepayPage />} />
+      </Routes>
     </MemoryRouter>,
   );
   act(() => {
@@ -94,7 +169,7 @@ function renderWithLine(initialEntries = ['/?line=CL-2024-001']) {
 function renderWithoutLine() {
   const result = render(
     <MemoryRouter initialEntries={['/repay']}>
-      <RepayPage />
+      <Routes><Route path="*" element={<RepayPage />} /></Routes>
     </MemoryRouter>,
   );
   act(() => {
@@ -109,6 +184,7 @@ describe('RepayPage — draft recovery (issue #935)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     localStorage.clear();
+    resetLines();
   });
 
   afterEach(() => {
@@ -118,13 +194,7 @@ describe('RepayPage — draft recovery (issue #935)', () => {
 
   describe('Recovery prompt visibility', () => {
     it('should show recovery prompt when a fresh draft exists and no line is preselected', () => {
-      saveRepayDraft({
-        step: 'input',
-        creditLineId: 'CL-2024-001',
-        amountStr: '5000',
-        confirmAmountStr: '',
-        isAutoSchedule: false,
-      });
+      saveRepayDraft(draftState());
 
       renderWithoutLine();
 
@@ -133,13 +203,7 @@ describe('RepayPage — draft recovery (issue #935)', () => {
     });
 
     it('should NOT show recovery prompt when a line is preselected via URL', () => {
-      saveRepayDraft({
-        step: 'input',
-        creditLineId: 'CL-2024-001',
-        amountStr: '5000',
-        confirmAmountStr: '',
-        isAutoSchedule: false,
-      });
+      saveRepayDraft(draftState());
 
       renderWithLine(['/?line=CL-2024-001']);
 
@@ -155,13 +219,7 @@ describe('RepayPage — draft recovery (issue #935)', () => {
     });
 
     it('should NOT show recovery prompt for expired drafts', () => {
-      saveRepayDraft({
-        step: 'input',
-        creditLineId: 'CL-2024-001',
-        amountStr: '5000',
-        confirmAmountStr: '',
-        isAutoSchedule: false,
-      });
+      saveRepayDraft(draftState());
 
       // Advance past expiry
       vi.setSystemTime(Date.now() + MAX_AGE_MS + 1);
@@ -175,13 +233,9 @@ describe('RepayPage — draft recovery (issue #935)', () => {
 
   describe('Restore draft', () => {
     it('should populate form fields when restoring a draft', () => {
-      saveRepayDraft({
-        step: 'input',
-        creditLineId: 'CL-2024-002',
-        amountStr: '12000',
-        confirmAmountStr: '',
-        isAutoSchedule: true,
-      });
+      saveRepayDraft(
+        draftState({ creditLineId: 'CL-2024-002', amountStr: '12000', isAutoSchedule: true }),
+      );
 
       renderWithoutLine();
 
@@ -198,13 +252,7 @@ describe('RepayPage — draft recovery (issue #935)', () => {
     });
 
     it('should hide the recovery prompt after restore', () => {
-      saveRepayDraft({
-        step: 'input',
-        creditLineId: 'CL-2024-001',
-        amountStr: '5000',
-        confirmAmountStr: '',
-        isAutoSchedule: false,
-      });
+      saveRepayDraft(draftState());
 
       renderWithoutLine();
 
@@ -218,13 +266,7 @@ describe('RepayPage — draft recovery (issue #935)', () => {
 
   describe('Dismiss draft', () => {
     it('should clear the draft and hide the prompt when dismissed', () => {
-      saveRepayDraft({
-        step: 'input',
-        creditLineId: 'CL-2024-001',
-        amountStr: '5000',
-        confirmAmountStr: '',
-        isAutoSchedule: false,
-      });
+      saveRepayDraft(draftState());
 
       renderWithoutLine();
 
@@ -239,13 +281,7 @@ describe('RepayPage — draft recovery (issue #935)', () => {
     });
 
     it('should not populate any form fields after dismissal', () => {
-      saveRepayDraft({
-        step: 'input',
-        creditLineId: 'CL-2024-001',
-        amountStr: '5000',
-        confirmAmountStr: '',
-        isAutoSchedule: false,
-      });
+      saveRepayDraft(draftState());
 
       renderWithoutLine();
 
@@ -277,14 +313,8 @@ describe('RepayPage — draft recovery (issue #935)', () => {
       expect(draft.state.amountStr).toBe('5000');
     });
 
-    it('should clear draft after successful confirmation', () => {
-      saveRepayDraft({
-        step: 'input',
-        creditLineId: 'CL-2024-001',
-        amountStr: '1000',
-        confirmAmountStr: '',
-        isAutoSchedule: false,
-      });
+    it('should save the completed transaction and clear the draft after confirmation', async () => {
+      saveRepayDraft(draftState({ amountStr: '1000' }));
 
       renderWithLine(['/?line=CL-2024-001']);
 
@@ -296,27 +326,32 @@ describe('RepayPage — draft recovery (issue #935)', () => {
       // Click review
       const reviewBtn = screen.getByText(/Review Repayment/i);
       fireEvent.click(reviewBtn);
+      await flushAsync();
 
-      // Click confirm — navigates to /repay/success and sets step='success'
+      // Confirmation renders the success route.
       const confirmBtn = screen.getByText(/Confirm Repayment/i);
+      const transactionId = `TXN-${Date.now()}`;
       fireEvent.click(confirmBtn);
+      await flushAsync();
+      expect(screen.getByRole('heading', { name: /you repaid/i })).toBeInTheDocument();
 
       // Draft should be cleared.  The confirm handler calls clearRepayDraft()
-      // synchronously, and the persist effect's step==='success' branch also
-      // calls clearRepayDraft() as a safety net.
+      // synchronously before navigation.
       expect(localStorage.getItem('creditra_repay_draft')).toBeNull();
+      await expect(
+        creditDataSource.getTransaction('GAABC1234567890ABCDEF', transactionId),
+      ).resolves.toMatchObject({
+        id: transactionId,
+        status: 'Completed',
+        amount: 1000,
+        remainingDebt: 187828.13,
+      });
     });
   });
 
   describe('Review-step recovery (boundary case)', () => {
     it('should restore to review step when draft was interrupted during review', () => {
-      saveRepayDraft({
-        step: 'review',
-        creditLineId: 'CL-2024-001',
-        amountStr: '3000',
-        confirmAmountStr: '',
-        isAutoSchedule: false,
-      });
+      saveRepayDraft(draftState({ step: 'review', amountStr: '3000' }));
 
       renderWithLine(['/?line=CL-2024-001']);
 
@@ -333,13 +368,7 @@ describe('RepayPage — draft recovery (issue #935)', () => {
     });
 
     it('should restore to review step when draft was interrupted and user resumes', () => {
-      saveRepayDraft({
-        step: 'review',
-        creditLineId: 'CL-2024-001',
-        amountStr: '3000',
-        confirmAmountStr: '',
-        isAutoSchedule: false,
-      });
+      saveRepayDraft(draftState({ step: 'review', amountStr: '3000' }));
 
       renderWithoutLine();
 
@@ -357,17 +386,16 @@ describe('RepayPage — draft recovery (issue #935)', () => {
   });
 
   describe('Edge cases', () => {
-    it('should not crash when draft references a nonexistent credit line', () => {
-      saveRepayDraft({
-        step: 'input',
-        creditLineId: 'CL-NONEXISTENT',
-        amountStr: '1000',
-        confirmAmountStr: '',
-        isAutoSchedule: false,
-      });
+    it('should discard a draft that references a nonexistent credit line', () => {
+      saveRepayDraft(draftState({ creditLineId: 'CL-NONEXISTENT', amountStr: '1000' }));
 
-      // Should render without crashing — the credit line picker view
+      // Renders without crashing — the picker view is shown.
       expect(() => renderWithoutLine()).not.toThrow();
+
+      // Issue #1188: the draft is discarded with a status note, not offered.
+      expect(screen.queryByTestId('repay-recovery-prompt')).not.toBeInTheDocument();
+      expect(screen.getByTestId('repay-draft-discarded-note')).toBeInTheDocument();
+      expect(localStorage.getItem('creditra_repay_draft')).toBeNull();
     });
 
     it('should not crash when localStorage is unavailable', () => {
@@ -394,13 +422,7 @@ describe('RepayPage — draft recovery (issue #935)', () => {
     });
 
     it('should restore isAutoSchedule flag from draft', () => {
-      saveRepayDraft({
-        step: 'input',
-        creditLineId: 'CL-2024-001',
-        amountStr: '5000',
-        confirmAmountStr: '',
-        isAutoSchedule: true,
-      });
+      saveRepayDraft(draftState({ isAutoSchedule: true }));
 
       renderWithoutLine();
 
@@ -411,22 +433,15 @@ describe('RepayPage — draft recovery (issue #935)', () => {
       expect(toggle).toHaveAttribute('aria-checked', 'true');
     });
 
-    it('should handle draft with empty amount string on input step', () => {
-      saveRepayDraft({
-        step: 'input',
-        creditLineId: 'CL-2024-001',
-        amountStr: '',
-        confirmAmountStr: '',
-        isAutoSchedule: false,
-      });
+    it('should discard a draft with an empty amount string', () => {
+      // Issue #1188: amountStr must match ^\d+(\.\d{1,2})?$ — an empty string
+      // fails, so the draft is discarded rather than offered for recovery.
+      saveRepayDraft(draftState({ amountStr: '' }));
 
-      // loadRepayDraft should return the draft (amountStr is valid type)
-      // but the form should render with empty amount
       renderWithoutLine();
 
-      // Recovery prompt should appear (draft is valid)
-      const prompt = screen.queryByTestId('repay-recovery-prompt');
-      expect(prompt).toBeInTheDocument();
+      expect(screen.queryByTestId('repay-recovery-prompt')).not.toBeInTheDocument();
+      expect(localStorage.getItem('creditra_repay_draft')).toBeNull();
     });
 
     it('should not persist draft during the loading phase', () => {
@@ -440,13 +455,7 @@ describe('RepayPage — draft recovery (issue #935)', () => {
 
   describe('Accessibility', () => {
     it('recovery prompt should have role="alert" for screen reader announcement', () => {
-      saveRepayDraft({
-        step: 'input',
-        creditLineId: 'CL-2024-001',
-        amountStr: '5000',
-        confirmAmountStr: '',
-        isAutoSchedule: false,
-      });
+      saveRepayDraft(draftState());
 
       renderWithoutLine();
 
@@ -456,13 +465,7 @@ describe('RepayPage — draft recovery (issue #935)', () => {
     });
 
     it('restore and dismiss buttons should be keyboard accessible', () => {
-      saveRepayDraft({
-        step: 'input',
-        creditLineId: 'CL-2024-001',
-        amountStr: '5000',
-        confirmAmountStr: '',
-        isAutoSchedule: false,
-      });
+      saveRepayDraft(draftState());
 
       renderWithoutLine();
 
@@ -471,6 +474,164 @@ describe('RepayPage — draft recovery (issue #935)', () => {
 
       expect(restoreBtn.tagName).toBe('BUTTON');
       expect(dismissBtn.tagName).toBe('BUTTON');
+    });
+  });
+
+  // ── Issue #1188: revalidate restored drafts, gate confirm on validity ──
+  describe('Revalidation and scoping (issue #1188)', () => {
+    function resumeDraft() {
+      renderWithoutLine();
+      fireEvent.click(screen.getByTestId('repay-recovery-restore'));
+    }
+
+    function getConfirmButton() {
+      return screen.queryByRole('button', { name: /confirm repayment/i });
+    }
+
+    it('row 1: review draft exceeding current debt lands on input, Confirm unreachable', () => {
+      // CL-DEBT-10K owes 10,000; the tampered draft claims 999,999.
+      saveRepayDraft(draftState({ step: 'review', amountStr: '999999', creditLineId: 'CL-DEBT-10K' }));
+
+      resumeDraft();
+
+      // Lands on input, not review — Confirm only renders on the review step.
+      expect(screen.getByText('Make a repayment')).toBeInTheDocument();
+      expect(screen.queryByText('Review your repayment')).not.toBeInTheDocument();
+      expect(getConfirmButton()).not.toBeInTheDocument();
+    });
+
+    it('row 2: valid review draft resumes to review but clears the typed confirmation', async () => {
+      // 8,000 is valid (debt 187,500 / wallet 50,000) and exceeds the $5,000
+      // typed-confirmation threshold.
+      saveRepayDraft(
+        draftState({ step: 'review', amountStr: '8000', confirmAmountStr: '8000' }),
+      );
+
+      resumeDraft();
+      await flushAsync();
+
+      expect(screen.getByText('Review your repayment')).toBeInTheDocument();
+      // Typed confirmation was cleared on restore, so Confirm stays disabled
+      // until the amount is re-typed.
+      expect(getConfirmButton()).toBeDisabled();
+      const field = screen.getByLabelText(/type the repayment amount to confirm/i) as HTMLInputElement;
+      expect(field.value).toBe('');
+      // Re-typing enables Confirm again.
+      fireEvent.change(field, { target: { value: '8000' } });
+      expect(getConfirmButton()).not.toBeDisabled();
+    });
+
+    it('row 3: debt drops below the amount while on review — Confirm disabled with an alert', async () => {
+      // Reach review with a valid 3,000 against CL-DEBT-10K (10,000 owed).
+      saveRepayDraft(draftState({ step: 'review', amountStr: '3000', creditLineId: 'CL-DEBT-10K' }));
+      const { rerender } = renderWithoutLine();
+      fireEvent.click(screen.getByTestId('repay-recovery-restore'));
+      await flushAsync();
+      expect(screen.getByText('Review your repayment')).toBeInTheDocument();
+      expect(getConfirmButton()).not.toBeDisabled();
+
+      // Simulate a provider refetch dropping the debt to 1,000.
+      act(() => {
+        linesHolder.current = (linesHolder.current ?? []).map((cl) =>
+          cl.id === 'CL-DEBT-10K' ? { ...cl, utilized: 1000 } : cl,
+        );
+      });
+      rerender(
+        <MemoryRouter initialEntries={['/repay']}>
+          <Routes><Route path="*" element={<RepayPage />} /></Routes>
+        </MemoryRouter>,
+      );
+
+      // Amount now exceeds the debt: Confirm disabled + alert + Edit amount.
+      expect(getConfirmButton()).toBeDisabled();
+      const alert = screen.getByTestId('repay-review-invalid-alert');
+      expect(alert).toHaveAttribute('role', 'alert');
+      expect(alert).toHaveTextContent(/exceeds outstanding debt/i);
+      expect(screen.getByTestId('repay-review-edit-amount')).toBeInTheDocument();
+    });
+
+    it('row 4: Enter on review with an invalid amount does not confirm', () => {
+      saveRepayDraft(draftState({ step: 'review', amountStr: '3000', creditLineId: 'CL-DEBT-10K' }));
+      const { rerender } = renderWithoutLine();
+      fireEvent.click(screen.getByTestId('repay-recovery-restore'));
+
+      act(() => {
+        linesHolder.current = (linesHolder.current ?? []).map((cl) =>
+          cl.id === 'CL-DEBT-10K' ? { ...cl, utilized: 1000 } : cl,
+        );
+      });
+      rerender(
+        <MemoryRouter initialEntries={['/repay']}>
+          <Routes><Route path="*" element={<RepayPage />} /></Routes>
+        </MemoryRouter>,
+      );
+
+      expect(screen.getByTestId('repay-review-invalid-alert')).toBeInTheDocument();
+      fireEvent.keyDown(window, { key: 'Enter' });
+      // No navigation to the success route.
+      expect(screen.queryByText(/you repaid/i)).not.toBeInTheDocument();
+      expect(screen.getByText('Review your repayment')).toBeInTheDocument();
+    });
+
+    it('row 5: a draft saved under a different wallet identity is discarded', () => {
+      saveRepayDraft(draftState({ owner: OTHER_OWNER }));
+
+      renderWithoutLine();
+
+      expect(screen.queryByTestId('repay-recovery-prompt')).not.toBeInTheDocument();
+      expect(screen.getByTestId('repay-draft-discarded-note')).toBeInTheDocument();
+      expect(localStorage.getItem('creditra_repay_draft')).toBeNull();
+    });
+
+    it('row 6: step "success" and non-numeric amountStr are discarded', () => {
+      // Shape-invalid drafts are refused by loadRepayDraft itself: no prompt
+      // is offered and the stored entry is removed.
+      saveRepayDraftRaw({ ...draftState(), step: 'success' });
+      renderWithoutLine();
+      expect(screen.queryByTestId('repay-recovery-prompt')).not.toBeInTheDocument();
+      expect(localStorage.getItem('creditra_repay_draft')).toBeNull();
+      localStorage.clear();
+      resetLines();
+
+      saveRepayDraftRaw({ ...draftState(), amountStr: '1e3' });
+      renderWithoutLine();
+      expect(screen.queryByTestId('repay-recovery-prompt')).not.toBeInTheDocument();
+      expect(localStorage.getItem('creditra_repay_draft')).toBeNull();
+    });
+
+    it('row 7: a draft for a line that is no longer repayable is discarded with a status note', () => {
+      // CL-CLOSED-001 exists in the mock data but is Closed with zero
+      // utilization, so isRepayable() is false.
+      saveRepayDraft(draftState({ creditLineId: 'CL-CLOSED-001', amountStr: '500' }));
+
+      renderWithoutLine();
+
+      expect(screen.queryByTestId('repay-recovery-prompt')).not.toBeInTheDocument();
+      const note = screen.getByTestId('repay-draft-discarded-note');
+      expect(note).toHaveAttribute('role', 'status');
+      expect(localStorage.getItem('creditra_repay_draft')).toBeNull();
+    });
+
+    it('row 8 (regression): a valid draft still resumes straight to review with Confirm enabled', async () => {
+      // Guards against over-blocking: valid review drafts must keep working.
+      saveRepayDraft(draftState({ step: 'review', amountStr: '1000' }));
+
+      resumeDraft();
+      await flushAsync();
+
+      expect(screen.getByText('Review your repayment')).toBeInTheDocument();
+      expect(getConfirmButton()).not.toBeDisabled();
+    });
+
+    it('drafts persisted by the page are owner-scoped to the connected wallet', () => {
+      renderWithoutLine();
+      fireEvent.click(screen.getByText('Primary Business Line'));
+      const amountInput = screen.getByLabelText(/amount to repay/i) as HTMLInputElement;
+      fireEvent.change(amountInput, { target: { value: '5000' } });
+
+      const raw = localStorage.getItem('creditra_repay_draft');
+      expect(raw).not.toBeNull();
+      expect(JSON.parse(raw!).state.owner).toBe(OWNER);
     });
   });
 });

@@ -27,11 +27,35 @@ import { vi } from 'vitest';
 vi.mock('../context/WalletContext', () => ({
   useWallet: () => ({
     wallet: {
+      type: 'freighter',
       publicKey: 'GAABC1234567890ABCDEF',
       network: 'TESTNET',
     },
     status: 'connected',
   }),
+  // <NextSteps/> (mounted on Dashboard) derives its per-wallet storage key
+  // from the connected wallet via this helper.
+  walletIdentityKey: (
+    wallet: { type?: string; publicKey?: string; network?: string } | null,
+  ) => (wallet ? `${wallet.type}:${wallet.publicKey}:${wallet.network}` : null),
+}));
+
+// <NextSteps/> reads KYC progress from the app-wide KycContext.
+vi.mock('../context/KycContext', () => ({
+  useKyc: () => ({
+    steps: [],
+    overallStatus: 'not_started',
+    resumeStepId: 'identity',
+    completedCount: 0,
+    setStepStatus: vi.fn(),
+    resetAll: vi.fn(),
+  }),
+}));
+
+// Resolve the linked-accounts lookup immediately so the Next Steps card is
+// not stuck on its loading skeleton inside these tests.
+vi.mock('../services/linkedAccounts', () => ({
+  fetchLinkedAccounts: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('../utils/storage', () => ({

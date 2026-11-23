@@ -42,6 +42,13 @@ import * as ReducedMotionContext from '../context/ReducedMotionContext';
 // revisions. Mock it with a minimal stand-in so tests can reach the loading
 // state without depending on that component's internals.
 
+// The wizard reads the connected wallet to scope its persisted draft. These
+// tests render the page without a WalletProvider.
+vi.mock('@/context/WalletContext', () => ({
+  useWallet: () => ({ wallet: null }),
+  walletIdentityKey: () => null,
+}));
+
 vi.mock('@/components/ConfirmationStep', () => ({
   ConfirmationStep: ({
     onConfirm,

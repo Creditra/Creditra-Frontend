@@ -16,7 +16,6 @@ import {
   ConsoleSubstitutionLogger,
   setSubstitutionLogger,
   getSubstitutionLogger,
-  logSubstitutionEvent,
   logIdempotencyKeyGenerated,
   logDuplicateDetected,
   logSubmissionAttempted,

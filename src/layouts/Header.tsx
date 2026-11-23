@@ -5,6 +5,7 @@ import { KycTriggerButton } from "../components/KycDrawer";
 import { QuickRepayTrigger } from "../components/QuickRepayTrigger";
 import { WalletButton } from "../components/WalletButton";
 import { NotificationWidget } from "../components/notifications/NotificationWidget";
+import { getEnabledRoutes } from "../routes/manifest";
 
 export interface HeaderProps {
   settingsTriggerRef: RefObject<HTMLButtonElement | null>;
@@ -26,12 +27,12 @@ export function Header({
   const { pathname } = useLocation();
 
   // On narrow screens the nav is a horizontally scrolling row; keep the
-  // active link in view (adjust scrollLeft only, never the page scroll).
+  // active link in view using the browser's direction-aware inline scrolling.
   useEffect(() => {
     const nav = navRef.current;
     const active = nav?.querySelector<HTMLElement>(".header-nav-link.active");
     if (!nav || !active || nav.scrollWidth <= nav.clientWidth) return;
-    nav.scrollLeft = active.offsetLeft - nav.offsetLeft - (nav.clientWidth - active.offsetWidth) / 2;
+    active.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [pathname]);
 
   return (
@@ -50,55 +51,18 @@ export function Header({
           - 2.4.7: Focus Visible - outline differs from active underline
           - 2.4.8: Location - aria-current="page" indicates current page
         */}
-        <NavLink
-          to="/"
-          end
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Dashboard
-        </NavLink>
-        <NavLink
-          to="/transactions"
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Transactions
-        </NavLink>
-        <NavLink
-          to="/credit-lines"
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Credit Lines
-        </NavLink>
-        <NavLink
-          to="/open-credit"
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Open Credit Line
-        </NavLink>
-        <NavLink
-          to="/dutch-auctions"
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Dutch Auctions
-        </NavLink>
-        <NavLink
-          to="/docs"
-          className={({ isActive }) =>
-            isActive ? "header-nav-link active" : "header-nav-link"
-          }
-        >
-          Docs
-        </NavLink>
+        {getEnabledRoutes().filter((route) => Boolean(route.nav?.header)).map((route) => (
+          <NavLink
+            key={route.path}
+            to={route.path}
+            end={route.path === "/"}
+            className={({ isActive }) =>
+              isActive ? "header-nav-link active" : "header-nav-link"
+            }
+          >
+            {route.nav?.headerLabel ?? route.pageName}
+          </NavLink>
+        ))}
       </nav>
       <button
         ref={settingsTriggerRef}

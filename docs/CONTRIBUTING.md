@@ -140,6 +140,7 @@ UI changes must pass the accessibility checklist in section 3. See
 npm run lint
 npm test -- --run
 npm run build
+npm audit --omit=dev --audit-level=high
 ```
 
 If any fail, fix the underlying problem rather than silencing it.
@@ -149,10 +150,45 @@ If any fail, fix the underlying problem rather than silencing it.
   to make a PR green.
 - **TypeScript error** — fix the type, don't reach for `as any` or `@ts-ignore`. The
   project sets `strict: true` for a reason.
+- **Audit failure** — upgrade or replace the affected production dependency rather than
+  ignoring the advisory.
 
 Exception: when working on docs-only or comment-only PRs, you may inherit existing
 failures from `main`. You may **not worsen** them. The neutral-or-positive bar from the
 checklist applies.
+
+### CI security & dependency checks
+
+In addition to `build`, Frontend CI runs two security checks using the shared `npm`
+dependency cache:
+
+- **`security` (`npm audit --omit=dev --audit-level=high`)** — runs on pushes to `main`
+  and on pull requests. It audits only production dependencies (`--omit=dev`) so that
+  dev-only tooling (test runners, linters, build plugins) does not block PRs when it is
+  not shipped to users.
+- **`dependency-review` (`actions/dependency-review-action@v4`)** — runs on pull requests
+  only, with `fail-on-severity: high` and job-scoped `contents: read` / `pull-requests: write`
+  permissions. It inspects dependency changes introduced by the PR and comments on the PR
+  if a vulnerable package is added.
+
+**Why `high` severity?** Failing on `high` and `critical` advisories blocks meaningful
+production risk while avoiding frequent false-positive CI breaks from `low` or `moderate`
+advisories that have low exploitability in a client-side bundle or no upstream fix yet.
+
+**Reproducing locally:**
+
+```bash
+# View all production dependency advisories
+npm audit --omit=dev
+
+# Match the exact CI failure threshold (exits non-zero on high/critical)
+npm audit --omit=dev --audit-level=high
+```
+
+`dependency-review` compares the PR's lockfile diff against `main` on GitHub. Before
+pushing dependency changes, run `npm audit --omit=dev --audit-level=high` locally and
+review `git diff main -- package-lock.json` to ensure no high- or critical-severity
+packages are introduced.
 
 ---
 

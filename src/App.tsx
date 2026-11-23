@@ -1,39 +1,35 @@
-import { useEffect, useRef, useState, lazy, Suspense } from "react";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { useRef, useState, useEffect, lazy, Suspense } from "react";
+import { BrowserRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { CommandPalette } from "./components/CommandPalette";
 import { RouteAnnouncer, RouteHeadProvider } from "./components/RouteAnnouncer";
 import { WalletProvider } from "./context/WalletContext";
+import { CreditDataProvider } from "./context/CreditDataContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { ContrastProvider } from "./context/ContrastContext";
 import { KycProvider } from "./context/KycContext";
 import { NotificationProvider } from "./context/NotificationContext";
+import { AuctionAlertWatcher } from "./components/AuctionAlertWatcher";
 import { ReducedMotionProvider } from "./context/ReducedMotionContext";
 import { KycDrawer } from "./components/KycDrawer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ShortcutHelpOverlay } from "./components/ShortcutHelpOverlay";
 import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
 import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatchBanner";
+import { StaleDataBanner } from "./components/StaleDataBanner";
+import { ToastContainer } from "./components/notifications/ToastContainer";
+import { BannerAlerts } from "./components/notifications/BannerAlert";
 import { Header } from "./layouts/Header";
 import { Skeleton } from "./components/Skeleton";
+import { useHotkey } from "./lib/hotkeys";
+import { useNotifications } from "./context/NotificationContext";
+import { useCreditData } from "./context/CreditDataContext";
+import { registerEventSubscribers } from "./lib/event-subscribers";
+
+import { getEnabledRoutes } from "./routes/manifest";
 
 // ── Code-split route components (non-critical for first paint) ────────────────
-const Dashboard = lazy(() => import("./pages/Dashboard").then(m => ({ default: m.Dashboard })));
-const DrawCreditPage = lazy(() => import("./pages/DrawCreditPage"));
-const CreditLines = lazy(() => import("./pages/CreditLines"));
-const TransactionHistory = lazy(() => import("./pages/TransactionHistory").then(m => ({ default: m.TransactionHistory })));
-const RequestEvaluation = lazy(() => import("./pages/RequestEvaluation").then(m => ({ default: m.RequestEvaluation })));
 const NotFound = lazy(() => import("./pages/NotFound").then(m => ({ default: m.NotFound })));
-const HelpCenter = lazy(() => import("./pages/HelpCenter"));
-const DutchAuctions = lazy(() => import("./pages/DutchAuctions").then(m => ({ default: m.DutchAuctions })));
-const LinkedAccounts = lazy(() => import("./pages/LinkedAccounts").then(m => ({ default: m.LinkedAccounts })));
-const RepayPage = lazy(() => import("./pages/RepayPage"));
-const RepaySuccess = lazy(() => import("./pages/RepaySuccess"));
-const NotificationSettings = lazy(() => import("./pages/settings/Notifications"));
-const Settings = lazy(() => import("./pages/Settings").then(m => ({ default: m.Settings })));
-const Profile = lazy(() => import("./pages/Profile"));
-const Docs = lazy(() => import("./pages/Docs"));
 const SessionTimeoutBanner = lazy(() => import("./components/SessionTimeoutBanner").then(m => ({ default: m.SessionTimeoutBanner })));
-const NotificationPreferences = lazy(() => import("./pages/NotificationPreferences").then(m => ({ default: m.NotificationPreferences })));
 
 // ── Suspense Fallback for Route Loading ───────────────────────────────────────
 /** Minimal skeleton shown while route chunks load (preserves first paint). */
@@ -47,16 +43,112 @@ function RouteLoadingFallback() {
   );
 }
 
-const isEditableTarget = (target: EventTarget | null) => {
-  if (!(target instanceof HTMLElement)) return false;
-  const tagName = target.tagName.toLowerCase();
+function AppShell() {
+  const navigate = useNavigate();
+  const { addToast } = useNotifications();
+  const { refetch } = useCreditData();
+
+  useEffect(() => registerEventSubscribers({ addToast, refetch }), [addToast, refetch]);
+  const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
+  const [openedFromSettingsLink, setOpenedFromSettingsLink] = useState(false);
+  const [isKycDrawerOpen, setIsKycDrawerOpen] = useState(false);
+  const settingsTriggerRef = useRef<HTMLButtonElement>(null);
+  const kycTriggerRef = useRef<HTMLButtonElement>(null);
+
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  const paletteTriggerRef = useRef<HTMLElement | null>(null);
+
+  useHotkey({
+    combo: "Mod+K",
+    scope: "global",
+    description: "Toggle command palette",
+    allowInEditable: true,
+    handler: (event) => {
+      event.preventDefault();
+      paletteTriggerRef.current = document.activeElement as HTMLElement;
+      setIsPaletteOpen((open) => !open);
+    },
+  });
+
+  useHotkey({
+    combo: "?",
+    scope: "global",
+    description: "Open this keyboard shortcut guide",
+    handler: (event) => {
+      event.preventDefault();
+      setOpenedFromSettingsLink(false);
+      setIsShortcutHelpOpen(true);
+    },
+  });
+
   return (
-    target.isContentEditable ||
-    tagName === "input" ||
-    tagName === "textarea" ||
-    tagName === "select"
+    <>
+      <AuctionAlertWatcher />
+      <RouteHeadProvider>
+        <RouteAnnouncer />
+        <div className="app">
+          <Header
+            settingsTriggerRef={settingsTriggerRef}
+            kycTriggerRef={kycTriggerRef}
+            onSettingsClick={() => {
+              setOpenedFromSettingsLink(true);
+              setIsShortcutHelpOpen(true);
+            }}
+            onKycClick={() => setIsKycDrawerOpen(true)}
+          />
+
+          {/* Wallet auto-reconnect timeout banner — self-dismissing,
+              non-blocking; only visible when reconnect takes > 8 s. */}
+          <WalletReconnectBanner />
+          {/* Session-timeout warning banner — visible 60 s before
+              the wallet extension silently disconnects (#227). */}
+          <Suspense fallback={null}>
+            <SessionTimeoutBanner />
+          </Suspense>
+          <main className="main">
+            <BannerAlerts />
+            <NetworkMismatchBanner />
+            <StaleDataBanner />
+            <Suspense fallback={<RouteLoadingFallback />}>
+              <Routes>
+                {getEnabledRoutes().map((route) => {
+                  const RouteComponent = route.Component;
+                  return (
+                    <Route
+                      key={route.path}
+                      path={route.path}
+                      element={<RouteComponent />}
+                    />
+                  );
+                })}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
+          </main>
+          <ShortcutHelpOverlay
+            isOpen={isShortcutHelpOpen}
+            onClose={() => setIsShortcutHelpOpen(false)}
+            triggerRef={openedFromSettingsLink ? settingsTriggerRef : undefined}
+          />
+          <KycDrawer
+            isOpen={isKycDrawerOpen}
+            onClose={() => setIsKycDrawerOpen(false)}
+            onResume={(stepId) => {
+              navigate(`/kyc?step=${encodeURIComponent(stepId)}`);
+            }}
+            triggerRef={kycTriggerRef}
+          />
+          <CommandPalette
+            isOpen={isPaletteOpen}
+            onClose={() => setIsPaletteOpen(false)}
+            triggerRef={paletteTriggerRef}
+          />
+          <ToastContainer />
+        </div>
+      </RouteHeadProvider>
+    </>
   );
-};
+}
 
 /**
  * Application root.
@@ -67,12 +159,14 @@ const isEditableTarget = (target: EventTarget | null) => {
  *     <ThemeProvider>    — colour-scheme (light/dark) preference
  *       <ContrastProvider> — high-contrast override, [data-contrast="high"]
  *         <WalletProvider> — wallet lifecycle visible to every route
- *           <BrowserRouter>
+ *           <CreditDataProvider> — wallet-scoped credit line and transaction data
+ *             <BrowserRouter>
  *             <header />   — persistent nav chrome
  *             <main>
  *               <Routes /> — current route
  *             </main>
- *           </BrowserRouter>
+ *             </BrowserRouter>
+ *           </CreditDataProvider>
  *         </WalletProvider>
  *       </ContrastProvider>
  *     </ThemeProvider>
@@ -81,124 +175,22 @@ const isEditableTarget = (target: EventTarget | null) => {
  * See docs/ARCHITECTURE.md for the full component topology.
  */
 function App() {
-  const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
-  const [openedFromSettingsLink, setOpenedFromSettingsLink] = useState(false);
-  const [isKycDrawerOpen, setIsKycDrawerOpen] = useState(false);
-  const settingsTriggerRef = useRef<HTMLButtonElement>(null);
-  const kycTriggerRef = useRef<HTMLButtonElement>(null);
-
-  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
-  const paletteTriggerRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // Cmd+K / Ctrl+K → toggle command palette
-      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
-        event.preventDefault();
-        paletteTriggerRef.current = document.activeElement as HTMLElement;
-        setIsPaletteOpen((open) => !open);
-        return;
-      }
-
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
-        return;
-      }
-      if (event.key !== "?") return;
-      if (isEditableTarget(event.target)) return;
-
-      event.preventDefault();
-      setOpenedFromSettingsLink(false);
-      setIsShortcutHelpOpen(true);
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
-
   return (
     <ErrorBoundary>
       <ThemeProvider>
         <ContrastProvider>
           <WalletProvider>
-            <KycProvider>
-              <NotificationProvider>
-                <ReducedMotionProvider>
-                  <BrowserRouter>
-                    <RouteHeadProvider>
-                      <RouteAnnouncer />
-                      <div className="app">
-                        <Header
-                          settingsTriggerRef={settingsTriggerRef}
-                          kycTriggerRef={kycTriggerRef}
-                          onSettingsClick={() => {
-                            setOpenedFromSettingsLink(true);
-                            setIsShortcutHelpOpen(true);
-                          }}
-                          onKycClick={() => setIsKycDrawerOpen(true)}
-                        />
-
-                        {/* Wallet auto-reconnect timeout banner — self-dismissing,
-                            non-blocking; only visible when reconnect takes > 8 s. */}
-                        <WalletReconnectBanner />
-                        {/* Session-timeout warning banner — visible 60 s before
-                            the wallet extension silently disconnects (#227). */}
-                        <Suspense fallback={null}>
-                          <SessionTimeoutBanner />
-                        </Suspense>
-                        <main className="main">
-                          <NetworkMismatchBanner />
-                          <Suspense fallback={<RouteLoadingFallback />}>
-                            <Routes>
-                              <Route path="/" element={<Dashboard />} />
-                              <Route path="/transactions" element={<TransactionHistory />} />
-                              <Route path="/credit-lines" element={<CreditLines />} />
-                              <Route path="/help" element={<HelpCenter />} />
-                              <Route path="/draw-credit" element={<DrawCreditPage />} />
-                              <Route
-                                path="/draw-credit/success"
-                                element={<DrawCreditPage />}
-                              />
-                              <Route path="/open-credit" element={<RequestEvaluation />} />
-                              <Route path="/dutch-auctions" element={<DutchAuctions />} />
-                              <Route path="/linked-accounts" element={<LinkedAccounts />} />
-                              <Route path="/notification-preferences" element={<NotificationPreferences />} />
-                              <Route path="/repay" element={<RepayPage />} />
-                              <Route path="/repay/success" element={<RepaySuccess />} />
-                              <Route path="/settings" element={<Settings />} />
-                              <Route path="/settings/notifications" element={<NotificationSettings />} />
-                              <Route path="/profile" element={<Profile />} />
-                              <Route path="/docs" element={<Docs />} />
-                              <Route path="*" element={<NotFound />} />
-                            </Routes>
-                          </Suspense>
-                        </main>
-                        <ShortcutHelpOverlay
-                          isOpen={isShortcutHelpOpen}
-                          onClose={() => setIsShortcutHelpOpen(false)}
-                          triggerRef={openedFromSettingsLink ? settingsTriggerRef : undefined}
-                        />
-                        <KycDrawer
-                          isOpen={isKycDrawerOpen}
-                          onClose={() => setIsKycDrawerOpen(false)}
-                          onResume={(stepId) => {
-                            // Navigate to the KYC page with the step pre-selected.
-                            // Replace with router.push('/kyc?step=' + stepId) when the
-                            // full KYC page exists.
-                            console.info('[KYC] Resume at step:', stepId);
-                          }}
-                          triggerRef={kycTriggerRef}
-                        />
-                        <CommandPalette
-                          isOpen={isPaletteOpen}
-                          onClose={() => setIsPaletteOpen(false)}
-                          triggerRef={paletteTriggerRef}
-                        />
-                      </div>
-                    </RouteHeadProvider>
-                  </BrowserRouter>
-                </ReducedMotionProvider>
-              </NotificationProvider>
-            </KycProvider>
+            <NotificationProvider>
+              <CreditDataProvider>
+                <KycProvider>
+                  <ReducedMotionProvider>
+                    <BrowserRouter>
+                      <AppShell />
+                    </BrowserRouter>
+                  </ReducedMotionProvider>
+                </KycProvider>
+              </CreditDataProvider>
+            </NotificationProvider>
           </WalletProvider>
         </ContrastProvider>
       </ThemeProvider>

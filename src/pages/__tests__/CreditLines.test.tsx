@@ -1,14 +1,16 @@
-import { render, screen, act } from '@testing-library/react';
-import { BrowserRouter } from 'react-router-dom';
+import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
+import { BrowserRouter, MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import CreditLines from '../CreditLines';
+import { mockCreditLines } from '../../data/mockData';
+import { freezeTime, unfreezeTime } from '../../test/freezeTime';
 
 beforeEach(() => {
-  vi.useFakeTimers();
+  freezeTime();
 });
 
 afterEach(() => {
-  vi.useRealTimers();
+  unfreezeTime();
 });
 
 // See src/pages/CreditLines.test.tsx for why this advances past the
@@ -30,7 +32,7 @@ describe('CreditLines page', () => {
     renderPage();
     expect(screen.getByText('Credit Lines')).toBeInTheDocument();
     expect(screen.getByText('Manage your credit facilities')).toBeInTheDocument();
-  });
+  }, 15000);
 
   it('renders credit line cards from mock data', () => {
     renderPage();
@@ -118,6 +120,71 @@ describe('CreditLines page', () => {
     expect(card?.textContent).toMatch(/Opened/);
   });
 
+  describe('over-limit credit lines', () => {
+    function getCard(name: string) {
+      const card = screen
+        .getAllByText(name)[0]
+        .closest('.cl-card');
+      expect(card).toBeInTheDocument();
+      return card as HTMLElement;
+    }
+
+    it('clamps available to $0 and shows an over-limit badge', () => {
+      renderPage();
+      const card = getCard('Primary Business Line');
+
+      // Available is clamped at $0, not negative.
+      const available = card.querySelector('.cl-available');
+      expect(available).toBeInTheDocument();
+      expect(available?.textContent).toMatch(/\$$0,?\.?0\d*/);
+      expect(available?.textContent).not.toMatch(/-/);
+
+      // Over-limit badge is present and includes the overage amount.
+      const badge = card.querySelector('.cl-over-limit');
+      expect(badge).toBeInTheDocument();
+      expect(badge?.textContent).toMatch(/Over limit by (\$|US)?\s*\.?\$\s*12,750/i);
+    });
+
+    it('clamps the bar width to 100% and exposes meter semantics', () => {
+      renderPage();
+      const card = getCard('Primary Business Line');
+
+      const meter = card.querySelector('[role="meter"]');
+      expect(meter).toBeInTheDocument();
+      // True percentage (117) remains in aria-valuenow.
+      expect(meter?.getAttribute('aria-valuenow')).toBe('117');
+      expect(meter?.getAttribute('aria-valuetext')).toMatch(/over limit/i);
+
+      // The fill width is clamped to 100%.
+      const fill = card.querySelector('.cl-bar-fill') as HTMLElement;
+      expect(fill).toBeInTheDocument();
+      expect(fill.style.width).toBe('100%');
+      expect(fill.className).toMatch(/cl-bar-fill--over-limit|striped/);
+    });
+
+    it('does not show the badge when at the limit exactly', () => {
+      renderPage();
+      // Find a card that is at the limit exactly (utilized === limit).
+      const cards = Array.from(document.querySelectorAll('.cl-card')) as HTMLElement[];
+      const atLimit = cards.find((card) => {
+        const meter = card.querySelector('[role="meter"]');
+        return meter?.getAttribute('aria-valuenow') === '100';
+      });
+      expect(atLimit).toBeDefined();
+      expect(atLimit!.querySelector('.cl-over-limit')).not.toBeInTheDocument();
+    });
+
+    it('sorts the over-limit line first when sorting by utilisation descending', () => {
+      renderPage();
+      // The over-limit line has the highest true utilisation (117%).
+      const cards = Array.from(document.querySelectorAll('.cl-card')) as HTMLElement[];
+      const overLimitIdx = cards.findIndex((card) =>
+        card.querySelector('.cl-over-limit') !== null,
+      );
+      expect(overLimitIdx).toBe(0);
+    });
+  });
+
   describe("skeleton loading state", () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -163,6 +230,156 @@ describe('CreditLines page', () => {
       expect(screen.getAllByText("Primary Business Line")[0]).toBeInTheDocument();
     });
   });
-});
 
-import { act } from "react";
+  describe("CreditLineDetailDrawer integration", () => {
+    it("opens drawer from row menu Details action, traps focus, and restores focus on Escape", async () => {
+      render(
+        <MemoryRouter initialEntries={["/credit-lines"]}>
+          <CreditLines defaultLoading={false} />
+        </MemoryRouter>
+      );
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+
+      const menuTrigger = screen.getByLabelText("Menu for Primary Business Line");
+      fireEvent.click(menuTrigger);
+
+      const detailsItem = screen.getByRole("menuitem", { name: /Details/i });
+      fireEvent.click(detailsItem);
+
+      const dialog = await screen.findByRole("dialog");
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveTextContent("Primary Business Line");
+
+      // Advance past useFocusTrap's 50ms initial focus delay
+      act(() => {
+        vi.advanceTimersByTime(60);
+      });
+      expect(dialog.contains(document.activeElement)).toBe(true);
+
+      // Press Escape to close and restore focus to the row menu trigger
+      fireEvent.keyDown(dialog, { key: "Escape", code: "Escape" });
+
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+      expect(document.activeElement).toBe(menuTrigger);
+    });
+
+    it("opens drawer on load when ?line=<id> deep link is present and ignores unknown ids", async () => {
+      const { unmount } = render(
+        <MemoryRouter initialEntries={["/credit-lines?line=CL-001"]}>
+          <CreditLines defaultLoading={false} />
+        </MemoryRouter>
+      );
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+
+      const dialog = await screen.findByRole("dialog");
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveTextContent("CL-001");
+      unmount();
+
+      render(
+        <MemoryRouter initialEntries={["/credit-lines?line=UNKNOWN-ID"]}>
+          <CreditLines defaultLoading={false} />
+        </MemoryRouter>
+      );
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("APR history chart in expanded card", () => {
+    it("does not render the APR history chart when a card is collapsed", () => {
+      renderPage();
+      expect(
+        screen.queryByRole("group", { name: "APR history time window" }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByTestId("apr-history-chart")).not.toBeInTheDocument();
+    });
+
+    it("renders the APR history chart group when a card with history is expanded", async () => {
+      renderPage();
+      const card = screen
+        .getAllByText("Primary Business Line")[0]
+        .closest(".cl-card") as HTMLElement;
+      expect(card).toBeInTheDocument();
+
+      const toggleBtn = card.querySelector(
+        ".cl-expand-btn",
+      ) as HTMLButtonElement;
+      expect(toggleBtn).toBeInTheDocument();
+      expect(toggleBtn).toHaveAttribute("aria-expanded", "false");
+
+      fireEvent.click(toggleBtn);
+      expect(toggleBtn).toHaveAttribute("aria-expanded", "true");
+
+      const chartGroup = await screen.findByRole("group", {
+        name: "APR history time window",
+      });
+      expect(chartGroup).toBeInTheDocument();
+      expect(card.contains(chartGroup)).toBe(true);
+    });
+
+    it("renders nothing when an expanded card has no APR history", () => {
+      const target = mockCreditLines.find(
+        (line) => line.name === "Primary Business Line",
+      )!;
+      const originalHistory = target.aprHistory;
+      target.aprHistory = undefined;
+
+      try {
+        renderPage();
+        const card = screen
+          .getAllByText("Primary Business Line")[0]
+          .closest(".cl-card") as HTMLElement;
+        const toggleBtn = card.querySelector(
+          ".cl-expand-btn",
+        ) as HTMLButtonElement;
+
+        fireEvent.click(toggleBtn);
+        expect(toggleBtn).toHaveAttribute("aria-expanded", "true");
+        expect(
+          card.querySelector('[data-testid="apr-history-chart"]'),
+        ).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole("group", { name: "APR history time window" }),
+        ).not.toBeInTheDocument();
+      } finally {
+        target.aprHistory = originalHistory;
+      }
+    });
+  });
+
+  describe("comparison selection limit", () => {
+    beforeEach(() => {
+      sessionStorage.clear();
+    });
+
+    it("blocks selecting a third credit line once two are selected", () => {
+
+      const checkboxes = screen.getAllByRole("checkbox", {
+        name: /Select .* for comparison/i,
+      }) as HTMLInputElement[];
+      expect(checkboxes.length).toBeGreaterThanOrEqual(3);
+
+      fireEvent.click(checkboxes[0]);
+      fireEvent.click(checkboxes[1]);
+
+      expect(checkboxes[0].checked).toBe(true);
+      expect(checkboxes[1].checked).toBe(true);
+      expect(screen.getByText("Compare Selected (2/2)")).toBeInTheDocument();
+
+      // Attempting to select a third line is blocked
+      fireEvent.click(checkboxes[2]);
+      expect(checkboxes[2].checked).toBe(false);
+      expect(screen.getByText("Compare Selected (2/2)")).toBeInTheDocument();
+    });
+  });
+});

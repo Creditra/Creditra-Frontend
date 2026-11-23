@@ -1,16 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 export const LocaleSettings: React.FC = () => {
   const [currency, setCurrency] = useState('USD');
   const [language, setLanguage] = useState('en');
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current !== null) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const handleSave = () => {
     setIsSaving(true);
     setSaveMessage(null);
+    if (saveTimerRef.current !== null) {
+      clearTimeout(saveTimerRef.current);
+    }
     // Simulate API call
-    setTimeout(() => {
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
       setIsSaving(false);
       setSaveMessage({ type: 'success', text: 'Settings updated successfully.' });
     }, 800);
