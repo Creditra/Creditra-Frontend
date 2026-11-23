@@ -207,7 +207,7 @@ export function formatMoney(m: Money, locale?: string): string {
   const raw = formatUnitsUnsigned(abs, m.decimals);
   if (!locale) return `${negative}${raw}`;
   const [dollarPart, fracPart] = raw.split('.');
-  const grouped = Number(dollarPart).toLocaleString(locale);
+  const grouped = BigInt(dollarPart).toLocaleString(locale);
   if (fracPart === undefined) return `${negative}${grouped}`;
   const decimalSep = (11.5).toLocaleString(locale).replace(/\d/g, '');
   return `${negative}${grouped}${decimalSep}${fracPart}`;
@@ -247,9 +247,10 @@ export function roundMoneyToCents(m: Money): Money {
 }
 
 /**
- * Display helper that rounds to cents for consistency with the existing
- * currency formatting surfaces. Uses the currency util's rounding on the
- * display number only after exact base-unit aggregation.
+ * Display-only helper that rounds to cents for consistency with the existing
+ * currency formatting surfaces. Uses the currency util's rounding through a
+ * JavaScript `number` (`toDisplayNumber`) after exact base-unit aggregation,
+ * so it may lose precision for values above 2^53.
  */
 export function formatMoneyCents(m: Money, locale?: string): string {
   const cents = roundMoneyToCents(m);
