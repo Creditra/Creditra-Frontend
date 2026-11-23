@@ -293,4 +293,31 @@ describe('CreditLines page', () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
   });
+
+  describe("comparison selection limit", () => {
+    beforeEach(() => {
+      sessionStorage.clear();
+    });
+
+    it("blocks selecting a third credit line once two are selected", () => {
+      renderPage();
+
+      const checkboxes = screen.getAllByRole("checkbox", {
+        name: /Select .* for comparison/i,
+      }) as HTMLInputElement[];
+      expect(checkboxes.length).toBeGreaterThanOrEqual(3);
+
+      fireEvent.click(checkboxes[0]);
+      fireEvent.click(checkboxes[1]);
+
+      expect(checkboxes[0].checked).toBe(true);
+      expect(checkboxes[1].checked).toBe(true);
+      expect(screen.getByText("Compare Selected (2/2)")).toBeInTheDocument();
+
+      // Attempting to select a third line is blocked
+      fireEvent.click(checkboxes[2]);
+      expect(checkboxes[2].checked).toBe(false);
+      expect(screen.getByText("Compare Selected (2/2)")).toBeInTheDocument();
+    });
+  });
 });
