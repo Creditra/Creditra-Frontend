@@ -2,6 +2,7 @@ import { render, screen, act, fireEvent, waitFor } from '@testing-library/react'
 import { BrowserRouter, MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import CreditLines from '../CreditLines';
+import { mockCreditLines } from '../../data/mockData';
 import { freezeTime, unfreezeTime } from '../../test/freezeTime';
 
 beforeEach(() => {
@@ -291,6 +292,68 @@ describe('CreditLines page', () => {
       });
 
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("APR history chart in expanded card", () => {
+    it("does not render the APR history chart when a card is collapsed", () => {
+      renderPage();
+      expect(
+        screen.queryByRole("group", { name: "APR history time window" }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByTestId("apr-history-chart")).not.toBeInTheDocument();
+    });
+
+    it("renders the APR history chart group when a card with history is expanded", async () => {
+      renderPage();
+      const card = screen
+        .getAllByText("Primary Business Line")[0]
+        .closest(".cl-card") as HTMLElement;
+      expect(card).toBeInTheDocument();
+
+      const toggleBtn = card.querySelector(
+        ".cl-expand-btn",
+      ) as HTMLButtonElement;
+      expect(toggleBtn).toBeInTheDocument();
+      expect(toggleBtn).toHaveAttribute("aria-expanded", "false");
+
+      fireEvent.click(toggleBtn);
+      expect(toggleBtn).toHaveAttribute("aria-expanded", "true");
+
+      const chartGroup = await screen.findByRole("group", {
+        name: "APR history time window",
+      });
+      expect(chartGroup).toBeInTheDocument();
+      expect(card.contains(chartGroup)).toBe(true);
+    });
+
+    it("renders nothing when an expanded card has no APR history", () => {
+      const target = mockCreditLines.find(
+        (line) => line.name === "Primary Business Line",
+      )!;
+      const originalHistory = target.aprHistory;
+      target.aprHistory = undefined;
+
+      try {
+        renderPage();
+        const card = screen
+          .getAllByText("Primary Business Line")[0]
+          .closest(".cl-card") as HTMLElement;
+        const toggleBtn = card.querySelector(
+          ".cl-expand-btn",
+        ) as HTMLButtonElement;
+
+        fireEvent.click(toggleBtn);
+        expect(toggleBtn).toHaveAttribute("aria-expanded", "true");
+        expect(
+          card.querySelector('[data-testid="apr-history-chart"]'),
+        ).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole("group", { name: "APR history time window" }),
+        ).not.toBeInTheDocument();
+      } finally {
+        target.aprHistory = originalHistory;
+      }
     });
   });
 });

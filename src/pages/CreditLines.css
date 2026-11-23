@@ -459,6 +459,44 @@
     padding: 0 1.25rem 1.25rem;
 }
 
+.cl-card-expand-row {
+    padding: 0 1.25rem 0.75rem;
+}
+
+.cl-expand-btn {
+    width: 100%;
+    padding: 0.45rem 0.75rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.cl-expand-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(88, 166, 255, 0.08);
+}
+
+.cl-card-expanded {
+    padding: 0 1.25rem 1.25rem;
+    min-width: 0;
+    overflow-x: hidden;
+}
+
+.cl-apr-history {
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+}
+
 .cl-action-btn {
     flex: 1;
     padding: 0.5rem 1rem;
@@ -697,6 +735,14 @@
         padding: 0 1rem 1rem;
     }
 
+    .cl-card-expand-row {
+        padding: 0 1rem 0.75rem;
+    }
+
+    .cl-card-expanded {
+        padding: 0 1rem 1rem;
+    }
+
     .cl-empty {
         padding: 2.5rem 1rem;
     }
@@ -729,6 +775,10 @@
     }
 
     .cl-util-fill {
+        transition: none;
+    }
+
+    .cl-expand-btn {
         transition: none;
     }
 
