@@ -1,6 +1,8 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { COLOR } from '../utils/tokens';
 import { parseLocalDate } from '../utils/dates';
+import { buildIcs, downloadIcs, type IcsEventInput } from '../utils/ics';
+import type { AutopayFrequency } from '../lib/autopay-schedule';
 
 function formatEventDate(dateStr: string): string {
   const parsed = parseLocalDate(dateStr);
@@ -20,6 +22,22 @@ export interface RepayCalendarEvent {
   label: string;
   /** Optional repayment status; renders a status chip when provided. */
   status?: RepayEventStatus;
+  /** Optional credit line identifier for deterministic `.ics` UIDs. */
+  lineId?: string;
+  /** Optional autopay recurrence frequency exported as an RFC 5545 `RRULE`. */
+  frequency?: AutopayFrequency;
+}
+
+function toIcsEvent(event: RepayCalendarEvent, index: number): IcsEventInput {
+  const lineId = event.lineId ?? event.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `payment-${index}`;
+  const formattedAmount = `$${event.amount.toLocaleString()}`;
+  return {
+    lineId,
+    date: event.date,
+    summary: `${event.label} — ${formattedAmount}`,
+    description: `Creditra repayment due: ${event.label} (${formattedAmount})`,
+    frequency: event.frequency,
+  };
 }
 
 /**
@@ -79,9 +97,28 @@ export function RepayCalendar({
   className = '',
   children,
 }: RepayCalendarProps) {
+  const [announcement, setAnnouncement] = useState('');
   const classes = ['card', 'repay-calendar', className]
     .filter(Boolean)
     .join(' ');
+
+  const handleExportAll = () => {
+    const icsEvents = events.map((event, idx) => toIcsEvent(event, idx));
+    const content = buildIcs(icsEvents);
+    const filename = 'creditra-repayments.ics';
+    downloadIcs(filename, content);
+    setAnnouncement(
+      `Downloaded ${filename} with ${events.length} ${events.length === 1 ? 'payment' : 'payments'}.`,
+    );
+  };
+
+  const handleExportOne = (event: RepayCalendarEvent, idx: number) => {
+    const icsEvent = toIcsEvent(event, idx);
+    const content = buildIcs([icsEvent]);
+    const filename = `creditra-${icsEvent.lineId}-${event.date}.ics`;
+    downloadIcs(filename, content);
+    setAnnouncement(`Downloaded ${filename} for ${event.label}.`);
+  };
 
   return (
     <section
@@ -90,7 +127,22 @@ export function RepayCalendar({
       aria-live="polite"
       aria-atomic="true"
     >
-      <h2 className="repay-calendar__title">Upcoming Payments</h2>
+      <div className="repay-calendar__header">
+        <h2 className="repay-calendar__title">Upcoming Payments</h2>
+        {events.length > 0 && (
+          <button
+            type="button"
+            className="repay-calendar__export-btn"
+            onClick={handleExportAll}
+          >
+            Add to calendar
+          </button>
+        )}
+      </div>
+
+      <p className="sr-only" role="status" aria-live="polite">
+        {announcement}
+      </p>
 
       {events.length === 0 ? (
         <p className="repay-calendar__empty">No upcoming payments.</p>
@@ -119,6 +171,14 @@ export function RepayCalendar({
               <span className="repay-calendar__amount num-tabular">
                 ${event.amount.toLocaleString()}
               </span>
+              <button
+                type="button"
+                className="repay-calendar__event-export-btn"
+                aria-label={`Add ${event.label} on ${formatEventDate(event.date)} to calendar`}
+                onClick={() => handleExportOne(event, idx)}
+              >
+                Add to calendar
+              </button>
             </li>
           ))}
         </ol>
