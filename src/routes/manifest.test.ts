@@ -1,9 +1,18 @@
-import { describe, expect, it } from 'vitest';
-import { ROUTE_MANIFEST } from './manifest';
-import { COMMAND_PALETTE_DEFAULT_ITEMS } from '../components/CommandPalette';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getEnabledRoutes, ROUTE_MANIFEST } from './manifest';
+import {
+  COMMAND_PALETTE_DEFAULT_ITEMS,
+  getCommandPaletteDefaultItems,
+} from '../components/CommandPalette';
 import { ROUTE_METADATA } from '../components/RouteAnnouncer';
+import { resetFeatureOverrides } from '../config/features';
 
 describe('Route Manifest', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    resetFeatureOverrides();
+  });
+
   it('keeps page names and descriptions unique', () => {
     const pageNames = ROUTE_MANIFEST.map((r) => r.pageName);
     const descriptions = ROUTE_MANIFEST.map((r) => r.description);
@@ -35,8 +44,8 @@ describe('Route Manifest', () => {
     }
   });
 
-  it('derives command palette items from nav.palette entries', () => {
-    const paletteRoutes = ROUTE_MANIFEST.filter((r) => Boolean(r.nav?.palette));
+  it('derives command palette items from enabled nav.palette entries', () => {
+    const paletteRoutes = getEnabledRoutes().filter((r) => Boolean(r.nav?.palette));
     for (const r of paletteRoutes) {
       const found = COMMAND_PALETTE_DEFAULT_ITEMS.find((item) => item.action === r.path);
       expect(found).toBeDefined();
@@ -45,8 +54,8 @@ describe('Route Manifest', () => {
     }
   });
 
-  it('derives header navigation from nav.header entries', () => {
-    const headerRoutes = ROUTE_MANIFEST.filter((r) => Boolean(r.nav?.header));
+  it('derives header navigation from enabled nav.header entries', () => {
+    const headerRoutes = getEnabledRoutes().filter((r) => Boolean(r.nav?.header));
     expect(headerRoutes.length).toBe(6);
     const headerPaths = headerRoutes.map((r) => r.path);
     expect(headerPaths).toEqual([
@@ -57,5 +66,30 @@ describe('Route Manifest', () => {
       '/dutch-auctions',
       '/docs',
     ]);
+  });
+
+  it('omits feature-gated routes by default and enables them when flagged on', () => {
+    const defaultPaths = getEnabledRoutes().map((r) => r.path);
+    expect(defaultPaths).not.toContain('/collateral-swap');
+    expect(defaultPaths).not.toContain('/autopay');
+    expect(
+      getCommandPaletteDefaultItems().find((i) => i.action === '/collateral-swap'),
+    ).toBeUndefined();
+    expect(
+      getCommandPaletteDefaultItems().find((i) => i.action === '/autopay'),
+    ).toBeUndefined();
+
+    vi.stubEnv('VITE_FEATURE_COLLATERAL_SWAP', 'true');
+    expect(getEnabledRoutes().map((r) => r.path)).toContain('/collateral-swap');
+    expect(getEnabledRoutes().map((r) => r.path)).not.toContain('/autopay');
+    expect(
+      getCommandPaletteDefaultItems().find((i) => i.action === '/collateral-swap'),
+    ).toBeDefined();
+
+    vi.stubEnv('VITE_FEATURE_AUTOPAY', 'true');
+    expect(getEnabledRoutes().map((r) => r.path)).toContain('/autopay');
+    expect(
+      getCommandPaletteDefaultItems().find((i) => i.action === '/autopay'),
+    ).toBeDefined();
   });
 });

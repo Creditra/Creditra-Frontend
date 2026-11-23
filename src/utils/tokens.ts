@@ -14,6 +14,7 @@
 import type { CreditLineStatus, UtilizationLevel } from '../types/creditLine';
 import type { AttestationStatus } from '../types/attestation';
 import type React from 'react';
+import { getNumberFormat } from './formatters';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@ export const btn = {
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
 export const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+  getNumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
 
 export const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });

@@ -5,7 +5,7 @@ import { KycTriggerButton } from "../components/KycDrawer";
 import { QuickRepayTrigger } from "../components/QuickRepayTrigger";
 import { WalletButton } from "../components/WalletButton";
 import { NotificationWidget } from "../components/notifications/NotificationWidget";
-import { ROUTE_MANIFEST } from "../routes/manifest";
+import { getEnabledRoutes } from "../routes/manifest";
 
 export interface HeaderProps {
   settingsTriggerRef: RefObject<HTMLButtonElement | null>;
@@ -51,7 +51,7 @@ export function Header({
           - 2.4.7: Focus Visible - outline differs from active underline
           - 2.4.8: Location - aria-current="page" indicates current page
         */}
-        {ROUTE_MANIFEST.filter((route) => Boolean(route.nav?.header)).map((route) => (
+        {getEnabledRoutes().filter((route) => Boolean(route.nav?.header)).map((route) => (
           <NavLink
             key={route.path}
             to={route.path}

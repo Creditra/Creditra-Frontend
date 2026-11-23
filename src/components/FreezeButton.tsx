@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Snowflake } from 'lucide-react';
 import { canTransition } from '../lib/credit-line-status';
+import { PendingButton } from './PendingButton';
 import './FreezeButton.css';
 
 interface FreezeButtonProps {
@@ -52,6 +53,10 @@ export function FreezeButton({
     [],
   );
 
+  const offlineReason = frozen
+    ? "You're offline — reconnect to unfreeze"
+    : "You're offline — reconnect to freeze";
+
   if (confirming) {
     return (
       <div
@@ -70,29 +75,37 @@ export function FreezeButton({
           >
             Cancel
           </button>
-          <button
+          <PendingButton
             onClick={handleConfirm}
+            pending={false}
+            pendingLabel={frozen ? 'Unfreezing...' : 'Freezing...'}
             disabled={!transitionAllowed}
+            requiresOnline
+            offlineReason={offlineReason}
             className={`freeze-btn freeze-btn--confirm ${frozen ? 'freeze-btn--unfreeze' : 'freeze-btn--freeze'}`}
             aria-label={`Confirm ${label.toLowerCase()}`}
           >
             {label}
-          </button>
+          </PendingButton>
         </div>
       </div>
     );
   }
 
   return (
-    <button
+    <PendingButton
       onClick={() => setConfirming(true)}
+      pending={false}
+      pendingLabel={frozen ? 'Unfreezing...' : 'Freezing...'}
       disabled={!transitionAllowed}
+      requiresOnline
+      offlineReason={offlineReason}
       className={`freeze-btn freeze-btn--trigger ${frozen ? 'freeze-btn--unfreeze' : 'freeze-btn--freeze'} ${className}`}
       aria-label={`${label} ${lineName}`}
       aria-haspopup="dialog"
     >
       <Snowflake className="freeze-btn__icon" aria-hidden="true" />
       {label}
-    </button>
+    </PendingButton>
   );
 }

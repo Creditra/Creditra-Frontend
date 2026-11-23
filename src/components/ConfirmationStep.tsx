@@ -563,6 +563,8 @@ export function ConfirmationStep({
             pending={isLoading}
             pendingLabel="Processing draw..."
             disabled={!canConfirm}
+            requiresOnline
+            offlineReason="You're offline — reconnect to draw"
             className="dc-btn dc-btn--primary dc-btn--full"
           >
             Confirm draw

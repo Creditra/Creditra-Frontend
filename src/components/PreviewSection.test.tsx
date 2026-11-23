@@ -65,3 +65,15 @@ describe('glossed credit terms', () => {
     expect(microcopy).toContain('A term is a defined period or condition of your credit agreement.');
   });
 });
+
+describe('PreviewSection currency formatting', () => {
+  it.each([
+    [0, '$0.00'],
+    [1000, '$1,000.00'],
+    [1250000.5, '$1,250,000.50'],
+    [42.75, '$42.75'],
+  ])('formats draw amount %s as %s', (amount, expected) => {
+    render(<PreviewSection creditLine={creditLine} amount={amount} />);
+    expect(screen.getByText(expected)).toBeInTheDocument();
+  });
+});

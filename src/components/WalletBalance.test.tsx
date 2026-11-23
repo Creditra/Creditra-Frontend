@@ -8,13 +8,26 @@ vi.mock('../context/WalletContext', () => ({
   useWallet: vi.fn(),
 }));
 
+function setVisibilityState(state: DocumentVisibilityState) {
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    value: state,
+  });
+  Object.defineProperty(document, 'hidden', {
+    configurable: true,
+    value: state !== 'visible',
+  });
+}
+
 describe('WalletBalance', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    setVisibilityState('visible');
   });
 
   afterEach(() => {
+    setVisibilityState('visible');
     vi.useRealTimers();
   });
 
@@ -103,5 +116,32 @@ describe('WalletBalance', () => {
 
     rerender(<WalletBalance />);
     expect(screen.getByRole('status')).toHaveAttribute('aria-label', 'Balance stream: Polling');
+  });
+
+  it('does not refresh while hidden and runs one catch-up refresh on return to visible', () => {
+    const refreshBalanceMock = vi.fn();
+    vi.mocked(useWallet).mockReturnValue({
+      status: 'connected',
+      wallet: { publicKey: 'G123' },
+      balances: [{ asset: 'XLM', balance: '100.50' }],
+      streamStatus: 'live',
+      refreshBalance: refreshBalanceMock,
+    } as any);
+
+    render(<WalletBalance />);
+    expect(refreshBalanceMock).not.toHaveBeenCalled();
+
+    act(() => {
+      setVisibilityState('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(refreshBalanceMock).not.toHaveBeenCalled();
+
+    act(() => {
+      setVisibilityState('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(refreshBalanceMock).toHaveBeenCalledTimes(1);
   });
 });

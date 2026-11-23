@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useWallet } from '../context/WalletContext';
+import { usePageVisible } from '../hooks/usePageVisible';
 import type { HorizonStreamStatus } from '../services/horizonStream';
 import './WalletBalance.css';
 
@@ -11,15 +12,28 @@ const STREAM_STATUS_LABELS: Record<HorizonStreamStatus, string> = {
 
 export function WalletBalance() {
   const { wallet, status, balances, refreshBalance, streamStatus = 'live' } = useWallet();
+  const isVisible = usePageVisible();
+  const wasHiddenRef = useRef(false);
 
   useEffect(() => {
+    if (!isVisible) {
+      wasHiddenRef.current = true;
+      return;
+    }
+
     if (status !== 'connected' || !wallet) return;
+
+    if (wasHiddenRef.current) {
+      wasHiddenRef.current = false;
+      refreshBalance();
+      return;
+    }
 
     // Initial fetch if no balances yet; subsequent updates arrive via Horizon SSE stream.
     if (!balances) {
       refreshBalance();
     }
-  }, [status, wallet, refreshBalance, balances]);
+  }, [status, wallet, refreshBalance, balances, isVisible]);
 
   if (status !== 'connected' || !balances) return null;
 

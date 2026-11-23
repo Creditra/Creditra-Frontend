@@ -4,6 +4,7 @@ import type { DutchAuction } from '../types/dutchAuction';
 import { COLOR, fmt } from '../utils/tokens';
 import { PendingButton } from './PendingButton';
 import { useWallet } from '../context/WalletContext';
+import { usePageVisible } from '../hooks/usePageVisible';
 import {
   canPurchase,
   createPurchaseIdempotencyKey,
@@ -128,14 +129,21 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
     setReceipt(null);
   }, [auction.id]);
 
+  const isVisible = usePageVisible();
   const intervalRef = useRef<number | undefined>(undefined);
 
-  // Update price, timer, and effective status
+  // Update price, timer, and effective status while tab is visible
   useEffect(() => {
+    if (!isVisible) return;
+
     const initialNow = Date.now();
     setNowMs(initialNow);
     const newStatus = getEffectiveStatus(auction, initialNow);
     setEffectiveStatus(newStatus);
+    const initialPrice = calculateCurrentPriceStroops(auction, initialNow);
+    if (initialPrice !== null) setCurrentPriceStroops(initialPrice);
+    setTimeLeft(formatTimeLeft(auction.endTime));
+    setTimeUntilStart(formatTimeUntilStart(auction.startTime));
 
     // Only run interval for non-terminal states
     if (newStatus === 'Scheduled' || newStatus === 'Active') {
@@ -165,7 +173,7 @@ export const DutchAuctionCard: React.FC<DutchAuctionCardProps> = ({ auction, onP
         intervalRef.current = undefined;
       }
     };
-  }, [auction]);
+  }, [auction, isVisible]);
 
   const purchaseCheck = canPurchase(auction, wallet, status);
   const helperId = `purchase-helper-${auction.id}`;
