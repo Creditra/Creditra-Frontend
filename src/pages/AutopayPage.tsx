@@ -264,7 +264,7 @@ export default function AutopayPage() {
   );
 
   const handleSubmit = useCallback(
-    (e: React.FormEvent) => {
+    async (e: React.FormEvent) => {
       e.preventDefault();
       if (!walletKey) {
         setErrors({
