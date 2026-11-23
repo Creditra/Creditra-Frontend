@@ -11,6 +11,7 @@ import {
 } from '../sorobanCreditDataSource';
 
 const BORROWER = 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H';
+const SECOND_BORROWER = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
 
 function createSuccessSimulation(retval: xdr.ScVal): rpc.Api.SimulateTransactionSuccessResponse {
   return {
@@ -39,7 +40,7 @@ function createErrorSimulation(error: string): rpc.Api.SimulateTransactionErrorR
 
 function createAdapter(
   server: rpc.Server,
-  options: Pick<SorobanCreditDataSourceOptions, 'defaultTimeoutMs' | 'retry'> = {},
+  options: Pick<SorobanCreditDataSourceOptions, 'defaultTimeoutMs' | 'minListIntervalMs' | 'retry'> = {},
 ): SorobanCreditDataSource {
   return new SorobanCreditDataSource({
     server,
@@ -415,6 +416,171 @@ describe('SorobanCreditDataSource', () => {
 
     await expect(promise).rejects.toMatchObject({
       code: 'aborted',
+    });
+  });
+
+  // ── Scenario 9: Coalescing & Throttling ────────────────────────────────────
+  describe('9. Coalescing and throttling for listCreditLines', () => {
+    it('coalesces N parallel calls for the same borrower into one RPC', async () => {
+      let resolveSim!: (val: rpc.Api.SimulateTransactionSuccessResponse) => void;
+      mockSimulateTransaction.mockImplementationOnce(
+        () => new Promise((resolve) => { resolveSim = resolve; }),
+      );
+
+      const p1 = adapter.listCreditLines(BORROWER);
+      const p2 = adapter.listCreditLines(BORROWER);
+      const p3 = adapter.listCreditLines(BORROWER);
+
+      expect(mockSimulateTransaction).toHaveBeenCalledTimes(1);
+
+      resolveSim(createSuccessSimulation(xdr.ScVal.scvVec([])));
+
+      const [r1, r2, r3] = await Promise.all([p1, p2, p3]);
+      expect(r1).toEqual([]);
+      expect(r2).toEqual([]);
+      expect(r3).toEqual([]);
+      expect(mockSimulateTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not coalesce concurrent calls for different borrowers', async () => {
+      mockSimulateTransaction
+        .mockResolvedValueOnce(createSuccessSimulation(xdr.ScVal.scvVec([])))
+        .mockResolvedValueOnce(createSuccessSimulation(xdr.ScVal.scvVec([])));
+
+      const [r1, r2] = await Promise.all([
+        adapter.listCreditLines(BORROWER),
+        adapter.listCreditLines(SECOND_BORROWER),
+      ]);
+
+      expect(r1).toEqual([]);
+      expect(r2).toEqual([]);
+      expect(mockSimulateTransaction).toHaveBeenCalledTimes(2);
+    });
+
+    it('returns cached result within minListIntervalMs and fetches again after interval', async () => {
+      vi.useFakeTimers();
+      try {
+        adapter = createAdapter(mockServer, {
+          minListIntervalMs: 1_000,
+          retry: { attempts: 0, sleep: mockSleep },
+        });
+
+        mockSimulateTransaction
+          .mockResolvedValueOnce(createSuccessSimulation(xdr.ScVal.scvVec([])))
+          .mockResolvedValueOnce(createSuccessSimulation(xdr.ScVal.scvVec([])));
+
+        await expect(adapter.listCreditLines(BORROWER)).resolves.toEqual([]);
+        expect(mockSimulateTransaction).toHaveBeenCalledTimes(1);
+
+        // Within interval: returns cached result without another RPC
+        vi.advanceTimersByTime(500);
+        await expect(adapter.listCreditLines(BORROWER)).resolves.toEqual([]);
+        expect(mockSimulateTransaction).toHaveBeenCalledTimes(1);
+
+        // Past interval: issues a second RPC
+        vi.advanceTimersByTime(500);
+        await expect(adapter.listCreditLines(BORROWER)).resolves.toEqual([]);
+        expect(mockSimulateTransaction).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('bypasses the minimum interval when options.force is true', async () => {
+      vi.useFakeTimers();
+      try {
+        adapter = createAdapter(mockServer, {
+          minListIntervalMs: 1_000,
+          retry: { attempts: 0, sleep: mockSleep },
+        });
+
+        mockSimulateTransaction
+          .mockResolvedValueOnce(createSuccessSimulation(xdr.ScVal.scvVec([])))
+          .mockResolvedValueOnce(createSuccessSimulation(xdr.ScVal.scvVec([])));
+
+        await expect(adapter.listCreditLines(BORROWER)).resolves.toEqual([]);
+        expect(mockSimulateTransaction).toHaveBeenCalledTimes(1);
+
+        await expect(adapter.listCreditLines(BORROWER, { force: true })).resolves.toEqual([]);
+        expect(mockSimulateTransaction).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not cache failed calls', async () => {
+      adapter = createAdapter(mockServer, {
+        minListIntervalMs: 1_000,
+        retry: { attempts: 0, sleep: mockSleep },
+      });
+
+      mockSimulateTransaction
+        .mockRejectedValueOnce(new Error('temporary rpc failure'))
+        .mockResolvedValueOnce(createSuccessSimulation(xdr.ScVal.scvVec([])));
+
+      await expect(adapter.listCreditLines(BORROWER)).rejects.toMatchObject({
+        code: 'network',
+      });
+      expect(mockSimulateTransaction).toHaveBeenCalledTimes(1);
+
+      await expect(adapter.listCreditLines(BORROWER)).resolves.toEqual([]);
+      expect(mockSimulateTransaction).toHaveBeenCalledTimes(2);
+    });
+
+    it('aborting one joined consumer rejects only that consumer while others resolve', async () => {
+      let resolveSim!: (val: rpc.Api.SimulateTransactionSuccessResponse) => void;
+      mockSimulateTransaction.mockImplementationOnce(
+        () => new Promise((resolve) => { resolveSim = resolve; }),
+      );
+
+      const controllerA = new AbortController();
+      const controllerB = new AbortController();
+
+      const pA = adapter.listCreditLines(BORROWER, { signal: controllerA.signal });
+      const pB = adapter.listCreditLines(BORROWER, { signal: controllerB.signal });
+
+      // Pre-aborted caller joining an existing in-flight request rejects immediately without affecting others
+      const preAborted = new AbortController();
+      preAborted.abort();
+      await expect(
+        adapter.listCreditLines(BORROWER, { signal: preAborted.signal }),
+      ).rejects.toMatchObject({ code: 'aborted' });
+
+      // Abort consumer A after join
+      controllerA.abort();
+      await expect(pA).rejects.toMatchObject({ code: 'aborted' });
+
+      // Shared RPC completes -> consumer B still resolves
+      resolveSim(createSuccessSimulation(xdr.ScVal.scvVec([])));
+      await expect(pB).resolves.toEqual([]);
+      expect(mockSimulateTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('timeout of one joined consumer rejects only that consumer while others resolve', async () => {
+      vi.useFakeTimers();
+      try {
+        adapter = createAdapter(mockServer, {
+          defaultTimeoutMs: 15_000,
+          retry: { attempts: 0, sleep: mockSleep },
+        });
+
+        let resolveSim!: (val: rpc.Api.SimulateTransactionSuccessResponse) => void;
+        mockSimulateTransaction.mockImplementationOnce(
+          () => new Promise((resolve) => { resolveSim = resolve; }),
+        );
+
+        const pLong = adapter.listCreditLines(BORROWER);
+        const pShort = adapter.listCreditLines(BORROWER, { timeoutMs: 50 });
+
+        vi.advanceTimersByTime(50);
+        await expect(pShort).rejects.toMatchObject({ code: 'network' });
+
+        resolveSim(createSuccessSimulation(xdr.ScVal.scvVec([])));
+        await expect(pLong).resolves.toEqual([]);
+        expect(mockSimulateTransaction).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

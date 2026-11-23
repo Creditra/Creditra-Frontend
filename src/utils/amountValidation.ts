@@ -51,6 +51,21 @@ export interface RepayAmountValidationResult {
 const MIN_AMOUNT = 1;
 const MIN_AMOUNT_CENTS = MIN_AMOUNT * 100;
 
+/** Fallback USD threshold protecting against accidental large repayments. */
+export const DEFAULT_REPAY_CONFIRM_THRESHOLD = 5000;
+
+/** Minimum USD credit reserve protecting against fully drawing the available line. */
+export const CREDIT_RESERVE_MIN = 5000;
+
+/** Fraction of the USD credit limit protected as an available reserve (10%). */
+export const CREDIT_RESERVE_LIMIT_RATIO = 0.1;
+
+/** Minimum USD wallet reserve protecting against spending the entire balance. */
+export const WALLET_RESERVE_MIN = 100;
+
+/** Fraction of the USD wallet balance protected as a reserve (10%). */
+export const WALLET_RESERVE_RATIO = 0.1;
+
 /** Convert a dollar amount to whole cents (integer-exact). */
 const toCents = (dollars: number): number => Math.round(dollars * 100);
 
@@ -70,14 +85,14 @@ const parseAmountToCents = (input: string): number => {
 
 /**
  * Resolves the confirmation threshold from the given environment (defaults to `import.meta.env`).
- * Falls back to 5 000 when absent, negative, or unparseable.
+ * Falls back to DEFAULT_REPAY_CONFIRM_THRESHOLD when absent, negative, or unparseable.
  */
 export function getRepayConfirmThreshold(
   env: Record<string, any> = import.meta.env,
 ): number {
   const raw = env?.VITE_REPAY_CONFIRM_THRESHOLD;
   const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 5000;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_REPAY_CONFIRM_THRESHOLD;
 }
 
 /**
@@ -107,10 +122,16 @@ export const formatMoney = (amount: number) =>
   }).format(amount);
 
 export const getCreditReserveFloor = (limit: number, available: number) =>
-  Math.min(available, Math.max(5000, Math.round(limit * 0.1)));
+  Math.min(
+    available,
+    Math.max(CREDIT_RESERVE_MIN, Math.round(limit * CREDIT_RESERVE_LIMIT_RATIO)),
+  );
 
 export const getWalletReserveFloor = (walletBalance: number) =>
-  Math.min(walletBalance, Math.max(100, Math.round(walletBalance * 0.1)));
+  Math.min(
+    walletBalance,
+    Math.max(WALLET_RESERVE_MIN, Math.round(walletBalance * WALLET_RESERVE_RATIO)),
+  );
 
 const getMaximumDraw = (available: number): number => {
   const availableCents = Math.max(toCents(available), 0);

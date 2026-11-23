@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { creditService, MockCreditAdapter } from '../index';
-import { getGlobalCreditLines, resetGlobalCreditLines } from '@/hooks/useCreditLines';
+import { getGlobalCreditLines } from '@/hooks/useCreditLines';
+import { resetGlobalCreditLines } from '@/test/creditLinesTestHelpers';
 
 describe('CreditDataPort - MockCreditAdapter', () => {
   beforeEach(() => {

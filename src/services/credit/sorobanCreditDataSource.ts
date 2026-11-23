@@ -23,6 +23,8 @@ export interface SorobanCreditDataSourceOptions {
   contractId?: string;
   server?: rpc.Server;
   defaultTimeoutMs?: number;
+  /** Minimum interval in ms between successful listCreditLines RPCs for the same borrower. Defaults to 1000. */
+  minListIntervalMs?: number;
   retry?: {
     /** Number of retries after the initial RPC attempt. */
     attempts?: number;
@@ -32,21 +34,36 @@ export interface SorobanCreditDataSourceOptions {
   };
 }
 
+interface InFlightListEntry {
+  promise: Promise<CreditLine[]>;
+  controller: AbortController;
+  activeWaiters: number;
+}
+
+interface CachedListEntry {
+  value: CreditLine[];
+  timestamp: number;
+}
+
 const THROWAWAY_ACCOUNT = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
 const DEFAULT_TIMEOUT_MS = 15_000;
+const DEFAULT_MIN_LIST_INTERVAL_MS = 1_000;
 const DEFAULT_RETRY_ATTEMPTS = 2;
 const DEFAULT_RETRY_BASE_DELAY_MS = 250;
 const DEFAULT_RETRY_MAX_DELAY_MS = 2_000;
 
 export class SorobanCreditDataSource implements CreditDataSource {
-  private readonly server: rpc.Server;
+  readonly server: rpc.Server;
   private readonly networkPassphrase: string;
-  private readonly contractId: string;
+  readonly contractId: string;
   private readonly defaultTimeoutMs: number;
+  private readonly minListIntervalMs: number;
   private readonly retryAttempts: number;
   private readonly retryBaseDelayMs: number;
   private readonly retryMaxDelayMs: number;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly inFlightLists = new Map<string, InFlightListEntry>();
+  private readonly listCache = new Map<string, CachedListEntry>();
 
   constructor(options: SorobanCreditDataSourceOptions = {}) {
     const config: SorobanCreditConfig = getSorobanConfig();
@@ -54,6 +71,11 @@ export class SorobanCreditDataSource implements CreditDataSource {
     this.networkPassphrase = options.networkPassphrase || config.networkPassphrase;
     this.contractId = options.contractId || config.contractId;
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.minListIntervalMs = options.minListIntervalMs ?? DEFAULT_MIN_LIST_INTERVAL_MS;
+
+    if (!Number.isFinite(this.minListIntervalMs) || this.minListIntervalMs < 0) {
+      throw new RangeError('minListIntervalMs must be a finite non-negative number');
+    }
 
     const retry = options.retry ?? {};
     this.retryAttempts = retry.attempts ?? DEFAULT_RETRY_ATTEMPTS;
@@ -242,20 +264,10 @@ export class SorobanCreditDataSource implements CreditDataSource {
     }
   }
 
-  async listCreditLines(borrower: string, options?: CreditDataOptions): Promise<CreditLine[]> {
-    if (!borrower || typeof borrower !== 'string') {
-      throw new CreditDataError('invalid_response', 'Borrower address is required');
-    }
-
-    let borrowerScVal: xdr.ScVal;
-    try {
-      borrowerScVal = new Address(borrower).toScVal();
-    } catch (err) {
-      throw new CreditDataError('invalid_response', `Invalid borrower address: ${borrower}`, {
-        cause: err,
-      });
-    }
-
+  private async fetchCreditLines(
+    borrowerScVal: xdr.ScVal,
+    options?: CreditDataOptions,
+  ): Promise<CreditLine[]> {
     const retval = await this.simulateCall('get_lines_by_borrower', [borrowerScVal], options);
 
     let nativeVal: unknown;
@@ -276,6 +288,137 @@ export class SorobanCreditDataSource implements CreditDataSource {
 
     // Losslessly decode each credit line
     return nativeVal.map((item) => decodeCreditLine(item));
+  }
+
+  private async awaitInFlightList(
+    key: string,
+    entry: InFlightListEntry,
+    options: CreditDataOptions | undefined,
+    isJoined: boolean,
+  ): Promise<CreditLine[]> {
+    const callerSignal = options?.signal;
+    const callerTimeoutMs = isJoined ? options?.timeoutMs : undefined;
+
+    entry.activeWaiters += 1;
+    let released = false;
+    const releaseWaiter = (didAbort: boolean) => {
+      if (released) {
+        return;
+      }
+      released = true;
+      entry.activeWaiters -= 1;
+      if (didAbort && entry.activeWaiters === 0) {
+        if (this.inFlightLists.get(key) === entry) {
+          this.inFlightLists.delete(key);
+        }
+        entry.controller.abort();
+      }
+    };
+
+    let abortListener: (() => void) | undefined;
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const racers: Promise<CreditLine[]>[] = [entry.promise];
+
+    if (callerSignal) {
+      racers.push(
+        new Promise<never>((_, reject) => {
+          abortListener = () => {
+            releaseWaiter(true);
+            reject(new CreditDataError('aborted', 'The operation was aborted'));
+          };
+          callerSignal.addEventListener('abort', abortListener, { once: true });
+        }),
+      );
+    }
+
+    if (callerTimeoutMs !== undefined) {
+      racers.push(
+        new Promise<never>((_, reject) => {
+          timeoutTimer = setTimeout(() => {
+            releaseWaiter(true);
+            reject(
+              new CreditDataError('network', `RPC request timed out after ${callerTimeoutMs}ms`),
+            );
+          }, callerTimeoutMs);
+        }),
+      );
+    }
+
+    try {
+      const lines = await Promise.race(racers);
+      return lines.slice();
+    } finally {
+      if (timeoutTimer) {
+        clearTimeout(timeoutTimer);
+      }
+      if (callerSignal && abortListener) {
+        callerSignal.removeEventListener('abort', abortListener);
+      }
+      releaseWaiter(false);
+    }
+  }
+
+  async listCreditLines(borrower: string, options?: CreditDataOptions): Promise<CreditLine[]> {
+    if (!borrower || typeof borrower !== 'string') {
+      throw new CreditDataError('invalid_response', 'Borrower address is required');
+    }
+
+    let borrowerScVal: xdr.ScVal;
+    try {
+      borrowerScVal = new Address(borrower).toScVal();
+    } catch (err) {
+      throw new CreditDataError('invalid_response', `Invalid borrower address: ${borrower}`, {
+        cause: err,
+      });
+    }
+
+    if (options?.signal?.aborted) {
+      throw new CreditDataError('aborted', 'The operation was aborted');
+    }
+
+    const key = borrower;
+
+    if (!options?.force && this.minListIntervalMs > 0) {
+      const cached = this.listCache.get(key);
+      if (cached && Date.now() - cached.timestamp < this.minListIntervalMs) {
+        return cached.value.slice();
+      }
+    }
+
+    let entry = this.inFlightLists.get(key);
+    const isJoined = entry !== undefined;
+
+    if (!entry) {
+      const controller = new AbortController();
+      const promise = this.fetchCreditLines(borrowerScVal, {
+        timeoutMs: options?.timeoutMs,
+        signal: controller.signal,
+      })
+        .then((lines) => {
+          if (this.minListIntervalMs > 0) {
+            this.listCache.set(key, { value: lines, timestamp: Date.now() });
+          }
+          return lines;
+        })
+        .finally(() => {
+          if (this.inFlightLists.get(key)?.promise === promise) {
+            this.inFlightLists.delete(key);
+          }
+        });
+
+      // Prevent unhandled rejection when all callers abort or time out before the RPC settles
+      promise.catch(() => {});
+
+      entry = {
+        promise,
+        controller,
+        activeWaiters: 0,
+      };
+      this.inFlightLists.set(key, entry);
+    }
+
+    return this.awaitInFlightList(key, entry, options, isJoined);
   }
 
   async getCreditLine(id: string, options?: CreditDataOptions): Promise<CreditLine> {

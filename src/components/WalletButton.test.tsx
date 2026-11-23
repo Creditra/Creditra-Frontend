@@ -64,7 +64,7 @@ describe('WalletButton Component', () => {
     );
 
     render(<WalletButton />);
-    const button = screen.getByRole('button', { name: /wallet connected: gd6w\.\.\.h\.\.\./i });
+    const button = screen.getByRole('button', { name: /wallet connected: gd6w…h\.\.\./i });
     expect(button).toBeInTheDocument();
     expect(button).toHaveAttribute('aria-expanded', 'false');
   });

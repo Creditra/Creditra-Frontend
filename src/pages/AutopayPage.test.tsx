@@ -1,22 +1,98 @@
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import AutopayPage from './AutopayPage';
+
+vi.mock('../hooks/useCreditLines', () => ({
+  useCreditLines: () => ({ lines: [] }),
+}));
+
+vi.mock('../context/WalletContext', () => ({
+  useWallet: () => ({ balances: null }),
+}));
+
+describe('AutopayPage', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('announces cancel and clears the announcement after 4000ms', () => {
+    vi.useFakeTimers();
+    render(<AutopayPage />);
+
+    const cancelButton = screen.getByRole('button', { name: /cancel autopay/i });
+    fireEvent.click(cancelButton);
+
+    expect(screen.getByText('Autopay schedule cleared.')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
+
+    expect(screen.queryByText('Autopay schedule cleared.')).not.toBeInTheDocument();
+  });
+
+  it('clears the cancel-announcement timer on unmount without warnings', () => {
+    vi.useFakeTimers();
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { unmount } = render(<AutopayPage />);
+
+    const cancelButton = screen.getByRole('button', { name: /cancel autopay/i });
+    fireEvent.click(cancelButton);
+    expect(vi.getTimerCount()).toBe(1);
+
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('clears the previous timer when cancel is clicked repeatedly', () => {
+    vi.useFakeTimers();
+    render(<AutopayPage />);
+
+    const cancelButton = screen.getByRole('button', { name: /cancel autopay/i });
+    fireEvent.click(cancelButton);
+
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
+
+    fireEvent.click(cancelButton);
+    expect(vi.getTimerCount()).toBe(1);
+
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
+
+    // Still visible because the timer was reset on the second click
+    expect(screen.getByText('Autopay schedule cleared.')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+
+    expect(screen.queryByText('Autopay schedule cleared.')).not.toBeInTheDocument();
+  });
+});
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import AutopayPage from './AutopayPage';
 
 const mockUseCreditLines = vi.fn();
 const mockUseWallet = vi.fn();
 const mockUseWalletIdentityKey = vi.fn();
 
-vi.mock('../hooks/useCreditLines', () => ({
   useCreditLines: () => mockUseCreditLines(),
-}));
 
-vi.mock('../context/WalletContext', () => ({
   useWallet: () => mockUseWallet(),
-}));
 
 vi.mock('../hooks/useWalletIdentityKey', () => ({
   useWalletIdentityKey: () => mockUseWalletIdentityKey(),
-}));
 
 const MOCK_LINES = [
   {
@@ -47,7 +123,6 @@ const MOCK_LINES = [
   },
 ];
 
-describe('AutopayPage', () => {
   beforeEach(() => {
     localStorage.clear();
     mockUseCreditLines.mockReturnValue({ lines: MOCK_LINES });
@@ -56,7 +131,6 @@ describe('AutopayPage', () => {
   });
 
   it('creates a schedule, persists it across remount, edits in place, and cancels via ConfirmDialog', async () => {
-    const { unmount } = render(<AutopayPage />);
 
     // Create a schedule
     fireEvent.change(screen.getByLabelText(/Credit Line/i), {
@@ -75,8 +149,6 @@ describe('AutopayPage', () => {
     expect(screen.getByRole('button', { name: /Edit autopay schedule for Prime Working Capital/i })).toBeInTheDocument();
 
     // Simulate page reload by unmounting and remounting
-    unmount();
-    render(<AutopayPage />);
 
     expect(screen.getByText(/\$250 · Monthly · Starts 2027-01-15/i)).toBeInTheDocument();
     expect(screen.getByText(/Next scheduled payment:/i)).toBeInTheDocument();
@@ -106,7 +178,6 @@ describe('AutopayPage', () => {
   });
 
   it('scopes persisted schedules per wallet', async () => {
-    const { unmount } = render(<AutopayPage />);
 
     fireEvent.change(screen.getByLabelText(/Credit Line/i), {
       target: { value: 'cl-1' },
@@ -122,9 +193,7 @@ describe('AutopayPage', () => {
     expect(screen.getByText(/\$150 · Monthly · Starts 2027-02-01/i)).toBeInTheDocument();
 
     // Switch to another wallet
-    unmount();
     mockUseWalletIdentityKey.mockReturnValue('freighter:GBBB:TESTNET');
-    render(<AutopayPage />);
 
     expect(
       await screen.findByText(/No active autopay schedules saved for this wallet yet/i),

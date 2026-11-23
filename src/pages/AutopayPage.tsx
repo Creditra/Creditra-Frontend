@@ -1,4 +1,4 @@
-import { useState, useId, useCallback, useMemo } from 'react';
+import { useState, useId, useCallback, useMemo, useEffect, useRef } from 'react';
 import { FormField } from '../components/FormField';
 import './AutopayPage.css';
 import { PendingButton } from '../components/PendingButton';
@@ -170,6 +170,25 @@ export default function AutopayPage() {
   } | null>(null);
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
 
+  const isMountedRef = useRef(true);
+  const cancelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const submitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (cancelTimerRef.current !== null) {
+        clearTimeout(cancelTimerRef.current);
+        cancelTimerRef.current = null;
+      }
+      if (submitTimerRef.current !== null) {
+        clearTimeout(submitTimerRef.current);
+        submitTimerRef.current = null;
+      }
+    };
+  }, []);
+
   // ─── Derived ──────────────────────────────────────────────────────────────
 
   const repayableLines = useMemo(() => getRepayableLines(lines), [lines]);
@@ -301,6 +320,16 @@ export default function AutopayPage() {
         });
         document.getElementById('autopay-credit-line')?.focus();
       }
+      await new Promise<void>(resolve => {
+        if (submitTimerRef.current !== null) {
+          clearTimeout(submitTimerRef.current);
+        }
+        submitTimerRef.current = setTimeout(() => {
+          submitTimerRef.current = null;
+          resolve();
+        }, 1200);
+      });
+      if (!isMountedRef.current) return;
     },
     [walletKey, form, repayableLineIds, activeSchedules, editingId, create, update, announce],
   );
@@ -356,6 +385,13 @@ export default function AutopayPage() {
     },
     [lines, confirm, cancel, editingId, announce],
   );
+    if (cancelTimerRef.current !== null) {
+      clearTimeout(cancelTimerRef.current);
+    }
+    cancelTimerRef.current = setTimeout(() => {
+      cancelTimerRef.current = null;
+      setCancelAnnouncement('');
+    }, 4000);
 
   // ─── Render ───────────────────────────────────────────────────────────────
 

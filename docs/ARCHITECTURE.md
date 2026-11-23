@@ -388,3 +388,19 @@ src/
 ├── data/                Static fixtures (mirrors backend shape)
 └── test/                Vitest setup
 ```
+
+---
+
+## Deployment — Vercel security headers
+
+`vercel.json` applies the following response headers to every route via a `source: "/(.*)"` catch-all rule:
+
+| Header | Value | Purpose |
+|--------|-------|---------|
+| `X-Content-Type-Options` | `nosniff` | Prevents MIME-type sniffing |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Limits referrer leakage across origins |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=()` | Disables browser features not used by this app |
+| `X-Frame-Options` | `DENY` | Clickjacking protection for older browsers |
+| `Content-Security-Policy` | `frame-ancestors 'none'` | Clickjacking protection for modern browsers |
+
+A full CSP (script-src, connect-src, etc.) is tracked in a separate issue.

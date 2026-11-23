@@ -5,7 +5,8 @@ import { CreditDataProvider } from '../context/CreditDataContext';
 import { WalletProvider } from '../context/WalletContext';
 import { MockCreditDataSource } from '../services/credit/mockCreditDataSource';
 import type { CreditDataSource } from '../services/credit/CreditDataSource';
-import { getGlobalCreditLines, getMockRefetchError } from '../hooks/useCreditLines';
+import { getGlobalCreditLines } from '../hooks/useCreditLines';
+import { getMockRefetchError } from './creditLinesTestHelpers';
 import type { CreditLine } from '../types/creditLine';
 import type { WalletInfo } from '../types/wallet';
 
