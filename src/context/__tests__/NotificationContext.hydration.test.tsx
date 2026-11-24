@@ -2,6 +2,7 @@ import React from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 import { NotificationProvider, useNotifications } from '../NotificationContext';
+import { MAX_INBOX_AGE_MS } from '../notificationStorage';
 import type { Notification } from '../../types/notification';
 
 function renderWithProvider(ui: React.ReactElement) {
@@ -355,5 +356,58 @@ describe.sequential('NotificationProvider hydration', () => {
     renderHarness(<Harness />);
     expect(screen.getByTestId('count').textContent).toBe('1');
     expect(screen.getByTestId('action').textContent).toBe('undefined');
+  });
+
+  it('prunes notifications older than MAX_INBOX_AGE_MS on load and does not re-persist them', () => {
+    const fresh = createValidNotification({
+      id: 'fresh-1',
+      timestamp: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const expired = createValidNotification({
+      id: 'expired-1',
+      timestamp: new Date(Date.now() - MAX_INBOX_AGE_MS - 60_000).toISOString(),
+    });
+    localStorage.setItem(
+      'creditra_notifications',
+      JSON.stringify({ v: 1, items: [fresh, expired] })
+    );
+
+    function Harness() {
+      const { notifications } = useNotifications();
+      return <span data-testid="ids">{notifications.map((n) => n.id).join(',')}</span>;
+    }
+
+    renderHarness(<Harness />);
+    expect(screen.getByTestId('ids').textContent).toBe('fresh-1');
+
+    const persisted = JSON.parse(localStorage.getItem('creditra_notifications')!);
+    expect(persisted.v).toBe(1);
+    expect(persisted.items.map((n: Notification) => n.id)).toEqual(['fresh-1']);
+  });
+
+  it('retains valid auction notifications across reload', () => {
+    const auction = createValidNotification({
+      id: 'auction-1',
+      category: 'auction',
+      title: 'Auction bid won',
+    });
+    localStorage.setItem(
+      'creditra_notifications',
+      JSON.stringify({ v: 1, items: [auction] })
+    );
+
+    function Harness() {
+      const { notifications } = useNotifications();
+      return (
+        <div>
+          <span data-testid="count">{notifications.length}</span>
+          <span data-testid="category">{notifications[0]?.category}</span>
+        </div>
+      );
+    }
+
+    renderHarness(<Harness />);
+    expect(screen.getByTestId('count').textContent).toBe('1');
+    expect(screen.getByTestId('category').textContent).toBe('auction');
   });
 });
