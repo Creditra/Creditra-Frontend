@@ -27,7 +27,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface AutopayFormState {
+export interface AutopayFormState {
   creditLineId: string;
   amount: string;
   frequency: AutopayFrequency;
@@ -35,7 +35,7 @@ interface AutopayFormState {
   endDate: string;
 }
 
-interface FormErrors {
+export interface FormErrors {
   creditLineId?: string;
   amount?: string;
   startDate?: string;
@@ -65,6 +65,27 @@ const AMOUNT_WALLET_WARNING_ID = 'autopay-amount-wallet-warning';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Strict money string parser for Autopay.
+ *
+ * Accepts only unsigned numeric strings with up to 2 decimal places (e.g. "12", "12.5", "0.01").
+ * Rejects non-numeric characters ("12abc"), scientific notation ("1e3"), multiple decimals ("1.2.3"),
+ * negative values ("-5", "--5"), commas ("1,000"), and empty/blank inputs.
+ * Returns null if the string is invalid or <= 0.
+ */
+export function parseAutopayAmount(input: string): number | null {
+  if (typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  if (!trimmed || !/^\d+(\.\d{1,2})?$/.test(trimmed)) {
+    return null;
+  }
+  const amt = parseFloat(trimmed);
+  if (!Number.isFinite(amt) || amt <= 0) {
+    return null;
+  }
+  return amt;
+}
+
 /** Returns today in YYYY-MM-DD (local time) for the `min` attribute on date inputs. */
 function todayISO(): string {
   const d = new Date();
@@ -74,7 +95,7 @@ function todayISO(): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function validate(
+export function validate(
   form: AutopayFormState,
   repayableLineIds: ReadonlySet<string>,
   activeSchedules: readonly AutopayScheduleRecord[],
@@ -90,6 +111,8 @@ function validate(
 
   const amt = parseAmountInput(form.amount);
   if (!form.amount || amt === null || amt <= 0) {
+  const amt = parseAutopayAmount(form.amount);
+  if (amt === null) {
     errors.amount = 'Enter a payment amount greater than $0.';
   } else if (amt > 1_000_000) {
     errors.amount = 'Amount cannot exceed $1,000,000 per payment.';
@@ -165,6 +188,7 @@ export default function AutopayPage() {
   const [form, setForm] = useState<AutopayFormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<FormErrors>({});
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
   const [savedBanner, setSavedBanner] = useState<{
     action: 'created' | 'updated';
     amount: number;
@@ -228,6 +252,7 @@ export default function AutopayPage() {
       : null;
 
   const parsedAmount = parseAmountInput(form.amount) ?? 0;
+  const parsedAmount = parseAutopayAmount(form.amount) ?? 0;
   const amountExceedsLine =
     selectedLineRepayable !== null && parsedAmount > selectedLineRepayable;
   const amountExceedsWallet =
@@ -241,16 +266,27 @@ export default function AutopayPage() {
     .join(' ');
 
   const hasValidPreview =
-    parsedAmount > 0 && !!form.startDate && form.startDate >= todayISO();
+    parsedAmount > 0 &&
+    parsedAmount <= 1_000_000 &&
+    !!form.startDate &&
+    form.startDate >= todayISO();
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
 
   const announce = useCallback((message: string) => {
     setLiveAnnouncement(message);
+    if (cancelTimerRef.current !== null) {
+      clearTimeout(cancelTimerRef.current);
+    }
+    cancelTimerRef.current = setTimeout(() => {
+      cancelTimerRef.current = null;
+      setLiveAnnouncement('');
+    }, 4000);
   }, []);
 
   const handleChange = useCallback(
     <K extends keyof AutopayFormState>(field: K, value: AutopayFormState[K]) => {
+      setSubmitted(false);
       setForm(prev => ({ ...prev, [field]: value }));
       // Clear the field's error on change so the user gets real-time relief.
       setErrors(prev => {
@@ -291,6 +327,7 @@ export default function AutopayPage() {
       }
 
       const amount = parseAmountInput(form.amount) ?? 0;
+      const amount = parseAutopayAmount(form.amount) ?? 0;
       try {
         if (editingId) {
           update(editingId, {
@@ -324,6 +361,7 @@ export default function AutopayPage() {
         }
         setForm(EMPTY_FORM);
         setErrors({});
+        setSubmitted(true);
       } catch (err) {
         setErrors({
           creditLineId:
@@ -346,6 +384,7 @@ export default function AutopayPage() {
   );
 
   const handleCancel = useCallback(() => {
+    setSubmitted(false);
     setForm(EMPTY_FORM);
     setErrors({});
     setSavedBanner(null);
@@ -390,19 +429,13 @@ export default function AutopayPage() {
         setEditingId(null);
         setForm(EMPTY_FORM);
         setErrors({});
+        setSubmitted(true);
       }
       setSavedBanner(null);
       announce(`Autopay schedule for ${lineName} cancelled.`);
     },
     [lines, confirm, cancel, editingId, announce],
   );
-    if (cancelTimerRef.current !== null) {
-      clearTimeout(cancelTimerRef.current);
-    }
-    cancelTimerRef.current = setTimeout(() => {
-      cancelTimerRef.current = null;
-      setCancelAnnouncement('');
-    }, 4000);
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
