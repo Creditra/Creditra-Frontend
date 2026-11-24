@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { AlertCircle, AlertTriangle, CheckCircle, Info, ArrowLeft, RefreshCw, X } from 'lucide-react';
 import { Skeleton } from '@/components/Skeleton';
+import { Amount } from '@/components/Amount';
 import { PayoffProjection } from '@/components/PayoffProjection';
 import { RepaymentVisualizer } from '@/components/RepaymentVisualizer';
 import { InlineHelpOverlay } from '@/components/InlineHelpOverlay';
@@ -1111,7 +1112,7 @@ export default function RepayPage() {
               <span className="font-medium text-foreground">{recoveredDraft.creditLineId}</span>
               {' '}—{' '}
               <span className="font-medium text-foreground num-tabular">
-                {formatMoney(parseFloat(recoveredDraft.amountStr) || 0)}
+                <Amount value={parseFloat(recoveredDraft.amountStr) || 0} format={formatMoney} maskedLabel="Repayment amount hidden for privacy" />
               </span>
               . Saved {new Date(recoveredDraft.savedAt).toLocaleTimeString()}.
             </p>
@@ -1306,7 +1307,7 @@ export default function RepayPage() {
                             <p className="mt-0.5 text-xs opacity-90">
                               Total repaid:{' '}
                               <span className="font-semibold num-tabular">
-                                {formatMoney(totalPaid)}
+                                <Amount value={totalPaid} format={formatMoney} maskedLabel="Total repaid hidden for privacy" />
                               </span>
                               {failed.length > 0 &&
                                 ` · ${failed.length} ${failed.length === 1 ? 'line' : 'lines'} failed`}
@@ -1358,10 +1359,10 @@ export default function RepayPage() {
                                     )}
                                   </td>
                                   <td className="py-2.5 px-3 text-right font-medium num-tabular text-foreground">
-                                    {formatMoney(res.amount)}
+                                    <Amount value={res.amount} format={formatMoney} maskedLabel="Repayment amount hidden for privacy" />
                                   </td>
                                   <td className="py-2.5 pl-3 text-right font-medium num-tabular text-foreground">
-                                    {formatMoney(res.allocation.remainingTotal)}
+                                    <Amount value={res.allocation.remainingTotal} format={formatMoney} maskedLabel="Remaining balance hidden for privacy" />
                                   </td>
                                 </tr>
                               ))}
@@ -1442,7 +1443,7 @@ export default function RepayPage() {
                                 </div>
                                 <div className="text-right">
                                   <p className="font-semibold text-foreground num-tabular">
-                                    {formatMoney(lineOwed)}
+                                    <Amount value={lineOwed} format={formatMoney} maskedLabel="Total owed hidden for privacy" />
                                   </p>
                                   <p className="text-xs text-muted">
                                     Total owed
@@ -1513,7 +1514,7 @@ export default function RepayPage() {
                         Wallet:{' '}
                         <span className="num-tabular font-medium text-foreground">
                           {hasRepayableBalance
-                            ? formatMoney(walletBalance)
+                            ? <Amount value={walletBalance} format={formatMoney} maskedLabel="Wallet balance hidden for privacy" />
                             : 'Unavailable'}
                         </span>
                       </span>
@@ -1563,7 +1564,7 @@ export default function RepayPage() {
                               }}
                               className="rounded border border-accent/30 px-2 py-0.5 text-xs font-medium text-accent hover:bg-accent/10 disabled:opacity-50"
                             >
-                              MAX ({formatMoney(Math.min(batchTotalOwed, walletBalance))})
+                              MAX (<Amount value={Math.min(batchTotalOwed, walletBalance)} format={formatMoney} maskedLabel="Maximum repayment hidden for privacy" />)
                             </button>
                           </div>
                           <div className="relative mt-2">
@@ -1844,7 +1845,7 @@ export default function RepayPage() {
               <span className="font-medium text-foreground">{recoveredDraft.creditLineId}</span>
               {' '}—{' '}
               <span className="font-medium text-foreground num-tabular">
-                {formatMoney(parseFloat(recoveredDraft.amountStr) || 0)}
+                <Amount value={parseFloat(recoveredDraft.amountStr) || 0} format={formatMoney} maskedLabel="Repayment amount hidden for privacy" />
               </span>
               . Saved {new Date(recoveredDraft.savedAt).toLocaleTimeString()}.
             </p>
@@ -1944,7 +1945,7 @@ export default function RepayPage() {
                       <span className="text-xs text-muted">
                         Wallet:{' '}
                         <span className="num-tabular">
-                          {hasRepayableBalance ? formatMoney(walletBalance) : 'Unavailable'}
+                          {hasRepayableBalance ? <Amount value={walletBalance} format={formatMoney} maskedLabel="Wallet balance hidden for privacy" /> : 'Unavailable'}
                         </span>
                       </span>
                     )}

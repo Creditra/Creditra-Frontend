@@ -6,6 +6,7 @@ import { WalletProvider } from "./context/WalletContext";
 import { CreditDataProvider } from "./context/CreditDataContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { ContrastProvider } from "./context/ContrastContext";
+import { PrivacyModeProvider, usePrivacyMode } from "./context/PrivacyContext";
 import { KycProvider } from "./context/KycContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import { AuctionAlertWatcher } from "./components/AuctionAlertWatcher";
@@ -31,6 +32,11 @@ import { getEnabledRoutes } from "./routes/manifest";
 const NotFound = lazy(() => import("./pages/NotFound").then(m => ({ default: m.NotFound })));
 const SessionTimeoutBanner = lazy(() => import("./components/SessionTimeoutBanner").then(m => ({ default: m.SessionTimeoutBanner })));
 
+const NotificationPreferences = lazy(() => import("./pages/NotificationPreferences").then(m => ({ default: m.NotificationPreferences })));
+const Terms = lazy(() => import("./pages/Terms").then(m => ({ default: m.Terms })));
+const Privacy = lazy(() => import("./pages/Privacy").then(m => ({ default: m.Privacy })));
+
+
 // ── Suspense Fallback for Route Loading ───────────────────────────────────────
 /** Minimal skeleton shown while route chunks load (preserves first paint). */
 function RouteLoadingFallback() {
@@ -45,6 +51,7 @@ function RouteLoadingFallback() {
 
 function AppShell() {
   const navigate = useNavigate();
+  const { privacyMode, togglePrivacyMode } = usePrivacyMode();
   const { addToast } = useNotifications();
   const { refetch } = useCreditData();
 
@@ -142,6 +149,17 @@ function AppShell() {
             isOpen={isPaletteOpen}
             onClose={() => setIsPaletteOpen(false)}
             triggerRef={paletteTriggerRef}
+            extraItems={[
+              {
+                id: "toggle-privacy-mode",
+                label: "Toggle privacy mode",
+                description: privacyMode
+                  ? "Show balances and amounts again"
+                  : "Mask balances and amounts across the app",
+                icon: privacyMode ? "🙈" : "👁️",
+                action: togglePrivacyMode,
+              },
+            ]}
           />
           <ToastContainer />
         </div>
@@ -158,16 +176,18 @@ function AppShell() {
  *   <ErrorBoundary>      — catches render errors in everything below
  *     <ThemeProvider>    — colour-scheme (light/dark) preference
  *       <ContrastProvider> — high-contrast override, [data-contrast="high"]
- *         <WalletProvider> — wallet lifecycle visible to every route
- *           <CreditDataProvider> — wallet-scoped credit line and transaction data
- *             <BrowserRouter>
- *             <header />   — persistent nav chrome
- *             <main>
- *               <Routes /> — current route
- *             </main>
- *             </BrowserRouter>
- *           </CreditDataProvider>
- *         </WalletProvider>
+ *         <PrivacyModeProvider> — app-wide amount masking, [data-privacy-mode="on"]
+ *           <WalletProvider> — wallet lifecycle visible to every route
+ *             <CreditDataProvider> — wallet-scoped credit line and transaction data
+ *               <BrowserRouter>
+ *               <header />   — persistent nav chrome
+ *               <main>
+ *                 <Routes /> — current route
+ *               </main>
+ *               </BrowserRouter>
+ *             </CreditDataProvider>
+ *           </WalletProvider>
+ *         </PrivacyModeProvider>
  *       </ContrastProvider>
  *     </ThemeProvider>
  *   </ErrorBoundary>
@@ -180,6 +200,89 @@ function App() {
       <ThemeProvider>
         <ContrastProvider>
           <WalletProvider>
+
+            <KycProvider>
+              <NotificationProvider>
+                <ReducedMotionProvider>
+                  <BrowserRouter>
+                    <RouteHeadProvider>
+                      <RouteAnnouncer />
+                      <div className="app">
+                        <Header
+                          settingsTriggerRef={settingsTriggerRef}
+                          kycTriggerRef={kycTriggerRef}
+                          onSettingsClick={() => {
+                            setOpenedFromSettingsLink(true);
+                            setIsShortcutHelpOpen(true);
+                          }}
+                          onKycClick={() => setIsKycDrawerOpen(true)}
+                        />
+
+                        {/* Wallet auto-reconnect timeout banner — self-dismissing,
+                            non-blocking; only visible when reconnect takes > 8 s. */}
+                        <WalletReconnectBanner />
+                        {/* Session-timeout warning banner — visible 60 s before
+                            the wallet extension silently disconnects (#227). */}
+                        <Suspense fallback={null}>
+                          <SessionTimeoutBanner />
+                        </Suspense>
+                        <main className="main">
+                          <NetworkMismatchBanner />
+                          <Suspense fallback={<RouteLoadingFallback />}>
+                            <Routes>
+                              <Route path="/" element={<Dashboard />} />
+                              <Route path="/transactions" element={<TransactionHistory />} />
+                              <Route path="/credit-lines" element={<CreditLines />} />
+                              <Route path="/help" element={<HelpCenter />} />
+                              <Route path="/draw-credit" element={<DrawCreditPage />} />
+                              <Route
+                                path="/draw-credit/success"
+                                element={<DrawCreditPage />}
+                              />
+                              <Route path="/open-credit" element={<RequestEvaluation />} />
+                              <Route path="/dutch-auctions" element={<DutchAuctions />} />
+                              <Route path="/linked-accounts" element={<LinkedAccounts />} />
+                              <Route path="/notification-preferences" element={<NotificationPreferences />} />
+                              <Route path="/repay" element={<RepayPage />} />
+                              <Route path="/repay/success" element={<RepaySuccess />} />
+                              <Route path="/settings" element={<Settings />} />
+                              <Route path="/settings/notifications" element={<NotificationSettings />} />
+                              <Route path="/profile" element={<Profile />} />
+                              <Route path="/docs" element={<Docs />} />
+                              <Route path="/terms" element={<Terms />} />
+                              <Route path="/privacy" element={<Privacy />} />
+                              <Route path="*" element={<NotFound />} />
+                            </Routes>
+                          </Suspense>
+                        </main>
+                        <ShortcutHelpOverlay
+                          isOpen={isShortcutHelpOpen}
+                          onClose={() => setIsShortcutHelpOpen(false)}
+                          triggerRef={openedFromSettingsLink ? settingsTriggerRef : undefined}
+                        />
+                        <KycDrawer
+                          isOpen={isKycDrawerOpen}
+                          onClose={() => setIsKycDrawerOpen(false)}
+                          onResume={(stepId) => {
+                            // Navigate to the KYC page with the step pre-selected.
+                            // Replace with router.push('/kyc?step=' + stepId) when the
+                            // full KYC page exists.
+                            console.info('[KYC] Resume at step:', stepId);
+                          }}
+                          triggerRef={kycTriggerRef}
+                        />
+                        <CommandPalette
+                          isOpen={isPaletteOpen}
+                          onClose={() => setIsPaletteOpen(false)}
+                          triggerRef={paletteTriggerRef}
+                        />
+                      </div>
+                    </RouteHeadProvider>
+                  </BrowserRouter>
+                </ReducedMotionProvider>
+              </NotificationProvider>
+            </KycProvider>
+
             <NotificationProvider>
               <CreditDataProvider>
                 <KycProvider>
@@ -191,7 +294,24 @@ function App() {
                 </KycProvider>
               </CreditDataProvider>
             </NotificationProvider>
+
           </WalletProvider>
+
+          <PrivacyModeProvider>
+            <WalletProvider>
+              <NotificationProvider>
+                <CreditDataProvider>
+                  <KycProvider>
+                    <ReducedMotionProvider>
+                      <BrowserRouter>
+                        <AppShell />
+                      </BrowserRouter>
+                    </ReducedMotionProvider>
+                  </KycProvider>
+                </CreditDataProvider>
+              </NotificationProvider>
+            </WalletProvider>
+          </PrivacyModeProvider>
         </ContrastProvider>
       </ThemeProvider>
     </ErrorBoundary>

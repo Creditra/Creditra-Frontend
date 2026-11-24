@@ -18,13 +18,13 @@ class MockXMLHttpRequest {
   }
 }
 
-class MockDataTransferItemList {
-  items: any[] = [];
   get length() {
     return this.items.length;
   }
   [index: number]: any;
+class MockDataTransferItemList extends Array<any> {
   add(item: File) {
+    this.push({
     const entry = { kind: 'file', getAsFile: () => item };
     this.items.push(entry);
     Object.defineProperty(this, this.items.length - 1, { value: entry, configurable: true });
@@ -126,8 +126,9 @@ describe('FileUploadZone', () => {
     render(<FileUploadZone onFilesUploaded={mockOnFilesUploaded} />);
 
     const file = new File(['pasted content'], 'pasted.pdf', { type: 'application/pdf' });
-    const dataTransfer = new DataTransfer();
+    const dataTransfer = new MockDataTransfer();
     dataTransfer.items.add(file);
+    const dataTransfer = new DataTransfer();
 
     const pasteEvent = new Event('paste', { bubbles: true });
     Object.defineProperty(pasteEvent, 'clipboardData', {

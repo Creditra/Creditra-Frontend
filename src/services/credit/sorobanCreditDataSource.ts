@@ -192,6 +192,10 @@ export class SorobanCreditDataSource implements CreditDataSource {
       if (rpc.Api.isSimulationError(simResponse)) {
         throw new CreditDataError('unavailable', `Simulation error: ${simResponse.error}`, {
           cause: simResponse.error,
+          details: {
+            error: simResponse.error,
+            events: simResponse.events ?? [],
+          },
         });
       }
 

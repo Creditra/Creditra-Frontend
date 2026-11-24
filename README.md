@@ -98,7 +98,10 @@ npm run test:coverage # one-shot test run with v8 coverage report
 npm run build      # tsc -b && vite build (writes ./dist)
 npm run preview    # serve ./dist locally
 npm run lint       # eslint .
+npm run docs:links # check inline relative links in README.md and docs/**/*.md
 ```
+
+The docs link checker currently supports inline Markdown links; reference-style links are not checked.
 
 ### Environment
 
@@ -235,7 +238,7 @@ All UI changes must pass an accessibility review. Include this checklist in your
 - [ ] `prefers-reduced-motion` is respected
 ```
 
-See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) and [`CHECKLIST.md`](CHECKLIST.md) for
+See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) and [`docs/notes/CHECKLIST.md`](docs/notes/CHECKLIST.md) for
 the full review checklist.
 
 ---

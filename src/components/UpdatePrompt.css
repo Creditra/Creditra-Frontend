@@ -1,0 +1,78 @@
+/* Reuses the OfflineBanner floating banner layout & design tokens */
+.update-prompt {
+  position: fixed;
+  bottom: calc(var(--space-lg) + var(--sab, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface-raised, var(--surface));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md) var(--space-lg);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  color: var(--text);
+  max-width: calc(100vw - var(--space-xl));
+  width: max-content;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.update-prompt__content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.update-prompt__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.update-prompt__reload-button {
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.update-prompt__reload-button:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.update-prompt__reload-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.update-prompt__dismiss-button {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.update-prompt__dismiss-button:hover {
+  border-color: var(--text);
+  color: var(--text);
+}
+
+.update-prompt__dismiss-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

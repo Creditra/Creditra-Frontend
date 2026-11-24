@@ -7,11 +7,12 @@
 
 import React, { useState, useRef, useCallback, useId, useMemo, useEffect } from 'react';
 import { COLOR } from '@/utils/tokens';
-import { getNumberFormat } from '@/utils/formatters';
 import { formatUsd } from '@/utils/currency';
 import { KbdHint } from './KbdHint';
 import { LiveRegion } from './LiveRegion';
 import { useReducedMotion } from '@/context/ReducedMotionContext';
+import { usePrivacyMode } from '@/context/PrivacyContext';
+import { Amount } from './Amount';
 import { EmptyState } from './EmptyState';
 import { NoDataGraph } from './illustrations';
 import { Skeleton } from './Skeleton';
@@ -48,11 +49,6 @@ export interface RepaymentVisualizerProps {
    */
   loading?: boolean;
 }
-
-    getNumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
-    getNumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n);
-    getNumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
-    getNumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n);
 function EmptyStatePrompt() {
   return (
     <EmptyState
@@ -104,8 +100,15 @@ function buildLiveMessage(
   tooltip: TooltipData | null,
   termMonths: number,
   totalInterest: number,
+  masked = false,
 ): string {
   if (schedule.length === 0) return '';
+
+  if (masked) {
+    return tooltip
+      ? `Month ${tooltip.month}: amounts hidden for privacy.`
+      : `Repayment plan: ${termMonths} month${termMonths !== 1 ? 's' : ''}. Amounts hidden for privacy.`;
+  }
 
   if (tooltip) {
     return `Month ${tooltip.month}: principal remaining ${formatUsd(tooltip.principal, { decimals: 0 })}, cumulative interest ${formatUsd(tooltip.cumulativeInterest, { decimals: 0 })}.`;
@@ -142,6 +145,7 @@ export function RepaymentVisualizer({
   }, [loading, principal, apr, monthlyPayment]);
 
   const { isReducedMotionActive } = useReducedMotion();
+  const { privacyMode } = usePrivacyMode();
 
   const schedule = useMemo(
     () => buildSchedule(principal, apr, monthlyPayment, maxMonths),
@@ -179,8 +183,8 @@ export function RepaymentVisualizer({
   const termMonths = schedule.length;
 
   const liveMessage = useMemo(
-    () => buildLiveMessage(schedule, tooltip, termMonths, totalInterest),
-    [schedule, tooltip, termMonths, totalInterest],
+    () => buildLiveMessage(schedule, tooltip, termMonths, totalInterest, privacyMode),
+    [schedule, tooltip, termMonths, totalInterest, privacyMode],
   );
 
   if (loading === true || bootstrapping) {
@@ -230,8 +234,12 @@ export function RepaymentVisualizer({
             }}
           >
             {termMonths} month{termMonths !== 1 ? 's' : ''} ·{' '}
-            {getNumberFormat('en-US', {
-            {formatUsd(totalInterest, { decimals: 0 })} total interest
+            <Amount
+              value={totalInterest}
+              format={(value) => formatUsd(value, { decimals: 0 })}
+              maskedLabel="Total interest hidden for privacy"
+            />{' '}
+            total interest
           </p>
         )}
       </header>
@@ -254,6 +262,7 @@ export function RepaymentVisualizer({
               tooltip={tooltip}
               chartAriaLabel={chartAriaLabel}
               reducedMotion={isReducedMotionActive}
+              masked={privacyMode}
             />
 
             {tooltip && (
