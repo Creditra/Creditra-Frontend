@@ -1,8 +1,21 @@
-import { act, fireEvent, screen, within } from "@testing-library/react";
+import React, { useCallback, useState } from "react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import transactionHistoryCss from "./TransactionHistory.css?raw";
-import { TransactionHistory } from "./TransactionHistory";
+import { TransactionHistory, TransactionRow } from "./TransactionHistory";
+
+const amountRenderSpy = vi.hoisted(() => vi.fn());
+vi.mock("../components/Amount", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../components/Amount")>();
+  return {
+    ...actual,
+    Amount: (props: React.ComponentProps<typeof actual.Amount>) => {
+      amountRenderSpy(props.value);
+      return actual.Amount(props);
+    },
+  };
+});
 import { NotificationProvider } from "../context/NotificationContext";
 import { freezeTime, unfreezeTime } from "../test/freezeTime";
 import { renderWithCredit } from "../test/renderWithCredit";
@@ -50,14 +63,13 @@ const currentSearch = () =>
  * state update before any assertion runs.
  */
 const renderTransactionHistory = (initialEntries: string[] = ["/transactions"]) => {
-  const result = renderWithCredit(
+  const result = render(
     <NotificationProvider>
       <MemoryRouter initialEntries={initialEntries}>
         <TransactionHistory />
         <LocationProbe />
       </MemoryRouter>
     </NotificationProvider>,
-    { withRouter: false },
   );
   // Flush only the zero-delay loading useEffect timer (setTimeout 0).
   // Using advanceTimersByTime(1) rather than runAllTimers() so the 250ms
@@ -1302,7 +1314,7 @@ describe("TransactionHistory", () => {
   });
 
   describe("Virtualization (large ledger)", () => {
-    it("bounds rendered DOM rows for a 2,000-row fixture and preserves ARIA row semantics", () => {
+    it("bounds rendered DOM rows for a 2,000-row fixture and preserves ARIA row semantics", async () => {
       const baseMs = Date.parse("2025-02-20T12:00:00Z");
       const largeTransactions = Array.from({ length: 2000 }, (_, i) => ({
         id: `tx-large-${i}`,
@@ -1338,8 +1350,10 @@ describe("TransactionHistory", () => {
         { withRouter: false, lines: [largeLine] },
       );
 
-      act(() => {
-        vi.advanceTimersByTime(1);
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
       });
 
       const table = screen.getByRole("table");
@@ -1366,7 +1380,13 @@ describe("TransactionHistory", () => {
 describe("TransactionHashMenu", () => {
   beforeEach(() => {
     vi.mock("../config/creditNetwork", () => ({
-      getCreditNetworkConfig: vi.fn().mockReturnValue({ network: "TESTNET" }),
+      getCreditNetworkConfig: vi.fn().mockReturnValue({
+        network: "TESTNET",
+        horizonUrl: "https://horizon-testnet.stellar.org",
+        sorobanRpcUrl: "https://soroban-testnet.stellar.org",
+        networkPassphrase: "Test Stellar Network ; February 2015",
+        creditContractId: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+      }),
     }));
   });
 
@@ -1424,5 +1444,123 @@ describe("TransactionHashMenu", () => {
     const muted = screen.queryAllByText("—");
     // This is a soft assertion — not all data has missing hashes, but the component must not crash
     expect(muted).toBeDefined();
+  });
+});
+
+describe("TransactionRow memoisation", () => {
+  it("toggling one row re-renders only that row, identical polling data causes zero re-renders, and changed data re-renders only the changed row", () => {
+    amountRenderSpy.mockClear();
+
+    const initialTxs = [
+      {
+        id: "tx-memo-1",
+        type: "Draw" as const,
+        amount: 2501,
+        date: "2025-02-20T10:00:00Z",
+        note: "Working capital draw",
+        status: "Completed" as const,
+        txHash: "0xabc123def4567890",
+        lineId: "CL-1",
+        lineName: "Primary Business Line",
+        lineStatus: "Active" as const,
+      },
+      {
+        id: "tx-memo-2",
+        type: "Repay" as const,
+        amount: 1002,
+        date: "2025-02-19T10:00:00Z",
+        note: "Scheduled repayment",
+        status: "Pending" as const,
+        txHash: "0xdef456abc1237890",
+        lineId: "CL-1",
+        lineName: "Primary Business Line",
+        lineStatus: "Active" as const,
+      },
+    ];
+
+    const countRendersForAmount = (amount: number) =>
+      amountRenderSpy.mock.calls.filter(([val]) => val === amount).length;
+
+    function Harness() {
+      const [txs, setTxs] = useState(initialTxs);
+      const [expandedTx, setExpandedTx] = useState<string | null>(null);
+      const [unrelatedFilter, setUnrelatedFilter] = useState("all");
+
+      const handleToggle = useCallback((txId: string) => {
+        setExpandedTx((prev) => (prev === txId ? null : txId));
+      }, []);
+
+      const handlePollIdentical = () => {
+        setTxs((prev) => prev.map((tx) => ({ ...tx })));
+      };
+
+      const handlePollChangedSecond = () => {
+        setTxs((prev) =>
+          prev.map((tx, idx) =>
+            idx === 1 ? { ...tx, status: "Completed" as const } : { ...tx },
+          ),
+        );
+      };
+
+      return (
+        <div>
+          <button
+            type="button"
+            onClick={() =>
+              setUnrelatedFilter((f) => (f === "all" ? "other" : "all"))
+            }
+          >
+            Change Filter ({unrelatedFilter})
+          </button>
+          <button type="button" onClick={handlePollIdentical}>
+            Poll Identical
+          </button>
+          <button type="button" onClick={handlePollChangedSecond}>
+            Poll Changed Second
+          </button>
+          <table>
+            <tbody>
+              {txs.map((tx) => (
+                <TransactionRow
+                  key={tx.id}
+                  tx={tx}
+                  expanded={expandedTx === tx.id}
+                  onToggle={handleToggle}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    render(<Harness />);
+
+    expect(countRendersForAmount(2501)).toBe(1);
+    expect(countRendersForAmount(1002)).toBe(1);
+
+    // Changing an unrelated filter causes zero row re-renders
+    fireEvent.click(screen.getByRole("button", { name: /Change Filter/i }));
+    expect(countRendersForAmount(2501)).toBe(1);
+    expect(countRendersForAmount(1002)).toBe(1);
+
+    // Identical polling data (fresh object references) causes zero row re-renders
+    fireEvent.click(screen.getByRole("button", { name: /Poll Identical/i }));
+    expect(countRendersForAmount(2501)).toBe(1);
+    expect(countRendersForAmount(1002)).toBe(1);
+
+    // Toggling one row re-renders only that row
+    const rows = screen
+      .getAllByRole("row")
+      .filter((r) => r.classList.contains("tx-row"));
+    fireEvent.click(rows[0]);
+    const afterToggleFirst = countRendersForAmount(2501);
+    expect(afterToggleFirst).toBeGreaterThan(1);
+    expect(countRendersForAmount(1002)).toBe(1);
+
+    // Changing a displayed field on the second row re-renders only the second row
+    fireEvent.click(screen.getByRole("button", { name: /Poll Changed Second/i }));
+    expect(countRendersForAmount(2501)).toBe(afterToggleFirst);
+    expect(countRendersForAmount(1002)).toBe(2);
   });
 });

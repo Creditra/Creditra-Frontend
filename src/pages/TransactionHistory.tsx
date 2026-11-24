@@ -316,38 +316,89 @@ function TransactionHashMenu({ txHash }: { txHash: string }) {
   );
 }
 
-function TransactionRow({
+function areTransactionWithLinesEqual(
+  prev: TransactionWithLine,
+  next: TransactionWithLine,
+): boolean {
+  if (prev === next) return true;
+  return (
+    prev.id === next.id &&
+    prev.type === next.type &&
+    prev.amount === next.amount &&
+    prev.date === next.date &&
+    prev.note === next.note &&
+    prev.status === next.status &&
+    prev.txHash === next.txHash &&
+    prev.lineId === next.lineId &&
+    prev.lineName === next.lineName &&
+    prev.lineStatus === next.lineStatus
+  );
+}
+
+interface TransactionRowProps {
+  tx: TransactionWithLine;
+  expanded: boolean;
+  onToggle: (txId: string) => void;
+  index?: number;
+  ariaRowIndex?: number;
+  tabIndex?: number;
+  rowRef?: (index: number, el: HTMLTableRowElement | null) => void;
+  onFocus?: (index: number) => void;
+  onKeyDown?: (
+    index: number,
+    txId: string,
+    e: React.KeyboardEvent<HTMLTableRowElement>,
+  ) => void;
+}
+
+function areTransactionRowPropsEqual(
+  prev: TransactionRowProps,
+  next: TransactionRowProps,
+): boolean {
+  return (
+    prev.expanded === next.expanded &&
+    prev.index === next.index &&
+    prev.ariaRowIndex === next.ariaRowIndex &&
+    prev.tabIndex === next.tabIndex &&
+    prev.onToggle === next.onToggle &&
+    prev.rowRef === next.rowRef &&
+    prev.onFocus === next.onFocus &&
+    prev.onKeyDown === next.onKeyDown &&
+    areTransactionWithLinesEqual(prev.tx, next.tx)
+  );
+}
+
+export const TransactionRow = React.memo(function TransactionRow({
   tx,
   expanded,
   onToggle,
+  index = 0,
   ariaRowIndex,
   tabIndex,
   rowRef,
   onFocus,
   onKeyDown,
-}: {
-  tx: TransactionWithLine;
-  expanded: boolean;
-  onToggle: () => void;
-  ariaRowIndex?: number;
-  tabIndex?: number;
-  rowRef?: (el: HTMLTableRowElement | null) => void;
-  onFocus?: () => void;
-  onKeyDown?: (e: React.KeyboardEvent<HTMLTableRowElement>) => void;
-}) {
+}: TransactionRowProps) {
   const isNegative = tx.type === "Repay" || tx.type === "Fee";
+
+  const handleRowRef = useCallback(
+    (el: HTMLTableRowElement | null) => {
+      rowRef?.(index, el);
+    },
+    [rowRef, index],
+  );
 
   return (
     <>
       <tr
-        ref={rowRef}
+        ref={rowRef ? handleRowRef : undefined}
         className={`tx-row ${expanded ? "expanded" : ""}`}
         aria-rowindex={ariaRowIndex}
         aria-expanded={expanded}
         tabIndex={tabIndex}
-        onClick={onToggle}
-        onFocus={onFocus}
-        onKeyDown={onKeyDown}
+        onClick={() => onToggle(tx.id)}
+        onFocus={onFocus ? () => onFocus(index) : undefined}
+        onKeyDown={onKeyDown ? (e) => onKeyDown(index, tx.id, e) : undefined}
       >
         <td className="tx-date">
           <div className="tx-date-main">{relativeTime(tx.date)}</div>
@@ -490,7 +541,7 @@ function TransactionRow({
       )}
     </>
   );
-}
+}, areTransactionRowPropsEqual);
 
 /** Stable element ID that associates the export button with its helper text. */
 const CSV_EXPORT_EMPTY_REASON_ID = "csv-export-empty-reason";
@@ -854,9 +905,32 @@ export function TransactionHistory({
     }
   }, []);
 
+  const flatPageTransactionsRef = useRef(flatPageTransactions);
+  flatPageTransactionsRef.current = flatPageTransactions;
+
+  const measureRefsRef = useRef<Map<number, (el: HTMLElement | null) => void>>(
+    new Map(),
+  );
+
+  const handleRowRef = useCallback(
+    (index: number, el: HTMLTableRowElement | null) => {
+      if (el) {
+        rowRefs.current.set(index, el);
+      } else {
+        rowRefs.current.delete(index);
+      }
+      measureRefsRef.current.get(index)?.(el);
+    },
+    [],
+  );
+
+  const handleRowFocus = useCallback((index: number) => {
+    setFocusedRowIndex(index);
+  }, []);
+
   const handleRowKeyDown = useCallback(
     (index: number, txId: string, e: React.KeyboardEvent<HTMLTableRowElement>) => {
-      const count = flatPageTransactions.length;
+      const count = flatPageTransactionsRef.current.length;
       if (count === 0) return;
 
       switch (e.key) {
@@ -895,7 +969,7 @@ export function TransactionHistory({
           break;
       }
     },
-    [flatPageTransactions.length, focusRowAt],
+    [focusRowAt],
   );
 
   const stats = useMemo(() => {
@@ -961,9 +1035,9 @@ export function TransactionHistory({
     window.print();
   };
 
-  const handleToggleExpand = (txId: string) => {
-    setExpandedTx(expandedTx === txId ? null : txId);
-  };
+  const handleToggleExpand = useCallback((txId: string) => {
+    setExpandedTx((prev) => (prev === txId ? null : txId));
+  }, []);
 
   /**
    * Commit a suggestion by value: populate the input and close the listbox.
@@ -2023,30 +2097,28 @@ export function TransactionHistory({
                   pinnedIndex={focusedRowIndex}
                   ariaRowIndexOffset={2}
                   getItemKey={(tx) => tx.id}
-                  renderItem={(tx, index, { measureRef, ariaRowIndex }) => (
-                    <TransactionRow
-                      tx={tx}
-                      expanded={expandedTx === tx.id}
-                      onToggle={() => handleToggleExpand(tx.id)}
-                      ariaRowIndex={ariaRowIndex}
-                      tabIndex={
-                        focusedRowIndex === index ||
-                        (focusedRowIndex === null && index === 0)
-                          ? 0
-                          : -1
-                      }
-                      rowRef={(el) => {
-                        if (el) {
-                          rowRefs.current.set(index, el);
-                        } else {
-                          rowRefs.current.delete(index);
+                  renderItem={(tx, index, { measureRef, ariaRowIndex }) => {
+                    measureRefsRef.current.set(index, measureRef);
+                    return (
+                      <TransactionRow
+                        key={tx.id}
+                        tx={tx}
+                        index={index}
+                        expanded={expandedTx === tx.id}
+                        onToggle={handleToggleExpand}
+                        ariaRowIndex={ariaRowIndex}
+                        tabIndex={
+                          focusedRowIndex === index ||
+                          (focusedRowIndex === null && index === 0)
+                            ? 0
+                            : -1
                         }
-                        measureRef(el);
-                      }}
-                      onFocus={() => setFocusedRowIndex(index)}
-                      onKeyDown={(e) => handleRowKeyDown(index, tx.id, e)}
-                    />
-                  )}
+                        rowRef={handleRowRef}
+                        onFocus={handleRowFocus}
+                        onKeyDown={handleRowKeyDown}
+                      />
+                    );
+                  }}
                 />
               </tbody>
             </table>
