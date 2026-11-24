@@ -12,6 +12,7 @@ interface ImportMetaEnv {
   readonly VITE_SOROBAN_RPC_URL?: string;
   readonly VITE_STELLAR_NETWORK_PASSPHRASE?: string;
   readonly VITE_CREDIT_CONTRACT_ID?: string;
+  readonly VITE_NOTIFICATIONS_SSE_URL?: string;
 
   // Build-time feature flags (truthy only for 'true' or '1'; default off)
   readonly VITE_FEATURE_COLLATERAL_SWAP?: string;

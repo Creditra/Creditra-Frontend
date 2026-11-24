@@ -215,12 +215,34 @@ modal provides actionable feedback instead of closing silently.
 - `banners` — page-level alerts, persist until dismissed
 - `notifications` — inbox, persisted to `localStorage` capped at 100 entries
 - `preferences` — per-category mute switches (`transaction`, `credit_line`, `risk_score`,
-  `rate_change`, `system`)
+  `rate_change`, `auction`, `system`)
 - `unreadCount`, `markAsRead`, `markAllAsRead`, `clearAll`
 - `isPanelOpen` + open/close handlers for the `NotificationCenter`
 
 Each notification carries a `category` so users can mute classes (e.g. silence rate-change
 notifications while keeping transaction confirmations).
+
+#### Optional server-sent-event inbox channel
+
+Set `VITE_NOTIFICATIONS_SSE_URL` to enable the optional inbox stream. When it is unset,
+the provider opens no connection and reports the channel status as `off`. The configured
+URL must serve standard `message` events whose `data` is a JSON `Notification`:
+
+```text
+data: {"id":"evt-123","type":"info","category":"system","title":"Update","message":"Your account was updated.","timestamp":"2026-11-24T09:00:00.000Z","read":false}
+```
+
+The payload follows `src/types/notification.ts`: `id`, `type`, `category`, `title`,
+`message`, ISO-8601 `timestamp`, and boolean `read` are required; `action` is optional
+and uses a route or registered-command descriptor. Invalid JSON or invalid notification
+shapes are ignored. Notifications muted by the corresponding in-app category preference
+are not added. The inbox merge keeps ids unique and retains at most 100 entries.
+
+Connection failures close the current `EventSource` and trigger exponential retries
+starting at one second, capped at 30 seconds, with up to 20% jitter. The delay resets
+after a successful open. `useNotifications()` exposes
+`notificationChannelStatus` (`connecting`, `open`, `retrying`, or `off`) for the
+notification center.
 
 ---
 

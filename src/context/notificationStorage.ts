@@ -1,9 +1,12 @@
 import type {
+  NotificationActionDescriptor,
   Notification,
   NotificationCategory,
+  NotificationCommandId,
   NotificationPreferences,
   NotificationType,
 } from '../types/notification';
+import { NOTIFICATION_COMMAND_IDS } from '../types/notification';
 
 const VALID_TYPES: NotificationType[] = ['success', 'error', 'warning', 'info', 'danger'];
 const VALID_CATEGORIES: NotificationCategory[] = [
@@ -11,17 +14,20 @@ const VALID_CATEGORIES: NotificationCategory[] = [
   'credit_line',
   'risk_score',
   'rate_change',
+  'auction',
   'system',
 ];
 
 const STORAGE_VERSION = 1;
 const MAX_INBOX_SIZE = 100;
+const VALID_COMMAND_IDS: ReadonlySet<string> = new Set(NOTIFICATION_COMMAND_IDS);
 
 const DEFAULT_PREFS: NotificationPreferences = {
   transaction: true,
   credit_line: true,
   risk_score: true,
   rate_change: true,
+  auction: true,
   system: true,
 };
 
@@ -58,13 +64,38 @@ function isValidNotification(notification: unknown): notification is Notificatio
     n.title.length > 0 &&
     typeof n.message === 'string' &&
     isValidISO8601Timestamp(n.timestamp) &&
-    typeof n.read === 'boolean' &&
-    (n.action === undefined ||
-      (typeof n.action === 'object' &&
-        n.action !== null &&
-        typeof (n.action as Record<string, unknown>).label === 'string' &&
-        typeof (n.action as Record<string, unknown>).onClick === 'function'))
+    typeof n.read === 'boolean'
   );
+}
+
+function parseActionDescriptor(
+  action: unknown,
+): NotificationActionDescriptor | undefined {
+  if (!action || typeof action !== 'object') return undefined;
+  const descriptor = action as Record<string, unknown>;
+  if (typeof descriptor.label !== 'string' || typeof descriptor.kind !== 'string') {
+    return undefined;
+  }
+  if (
+    descriptor.kind === 'route' &&
+    typeof descriptor.to === 'string' &&
+    descriptor.to.startsWith('/') &&
+    !descriptor.to.includes('://')
+  ) {
+    return { label: descriptor.label, kind: 'route', to: descriptor.to };
+  }
+  if (
+    descriptor.kind === 'command' &&
+    typeof descriptor.id === 'string' &&
+    VALID_COMMAND_IDS.has(descriptor.id)
+  ) {
+    return {
+      label: descriptor.label,
+      kind: 'command',
+      id: descriptor.id as NotificationCommandId,
+    };
+  }
+  return undefined;
 }
 
 function parseEnvelope(raw: unknown): Notification[] | null {
@@ -100,7 +131,10 @@ export function parseInbox(raw: unknown): Notification[] {
   for (const n of notifications) {
     if (isValidNotification(n) && !seen.has(n.id)) {
       seen.add(n.id);
-      valid.push(n);
+      valid.push({
+        ...n,
+        action: n.action === undefined ? undefined : parseActionDescriptor(n.action),
+      });
     }
   }
 
@@ -129,6 +163,7 @@ export function parsePreferences(raw: unknown): NotificationPreferences {
     credit_line: result.credit_line ?? DEFAULT_PREFS.credit_line,
     risk_score: result.risk_score ?? DEFAULT_PREFS.risk_score,
     rate_change: result.rate_change ?? DEFAULT_PREFS.rate_change,
+    auction: result.auction ?? DEFAULT_PREFS.auction,
     system: result.system ?? DEFAULT_PREFS.system,
   };
 }

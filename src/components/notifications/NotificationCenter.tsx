@@ -112,6 +112,7 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     closePanel,
     notifications,
     unreadCount,
+    notificationChannelStatus,
     markAsRead,
     markAllAsRead,
     undoRead,
@@ -399,6 +400,20 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
             {unreadCount > 0 && (
               <span className="nc-badge tabular-nums" aria-label={`${unreadCount} unread`}>
                 {unreadCount}
+              </span>
+            )}
+            {notificationChannelStatus !== 'off' && (
+              <span
+                className="nc-channel-status"
+                data-status={notificationChannelStatus}
+                role="status"
+                aria-live="polite"
+              >
+                {notificationChannelStatus === 'open'
+                  ? 'Live'
+                  : notificationChannelStatus === 'retrying'
+                    ? 'Reconnecting…'
+                    : 'Connecting…'}
               </span>
             )}
           </div>
