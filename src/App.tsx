@@ -13,7 +13,7 @@ import { AuctionAlertWatcher } from "./components/AuctionAlertWatcher";
 import { CollateralAlertWatcher } from "./components/CollateralAlertWatcher";
 import { usePaymentReminders } from "./hooks/usePaymentReminders";
 import { ReducedMotionProvider } from "./context/ReducedMotionContext";
-import { KycDrawer } from "./components/KycDrawer";
+import { KycPanel } from "./components/KycPanel";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ShortcutHelpOverlay } from "./components/ShortcutHelpOverlay";
 import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
@@ -142,7 +142,7 @@ function AppShell() {
             onClose={() => setIsShortcutHelpOpen(false)}
             triggerRef={openedFromSettingsLink ? settingsTriggerRef : undefined}
           />
-          <KycDrawer
+          <KycPanel
             isOpen={isKycDrawerOpen}
             onClose={() => setIsKycDrawerOpen(false)}
             onResume={(stepId) => {
