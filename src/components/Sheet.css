@@ -1,0 +1,32 @@
+.sheet-portal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  pointer-events: none;
+}
+
+.sheet-portal--bottom {
+  align-items: flex-end;
+  justify-content: stretch;
+}
+
+.sheet-portal--right {
+  justify-content: flex-end;
+}
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  pointer-events: all;
+}
+
+.sheet-panel {
+  position: relative;
+  z-index: 1;
+  pointer-events: all;
+  outline: none;
+}
