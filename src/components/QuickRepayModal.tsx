@@ -17,6 +17,7 @@ import {
   type SubmissionAttempt,
 } from '../utils/idempotency';
 import { Skeleton } from './Skeleton';
+import './QuickRepayModal.css';
 import { ConnectWalletPrompt } from './ConnectWalletPrompt';
 import type { RepayableBalanceResult } from '../lib/repayable-balance';
 import { SETTLEMENT_ASSET } from '../lib/repayable-balance';
@@ -492,13 +493,6 @@ export function QuickRepayModal({
             </button>
           </div>
         )}
-
-      <style>{`
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes scaleIn { 0% { transform: scale(0); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
-      `}</style>
     </Modal>
   );
 }

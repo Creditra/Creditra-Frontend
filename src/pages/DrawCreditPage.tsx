@@ -276,7 +276,6 @@ export default function DrawCreditPage() {
     draftSave.markError,
     draftSave.reset,
   ]);
-  }, [state.step, state.selectedCreditLine, state.amount, draftOwner]);
 
   /**
    * Concurrent submission guard (issue #932). The ref is flipped to `true`
@@ -516,18 +515,6 @@ export default function DrawCreditPage() {
       if (step === "amount" || step === "confirm") {
         e.preventDefault();
         handleBack();
-          if (state.step === "select") {
-          } else if (state.step === "amount" || state.step === "confirm") {
-          if (state.step === "amount" || state.step === "confirm") {
-          if (state.step === "amount" && state.selectedCreditLine) {
-              String(state.amount),
-              state.selectedCreditLine,
-              handleAmountNext(state.amount);
-              dispatch({
-                type: "SET_SUBMIT_ERROR",
-                error: validation.message,
-              });
-          if (state.step === "confirm" && state.confirmationAcknowledged) {
       }
     },
   });
@@ -558,15 +545,6 @@ export default function DrawCreditPage() {
       }
     },
   });
-  }, [
-    state.step,
-    state.amount,
-    state.selectedCreditLine,
-    state.confirmationAcknowledged,
-    handleBack,
-    handleCancel,
-    isRiskModalOpen,
-  ]);
 
   return (
     <main className="dc-page" aria-label="Draw credit">

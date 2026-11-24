@@ -184,4 +184,10 @@ describe('RepayModal – Repay all shortcut', () => {
     const repayAll = screen.getByTestId('repay-all-shortcut');
     expect(repayAll).toHaveClass('repay-modal-repay-all-btn');
   });
+
+  it('does not render any <style> element into the DOM', () => {
+    const { container } = render(<TestWrapper />);
+    expect(container.querySelector('style')).toBeNull();
+    expect(document.querySelector('style')).toBeNull();
+  });
 });
