@@ -19,6 +19,21 @@ interface FileUploadZoneProps {
   maxSizeMB?: number;
 }
 
+let fallbackFileIdCounter = 0;
+
+const createFileUploadId = (): string => {
+  try {
+    if (typeof globalThis.crypto?.randomUUID === 'function') {
+      return globalThis.crypto.randomUUID();
+    }
+  } catch {
+    // Fall through to the collision-safe counter fallback.
+  }
+
+  fallbackFileIdCounter += 1;
+  return `file-fallback-${fallbackFileIdCounter}`;
+};
+
 export function FileUploadZone({
   onFilesUploaded,
   acceptedTypes = ['.pdf', '.csv'],
@@ -99,13 +114,12 @@ export function FileUploadZone({
   };
 
   const handleFiles = useCallback((newFiles: FileList | File[]) => {
-    console.log('Handling files:', newFiles);
     const allItems: FileUploadItem[] = [];
     const itemsToUpload: FileUploadItem[] = [];
 
     Array.from(newFiles).forEach(file => {
       const error = validateFile(file);
-      const id = Math.random().toString(36).substring(7);
+      const id = createFileUploadId();
       
       if (error) {
         allItems.push({
@@ -207,7 +221,7 @@ export function FileUploadZone({
 
       <div className="file-list" role="list">
         {files.map(item => (
-          <div key={item.id} className="file-item" role="listitem">
+          <div key={item.id} id={item.id} className="file-item" role="listitem">
             <div className="file-item-info">
               <div className="file-item-name">{item.file.name}</div>
               <div className="file-item-meta">{formatSize(item.file.size)}</div>
@@ -240,6 +254,7 @@ export function FileUploadZone({
                   onClick={() => retryFile(item)}
                   title="Retry upload"
                   aria-label={`Retry upload for ${item.file.name}`}
+                  aria-controls={item.id}
                 >
                   🔄
                 </button>
@@ -249,6 +264,7 @@ export function FileUploadZone({
                 onClick={() => removeFile(item.id)}
                 title="Remove file"
                 aria-label={`Remove ${item.file.name}`}
+                aria-controls={item.id}
               >
                 ✕
               </button>
