@@ -10,8 +10,14 @@ describe('createCreditDataSource', () => {
   });
 
   it('creates SorobanCreditDataSource when soroban type is passed', () => {
-    const source = createCreditDataSource('soroban');
+    const source = createCreditDataSource('soroban', {
+      contractId: 'CA3D5KRYM6CB7OWQ6TWYRR3Z4T7GNZLKERYNZGGA5SOAOPIFY6YQGAXE',
+    });
     expect(source).toBeInstanceOf(SorobanCreditDataSource);
+  });
+
+  it('rejects a soroban data source without a contract id', () => {
+    expect(() => createCreditDataSource('soroban')).toThrow(/CONTRACT_ID/);
   });
 
   it('MockCreditDataSource lists and gets credit lines', async () => {

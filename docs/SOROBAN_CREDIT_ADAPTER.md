@@ -19,14 +19,30 @@ Creditra's credit lines live in a Soroban smart contract. The `SorobanCreditData
 
 ## 2. Configuration & Environment Variables
 
-To point the application at Stellar Testnet and enable the on-chain Soroban adapter, set the following environment variables in `.env` (or pass them when launching the dev server):
+All Stellar/Soroban settings are resolved by a single validated module, `src/config/creditNetwork.ts`. Horizon, Soroban RPC, wallet network checks and explorer links read that one configuration, so a mismatch fails loudly instead of silently pointing different subsystems at different networks. The supported variables are documented in `.env.example`:
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `VITE_CREDIT_DATA_SOURCE` | Yes | `mock` | Set to `soroban` to enable the on-chain adapter (`mock` uses local fixture data). |
-| `VITE_SOROBAN_RPC_URL` | No | `https://soroban-testnet.stellar.org` | URL of the Soroban RPC node. |
-| `VITE_NETWORK_PASSPHRASE` | No | `Test SDF Network ; September 2015` | Network passphrase for transaction simulation. |
-| `VITE_CREDIT_CONTRACT_ID` | Yes (for live contract) | `CA3D5KRYM6CB7OWQ6TWYRR3Z4T7GNZLKERYNZGGA5SOAOPIFY6YQGAXE` | Address of the deployed Creditra credit line contract on testnet. |
+| `VITE_STELLAR_NETWORK` | No | `TESTNET` | `TESTNET` or `PUBLIC`; drives every URL and passphrase default below. |
+| `VITE_HORIZON_URL` | No | network default | Horizon base URL. Must be `https:` (plain `http:` is allowed only for localhost in development). |
+| `VITE_SOROBAN_RPC_URL` | No | network default | Soroban RPC endpoint. |
+| `VITE_STELLAR_NETWORK_PASSPHRASE` | No | network default | Must equal the passphrase for the selected network, otherwise `ConfigError` names this variable. |
+| `VITE_CREDIT_CONTRACT_ID` | Only for `soroban` | none | Deployed Creditra contract address (`C...`, 56 chars). Optional for the `mock` data source. |
+| `VITE_CREDIT_DATA_SOURCE` | No | `mock` | Set to `soroban` to enable the on-chain adapter. |
+
+The legacy passphrase names `VITE_STELLAR_NETWORK_PASSTHRASE` and `VITE_NETWORK_PASSPHRASE` are **not** read. Setting either logs a console warning; use `VITE_STELLAR_NETWORK_PASSPHRASE` instead.
+
+### Contract-id policy
+
+- `mock` data source: no contract id is required; the value is optional.
+- `soroban` data source: `VITE_CREDIT_CONTRACT_ID` is required. `SorobanCreditDataSource` throws a `ConfigError` at construction when neither the environment nor an explicit `contractId` option supplies one.
+
+### Network defaults
+
+| Network | Horizon | Soroban RPC | Passphrase | Explorer |
+|---|---|---|---|---|
+| `TESTNET` | `https://horizon-testnet.stellar.org` | `https://soroban-testnet.stellar.org` | `Test SDF Network ; September 2015` | `https://stellar.expert/explorer/testnet` |
+| `PUBLIC` | `https://horizon.stellar.org` | `https://soroban.stellar.org` | `Public Global Stellar Network ; September 2015` | `https://stellar.expert/explorer/public` |
 
 ### Running Locally with Testnet
 ```bash
@@ -70,7 +86,7 @@ When an RPC call fails, `SorobanCreditDataSource` categorizes the failure into a
 |---|---|---|---|
 | `network` | Transport failure or timeout | • RPC node offline or unreachable<br>• DNS resolution failure<br>• Request exceeded 15 s timeout | • Check internet connectivity.<br>• Verify `VITE_SOROBAN_RPC_URL` is healthy and responsive.<br>• Inspect browser network tab for blocked HTTP requests. |
 | `not_found` | Credit line record not found | • `get_line(id)` returned `Option::None`<br>• The credit line ID has not been provisioned | • Check that the requested credit line ID exists on-chain for the borrower.<br>• Ensure testnet state has not been wiped or reset. |
-| `unavailable` | Contract simulation failed | • Contract execution reverted/panicked<br>• Contract ID is not deployed on the target network<br>• Insufficient ledger state | • Verify `VITE_CREDIT_CONTRACT_ID` is correct for the active network.<br>• Inspect error details in `cause` for Soroban host error codes (e.g. `ContractError`). |
+| `unavailable` | Contract simulation failed | • Contract execution reverted/panicked<br>• Contract ID is not deployed on the target network<br>• Insufficient ledger state | • Verify `VITE_CREDIT_CONTRACT_ID` is correct for the active network and that `VITE_STELLAR_NETWORK` matches the deploy.<br>• Inspect error details in `cause` for Soroban host error codes (e.g. `ContractError`). |
 | `invalid_response` | Malformed or incompatible ScVal returned | • Contract struct missing required fields (`limit`, `status`, etc.)<br>• Field type mismatch (e.g. non-i128 limit)<br>• Unknown `status` variant | • Confirm contract ABI matches the struct specification.<br>• Ensure contract was compiled with compatible Soroban SDK version. |
 | `aborted` | Operation was aborted | • Caller aborted via `AbortSignal`<br>• Component unmounted before simulation completed | • Normal lifecycle behavior when switching views or canceling requests. No action required. |
 

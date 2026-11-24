@@ -7,7 +7,7 @@ import {
 } from '../types/wallet';
 import { readJson, writeJson, removeKey } from './storage';
 import { isValidAccountId } from './strkey';
-import { getCreditNetworkConfig } from '../config/creditNetwork';
+import { getCreditNetworkConfig, type CreditNetwork } from '../config/creditNetwork';
 import { getWalletAdapter } from './wallets';
 
 // Re-export types for convenience
@@ -540,7 +540,19 @@ export const setWalletRemembered = (remember: boolean): void => {
 };
 
 
-export const EXPECTED_NETWORK = 'TESTNET';
+/**
+ * Network the app expects wallets to be connected to, derived from the single
+ * source of truth in `src/config/creditNetwork.ts`. Falls back to TESTNET when
+ * the environment is invalid so importing this module never throws; callers
+ * that need the configuration itself still get a loud `ConfigError`.
+ */
+export const EXPECTED_NETWORK: CreditNetwork = (() => {
+  try {
+    return getCreditNetworkConfig().network;
+  } catch {
+    return 'TESTNET';
+  }
+})();
 
 export const isSwitchSupported = (type: WalletType): boolean => {
   return Boolean(getWalletAdapter(type)?.switchNetwork);
@@ -557,6 +569,16 @@ export const switchNetwork = async (type: WalletType, network: string): Promise<
 
 export const getExplorerBaseUrl = (network: string): string => {
   const normalized = network?.toUpperCase?.() ?? 'PUBLIC';
+  try {
+    const config = getCreditNetworkConfig();
+    // The unified config describes the network the app is deployed against;
+    // only reuse its explorer root when the caller asks about that network.
+    if (normalized === config.network) {
+      return `${config.explorerBaseUrl}/tx`;
+    }
+  } catch {
+    // Invalid environment: fall through to the canonical explorer roots below.
+  }
   if (normalized === 'TESTNET') {
     return 'https://stellar.expert/explorer/testnet/tx';
   }

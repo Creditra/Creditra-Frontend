@@ -14,6 +14,7 @@ import {
   type CreditDataOptions,
   type CreditDataSource,
 } from './CreditDataSource';
+import { ConfigError } from '../../config/creditNetwork';
 import { getSorobanConfig, type SorobanCreditConfig } from './config';
 import { decodeCreditLine } from './decoder';
 
@@ -70,6 +71,14 @@ export class SorobanCreditDataSource implements CreditDataSource {
     const rpcUrl = options.rpcUrl || config.rpcUrl;
     this.networkPassphrase = options.networkPassphrase || config.networkPassphrase;
     this.contractId = options.contractId || config.contractId;
+
+    // Contract-id policy: optional for the mock data source, required here.
+    if (!this.contractId) {
+      throw new ConfigError([
+        'VITE_CREDIT_CONTRACT_ID is required when VITE_CREDIT_DATA_SOURCE="soroban".',
+      ]);
+    }
+
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.minListIntervalMs = options.minListIntervalMs ?? DEFAULT_MIN_LIST_INTERVAL_MS;
 

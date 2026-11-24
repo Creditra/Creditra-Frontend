@@ -73,8 +73,7 @@ import { classifyDrawError } from "@/lib/draw-errors";
 import { getDrawAmountValidation } from "@/utils/amountValidation";
 import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
 import { projectDraw } from "@/lib/draw-projection";
-import { offlineMutation } from "@/utils/offline";
-import { useOnline } from "@/hooks/useOnline";
+import { offlineMutation, queueOfflineAction } from "@/utils/offline";
 import { WhyApr } from "@/components/WhyApr";
 import { DrawSummaryBar } from "@/components/DrawSummaryBar";
 import { useDrawWizardMicroProgress } from "@/hooks/useDrawWizardMicroProgress";
@@ -157,7 +156,6 @@ export default function DrawCreditPage() {
     setHasAcknowledgedRisk(true);
   }, []);
 
-  const { queueAction } = useOnline();
   const { wallet } = useWallet();
   // Auto-reconnect starts after the first render, so fall back to the
   // remembered wallet during that window. Without this, a draft saved by the
@@ -242,6 +240,8 @@ export default function DrawCreditPage() {
     });
   }, [draftOwner, draftSave.reset]);
 
+  const { step, selectedCreditLine, amount, confirmationAcknowledged } = state;
+
   useEffect(() => {
     if (state.step === "status") {
       clearDraft();
@@ -276,7 +276,6 @@ export default function DrawCreditPage() {
     draftSave.markError,
     draftSave.reset,
   ]);
-  }, [state.step, state.selectedCreditLine, state.amount, draftOwner]);
 
   /**
    * Concurrent submission guard (issue #932). The ref is flipped to `true`
@@ -290,7 +289,6 @@ export default function DrawCreditPage() {
   const helpTriggerRef = useRef<HTMLButtonElement>(null);
   const [isWhyAprOpen, setIsWhyAprOpen] = useState(false);
   const whyAprTriggerRef = useRef<HTMLButtonElement>(null);
-  const amountInputRef = useRef<HTMLInputElement>(null);
 
   const { debouncedAnnouncement: microProgressAnnouncement } =
     useDrawWizardMicroProgress({
@@ -327,6 +325,52 @@ export default function DrawCreditPage() {
       acknowledged,
     });
   }, []);
+
+  /**
+   * Performs the draw submission for a specific line/amount. Kept separate
+   * from `handleConfirm` so a queued action can replay the exact request it
+   * captured while offline, without depending on the wizard's current step.
+   */
+  const submitDraw = async (line: CreditLine, amount: number) => {
+    // Simulate API call
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    const succeeded = Math.random() > 0.2;
+    const newTransaction: Transaction = {
+      id: `TXN-${Date.now()}`,
+      creditLineId: line.id,
+      amount,
+      status: succeeded ? "success" : "error",
+      message: succeeded ? undefined : "Insufficient funds available",
+      timestamp: new Date(),
+    };
+
+    if (succeeded) {
+      emit("draw:success", {
+        transactionId: newTransaction.id,
+        creditLineId: line.id,
+        creditLineName: line.name,
+        amount: newTransaction.amount,
+        timestamp: newTransaction.timestamp?.toISOString() ?? new Date().toISOString(),
+      });
+    }
+
+    if (!isMountedRef.current) return;
+
+    if (succeeded) {
+      dispatch({ type: "SUBMIT_SUCCESS", transaction: newTransaction });
+      navigate("/draw-credit/success", {
+        replace: true,
+        state: { transaction: newTransaction },
+      });
+    } else {
+      dispatch({
+        type: "SUBMIT_ERROR",
+        transaction: newTransaction,
+        errorKind: classifyDrawError(newTransaction).kind,
+      });
+    }
+  };
 
   const handleConfirm = async () => {
     const line = state.selectedCreditLine;
@@ -382,50 +426,16 @@ export default function DrawCreditPage() {
     // Guard mutation
     try {
       await offlineMutation({
-        fn: async () => {
-          // Simulate API call
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-
-          const succeeded = Math.random() > 0.2;
-          const newTransaction: Transaction = {
-            id: `TXN-${Date.now()}`,
-            creditLineId: line.id,
-            amount: state.amount,
-            status: succeeded ? "success" : "error",
-            message: succeeded ? undefined : "Insufficient funds available",
-            timestamp: new Date(),
-          };
-
-          if (succeeded) {
-            emit("draw:success", {
-              transactionId: newTransaction.id,
-              creditLineId: line.id,
-              creditLineName: line.name,
-              amount: newTransaction.amount,
-              timestamp: newTransaction.timestamp?.toISOString() ?? new Date().toISOString(),
-            });
-          }
-
-          if (!isMountedRef.current) return;
-
-          if (succeeded) {
-            dispatch({ type: "SUBMIT_SUCCESS", transaction: newTransaction });
-            navigate("/draw-credit/success", {
-              replace: true,
-              state: { transaction: newTransaction },
-            });
-          } else {
-            dispatch({
-              type: "SUBMIT_ERROR",
-              transaction: newTransaction,
-              errorKind: classifyDrawError(newTransaction),
-            });
-          }
-        },
+        fn: () => submitDraw(line, state.amount),
         onOffline: () => {
-          queueAction(() => {
-            void handleConfirm();
-          }, "draw-confirm");
+          const amount = state.amount;
+          queueOfflineAction({
+            type: "draw",
+            label: `Draw ${amount} from ${line.name}`,
+            description: line.name,
+            dedupeKey: "draw-confirm",
+            run: () => submitDraw(line, amount),
+          });
         },
         offlineMessage:
           "You are offline, so your draw cannot be processed yet. It has been queued and will be submitted when your connection is restored.",
@@ -516,18 +526,6 @@ export default function DrawCreditPage() {
       if (step === "amount" || step === "confirm") {
         e.preventDefault();
         handleBack();
-          if (state.step === "select") {
-          } else if (state.step === "amount" || state.step === "confirm") {
-          if (state.step === "amount" || state.step === "confirm") {
-          if (state.step === "amount" && state.selectedCreditLine) {
-              String(state.amount),
-              state.selectedCreditLine,
-              handleAmountNext(state.amount);
-              dispatch({
-                type: "SET_SUBMIT_ERROR",
-                error: validation.message,
-              });
-          if (state.step === "confirm" && state.confirmationAcknowledged) {
       }
     },
   });
@@ -548,8 +546,11 @@ export default function DrawCreditPage() {
         if (validation.isValid) {
           handleAmountNext(amount);
         } else {
-          amountInputRef.current?.focus();
-          setSubmitError(validation.message);
+          document.getElementById("draw-amount-input")?.focus();
+          dispatch({
+            type: "SET_SUBMIT_ERROR",
+            error: validation.feedback.message,
+          });
         }
       }
       if (step === "confirm" && confirmationAcknowledged) {
@@ -558,15 +559,6 @@ export default function DrawCreditPage() {
       }
     },
   });
-  }, [
-    state.step,
-    state.amount,
-    state.selectedCreditLine,
-    state.confirmationAcknowledged,
-    handleBack,
-    handleCancel,
-    isRiskModalOpen,
-  ]);
 
   return (
     <main className="dc-page" aria-label="Draw credit">
@@ -650,13 +642,12 @@ export default function DrawCreditPage() {
                 drawnAmount={
                   utilizedCredit + (amountStepValidation?.amount ?? 0)
                 }
-                totalLimit={selectedCreditLine.limit}
+                totalLimit={state.selectedCreditLine.limit}
                 drawnLabel="Utilised"
                 availableLabel="Available after draw"
                 announcePercentage={false}
               />
               <AmountInput
-                ref={amountInputRef}
                 creditLine={state.selectedCreditLine}
                 initialAmount={state.amount}
                 onAmountChange={handleAmountChange}

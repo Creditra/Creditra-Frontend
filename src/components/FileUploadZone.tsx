@@ -1,7 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { FormMessage } from './FormMessage';
-import { offlineMutation } from '../utils/offline';
-import { useOnline } from '../hooks/useOnline';
+import { offlineMutation, queueOfflineAction } from '../utils/offline';
 import './FileUploadZone.css';
 
 interface FileUploadItem {
@@ -20,7 +18,7 @@ interface FileUploadZoneProps {
 }
 
 export function FileUploadZone({
-  onFilesUploaded,
+  onFilesUploaded: _onFilesUploaded,
   acceptedTypes = ['.pdf', '.csv'],
   maxSizeMB = 10,
 }: FileUploadZoneProps) {
@@ -28,7 +26,6 @@ export function FileUploadZone({
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const zoneRef = useRef<HTMLDivElement>(null);
-  const { queueAction } = useOnline();
 
   const formatSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
@@ -84,9 +81,13 @@ export function FileUploadZone({
           if (!response.ok) throw new Error('Upload failed');
         },
         onOffline: () => {
-          queueAction(() => {
-            uploadFile(item);
-          }, `upload-${item.id}`);
+          queueOfflineAction({
+            type: 'upload',
+            label: `Upload ${item.file.name}`,
+            description: `${formatSize(item.file.size)} · ${item.file.name.split('.').pop()?.toUpperCase() ?? 'file'}`,
+            dedupeKey: `upload-${item.id}`,
+            run: () => uploadFile(item),
+          });
         },
         offlineMessage:
           'You are offline. Upload queued and will retry when you reconnect.',
@@ -116,7 +117,7 @@ export function FileUploadZone({
           errorMessage: error,
         });
       } else {
-        const item = {
+        const item: FileUploadItem = {
           id,
           file,
           progress: 0,

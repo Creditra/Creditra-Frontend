@@ -1,12 +1,51 @@
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef, useSyncExternalStore, type RefObject } from "react";
 import { NetworkStatus } from "../components/NetworkStatus";
+import { openOfflineQueuePanel } from "../components/OfflineQueuePanel";
+import {
+  getQueuedActionsSnapshot,
+  subscribeToOfflineQueue,
+  type QueuedAction,
+} from "../utils/offline";
 import { KycTriggerButton } from "../components/KycDrawer";
 import { QuickRepayTrigger } from "../components/QuickRepayTrigger";
 import { WalletButton } from "../components/WalletButton";
 import { PrivacyModeToggle } from "../components/PrivacyModeToggle";
 import { NotificationWidget } from "../components/notifications/NotificationWidget";
 import { getEnabledRoutes } from "../routes/manifest";
+
+const EMPTY_QUEUE: readonly QueuedAction[] = Object.freeze([]);
+
+/**
+ * Header entry point for the offline queue. Shows how many actions are
+ * waiting and opens the queue panel; renders nothing when the queue is empty.
+ */
+function OfflineQueueBadge() {
+  const actions = useSyncExternalStore(
+    subscribeToOfflineQueue,
+    getQueuedActionsSnapshot,
+    () => EMPTY_QUEUE,
+  );
+
+  if (actions.length === 0) return null;
+
+  const label = `${actions.length} queued offline action${actions.length === 1 ? '' : 's'}`;
+
+  return (
+    <button
+      type="button"
+      className="header-nav-link offline-queue-badge"
+      onClick={openOfflineQueuePanel}
+      aria-label={`Open queued actions (${actions.length})`}
+      title={label}
+    >
+      Queued
+      <span className="offline-queue-badge__count" aria-hidden="true">
+        {actions.length}
+      </span>
+    </button>
+  );
+}
 
 export interface HeaderProps {
   settingsTriggerRef: RefObject<HTMLButtonElement | null>;
@@ -74,6 +113,7 @@ export function Header({
         Settings
       </button>
       <NetworkStatus />
+      <OfflineQueueBadge />
       <KycTriggerButton triggerRef={kycTriggerRef} onClick={onKycClick} />
       <QuickRepayTrigger />
       <PrivacyModeToggle />

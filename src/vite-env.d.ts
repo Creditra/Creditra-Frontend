@@ -1,6 +1,13 @@
 /// <reference types="vite/client" />
 /// <reference types="@testing-library/jest-dom/vitest" />
 
+/**
+ * Supported build-time variables.
+ *
+ * Stellar/Soroban network values are read exclusively by
+ * `src/config/creditNetwork.ts`; see `.env.example` for defaults and the
+ * contract-id policy.
+ */
 interface ImportMetaEnv {
   readonly VITE_IPFS_GATEWAY?: string;
   readonly VITE_SETTLEMENT_ASSET_CODE?: string;
@@ -12,8 +19,13 @@ interface ImportMetaEnv {
   readonly VITE_SOROBAN_RPC_URL?: string;
   readonly VITE_STELLAR_NETWORK_PASSPHRASE?: string;
   readonly VITE_CREDIT_CONTRACT_ID?: string;
+  /** `mock` (default) or `soroban`. */
+  readonly VITE_CREDIT_DATA_SOURCE?: 'mock' | 'soroban' | string;
 
   // Build-time feature flags (truthy only for 'true' or '1'; default off)
   readonly VITE_FEATURE_COLLATERAL_SWAP?: string;
   readonly VITE_FEATURE_AUTOPAY?: string;
+
+  /** Optional version string surfaced in diagnostics bundles. */
+  readonly VITE_APP_VERSION?: string;
 }

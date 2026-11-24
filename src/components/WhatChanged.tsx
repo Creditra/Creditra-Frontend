@@ -8,7 +8,7 @@ import {
   dashboardValuesStableKey,
 } from "../constants/storageKeys";
 import { useWalletIdentityKey } from "../hooks/useWalletIdentityKey";
-import { readJson, readSessionJson, writeJson, writeSessionJson } from "../utils/storage";
+import { readSessionJson, writeJson, writeSessionJson } from "../utils/storage";
 import "./WhatChanged.css";
 
 const DASHBOARD_VALUES_SCHEMA_VERSION = 1;
@@ -77,8 +77,6 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
 
     // Check if the session is already active
     const sessionActive = readSessionJson<boolean>(sessionActiveKey, false);
-    const storedData = readJson<unknown>(stableKey, {});
-    const lastVisitData = isDashboardValues(storedData) ? storedData : {};
     const lastVisitData = readVersioned<Record<string, number>>(
       DASHBOARD_VALUES_STABLE_KEY,
       {
