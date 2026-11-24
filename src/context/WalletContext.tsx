@@ -40,6 +40,20 @@ export type { BalanceInfo, ConnectOptions, ConnectResult };
 interface WalletContextType {
   /** The currently connected wallet, or `null` when disconnected. */
   wallet: WalletInfo | null;
+  /**
+   * Every account the connected wallet exposes, with the active account first.
+   * Always contains at least the connected key while `wallet` is non-null;
+   * wallets that expose only one account produce a single-element list.
+   */
+  accounts: string[];
+  /**
+   * Make another account from `accounts` the active one without disconnecting.
+   *
+   * This is an app-level selection: the wallet extension still decides which
+   * key signs. Balances, SSE subscriptions and per-wallet drafts are re-scoped
+   * automatically because they key off `walletIdentityKey`.
+   */
+  switchAccount: (publicKey: string) => void;
   /** Coarse connection-lifecycle state. UI consumers branch on this for spinners and badges. */
   status: ConnectionStatus;
   /**
@@ -151,6 +165,8 @@ export const WalletProvider = ({
 
   const {
     wallet,
+    accounts,
+    switchAccount,
     status,
     error,
     reconnectTimedOut,
@@ -185,6 +201,8 @@ export const WalletProvider = ({
   const value = useMemo<WalletContextType>(
     () => ({
       wallet,
+      accounts,
+      switchAccount,
       status,
       error,
       reconnectTimedOut,
@@ -206,6 +224,8 @@ export const WalletProvider = ({
     }),
     [
       wallet,
+      accounts,
+      switchAccount,
       status,
       error,
       reconnectTimedOut,

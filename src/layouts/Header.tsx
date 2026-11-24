@@ -4,6 +4,7 @@ import { NetworkStatus } from "../components/NetworkStatus";
 import { KycTriggerButton } from "../components/KycDrawer";
 import { QuickRepayTrigger } from "../components/QuickRepayTrigger";
 import { WalletButton } from "../components/WalletButton";
+import { PrivacyModeToggle } from "../components/PrivacyModeToggle";
 import { NotificationWidget } from "../components/notifications/NotificationWidget";
 import { getEnabledRoutes } from "../routes/manifest";
 
@@ -75,6 +76,7 @@ export function Header({
       <NetworkStatus />
       <KycTriggerButton triggerRef={kycTriggerRef} onClick={onKycClick} />
       <QuickRepayTrigger />
+      <PrivacyModeToggle />
       <NotificationWidget />
       <WalletButton />
     </header>

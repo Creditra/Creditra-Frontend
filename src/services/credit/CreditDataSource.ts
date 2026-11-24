@@ -10,12 +10,23 @@ export type CreditDataErrorCode =
 export class CreditDataError extends Error {
   readonly code: CreditDataErrorCode;
   override readonly cause?: unknown;
+  /**
+   * Structured context for the failure. Simulation errors put the raw RPC
+   * message and its diagnostic events here so callers can map contract codes
+   * without re-parsing the human-readable `message`.
+   */
+  readonly details?: unknown;
 
-  constructor(code: CreditDataErrorCode, message: string, options?: { cause?: unknown }) {
+  constructor(
+    code: CreditDataErrorCode,
+    message: string,
+    options?: { cause?: unknown; details?: unknown },
+  ) {
     super(message);
     this.name = 'CreditDataError';
     this.code = code;
     this.cause = options?.cause;
+    this.details = options?.details;
 
     // Restore prototype chain for instanceof checks across transpilation targets
     Object.setPrototypeOf(this, new.target.prototype);
