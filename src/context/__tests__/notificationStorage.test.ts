@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  MAX_INBOX_AGE_MS,
+  MAX_INBOX_SIZE,
   parseInbox,
   parsePreferences,
   serializeInbox,
@@ -145,6 +147,96 @@ describe('parseInbox', () => {
   it('handles number input gracefully', () => {
     expect(parseInbox(123)).toEqual([]);
   });
+
+  it('retains valid auction category notifications', () => {
+    const now = Date.parse('2026-06-01T00:00:00.000Z');
+    const auctionNotification = createValidNotification({
+      id: 'auction-1',
+      category: 'auction',
+      timestamp: new Date(now - 1000).toISOString(),
+    });
+    const result = parseInbox({ v: 1, items: [auctionNotification] }, now);
+    expect(result).toHaveLength(1);
+    expect(result[0].category).toBe('auction');
+  });
+
+  it('drops notifications older than MAX_INBOX_AGE_MS', () => {
+    const now = Date.parse('2026-06-01T00:00:00.000Z');
+    const fresh = createValidNotification({
+      id: 'fresh',
+      timestamp: new Date(now - 1000).toISOString(),
+    });
+    const expired = createValidNotification({
+      id: 'expired',
+      timestamp: new Date(now - MAX_INBOX_AGE_MS - 1).toISOString(),
+    });
+    const result = parseInbox({ v: 1, items: [fresh, expired] }, now);
+    expect(result.map((n) => n.id)).toEqual(['fresh']);
+  });
+
+  it('retains a notification exactly at the retention cutoff', () => {
+    const now = Date.parse('2026-06-01T00:00:00.000Z');
+    const atCutoff = createValidNotification({
+      id: 'at-cutoff',
+      timestamp: new Date(now - MAX_INBOX_AGE_MS).toISOString(),
+    });
+    const justPastCutoff = createValidNotification({
+      id: 'past-cutoff',
+      timestamp: new Date(now - MAX_INBOX_AGE_MS - 1).toISOString(),
+    });
+    const result = parseInbox([atCutoff, justPastCutoff], now);
+    expect(result.map((n) => n.id)).toEqual(['at-cutoff']);
+  });
+
+  it('retains future-dated notifications', () => {
+    const now = Date.parse('2026-06-01T00:00:00.000Z');
+    const future = createValidNotification({
+      id: 'future',
+      timestamp: new Date(now + 60_000).toISOString(),
+    });
+    const result = parseInbox({ v: 1, items: [future] }, now);
+    expect(result.map((n) => n.id)).toEqual(['future']);
+  });
+
+  it('prunes expired items from legacy bare-array format', () => {
+    const now = Date.parse('2026-06-01T00:00:00.000Z');
+    const fresh = createValidNotification({
+      id: 'legacy-fresh',
+      timestamp: new Date(now - 5_000).toISOString(),
+    });
+    const expired = createValidNotification({
+      id: 'legacy-expired',
+      timestamp: new Date(now - MAX_INBOX_AGE_MS - 5_000).toISOString(),
+    });
+    const result = parseInbox([fresh, expired], now);
+    expect(result.map((n) => n.id)).toEqual(['legacy-fresh']);
+  });
+
+  it('handles empty inbox array and empty envelope', () => {
+    const now = Date.parse('2026-06-01T00:00:00.000Z');
+    expect(parseInbox([], now)).toEqual([]);
+    expect(parseInbox({ v: 1, items: [] }, now)).toEqual([]);
+  });
+
+  it('applies age pruning before count cap', () => {
+    const now = Date.parse('2026-06-01T00:00:00.000Z');
+    const expired = Array.from({ length: 10 }, (_, i) =>
+      createValidNotification({
+        id: `expired-${i}`,
+        timestamp: new Date(now - MAX_INBOX_AGE_MS - 10_000).toISOString(),
+      })
+    );
+    const fresh = Array.from({ length: MAX_INBOX_SIZE }, (_, i) =>
+      createValidNotification({
+        id: `fresh-${i}`,
+        timestamp: new Date(now - i * 1000).toISOString(),
+      })
+    );
+    // Expired items appear first; age pruning must run before slicing to MAX_INBOX_SIZE
+    const result = parseInbox([...expired, ...fresh], now);
+    expect(result).toHaveLength(MAX_INBOX_SIZE);
+    expect(result.every((n) => n.id.startsWith('fresh-'))).toBe(true);
+  });
 });
 
 describe('parsePreferences', () => {
@@ -154,6 +246,7 @@ describe('parsePreferences', () => {
       credit_line: true,
       risk_score: true,
       rate_change: true,
+      auction: true,
       system: true,
     });
   });
@@ -164,15 +257,17 @@ describe('parsePreferences', () => {
       credit_line: true,
       risk_score: true,
       rate_change: true,
+      auction: true,
       system: true,
     });
   });
 
-  it('accepts valid boolean preferences', () => {
-    const input = { transaction: false, credit_line: true };
+  it('accepts valid boolean preferences including auction', () => {
+    const input = { transaction: false, credit_line: true, auction: false };
     const result = parsePreferences(input);
     expect(result.transaction).toBe(false);
     expect(result.credit_line).toBe(true);
+    expect(result.auction).toBe(false);
     expect(result.risk_score).toBe(true); // default
   });
 
@@ -197,6 +292,7 @@ describe('parsePreferences', () => {
       credit_line: true,
       risk_score: true,
       rate_change: true,
+      auction: true,
       system: true,
     });
   });
@@ -207,6 +303,7 @@ describe('parsePreferences', () => {
       credit_line: true,
       risk_score: true,
       rate_change: true,
+      auction: true,
       system: true,
     });
   });
@@ -217,6 +314,7 @@ describe('parsePreferences', () => {
       credit_line: true,
       risk_score: true,
       rate_change: true,
+      auction: true,
       system: true,
     });
   });
@@ -236,7 +334,64 @@ describe('serializeInbox', () => {
       createValidNotification({ id: `${i}` })
     );
     const serialized = serializeInbox(notifications);
-    expect(serialized.items).toHaveLength(100);
+    expect(serialized.items).toHaveLength(MAX_INBOX_SIZE);
+  });
+
+  it('prunes expired items before applying count cap', () => {
+    const now = Date.parse('2026-06-01T00:00:00.000Z');
+    const expired = Array.from({ length: 10 }, (_, i) =>
+      createValidNotification({
+        id: `expired-${i}`,
+        timestamp: new Date(now - MAX_INBOX_AGE_MS - 1).toISOString(),
+      })
+    );
+    const fresh = Array.from({ length: MAX_INBOX_SIZE }, (_, i) =>
+      createValidNotification({
+        id: `fresh-${i}`,
+        timestamp: new Date(now - i * 1000).toISOString(),
+      })
+    );
+    const serialized = serializeInbox([...expired, ...fresh], now);
+    expect(serialized.items).toHaveLength(MAX_INBOX_SIZE);
+    expect(serialized.items.every((n) => n.id.startsWith('fresh-'))).toBe(true);
+  });
+
+  it('retains item at exact cutoff and future-dated items', () => {
+    const now = Date.parse('2026-06-01T00:00:00.000Z');
+    const atCutoff = createValidNotification({
+      id: 'cutoff',
+      timestamp: new Date(now - MAX_INBOX_AGE_MS).toISOString(),
+    });
+    const future = createValidNotification({
+      id: 'future',
+      timestamp: new Date(now + 60_000).toISOString(),
+    });
+    const expired = createValidNotification({
+      id: 'expired',
+      timestamp: new Date(now - MAX_INBOX_AGE_MS - 1).toISOString(),
+    });
+    const serialized = serializeInbox([atCutoff, future, expired], now);
+    expect(serialized.items.map((n) => n.id)).toEqual(['cutoff', 'future']);
+  });
+
+  it('applies the same FIFO count cap to unread critical notifications', () => {
+    const now = Date.parse('2026-06-01T00:00:00.000Z');
+    const recent = Array.from({ length: MAX_INBOX_SIZE }, (_, i) =>
+      createValidNotification({
+        id: `info-${i}`,
+        type: 'info',
+        timestamp: new Date(now - i * 1000).toISOString(),
+      })
+    );
+    const unreadCritical = createValidNotification({
+      id: 'critical-101',
+      type: 'danger',
+      read: false,
+      timestamp: new Date(now - MAX_INBOX_SIZE * 1000).toISOString(),
+    });
+    const serialized = serializeInbox([...recent, unreadCritical], now);
+    expect(serialized.items).toHaveLength(MAX_INBOX_SIZE);
+    expect(serialized.items.some((n) => n.id === 'critical-101')).toBe(false);
   });
 });
 
@@ -247,6 +402,7 @@ describe('serializePreferences', () => {
       credit_line: true,
       risk_score: false,
       rate_change: true,
+      auction: true,
       system: false,
     };
     const serialized = serializePreferences(prefs);
