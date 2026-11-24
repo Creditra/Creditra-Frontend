@@ -1,17 +1,48 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { createCreditDataSource } from '../factory';
 import { MockCreditDataSource } from '../mockCreditDataSource';
 import { SorobanCreditDataSource } from '../sorobanCreditDataSource';
 
 describe('createCreditDataSource', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('creates MockCreditDataSource by default', () => {
-    const source = createCreditDataSource('mock');
+    vi.stubEnv('VITE_CREDIT_DATA_SOURCE', undefined);
+    const source = createCreditDataSource();
     expect(source).toBeInstanceOf(MockCreditDataSource);
   });
 
-  it('creates SorobanCreditDataSource when soroban type is passed', () => {
-    const source = createCreditDataSource('soroban');
+  it('creates MockCreditDataSource when mock is configured', () => {
+    vi.stubEnv('VITE_CREDIT_DATA_SOURCE', 'mock');
+    const source = createCreditDataSource();
+    expect(source).toBeInstanceOf(MockCreditDataSource);
+  });
+
+  it.each(['', '   '])('defaults to mock for an empty configured value (%j)', (value) => {
+    vi.stubEnv('VITE_CREDIT_DATA_SOURCE', value);
+    const source = createCreditDataSource();
+    expect(source).toBeInstanceOf(MockCreditDataSource);
+  });
+
+  it('creates SorobanCreditDataSource for a case-insensitive configured value', () => {
+    vi.stubEnv('VITE_CREDIT_DATA_SOURCE', ' SOROBAN ');
+    const source = createCreditDataSource();
     expect(source).toBeInstanceOf(SorobanCreditDataSource);
+  });
+
+  it('throws for an unrecognized configured value', () => {
+    vi.stubEnv('VITE_CREDIT_DATA_SOURCE', 'sorobna');
+    expect(() => createCreditDataSource()).toThrow(
+      'Invalid VITE_CREDIT_DATA_SOURCE value "sorobna". Allowed values are "mock" and "soroban".',
+    );
+  });
+
+  it('throws for an unrecognized explicit type', () => {
+    expect(() => createCreditDataSource('sorobna')).toThrow(
+      'Unknown credit data source type "sorobna". Allowed values are "mock" and "soroban".',
+    );
   });
 
   it('MockCreditDataSource lists and gets credit lines', async () => {

@@ -27,9 +27,23 @@ export function getSorobanConfig(): SorobanCreditConfig {
 }
 
 export function getCreditDataSourceType(): 'mock' | 'soroban' {
-  const type =
-    typeof import.meta !== 'undefined' && import.meta.env?.VITE_CREDIT_DATA_SOURCE;
-  return type === 'soroban' ? 'soroban' : 'mock';
+  const configuredType =
+    typeof import.meta !== 'undefined'
+      ? import.meta.env?.VITE_CREDIT_DATA_SOURCE
+      : undefined;
+  const type = configuredType?.trim().toLowerCase();
+
+  if (!type) {
+    return 'mock';
+  }
+
+  if (type === 'mock' || type === 'soroban') {
+    return type;
+  }
+
+  throw new Error(
+    `Invalid VITE_CREDIT_DATA_SOURCE value "${configuredType}". Allowed values are "mock" and "soroban".`,
+  );
 }
 
 /**
