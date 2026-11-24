@@ -212,73 +212,59 @@ export function HealthFactorChart({
         </span>
       </figcaption>
 
-      <svg
-        width={width}
-        height={height}
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-labelledby={`${titleId} ${descId}`}
-        className="hf-chart__svg"
-      >
-        <title id={titleId}>
-          Health factor trend for {lineName}
-        </title>
-        <desc id={descId}>
-          Current health factor {current.toFixed(2)} ({healthBandLabel(band)}).
-          History of {data.length} observed points, from {min.toFixed(2)} to {max.toFixed(2)}.
-          The factor is the credit limit divided by utilized balance; an unused
-          line uses 3.00. Safe is 2.00 or higher, caution is 1.25 to below 2.00,
-          and at risk is below 1.25.
-        </desc>
+      <div className="chart-frame-wrapper">
+        <ChartFrame
+          width={width}
+          height={height}
+          explicitDimensions
+          title={`Health factor trend for ${lineName}`}
+          description={`Current health factor ${current.toFixed(2)} (${healthBandLabel(band)}). History of ${data.length} observed points, from ${min.toFixed(2)} to ${max.toFixed(2)}. The factor is the credit limit divided by utilized balance; an unused line uses 3.00. Safe is 2.00 or higher, caution is 1.25 to below 2.00, and at risk is below 1.25.`}
+          className="hf-chart__svg"
+        >
+          {/* Caution threshold guide at HF = 1.25 */}
+          <line
+            className="hf-chart__guide"
+            x1={PAD.left}
+            x2={width - PAD.right}
+            y1={guideY}
+            y2={guideY}
+            stroke={COLOR.warning}
+            strokeDasharray="4 3"
+            strokeWidth={1}
+            opacity={0.45}
+            aria-hidden="true"
+          />
 
-        {/* Caution threshold guide at HF = 1.25 */}
-        <line
-          className="hf-chart__guide"
-          x1={PAD.left}
-          x2={width - PAD.right}
-          y1={PAD.top + ((max - 1.25) / (max - min || 1)) * (height - PAD.top - PAD.bottom)}
-          y2={PAD.top + ((max - 1.25) / (max - min || 1)) * (height - PAD.top - PAD.bottom)}
-          stroke={COLOR.warning}
-          strokeDasharray="4 3"
-          strokeWidth={1}
-          opacity={0.45}
-          aria-hidden="true"
-        />
+          <path
+            d={area}
+            fill={stroke}
+            fillOpacity={0.12}
+            aria-hidden="true"
+            className="hf-chart__area"
+          />
+          <path
+            d={path}
+            fill="none"
+            stroke={stroke}
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="hf-chart__line"
+          />
+          <ChartTooltipPoints
+            points={tooltipPoints}
+            activeIndex={activeIndex}
+            onActiveChange={setActiveIndex}
+          />
+        </ChartFrame>
+        <ChartTooltip point={activePoint} />
+      </div>
 
-        <path
-          d={area}
-          fill={stroke}
-          fillOpacity={0.12}
-          aria-hidden="true"
-          className="hf-chart__area"
-        />
-        <path
-          d={path}
-          fill="none"
-          stroke={stroke}
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="hf-chart__line"
-        />
-      </svg>
-
-      <table className="sr-only" aria-label={`Health factor history for ${lineName}`}>
-        <thead>
-          <tr>
-            <th scope="col">Date</th>
-            <th scope="col">Health factor</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((p) => (
-            <tr key={p.date}>
-              <td>{p.date}</td>
-              <td>{p.value.toFixed(2)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <ChartDataTable
+        ariaLabel={`Health factor history for ${lineName}`}
+        columns={TABLE_COLUMNS}
+        rows={tableRows}
+      />
     </figure>
   );
 }

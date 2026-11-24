@@ -1,5 +1,17 @@
 import { useMemo, useState } from 'react';
 import { COLOR } from '../utils/tokens';
+import {
+  Axis,
+  ChartDataTable,
+  ChartFrame,
+  ChartTooltip,
+  ChartTooltipPoints,
+  buildStackedAreaPath,
+  createLinearScale,
+  useChartPreferences,
+  useChartTooltip,
+} from './charts';
+import type { AxisTick, ChartTooltipPoint } from './charts';
 import { getNumberFormat } from '../utils/formatters';
 import './RepaymentPlanChart.css';
 import type { CreditLine } from '../types/creditLine';
