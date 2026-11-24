@@ -60,6 +60,8 @@ import {
   reconcileStableOrder,
 } from "../utils/stableListPagination";
 import {
+  MAX_COMPARE,
+  buildComparisonUrl,
   loadComparisonSelection,
   saveComparisonSelection,
 } from "../utils/comparisonSelection";
@@ -864,7 +866,7 @@ export default function CreditLines({
   };
 
   const handleOpenCompare = () => {
-    if (selectedLines.length === 2) {
+    if (selectedLines.length >= 2 && selectedLines.length <= MAX_COMPARE) {
       setShowCompare(true);
     }
   };
@@ -876,13 +878,14 @@ export default function CreditLines({
 
   const toggleSelection = (id: string) => {
     setSelectedLines((prev) => {
-      const next = prev.includes(id)
-        ? prev.filter((lineId) => lineId !== id)
-        : prev.length < 2
-          ? [...prev, id]
-          : prev;
-
-      return next;
+      if (prev.includes(id)) {
+        return prev.filter((lineId) => lineId !== id);
+      }
+      if (prev.length < MAX_COMPARE) {
+        return [...prev, id];
+      }
+      setAnnouncement(`You can compare up to ${MAX_COMPARE} credit lines at a time.`);
+      return prev;
     });
   };
 
@@ -1029,43 +1032,60 @@ export default function CreditLines({
             ref={triggerRef}
             className="cl-primary-btn focus-ring"
             onClick={handleOpenCompare}
-            disabled={selectedLines.length !== 2}
+            disabled={selectedLines.length < 2 || selectedLines.length > MAX_COMPARE}
             style={{
-              opacity: selectedLines.length === 2 ? 1 : 0.6,
+              opacity:
+                selectedLines.length >= 2 && selectedLines.length <= MAX_COMPARE
+                  ? 1
+                  : 0.6,
               display: "inline-flex",
               alignItems: "center",
               gap: "0.5rem",
             }}
           >
-            <span>Compare Selected ({selectedLines.length}/2)</span>
+            <span>Compare Selected ({selectedLines.length}/{MAX_COMPARE})</span>
             <KbdHint keys={["C"]} description="Compare Selected" />
           </button>
-          {/* Full-page compare — only enabled when exactly 2 lines are selected */}
+          {/* Full-page compare */}
           <Link
             to={
-              selectedLines.length === 2
-                ? `/compare-credit-lines?a=${selectedLines[0]}&b=${selectedLines[1]}`
+              selectedLines.length >= 2 && selectedLines.length <= MAX_COMPARE
+                ? buildComparisonUrl(selectedLines)
                 : "#"
             }
             className="cl-primary-btn focus-ring"
-            aria-disabled={selectedLines.length !== 2}
+            aria-disabled={
+              selectedLines.length < 2 || selectedLines.length > MAX_COMPARE
+            }
             aria-label={
-              selectedLines.length === 2
-                ? "Open full-page comparison for the two selected credit lines"
-                : "Select exactly 2 credit lines to open the full comparison page"
+              selectedLines.length >= 2 && selectedLines.length <= MAX_COMPARE
+                ? `Open full-page comparison for the ${selectedLines.length} selected credit lines`
+                : `Select between 2 and ${MAX_COMPARE} credit lines to open the full comparison page`
             }
             style={{
               background: "var(--surface)",
               border: "1px solid var(--border)",
               color:
-                selectedLines.length === 2 ? "var(--text)" : "var(--muted)",
-              opacity: selectedLines.length === 2 ? 1 : 0.6,
-              pointerEvents: selectedLines.length === 2 ? "auto" : "none",
+                selectedLines.length >= 2 && selectedLines.length <= MAX_COMPARE
+                  ? "var(--text)"
+                  : "var(--muted)",
+              opacity:
+                selectedLines.length >= 2 && selectedLines.length <= MAX_COMPARE
+                  ? 1
+                  : 0.6,
+              pointerEvents:
+                selectedLines.length >= 2 && selectedLines.length <= MAX_COMPARE
+                  ? "auto"
+                  : "none",
               display: "inline-flex",
               alignItems: "center",
               gap: "0.5rem",
             }}
-            tabIndex={selectedLines.length === 2 ? 0 : -1}
+            tabIndex={
+              selectedLines.length >= 2 && selectedLines.length <= MAX_COMPARE
+                ? 0
+                : -1
+            }
           >
             <span>Full Compare →</span>
             <KbdHint keys={["F"]} description="Full Compare" />
@@ -1175,7 +1195,9 @@ export default function CreditLines({
           </button>
         </div>
       )}
-      {showCompare && selectedCreditLines.length === 2 && (
+      {showCompare &&
+        selectedCreditLines.length >= 2 &&
+        selectedCreditLines.length <= MAX_COMPARE && (
         <div
           id="compare-lines-drawer"
           ref={comparePanelRef}
@@ -1194,7 +1216,10 @@ export default function CreditLines({
         >
           <div
             style={{
-              width: "min(480px, 100%)",
+              width:
+                selectedCreditLines.length > 2
+                  ? "min(640px, 100%)"
+                  : "min(480px, 100%)",
               height: "100%",
               position: "relative",
               zIndex: 1201,
