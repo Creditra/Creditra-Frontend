@@ -5,6 +5,7 @@ import { CreditLineRowMenu } from "../components/CreditLineRowMenu";
 import { Skeleton } from "../components/Skeleton";
 import CompareLinesPanel from "../components/CompareLinesPanel";
 import { CollateralSubstitutionModal } from "../components/CollateralSubstitutionModal";
+import { CollateralAdjustModal } from "../components/CollateralAdjustModal";
 import { NoLines } from "../components/illustrations";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useInertBackdrop } from "../hooks/useInertBackdrop";
@@ -145,6 +146,7 @@ function CreditLineCard({
   isSelected,
   onToggle,
   onSwapCollateral,
+  onAdjustCollateral,
   onRepay,
   onSchedule,
   onDetails,
@@ -155,6 +157,10 @@ function CreditLineCard({
   isSelected: boolean;
   onToggle: () => void;
   onSwapCollateral?: (
+    line: CreditLine,
+    triggerRef: React.RefObject<HTMLButtonElement | null>,
+  ) => void;
+  onAdjustCollateral?: (
     line: CreditLine,
     triggerRef: React.RefObject<HTMLButtonElement | null>,
   ) => void;
@@ -214,6 +220,11 @@ function CreditLineCard({
             frozen={line.status === "Frozen"}
             triggerRef={menuTriggerRef}
             onRepay={onRepay}
+            onAdjustCollateral={
+              onAdjustCollateral
+                ? () => onAdjustCollateral(line, menuTriggerRef)
+                : undefined
+            }
             onFreeze={canFreeze ? onFreeze : undefined}
             onUnfreeze={canUnfreeze ? onUnfreeze : undefined}
             onSchedule={onSchedule}
@@ -680,6 +691,11 @@ export default function CreditLines({
     triggerRef: React.RefObject<HTMLButtonElement | null>;
   } | null>(null);
 
+  const [adjustModalTarget, setAdjustModalTarget] = useState<{
+    line: CreditLine;
+    triggerRef: React.RefObject<HTMLButtonElement | null>;
+  } | null>(null);
+
   const handleModalClose = () => setModalTarget(null);
   const handleModalSuccess = (_incomingAsset: CollateralAsset) => {
     setModalTarget(null);
@@ -691,6 +707,16 @@ export default function CreditLines({
     setModalTarget({
       line,
       currentAsset: "ETH",
+      triggerRef,
+    });
+  };
+
+  const handleAdjustCollateral = (
+    line: CreditLine,
+    triggerRef: React.RefObject<HTMLButtonElement | null>,
+  ) => {
+    setAdjustModalTarget({
+      line,
       triggerRef,
     });
   };
@@ -1226,6 +1252,7 @@ export default function CreditLines({
                     isSelected={selectedLines.includes(line.id)}
                     onToggle={() => toggleSelection(line.id)}
                     onSwapCollateral={handleSwapCollateral}
+                    onAdjustCollateral={handleAdjustCollateral}
                     onRepay={() => handleRepay(line.id)}
                     onFreeze={handleFreeze}
                     onUnfreeze={handleUnfreeze}
@@ -1326,6 +1353,20 @@ export default function CreditLines({
           loanBalance={modalTarget.line.utilized}
           currentAsset={modalTarget.currentAsset}
           triggerRef={modalTarget.triggerRef}
+        />
+      )}
+
+      {/* Collateral adjust modal (top up / withdraw) */}
+      {adjustModalTarget && (
+        <CollateralAdjustModal
+          isOpen
+          onClose={() => setAdjustModalTarget(null)}
+          onSuccess={() => {
+            setAdjustModalTarget(null);
+            void refetch();
+          }}
+          creditLine={adjustModalTarget.line}
+          triggerRef={adjustModalTarget.triggerRef}
         />
       )}
 
