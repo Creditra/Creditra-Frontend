@@ -704,16 +704,6 @@ export function RepayModal({
           </button>
         </div>
       )}
-
-      <style>{`
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes scaleIn { 0% { transform: scale(0); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
-        /* Suppress default outline for pointer users; show a visible ring for keyboard users (WCAG 2.4.7). */
-        .repay-modal-input { outline: none; }
-        .repay-modal-input:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
-      `}</style>
     </Modal>
   );
 }

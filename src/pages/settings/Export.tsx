@@ -1,6 +1,34 @@
 import React, { useState } from 'react';
+import { downloadCsv, toCsv } from '../../utils/csv';
 
-export const ExportAccountSettings: React.FC = () => {
+export interface ExportAccountData {
+  profile: {
+    username: string;
+    email: string;
+    jointAt: string;
+  };
+  activities: Array<{
+    id: number;
+    action: string;
+    timestamp: string;
+  }>;
+}
+
+export interface ExportAccountSettingsProps {
+  getExportData?: () => Promise<ExportAccountData> | ExportAccountData;
+}
+
+const DEFAULT_EXPORT_DATA: ExportAccountData = {
+  profile: { username: 'user_export', email: 'user@creditra.io', jointAt: '2026-01-01' },
+  activities: [
+    { id: 1, action: 'Credit Score Requested', timestamp: '2026-06-20' },
+    { id: 2, action: 'Report Downloaded', timestamp: '2026-06-25' },
+  ],
+};
+
+export const ExportAccountSettings: React.FC<ExportAccountSettingsProps> = ({
+  getExportData,
+}) => {
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,30 +52,31 @@ export const ExportAccountSettings: React.FC = () => {
     try {
       // Replace with your canonical API service fetch pipeline hook as needed
       // const userData = await api.auth.getExportData();
-      const mockUserData = {
-        profile: { username: "user_export", email: "user@creditra.io", jointAt: "2026-01-01" },
-        activities: [
-          { id: 1, action: "Credit Score Requested", timestamp: "2026-06-20" },
-          { id: 2, action: "Report Downloaded", timestamp: "2026-06-25" }
-        ]
-      };
+      const userData = getExportData ? await getExportData() : DEFAULT_EXPORT_DATA;
 
       if (format === 'json') {
-        const jsonString = JSON.stringify(mockUserData, null, 2);
-        triggerDownload(jsonString, `creditra-account-data.json`, 'application/json');
+        const jsonString = JSON.stringify(userData, null, 2);
+        triggerDownload(jsonString, 'creditra-account-data.json', 'application/json');
       } else {
         // Flat mapping data schema structure into compliance string patterns for standard CSV parsers
-        const csvRows = [
-          ['Section', 'Key/ID', 'Detail/Action', 'Timestamp'],
-          ['Profile', 'Username', mockUserData.profile.username, mockUserData.profile.jointAt],
-          ['Profile', 'Email', mockUserData.profile.email, ''],
-          ...mockUserData.activities.map(act => ['Activity', act.id.toString(), act.action, act.timestamp])
+        const headers = ['Section', 'Key/ID', 'Detail/Action', 'Timestamp'];
+        const rows = [
+          ['Profile', 'Username', userData.profile.username, userData.profile.jointAt],
+          ['Profile', 'Email', userData.profile.email, ''],
+          ...userData.activities.map((act) => [
+            'Activity',
+            act.id.toString(),
+            act.action,
+            act.timestamp,
+          ]),
         ];
-        
-        const csvContent = csvRows.map(e => e.map(val => `"${val}"`).join(",")).join("\n");
-        triggerDownload(csvContent, `creditra-account-data.csv`, 'text/csv;charset=utf-8;');
+
+        const csvContent = toCsv(headers, rows);
+        downloadCsv('creditra-account-data.csv', csvContent);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('Failed to export account data:', message);
       setError('Failed to bundle your account archive. Please try again later.');
     } finally {
       setIsExporting(false);

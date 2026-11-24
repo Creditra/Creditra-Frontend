@@ -37,10 +37,16 @@ describe('typed amount helpers', () => {
       expect(parseTypedAmount('$5000')).toBe(0);
     });
 
-    it('returns 5 for a comma-formatted value like "5,000"', () => {
-      // parseFloat stops at the comma: "5,000" → 5, not 5000.
-      // This is intentional — the hint text explains raw digits are required.
-      expect(parseTypedAmount('5,000')).toBe(5);
+    it('returns 0 for a comma-formatted value like "5,000"', () => {
+      // Strict parsing rejects commas — the hint text explains raw digits are required.
+      expect(parseTypedAmount('5,000')).toBe(0);
+    });
+
+    it('rejects trailing garbage and scientific notation ("12abc", "1e3")', () => {
+      expect(parseTypedAmount('12abc')).toBe(0);
+      expect(parseTypedAmount('1e3')).toBe(0);
+      expect(isTypedAmountMatch('12abc', 12)).toBe(false);
+      expect(isTypedAmountMatch('1e3', 1000)).toBe(false);
     });
 
     it('returns 0 for whitespace-only input', () => {

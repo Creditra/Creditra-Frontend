@@ -19,7 +19,9 @@ const VALID_CATEGORIES: NotificationCategory[] = [
 ];
 
 const STORAGE_VERSION = 1;
-const MAX_INBOX_SIZE = 100;
+export const MAX_INBOX_SIZE = 100;
+/** Retention window for persisted notifications (30 days). */
+export const MAX_INBOX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const VALID_COMMAND_IDS: ReadonlySet<string> = new Set(NOTIFICATION_COMMAND_IDS);
 
 const DEFAULT_PREFS: NotificationPreferences = {
@@ -109,7 +111,23 @@ function parseEnvelope(raw: unknown): Notification[] | null {
   return envelope.items;
 }
 
-export function parseInbox(raw: unknown): Notification[] {
+function isWithinRetentionWindow(timestamp: string, now: number): boolean {
+  const ts = Date.parse(timestamp);
+  if (Number.isNaN(ts)) return false;
+  return ts >= now - MAX_INBOX_AGE_MS;
+}
+
+/**
+ * Parse and validate persisted inbox data (versioned envelope or legacy bare array).
+ *
+ * Pruning rules:
+ * 1. Drop invalid entries and duplicate IDs (keeping the first occurrence).
+ * 2. Drop entries older than `MAX_INBOX_AGE_MS` relative to `now` (entries exactly at
+ *    the cutoff or future-dated are retained).
+ * 3. Cap at `MAX_INBOX_SIZE` entries (all severities, including unread `danger`/`error`,
+ *    follow the same FIFO count cap).
+ */
+export function parseInbox(raw: unknown, now: number = Date.now()): Notification[] {
   let notifications: Notification[] = [];
 
   // Try to parse as versioned envelope first
@@ -124,12 +142,12 @@ export function parseInbox(raw: unknown): Notification[] {
     return [];
   }
 
-  // Filter valid notifications, preserve order, deduplicate by id
+  // Filter valid, in-window notifications, preserve order, deduplicate by id
   const seen = new Set<string>();
   const valid: Notification[] = [];
 
   for (const n of notifications) {
-    if (isValidNotification(n) && !seen.has(n.id)) {
+    if (isValidNotification(n) && !seen.has(n.id) && isWithinRetentionWindow(n.timestamp, now)) {
       seen.add(n.id);
       valid.push({
         ...n,
@@ -168,10 +186,18 @@ export function parsePreferences(raw: unknown): NotificationPreferences {
   };
 }
 
-export function serializeInbox(notifications: Notification[]): StorageEnvelope {
+/**
+ * Serialize inbox into a versioned storage envelope.
+ * Applies age pruning first, then caps at `MAX_INBOX_SIZE` (all severities follow the same FIFO cap).
+ */
+export function serializeInbox(
+  notifications: Notification[],
+  now: number = Date.now()
+): StorageEnvelope {
+  const fresh = notifications.filter((n) => isWithinRetentionWindow(n.timestamp, now));
   return {
     v: STORAGE_VERSION,
-    items: notifications.slice(0, MAX_INBOX_SIZE),
+    items: fresh.slice(0, MAX_INBOX_SIZE),
   };
 }
 

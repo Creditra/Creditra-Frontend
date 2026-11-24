@@ -16,6 +16,87 @@ import type {
 
 // ─── LTV Calculations ─────────────────────────────────────────────────────────
 
+/** Warning threshold where borrower should consider adding collateral or repaying (80%). */
+export const LTV_WARNING_THRESHOLD = 0.80;
+
+/** Liquidation threshold where position is at immediate risk of liquidation (90%). */
+export const LTV_LIQUIDATION_THRESHOLD = 0.90;
+
+/**
+ * Hysteresis margin applied below thresholds to prevent notification flapping (5 percentage points).
+ * A line must fall strictly below (threshold - hysteresis) to reset/re-arm the alert level.
+ */
+export const LTV_HYSTERESIS = 0.05;
+
+export type CollateralAlertLevel = 'warning' | 'liquidation';
+export type LtvAlertLevel = CollateralAlertLevel;
+
+/**
+ * Determine whether a transition from `prev` to `next` represents an upward crossing.
+ * Recovery or remaining at the same severity does not count as upward crossing.
+ */
+export function isUpwardCrossing(
+  prev: LtvAlertLevel | null | undefined,
+  next: LtvAlertLevel | null | undefined
+): boolean {
+  if (!next) return false;
+  if (!prev) return true;
+  return prev === 'warning' && next === 'liquidation';
+}
+
+/**
+ * Pure evaluation function for collateral LTV alerts with hysteresis.
+ *
+ * @param prev  Previous alert level ('warning' | 'liquidation' | null) or previous LTV ratio number.
+ * @param next  Current LTV ratio number or LtvSnapshot.
+ * @returns The active alert level ('warning' | 'liquidation') or null (safe / recovered).
+ */
+export function evaluateLtvAlert(
+  prev: LtvAlertLevel | number | null | undefined,
+  next: number | { ltvRatio: number }
+): LtvAlertLevel | null {
+  const currentLtv = typeof next === 'number' ? next : next.ltvRatio;
+
+  let prevLevel: LtvAlertLevel | null = null;
+  if (typeof prev === 'number') {
+    if (prev >= LTV_LIQUIDATION_THRESHOLD) {
+      prevLevel = 'liquidation';
+    } else if (prev >= LTV_WARNING_THRESHOLD) {
+      prevLevel = 'warning';
+    }
+  } else if (prev === 'warning' || prev === 'liquidation') {
+    prevLevel = prev;
+  }
+
+  // 1. Check if currently at or above liquidation threshold
+  if (currentLtv >= LTV_LIQUIDATION_THRESHOLD) {
+    return 'liquidation';
+  }
+
+  // 2. Liquidation hysteresis: if previously in liquidation, stay in liquidation
+  // until dropping strictly below (LIQUIDATION_THRESHOLD - HYSTERESIS)
+  if (prevLevel === 'liquidation' && currentLtv >= LTV_LIQUIDATION_THRESHOLD - LTV_HYSTERESIS) {
+    return 'liquidation';
+  }
+
+  // 3. Check if currently at or above warning threshold
+  if (currentLtv >= LTV_WARNING_THRESHOLD) {
+    return 'warning';
+  }
+
+  // 4. Warning hysteresis: if previously in warning (or stepped down from liquidation),
+  // stay in warning until dropping strictly below (WARNING_THRESHOLD - HYSTERESIS)
+  if (
+    (prevLevel === 'warning' || prevLevel === 'liquidation') &&
+    currentLtv >= LTV_WARNING_THRESHOLD - LTV_HYSTERESIS
+  ) {
+    return 'warning';
+  }
+
+  // 5. Recovered below reset thresholds -> safe / re-armed
+  return null;
+}
+
 /**
  * Compute the LTV snapshot for a given collateral asset and loan balance.
  *
@@ -347,3 +428,107 @@ export function classifySubstitutionError(
     retryable: template.retryable,
   };
 }
+
+// ─── Collateral Adjustment Calculations ─────────────────────────────────────
+
+export type CollateralAdjustMode = 'add' | 'withdraw';
+
+export interface CollateralAdjustmentResult {
+  mode: CollateralAdjustMode;
+  amount: number;
+  currentSnapshot: LtvSnapshot;
+  adjustedSnapshot: LtvSnapshot;
+  adjustedCollateralValue: number;
+  maxWithdrawable: number;
+  isValid: boolean;
+  isBreachingMaxLtv: boolean;
+  errorMessage?: string;
+}
+
+/**
+ * Compute the maximum collateral value that can be withdrawn from a position
+ * without breaching the asset's maximum LTV ratio.
+ *
+ * @param assetOrValue  The collateral asset or its current market value in USD.
+ * @param loanBalance   The outstanding loan balance in USD.
+ * @param maxLtvRatio   The maximum permitted LTV ratio (0-1), required if assetOrValue is a number.
+ */
+export function computeMaxWithdrawable(
+  assetOrValue: CollateralAsset | number,
+  loanBalance: number,
+  maxLtvRatio?: number,
+): number {
+  const collateralValue = typeof assetOrValue === 'number' ? assetOrValue : assetOrValue.value;
+  const ratio = typeof assetOrValue === 'number' ? (maxLtvRatio ?? 1) : assetOrValue.maxLtvRatio;
+  if (collateralValue <= 0 || ratio <= 0) return 0;
+  if (loanBalance <= 0) return Math.max(0, Math.floor(collateralValue * 100) / 100);
+
+  // To maintain LTV <= maxLtvRatio: loanBalance / (collateralValue - withdrawAmount) <= maxLtvRatio
+  // => withdrawAmount <= collateralValue - (loanBalance / maxLtvRatio)
+  const minRequiredCollateral = loanBalance / ratio;
+  const maxWithdrawable = Math.max(0, collateralValue - minRequiredCollateral);
+  return Math.min(collateralValue, Math.floor(maxWithdrawable * 100) / 100);
+}
+
+/**
+ * Compute the adjusted LTV snapshot and safety metrics for adding or withdrawing collateral.
+ *
+ * @param asset         The current collateral asset.
+ * @param loanBalance   The outstanding loan balance in USD.
+ * @param mode          'add' to top up collateral, 'withdraw' to remove collateral.
+ * @param amount        The adjustment amount in USD.
+ */
+export function computeCollateralAdjustment(
+  asset: CollateralAsset,
+  loanBalance: number,
+  mode: CollateralAdjustMode,
+  amount: number,
+): CollateralAdjustmentResult {
+  const currentSnapshot = computeLtvSnapshot(asset, loanBalance);
+  const maxWithdrawable = computeMaxWithdrawable(asset, loanBalance);
+  const safeAmount = Math.max(0, amount);
+
+  let adjustedCollateralValue: number;
+  if (mode === 'add') {
+    adjustedCollateralValue = asset.value + safeAmount;
+  } else {
+    adjustedCollateralValue = Math.max(0, asset.value - safeAmount);
+  }
+
+  const adjustedAsset: CollateralAsset = {
+    ...asset,
+    value: adjustedCollateralValue,
+  };
+  const adjustedSnapshot = computeLtvSnapshot(adjustedAsset, loanBalance);
+
+  let isValid = true;
+  let isBreachingMaxLtv = false;
+  let errorMessage: string | undefined;
+
+  if (amount <= 0 || Number.isNaN(amount)) {
+    isValid = false;
+    errorMessage = 'Enter an amount greater than 0.';
+  } else if (mode === 'withdraw') {
+    if (amount > asset.value) {
+      isValid = false;
+      errorMessage = 'Withdrawal amount exceeds total pledged collateral.';
+    } else if (amount > maxWithdrawable || adjustedSnapshot.isOverLtv) {
+      isValid = false;
+      isBreachingMaxLtv = true;
+      errorMessage = `Withdrawal exceeds safe limit. Maximum withdrawable amount is $${maxWithdrawable.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} to maintain safe LTV of ${fmtLtv(asset.maxLtvRatio)}.`;
+    }
+  }
+
+  return {
+    mode,
+    amount,
+    currentSnapshot,
+    adjustedSnapshot,
+    adjustedCollateralValue,
+    maxWithdrawable,
+    isValid,
+    isBreachingMaxLtv,
+    errorMessage,
+  };
+}
+

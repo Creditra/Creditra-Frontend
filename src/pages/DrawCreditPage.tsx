@@ -268,15 +268,14 @@ export default function DrawCreditPage() {
       draftSave.markError();
     }
   }, [
-    step,
-    selectedCreditLine,
-    amount,
+    state.step,
+    state.selectedCreditLine,
+    state.amount,
     draftOwner,
     draftSave.markSaved,
     draftSave.markError,
     draftSave.reset,
   ]);
-  }, [state.step, state.selectedCreditLine, state.amount, draftOwner]);
 
   /**
    * Concurrent submission guard (issue #932). The ref is flipped to `true`
@@ -302,11 +301,11 @@ export default function DrawCreditPage() {
 
   const { isReducedMotionActive } = useReducedMotion();
 
-  const amountStepValidation = selectedCreditLine
-    ? getDrawAmountValidation(String(amount), selectedCreditLine)
+  const amountStepValidation = state.selectedCreditLine
+    ? getDrawAmountValidation(String(state.amount), state.selectedCreditLine)
     : null;
-  const utilizedCredit = selectedCreditLine
-    ? Math.max(0, selectedCreditLine.limit - selectedCreditLine.available)
+  const utilizedCredit = state.selectedCreditLine
+    ? Math.max(0, state.selectedCreditLine.limit - state.selectedCreditLine.available)
     : 0;
 
   const handleSelectCreditLine = useCallback((creditLine: CreditLine) => {
@@ -415,10 +414,11 @@ export default function DrawCreditPage() {
               state: { transaction: newTransaction },
             });
           } else {
+            const classified = classifyDrawError(newTransaction);
             dispatch({
               type: "SUBMIT_ERROR",
               transaction: newTransaction,
-              errorKind: classifyDrawError(newTransaction),
+              errorKind: classified.kind,
             });
           }
         },
@@ -496,10 +496,10 @@ export default function DrawCreditPage() {
     capture: true,
     handler: (e) => {
       if (hasOpenDialog()) return;
-      if (step === "select") {
+      if (state.step === "select") {
         e.preventDefault();
         handleCancel();
-      } else if (step === "amount" || step === "confirm") {
+      } else if (state.step === "amount" || state.step === "confirm") {
         e.preventDefault();
         handleBack();
       }
@@ -513,21 +513,9 @@ export default function DrawCreditPage() {
     capture: true,
     handler: (e) => {
       if (hasOpenDialog()) return;
-      if (step === "amount" || step === "confirm") {
+      if (state.step === "amount" || state.step === "confirm") {
         e.preventDefault();
         handleBack();
-          if (state.step === "select") {
-          } else if (state.step === "amount" || state.step === "confirm") {
-          if (state.step === "amount" || state.step === "confirm") {
-          if (state.step === "amount" && state.selectedCreditLine) {
-              String(state.amount),
-              state.selectedCreditLine,
-              handleAmountNext(state.amount);
-              dispatch({
-                type: "SET_SUBMIT_ERROR",
-                error: validation.message,
-              });
-          if (state.step === "confirm" && state.confirmationAcknowledged) {
       }
     },
   });
@@ -539,34 +527,28 @@ export default function DrawCreditPage() {
     capture: true,
     handler: (e) => {
       if (hasOpenDialog()) return;
-      if (step === "amount" && selectedCreditLine) {
+      if (state.step === "amount" && state.selectedCreditLine) {
         e.preventDefault();
         const validation = getDrawAmountValidation(
-          String(amount),
-          selectedCreditLine,
+          String(state.amount),
+          state.selectedCreditLine,
         );
         if (validation.isValid) {
-          handleAmountNext(amount);
+          handleAmountNext(state.amount);
         } else {
           amountInputRef.current?.focus();
-          setSubmitError(validation.message);
+          dispatch({
+            type: "SET_SUBMIT_ERROR",
+            error: validation.message,
+          });
         }
       }
-      if (step === "confirm" && confirmationAcknowledged) {
+      if (state.step === "confirm" && state.confirmationAcknowledged) {
         e.preventDefault();
         void handleConfirm();
       }
     },
   });
-  }, [
-    state.step,
-    state.amount,
-    state.selectedCreditLine,
-    state.confirmationAcknowledged,
-    handleBack,
-    handleCancel,
-    isRiskModalOpen,
-  ]);
 
   return (
     <main className="dc-page" aria-label="Draw credit">
@@ -650,7 +632,7 @@ export default function DrawCreditPage() {
                 drawnAmount={
                   utilizedCredit + (amountStepValidation?.amount ?? 0)
                 }
-                totalLimit={selectedCreditLine.limit}
+                totalLimit={state.selectedCreditLine.limit}
                 drawnLabel="Utilised"
                 availableLabel="Available after draw"
                 announcePercentage={false}

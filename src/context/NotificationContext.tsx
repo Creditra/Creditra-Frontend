@@ -21,6 +21,7 @@ import {
 import { createSseChannel, type NotificationChannelStatus } from './notificationChannel';
 import { MAX_NOTIFICATIONS, mergeNotifications } from './notificationMerge';
 import {
+  MAX_INBOX_SIZE,
   parseInbox,
   parsePreferences,
   serializeInbox,
@@ -306,7 +307,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         // Persist descriptor only
         action: opts.actionDescriptor,
       };
-      setNotifications(prev => [notification, ...prev].slice(0, 100));
+      setNotifications(prev => [notification, ...prev].slice(0, MAX_INBOX_SIZE));
     }
 
     return id;

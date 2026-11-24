@@ -1,9 +1,14 @@
 // src/pages/ForgotPasswordPage.tsx
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { PasswordResetRequestData, AuthError } from "../types/auth.types";
 import { PendingButton } from "../components/PendingButton";
 import { FormField } from "../components/FormField";
+import {
+  fetchWithTimeout,
+  FetchTimeoutError,
+  isAbortError,
+} from "../utils/fetchWithTimeout";
 
 export function ForgotPasswordPage() {
   const [formData, setFormData] = useState<PasswordResetRequestData>({
@@ -12,6 +17,13 @@ export function ForgotPasswordPage() {
   const [error, setError] = useState<AuthError | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,12 +36,20 @@ export function ForgotPasswordPage() {
       return;
     }
 
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
-      const response = await fetch("/api/auth/forgot-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
+      const response = await fetchWithTimeout(
+        "/api/auth/forgot-password",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        },
+        { signal: controller.signal },
+      );
 
       const data = await response.json();
 
@@ -40,9 +60,21 @@ export function ForgotPasswordPage() {
 
       setSuccess(true);
     } catch (err) {
+      if (controller.signal.aborted || isAbortError(err)) {
+        return;
+      }
+      if (err instanceof FetchTimeoutError) {
+        setError({ message: "Request timed out. Please try again." });
+        return;
+      }
       setError({ message: "An error occurred. Please try again." });
     } finally {
-      setLoading(false);
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   };
 
