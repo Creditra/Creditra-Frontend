@@ -399,3 +399,23 @@
     color: var(--text);
   }
 }
+
+/* ─── Page layout: gauge + breakdown side by side ───────────────────────────── */
+
+.risk-gauge-page-layout {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.risk-gauge-page-layout__breakdown {
+  /* Stretch to fill the second column */
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .risk-gauge-page-layout {
+    grid-template-columns: 1fr;
+  }
+}

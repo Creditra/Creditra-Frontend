@@ -149,6 +149,15 @@ class WalletConnectError extends Error {
 }
 ```
 
+#### Attempt-Token Rule and StrictMode Safety
+
+`WalletContext` prevents asynchronous race conditions (e.g. slow auto-reconnect resolving after user disconnect, rapid wallet switching, or rejected stale requests overwriting current connection) by maintaining a monotonically increasing `attemptRef.current`:
+
+- **Attempt Tokens**: Every async connection lifecycle entry point (`connect`, `runReconnect`, `retryReconnect`, `stayConnected`) captures an incremented attempt token `const id = ++attemptRef.current`.
+- **Currency Checks**: After every `await`, the function compares `id === attemptRef.current`. If superseded, the result is discarded immediately—no React state updates and no writes to `localStorage` (`saveWalletPreference`, `recordRecentWallet`).
+- **Cancellation on User Action**: Calling `disconnect()` or `forgetRememberedChoice()` increments `attemptRef.current`, ensuring any pending connect or auto-reconnect cannot resurrect state or overwrite privacy preferences on disk.
+- **StrictMode-Safe Mount**: In development, `React.StrictMode` dual-mounts effects. Cleanup on unmount increments `attemptRef.current` and clears reconnect timeouts to cancel in-flight work. In addition, an in-flight connection promise guard (`inFlightConnectRef`) deduplicates overlapping connection attempts across the StrictMode dual-mount cycle, preventing duplicate extension prompts.
+
 ### Wallet storage (`src/utils/wallet.ts`)
 
 `WalletContext` persists as little as possible: **only the wallet type** — never a
@@ -391,16 +400,29 @@ src/
 
 ---
 
-## Deployment — Vercel security headers
+## Money handling
 
-`vercel.json` applies the following response headers to every route via a `source: "/(.*)"` catch-all rule:
+All monetary arithmetic uses the exact `Money` type from `src/utils/money.ts` (`{ units: bigint, decimals: number, asset: string }`). Never add `CreditLine.limit` or `CreditLine.utilized` as plain JS numbers — float addition of many sub-cent values drifts by up to 1 ULP per operation.
 
-| Header | Value | Purpose |
-|--------|-------|---------|
-| `X-Content-Type-Options` | `nosniff` | Prevents MIME-type sniffing |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` | Limits referrer leakage across origins |
-| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=()` | Disables browser features not used by this app |
-| `X-Frame-Options` | `DENY` | Clickjacking protection for older browsers |
-| `Content-Security-Policy` | `frame-ancestors 'none'` | Clickjacking protection for modern browsers |
+**Canonical pattern**
 
-A full CSP (script-src, connect-src, etc.) is tracked in a separate issue.
+```ts
+import { lineMoney } from '@/lib/credit-summary';
+import { add, roundMoneyToCents, toDisplayNumber } from '@/utils/money';
+
+const total = lines.reduce((sum, l) => add(sum, lineMoney(l.utilized)), ZERO);
+const display = toDisplayNumber(roundMoneyToCents(total)); // safe for rendering
+```
+
+**Key functions**
+
+| Function | Location | Purpose |
+|----------|----------|---------|
+| `lineMoney(value)` | `src/lib/credit-summary.ts` | Convert a `CreditLine` number field to `Money` via `parseMoney` on a fixed-precision string |
+| `summarizeCreditLinesExact(lines)` | `src/lib/credit-summary.ts` | Exact `Money` aggregation of credit-line totals |
+| `summarizeCreditLines(lines)` | `src/lib/credit-summary.ts` | Number-based API (delegates to exact variant internally) |
+| `utilisationBps(utilized, limit)` | `src/lib/credit-summary.ts` | Utilisation as integer basis points — no float division |
+| `parseMoney`, `add`, `sub`, `mulRate` | `src/utils/money.ts` | Core exact arithmetic |
+| `roundMoneyToCents` | `src/utils/money.ts` | Round to 2 dp before display |
+
+**Naming note**: `formatMiney` and `formatMineyCents` in `src/utils/money.ts` are typo-aliases preserved for backward compatibility. Prefer `formatMoney` and `formatMoneyCents` in new code.

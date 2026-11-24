@@ -6,7 +6,7 @@ import {
   formatMonths,
   formatPayoffDate,
 } from '@/utils/payoffProjection';
-import { formatMoney } from '@/utils/amountValidation';
+import { formatMoney, parseAmountInput } from '@/utils/amountValidation';
 import type { DayCountConvention } from '@/lib/interest';
 import { ProgressBar } from './ProgressBar';
 import type { ProgressBarVariant } from './ProgressBar';
@@ -267,8 +267,8 @@ export function PayoffProjection({
                 type="number"
                 value={customMonthlyPayment ?? monthlyPayment}
                 onChange={(e) => {
-                  const val = Number.parseFloat(e.target.value);
-                  setCustomMonthlyPayment(Number.isFinite(val) && val > 0 ? val : null);
+                  const val = parseAmountInput(e.target.value);
+                  setCustomMonthlyPayment(val !== null && val > 0 ? val : null);
                 }}
                 className="w-full rounded-md border border-border bg-background px-3 py-1.5 pl-6 text-sm text-foreground outline-none transition-colors focus:border-accent focus:ring-1 focus:ring-accent"
                 aria-label="Assumed monthly payment"

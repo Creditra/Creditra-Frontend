@@ -18,6 +18,7 @@ import {
 import { getRepayableLines } from '../lib/repay-eligibility';
 import { getAccruedInterest } from '../lib/interest';
 import { roundToCents } from '../utils/currency';
+import { parseAmountInput } from '../utils/amountValidation';
 import {
   getRepayableBalance,
   moneyToNumber,
@@ -87,8 +88,8 @@ function validate(
     errors.creditLineId = 'Select an available credit line.';
   }
 
-  const amt = parseFloat(form.amount);
-  if (!form.amount || isNaN(amt) || amt <= 0) {
+  const amt = parseAmountInput(form.amount);
+  if (!form.amount || amt === null || amt <= 0) {
     errors.amount = 'Enter a payment amount greater than $0.';
   } else if (amt > 1_000_000) {
     errors.amount = 'Amount cannot exceed $1,000,000 per payment.';
@@ -226,7 +227,7 @@ export default function AutopayPage() {
       ? moneyToNumber(walletBalanceResult.amount)
       : null;
 
-  const parsedAmount = parseFloat(form.amount) || 0;
+  const parsedAmount = parseAmountInput(form.amount) ?? 0;
   const amountExceedsLine =
     selectedLineRepayable !== null && parsedAmount > selectedLineRepayable;
   const amountExceedsWallet =
@@ -264,7 +265,7 @@ export default function AutopayPage() {
   );
 
   const handleSubmit = useCallback(
-    (e: React.FormEvent) => {
+    async (e: React.FormEvent) => {
       e.preventDefault();
       if (!walletKey) {
         setErrors({
@@ -289,7 +290,7 @@ export default function AutopayPage() {
         return;
       }
 
-      const amount = parseFloat(form.amount);
+      const amount = parseAmountInput(form.amount) ?? 0;
       try {
         if (editingId) {
           update(editingId, {

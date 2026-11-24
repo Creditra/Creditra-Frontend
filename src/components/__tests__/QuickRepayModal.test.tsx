@@ -174,4 +174,9 @@ describe('QuickRepayModal — real submission path', () => {
     expect(screen.getByText(/connect a wallet/i)).toBeInTheDocument();
     expect(submitRepaymentMock).not.toHaveBeenCalled();
   });
+
+  it('does not render any <style> element into the DOM', () => {
+    renderModal();
+    expect(document.querySelector('style')).toBeNull();
+  });
 });

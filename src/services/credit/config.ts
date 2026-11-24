@@ -31,3 +31,12 @@ export function getCreditDataSourceType(): 'mock' | 'soroban' {
     typeof import.meta !== 'undefined' && import.meta.env?.VITE_CREDIT_DATA_SOURCE;
   return type === 'soroban' ? 'soroban' : 'mock';
 }
+
+/**
+ * Returns true when the app is running against the mock credit data source
+ * rather than live Soroban chain data.  Use this to surface a demo-data
+ * warning to the user (see DemoDataBanner).
+ */
+export function isDemoData(): boolean {
+  return getCreditDataSourceType() === 'mock';
+}

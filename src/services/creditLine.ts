@@ -72,3 +72,39 @@ export async function setLineFrozen(
 export function getLineFromStore(lineId: string): CreditLine | undefined {
   return getGlobalCreditLines().find((cl) => cl.id === lineId);
 }
+
+export interface CollateralAdjustmentPayload {
+  lineId: string;
+  mode: 'add' | 'withdraw';
+  amount: number;
+  newCollateralValue?: number;
+}
+
+/**
+ * Persist a collateral top-up or withdrawal for the given credit line.
+ */
+export async function adjustCollateral(
+  payload: CollateralAdjustmentPayload,
+  currentLines?: CreditLine[],
+): Promise<CreditLine> {
+  // Simulate network latency
+  await new Promise((r) => setTimeout(r, 50));
+
+  const lines = currentLines ?? getGlobalCreditLines();
+  const lineIndex = lines.findIndex((cl) => cl.id === payload.lineId);
+  if (lineIndex === -1) {
+    throw new Error(`Credit line ${payload.lineId} not found`);
+  }
+
+  const line = lines[lineIndex];
+  const updatedLine: CreditLine = {
+    ...line,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const newLines = lines.map((cl) => (cl.id === payload.lineId ? updatedLine : cl));
+  if (!currentLines) setGlobalCreditLines(newLines);
+
+  return updatedLine;
+}
+
