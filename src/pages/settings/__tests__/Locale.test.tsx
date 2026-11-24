@@ -49,4 +49,26 @@ describe('LocaleSettings', () => {
     
     vi.useRealTimers();
   });
+
+  it('clears the save timer on unmount without state-update warnings', () => {
+    vi.useFakeTimers();
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { unmount } = render(<LocaleSettings />);
+
+    const saveButton = screen.getByTestId('save-preferences-button');
+    fireEvent.click(saveButton);
+    expect(vi.getTimerCount()).toBe(1);
+
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+    vi.useRealTimers();
+  });
 });

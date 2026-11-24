@@ -120,6 +120,8 @@ data URIs are rejected.
 When a repayment amount meets or exceeds this value, the review step shows a confirmation
 input where the user must type the exact amount before the "Confirm Repayment" button
 enables. Set to `0` to disable the guard entirely (not recommended for production).
+When the variable is absent, negative or unparseable, the fallback is
+`DEFAULT_REPAY_CONFIRM_THRESHOLD` (5000 USD), defined in `src/utils/amountValidation.ts`.
 
 The repay form and Quick Repay use only the wallet balance matching both the configured
 settlement-asset code and issuer. Configure the issuer for the settlement asset on the

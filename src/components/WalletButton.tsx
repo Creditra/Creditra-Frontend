@@ -4,7 +4,9 @@ import { WalletConnectionModal } from './WalletConnectionModal';
 import { OnboardingFlow } from './OnboardingFlow';
 import { WalletQrCode } from './WalletQrCode';
 import { CopyToClipboard } from './CopyToClipboard';
+import { Amount } from './Amount';
 import { formatRelative } from '../utils/dates';
+import { shortenAddress } from '../utils/format-address';
 import { useDetectedWallets } from '../hooks/useDetectedWallets';
 import './WalletButton.css';
 
@@ -15,6 +17,8 @@ import './WalletButton.css';
 const ConnectedWalletDropdown = () => {
   const {
     wallet,
+    accounts,
+    switchAccount,
     disconnect,
     isRemembered,
     forgetRememberedChoice,
@@ -80,6 +84,19 @@ const ConnectedWalletDropdown = () => {
     setShowQr(false);
   };
 
+  const handleSwitchAccount = (publicKey: string) => {
+    if (!wallet || publicKey === wallet.publicKey) return;
+    switchAccount(publicKey);
+    setAnnounceMsg(`Switched to account ${formatPublicAddress(publicKey)}`);
+    if (announceTimeoutRef.current !== null) {
+      clearTimeout(announceTimeoutRef.current);
+    }
+    announceTimeoutRef.current = setTimeout(() => {
+      setAnnounceMsg('');
+      announceTimeoutRef.current = null;
+    }, 3000);
+  };
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
@@ -100,16 +117,19 @@ const ConnectedWalletDropdown = () => {
     }
   };
 
-  const formatPublicAddress = (address: string) => {
-    return `${address.slice(0, 4)}...${address.slice(-4)}`;
-  };
-
   if (!wallet) return null;
 
-  const balanceDisplay = balances ? balances.map((b, i) => (
-    <div key={i} className="balance-item">
+  const shortAddress = shortenAddress(wallet.publicKey, 4, 4);
+
+  const balanceDisplay = balances ? balances.map((b) => (
+    <div key={`${b.asset}:${b.issuer ?? 'native'}`} className="balance-item">
       <span className="label">Balance ({b.asset}):</span>
-      <span className="value">{b.balance}</span>
+      <Amount
+        className="value"
+        value={b.balance}
+        format={(v) => String(v)}
+        maskedLabel={`${b.asset} balance hidden for privacy`}
+      />
     </div>
   )) : <span className="value">Unknown</span>;
 
@@ -120,11 +140,11 @@ const ConnectedWalletDropdown = () => {
         onClick={handleToggleDropdown}
         aria-haspopup="true"
         aria-expanded={showDropdown}
-        aria-label={`Wallet connected: ${formatPublicAddress(wallet.publicKey)}`}
+        aria-label={`Wallet connected: ${shortAddress}`}
       >
         <span className="status-dot" aria-hidden="true"></span>
         <span className="sr-only">Status: Connected</span>
-        {formatPublicAddress(wallet.publicKey)}
+        {shortAddress}
       </button>
       {showDropdown && (
         <div className={`wallet-dropdown ${showQr ? 'wallet-dropdown--expanded' : ''}`} role="menu">
@@ -136,6 +156,39 @@ const ConnectedWalletDropdown = () => {
             <span className="label">Network:</span>
             <span className="value">{wallet.network}</span>
           </div>
+          {accounts.length > 1 && (
+            <div
+              className="dropdown-item dropdown-accounts"
+              role="group"
+              aria-label="Wallet accounts"
+            >
+              <span className="label">Account:</span>
+              <ul className="account-list">
+                {accounts.map((account) => {
+                  const isActive = account === wallet.publicKey;
+                  return (
+                    <li key={account}>
+                      <button
+                        type="button"
+                        className={`account-option${isActive ? ' account-option--active' : ''}`}
+                        role="menuitemradio"
+                        aria-checked={isActive}
+                        onClick={() => handleSwitchAccount(account)}
+                      >
+                        <span className="account-option-address">
+                          {formatPublicAddress(account)}
+                        </span>
+                        {isActive && (
+                          <span className="account-option-check" aria-hidden="true">✓</span>
+                        )}
+                        {isActive && <span className="sr-only">(active account)</span>}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
           <div className="dropdown-item" role="menuitem">
             <span className="label">Balance:</span>
             <div className="balance-list">{balanceDisplay}</div>

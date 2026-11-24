@@ -27,6 +27,7 @@ import {
 } from "@/lib/draw-credit-pricing";
 import { projectDraw } from "@/lib/draw-projection";
 import { formatMoney } from "@/utils/amountValidation";
+import { formatCurrency } from "../utils/currency";
 import { DollarSign, Percent, TrendingUp } from "lucide-react";
 
 interface PreviewSectionProps {
@@ -62,7 +63,7 @@ export function PreviewSection({ creditLine, amount }: PreviewSectionProps) {
             <div>
               <p className="dc-stat-card__label">Draw Amount</p>
               <p className="dc-stat-card__value tabular-nums">
-                ${amount.toLocaleString()}
+                {formatCurrency(amount)}
               </p>
             </div>
             <DollarSign

@@ -270,4 +270,54 @@ describe('WalletButton transition tests (real provider)', () => {
       expect.anything()
     );
   });
+
+  it('renders shortened address via shortenAddress and keys multi-issuer balances without duplicate-key warnings', async () => {
+    vi.mocked(walletUtils.getStoredWallet).mockReturnValue({ type: 'freighter' });
+    vi.mocked(walletUtils.isWalletRemembered).mockReturnValue(true);
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        balances: [
+          { asset_type: 'native', balance: '100.0000000' },
+          {
+            asset_type: 'credit_alphanum4',
+            asset_code: 'USDC',
+            asset_issuer: 'GISSUER1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+            balance: '50.0000000',
+          },
+          {
+            asset_type: 'credit_alphanum4',
+            asset_code: 'USDC',
+            asset_issuer: 'GISSUER2BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+            balance: '25.0000000',
+          },
+        ],
+      }),
+    });
+
+    render(
+      <WalletProvider>
+        <WalletButton />
+      </WalletProvider>
+    );
+
+    const addressBtn = await screen.findByRole('button', {
+      name: 'Wallet connected: GTES…1234',
+    });
+    expect(addressBtn).toHaveTextContent('GTES…1234');
+
+    fireEvent.click(addressBtn);
+    await waitFor(() => screen.getByRole('menu'));
+
+    await waitFor(() => {
+      expect(screen.getByText('50.0000000')).toBeInTheDocument();
+      expect(screen.getByText('25.0000000')).toBeInTheDocument();
+    });
+
+    const keyWarnings = consoleErrorSpy.mock.calls.filter((args) =>
+      args.some((arg) => typeof arg === 'string' && /same key|unique "key" prop/i.test(arg))
+    );
+    expect(keyWarnings).toHaveLength(0);
+  });
 });

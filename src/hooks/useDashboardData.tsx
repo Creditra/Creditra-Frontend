@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useWallet } from '../context/WalletContext';
-import { useCreditLines, useCreditTransactions } from './useCreditLines';
+import { useCreditLines } from './useCreditLines';
 import { getBorrowerRiskScore, summarizeCreditLines } from '../lib/credit-summary';
 import {
   getDashboardNotifications,
@@ -26,10 +26,7 @@ export function useDashboardData() {
     lastUpdatedAt: creditSyncedAt,
     refetch: refetchCreditLines,
   } = useCreditLines();
-  const {
-    lastUpdatedAt: activitySyncedAt,
-    refetch: refetchTransactions,
-  } = useCreditTransactions();
+  const activitySyncedAt = creditSyncedAt;
   const { isReducedMotionActive } = useReducedMotion();
   const [announcement, setAnnouncement] = useState('');
 
@@ -54,13 +51,13 @@ export function useDashboardData() {
 
   const handleActivityRefresh = useCallback(async () => {
     try {
-      await refetchTransactions();
+      await refetchCreditLines();
       setAnnouncement('Recent activity refreshed successfully.');
     } catch (err) {
       setAnnouncement('Failed to refresh activity.');
       throw err;
     }
-  }, [refetchTransactions]);
+  }, [refetchCreditLines]);
 
   const activeLines = useMemo(
     () =>

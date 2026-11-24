@@ -3,6 +3,7 @@ import { formatMoney } from "@/utils/amountValidation";
 import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
 import { projectDraw } from "@/lib/draw-projection";
 import { lineAccentColor } from "../utils/tokens";
+import { Amount } from "./Amount";
 
 interface CreditLineSummaryBlockProps {
   /** Credit line being summarised. */
@@ -117,19 +118,19 @@ export function CreditLineSummaryBlock({
         <div className="rounded-lg border border-border bg-background/60 p-3">
           <p className="text-muted">Limit</p>
           <p className="text-base font-semibold text-foreground mt-1 tabular-nums">
-            {formatMoney(creditLine.limit)}
+            <Amount value={creditLine.limit} format={formatMoney} maskedLabel="Credit limit hidden for privacy" />
           </p>
         </div>
         <div className="rounded-lg border border-border bg-background/60 p-3">
           <p className="text-muted">Utilized</p>
           <p className="text-base font-semibold text-foreground mt-1 tabular-nums">
-            {formatMoney(projectedUtilized)}
+            <Amount value={projectedUtilized} format={formatMoney} maskedLabel="Utilized amount hidden for privacy" />
           </p>
         </div>
         <div className="rounded-lg border border-border bg-background/60 p-3">
           <p className="text-muted">Available</p>
           <p className="text-base font-semibold text-foreground mt-1 tabular-nums">
-            {formatMoney(projectedAvailable)}
+            <Amount value={projectedAvailable} format={formatMoney} maskedLabel="Available credit hidden for privacy" />
           </p>
         </div>
       </div>
