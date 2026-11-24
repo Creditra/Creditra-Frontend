@@ -1,8 +1,13 @@
 import React, { useRef } from 'react';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { RepayModal } from '../RepayModal';
+import { submitRepayment } from '../../services/repay';
+
+vi.mock('../../services/repay', () => ({
+  submitRepayment: vi.fn(),
+}));
 
 // Suppress DOM side-effects from companion hooks
 vi.mock('@/hooks/useBodyScrollLock', () => ({ useBodyScrollLock: vi.fn() }));
@@ -183,5 +188,158 @@ describe('RepayModal – Repay all shortcut', () => {
 
     const repayAll = screen.getByTestId('repay-all-shortcut');
     expect(repayAll).toHaveClass('repay-modal-repay-all-btn');
+  });
+});
+
+describe('RepayModal – repayment submission service', () => {
+  const mockedSubmitRepayment = vi.mocked(submitRepayment);
+  const originalOnLineDescriptor = Object.getOwnPropertyDescriptor(
+    window.navigator,
+    'onLine',
+  );
+
+  function setOnlineStatus(online: boolean) {
+    Object.defineProperty(window.navigator, 'onLine', {
+      configurable: true,
+      get: () => online,
+    });
+  }
+
+  async function goToReviewStep(user: ReturnType<typeof userEvent.setup>, amount = '500') {
+    const input = screen.getByTestId('repay-amount-input');
+    await user.clear(input);
+    await user.type(input, amount);
+    await user.click(screen.getByRole('button', { name: /review repayment/i }));
+  }
+
+  beforeEach(() => {
+    setOnlineStatus(true);
+    mockedSubmitRepayment.mockReset();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    if (originalOnLineDescriptor) {
+      Object.defineProperty(window.navigator, 'onLine', originalOnLineDescriptor);
+    } else {
+      setOnlineStatus(true);
+    }
+  });
+
+  it('stays pending until submitRepayment resolves and displays the service txId', async () => {
+    let resolveSubmission!: (value: { txId: string; completedAt: string }) => void;
+    mockedSubmitRepayment.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSubmission = resolve;
+        }),
+    );
+
+    const user = userEvent.setup();
+    render(<TestWrapper />);
+    await goToReviewStep(user, '500');
+
+    await user.click(screen.getByRole('button', { name: /confirm repayment/i }));
+
+    expect(screen.getByText(/processing repayment/i)).toBeInTheDocument();
+    expect(screen.queryByText(/repayment successful/i)).not.toBeInTheDocument();
+    expect(mockedSubmitRepayment).toHaveBeenCalledTimes(1);
+    expect(mockedSubmitRepayment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        creditLineId: defaultCreditLine.id,
+        amount: 500,
+        idempotencyKey: expect.stringMatching(/^idem_/),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+
+    await act(async () => {
+      resolveSubmission({
+        txId: '0xdeadbeef12345678',
+        completedAt: '2026-11-24T12:00:00.000Z',
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/repayment successful/i)).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('repay-tx-hash')).toHaveTextContent('0xdeadbeef12345678');
+  });
+
+  it('shows an error on service rejection and allows retrying with the same idempotencyKey', async () => {
+    mockedSubmitRepayment
+      .mockRejectedValueOnce(new Error('Network timeout while broadcasting transaction'))
+      .mockResolvedValueOnce({
+        txId: '0xabcdef0123456789',
+        completedAt: '2026-11-24T12:01:00.000Z',
+      });
+
+    const user = userEvent.setup();
+    render(<TestWrapper />);
+    await goToReviewStep(user, '500');
+
+    await user.click(screen.getByRole('button', { name: /confirm repayment/i }));
+
+    const alert = await screen.findByTestId('repay-submit-error');
+    expect(alert).toHaveAttribute('role', 'alert');
+    expect(alert).toHaveTextContent(/network timeout while broadcasting transaction/i);
+    expect(screen.queryByText(/repayment successful/i)).not.toBeInTheDocument();
+
+    const firstKey = mockedSubmitRepayment.mock.calls[0][0].idempotencyKey;
+
+    await user.click(screen.getByRole('button', { name: /confirm repayment/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/repayment successful/i)).toBeInTheDocument();
+    });
+    expect(mockedSubmitRepayment).toHaveBeenCalledTimes(2);
+    expect(mockedSubmitRepayment.mock.calls[1][0].idempotencyKey).toBe(firstKey);
+    expect(screen.getByTestId('repay-tx-hash')).toHaveTextContent('0xabcdef0123456789');
+  });
+
+  it('fails fast when offline without calling submitRepayment or faking success', async () => {
+    setOnlineStatus(false);
+
+    const user = userEvent.setup();
+    render(<TestWrapper />);
+    await goToReviewStep(user, '500');
+
+    await user.click(screen.getByRole('button', { name: /confirm repayment/i }));
+
+    const alert = await screen.findByTestId('repay-submit-error');
+    expect(alert).toHaveAttribute('role', 'alert');
+    expect(alert).toHaveTextContent(/offline/i);
+    expect(mockedSubmitRepayment).not.toHaveBeenCalled();
+    expect(screen.queryByText(/repayment successful/i)).not.toBeInTheDocument();
+  });
+
+  it('guards against double-clicking Confirm Repayment', async () => {
+    let resolveSubmission!: (value: { txId: string; completedAt: string }) => void;
+    mockedSubmitRepayment.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSubmission = resolve;
+        }),
+    );
+
+    const user = userEvent.setup();
+    render(<TestWrapper />);
+    await goToReviewStep(user, '500');
+
+    const confirmBtn = screen.getByRole('button', { name: /confirm repayment/i });
+    await user.dblClick(confirmBtn);
+
+    expect(mockedSubmitRepayment).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveSubmission({
+        txId: '0x1122334455667788',
+        completedAt: '2026-11-24T12:02:00.000Z',
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('repay-tx-hash')).toHaveTextContent('0x1122334455667788');
+    });
   });
 });

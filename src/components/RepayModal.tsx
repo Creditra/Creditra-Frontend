@@ -12,6 +12,9 @@ import { PendingButton } from './PendingButton';
 import './RepayModal.css';
 import { Modal } from './Modal';
 import { isTypedAmountMatch } from './TypedAmountConfirm';
+import { offlineMutation } from '../utils/offline';
+import { generateIdempotencyKey } from '../utils/idempotency';
+import { submitRepayment } from '../services/repay';
 
 interface RepaymentCreditLine {
   id: string;
@@ -107,7 +110,19 @@ export function RepayModal({
   const [confirmAmountStr, setConfirmAmountStr] = useState('');
   const [isRepayAllLocked, setIsRepayAllLocked] = useState(false);
   const [repayAllLockAnnouncement, setRepayAllLockAnnouncement] = useState('');
+  const [txId, setTxId] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const amountInputRef = useRef<HTMLInputElement>(null);
+  const isSubmittingRef = useRef(false);
+  const idempotencyKeyRef = useRef<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     if (step === 'review') {
@@ -187,15 +202,71 @@ export function RepayModal({
 
   const handleReview = () => {
     if (!isInvalid) {
+      setSubmitError(null);
+      idempotencyKeyRef.current = null;
       setStep('review');
     }
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
+    if (isSubmittingRef.current || isConfirmDisabled) {
+      return;
+    }
+
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+    setSubmitError(null);
     setStep('pending');
-    setTimeout(() => {
+
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = generateIdempotencyKey({
+        creditLineId: creditLine.id,
+        outgoingAssetId: 'wallet',
+        incomingAssetId: `repay:${amount.toFixed(2)}`,
+        initiatedAtMs: Date.now(),
+      });
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const result = await offlineMutation({
+        fn: () =>
+          submitRepayment({
+            creditLineId: creditLine.id,
+            amount,
+            idempotencyKey: idempotencyKeyRef.current!,
+            signal: controller.signal,
+          }),
+        offlineMessage:
+          'You appear to be offline. Please reconnect and try confirming your repayment again.',
+      });
+
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      setTxId(result.txId);
       setStep('success');
-    }, 2500);
+    } catch (err) {
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Unable to complete repayment. Please try again.';
+      setSubmitError(message);
+      setStep('review');
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+    }
   };
 
   const handleCloseComplete = () => {
@@ -580,22 +651,55 @@ export function RepayModal({
             </div>
           )}
 
+          {submitError && (
+            <div
+              role="alert"
+              data-testid="repay-submit-error"
+              style={{
+                display: 'flex',
+                gap: '0.5rem',
+                alignItems: 'flex-start',
+                border: `1px solid ${toneMeta.danger.border}`,
+                background: toneMeta.danger.bg,
+                color: toneMeta.danger.color,
+                borderRadius: 8,
+                padding: '0.75rem',
+                marginBottom: '1rem',
+              }}
+            >
+              <span style={{ display: 'inline-flex', marginTop: 1 }}>{toneMeta.danger.icon}</span>
+              <div>
+                <p style={{ margin: 0, fontSize: '0.84rem', fontWeight: 600 }}>Repayment failed</p>
+                <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', lineHeight: 1.5 }}>{submitError}</p>
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: '1rem' }}>
-            <button className="focus-ring" onClick={() => setStep('input')} style={{ ...btn.outline, flex: 1 }}>
+            <button
+              className="focus-ring"
+              onClick={() => {
+                setSubmitError(null);
+                idempotencyKeyRef.current = null;
+                setStep('input');
+              }}
+              disabled={isSubmitting}
+              style={{ ...btn.outline, flex: 1 }}
+            >
               Back
             </button>
             <div style={{ flex: 2, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               <PendingButton className="focus-ring"
                 onClick={handleConfirm}
-                pending={false}
+                pending={isSubmitting}
                 pendingLabel="Processing..."
-                disabled={isConfirmDisabled}
-                aria-disabled={isConfirmDisabled || undefined}
+                disabled={isConfirmDisabled || isSubmitting}
+                aria-disabled={isConfirmDisabled || isSubmitting || undefined}
                 style={{
                   ...btn.primary,
                   width: '100%',
-                  opacity: isConfirmDisabled ? 0.5 : 1,
-                  cursor: isConfirmDisabled ? 'not-allowed' : 'pointer',
+                  opacity: isConfirmDisabled || isSubmitting ? 0.5 : 1,
+                  cursor: isConfirmDisabled || isSubmitting ? 'not-allowed' : 'pointer',
                 }}
               >
                 Confirm Repayment
@@ -697,6 +801,28 @@ export function RepayModal({
                 Reduced to <span className="tabular-nums">{newPct}%</span>
               </span>
             </p>
+            {txId && (
+              <p
+                style={{
+                  margin: '0.5rem 0 0',
+                  paddingTop: '0.5rem',
+                  borderTop: `1px solid ${COLOR.border}`,
+                  fontSize: '0.8rem',
+                  color: COLOR.muted,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: '0.5rem',
+                }}
+              >
+                <span>Transaction Hash:</span>
+                <span
+                  data-testid="repay-tx-hash"
+                  style={{ color: COLOR.text, fontFamily: 'monospace' }}
+                >
+                  {txId}
+                </span>
+              </p>
+            )}
           </div>
 
           <button className="focus-ring" onClick={handleCloseComplete} style={{ ...btn.primary, width: '100%' }}>
