@@ -11,6 +11,7 @@ import { KycProvider } from "./context/KycContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import { AuctionAlertWatcher } from "./components/AuctionAlertWatcher";
 import { CollateralAlertWatcher } from "./components/CollateralAlertWatcher";
+import { usePaymentReminders } from "./hooks/usePaymentReminders";
 import { ReducedMotionProvider } from "./context/ReducedMotionContext";
 import { KycDrawer } from "./components/KycDrawer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
