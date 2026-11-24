@@ -23,6 +23,8 @@ The collateral substitution flow lets a borrower replace the asset currently sec
 | `src/components/CollateralSubstitutionModal.css` | Component-scoped styles using CSS custom properties |
 | `src/components/__tests__/CollateralSubstitutionModal.test.tsx` | 27 component integration tests |
 | `src/pages/CreditLines.tsx` | Wired the "⇄ Swap Collateral" button on active credit lines |
+| `src/pages/CollateralSwap.tsx` | Standalone `/collateral-swap` page wired to `useCreditLines`, the quote/LTV engine, slippage presets, stale-quote expiry, and `CollateralSubstitutionModal` confirmation handoff |
+| `src/pages/CollateralSwap.test.tsx` | Unit & integration tests for `/collateral-swap` (loading, error, empty state, live LTV/fee calculation, over-LTV blocking, slippage, stale quote, modal handoff) |
 
 ---
 
@@ -88,6 +90,9 @@ interface CollateralSubstitutionModalProps {
   currentAsset?: CollateralAsset;  // undefined → no current collateral
   triggerRef?: React.RefObject<HTMLElement | null>;
   submitCollateralSwap?: (payload: SubmitCollateralSwapPayload) => Promise<void>;
+  initialIncomingAsset?: CollateralAsset; // pre-selected asset (skips Select step)
+  initialSlippage?: SlippageTolerance;    // initial slippage preset
+  initialStep?: 'review' | 'confirm';     // starting step when initialIncomingAsset is set
   _delayMs?: number;               // internal: override default network delay for tests
 }
 ```

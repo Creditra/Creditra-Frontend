@@ -1,8 +1,64 @@
 import "@testing-library/jest-dom/vitest";
 import "../index.css";
-import { beforeEach, vi } from "vitest";
+import { File as NodeFile, Blob as NodeBlob } from "node:buffer";
+import { afterAll, afterEach, beforeAll, beforeEach, vi } from "vitest";
+import { server } from "../mocks/server";
 
 import { act } from "@testing-library/react";
+
+// jsdom replaces FormData/File/Blob with its own classes, which hang Node's
+// native undici fetch when intercepted by MSW v2. Restore Node's native
+// implementations so multipart uploads work identically in tests and browsers.
+const NativeFormData = (
+  await new Response("", {
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+  }).formData()
+).constructor as typeof FormData;
+
+Object.defineProperty(globalThis, "FormData", {
+  value: NativeFormData,
+  writable: true,
+  configurable: true,
+});
+Object.defineProperty(globalThis, "File", {
+  value: NodeFile,
+  writable: true,
+  configurable: true,
+});
+Object.defineProperty(globalThis, "Blob", {
+  value: NodeBlob,
+  writable: true,
+  configurable: true,
+});
+if (typeof window !== "undefined") {
+  Object.defineProperty(window, "FormData", {
+    value: NativeFormData,
+    writable: true,
+    configurable: true,
+  });
+  Object.defineProperty(window, "File", {
+    value: NodeFile,
+    writable: true,
+    configurable: true,
+  });
+  Object.defineProperty(window, "Blob", {
+    value: NodeBlob,
+    writable: true,
+    configurable: true,
+  });
+}
+
+beforeAll(() => {
+  server.listen({ onUnhandledRequest: "error" });
+});
+
+afterEach(() => {
+  server.resetHandlers();
+});
+
+afterAll(() => {
+  server.close();
+});
 
 beforeEach(() => {
   Object.defineProperty(window, "matchMedia", {
