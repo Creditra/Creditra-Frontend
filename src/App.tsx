@@ -10,6 +10,8 @@ import { PrivacyModeProvider, usePrivacyMode } from "./context/PrivacyContext";
 import { KycProvider } from "./context/KycContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import { AuctionAlertWatcher } from "./components/AuctionAlertWatcher";
+import { CollateralAlertWatcher } from "./components/CollateralAlertWatcher";
+import { usePaymentReminders } from "./hooks/usePaymentReminders";
 import { ReducedMotionProvider } from "./context/ReducedMotionContext";
 import { KycDrawer } from "./components/KycDrawer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -17,6 +19,7 @@ import { ShortcutHelpOverlay } from "./components/ShortcutHelpOverlay";
 import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
 import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatchBanner";
 import { StaleDataBanner } from "./components/StaleDataBanner";
+import { DemoDataBanner } from "./components/DemoDataBanner";
 import { ToastContainer } from "./components/notifications/ToastContainer";
 import { BannerAlerts } from "./components/notifications/BannerAlert";
 import { Header } from "./layouts/Header";
@@ -31,6 +34,11 @@ import { getEnabledRoutes } from "./routes/manifest";
 // ── Code-split route components (non-critical for first paint) ────────────────
 const NotFound = lazy(() => import("./pages/NotFound").then(m => ({ default: m.NotFound })));
 const SessionTimeoutBanner = lazy(() => import("./components/SessionTimeoutBanner").then(m => ({ default: m.SessionTimeoutBanner })));
+
+const NotificationPreferences = lazy(() => import("./pages/NotificationPreferences").then(m => ({ default: m.NotificationPreferences })));
+const Terms = lazy(() => import("./pages/Terms").then(m => ({ default: m.Terms })));
+const Privacy = lazy(() => import("./pages/Privacy").then(m => ({ default: m.Privacy })));
+
 
 // ── Suspense Fallback for Route Loading ───────────────────────────────────────
 /** Minimal skeleton shown while route chunks load (preserves first paint). */
@@ -86,6 +94,7 @@ function AppShell() {
   return (
     <>
       <AuctionAlertWatcher />
+      <CollateralAlertWatcher />
       <RouteHeadProvider>
         <RouteAnnouncer />
         <div className="app">
@@ -109,6 +118,7 @@ function AppShell() {
           </Suspense>
           <main className="main">
             <BannerAlerts />
+            <DemoDataBanner />
             <NetworkMismatchBanner />
             <StaleDataBanner />
             <Suspense fallback={<RouteLoadingFallback />}>
@@ -194,6 +204,104 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <ContrastProvider>
+          <WalletProvider>
+
+            <KycProvider>
+              <NotificationProvider>
+                <ReducedMotionProvider>
+                  <BrowserRouter>
+                    <RouteHeadProvider>
+                      <RouteAnnouncer />
+                      <div className="app">
+                        <Header
+                          settingsTriggerRef={settingsTriggerRef}
+                          kycTriggerRef={kycTriggerRef}
+                          onSettingsClick={() => {
+                            setOpenedFromSettingsLink(true);
+                            setIsShortcutHelpOpen(true);
+                          }}
+                          onKycClick={() => setIsKycDrawerOpen(true)}
+                        />
+
+                        {/* Wallet auto-reconnect timeout banner — self-dismissing,
+                            non-blocking; only visible when reconnect takes > 8 s. */}
+                        <WalletReconnectBanner />
+                        {/* Session-timeout warning banner — visible 60 s before
+                            the wallet extension silently disconnects (#227). */}
+                        <Suspense fallback={null}>
+                          <SessionTimeoutBanner />
+                        </Suspense>
+                        <main className="main">
+                          <NetworkMismatchBanner />
+                          <Suspense fallback={<RouteLoadingFallback />}>
+                            <Routes>
+                              <Route path="/" element={<Dashboard />} />
+                              <Route path="/transactions" element={<TransactionHistory />} />
+                              <Route path="/credit-lines" element={<CreditLines />} />
+                              <Route path="/help" element={<HelpCenter />} />
+                              <Route path="/draw-credit" element={<DrawCreditPage />} />
+                              <Route
+                                path="/draw-credit/success"
+                                element={<DrawCreditPage />}
+                              />
+                              <Route path="/open-credit" element={<RequestEvaluation />} />
+                              <Route path="/dutch-auctions" element={<DutchAuctions />} />
+                              <Route path="/linked-accounts" element={<LinkedAccounts />} />
+                              <Route path="/notification-preferences" element={<NotificationPreferences />} />
+                              <Route path="/repay" element={<RepayPage />} />
+                              <Route path="/repay/success" element={<RepaySuccess />} />
+                              <Route path="/settings" element={<Settings />} />
+                              <Route path="/settings/notifications" element={<NotificationSettings />} />
+                              <Route path="/profile" element={<Profile />} />
+                              <Route path="/docs" element={<Docs />} />
+                              <Route path="/terms" element={<Terms />} />
+                              <Route path="/privacy" element={<Privacy />} />
+                              <Route path="*" element={<NotFound />} />
+                            </Routes>
+                          </Suspense>
+                        </main>
+                        <ShortcutHelpOverlay
+                          isOpen={isShortcutHelpOpen}
+                          onClose={() => setIsShortcutHelpOpen(false)}
+                          triggerRef={openedFromSettingsLink ? settingsTriggerRef : undefined}
+                        />
+                        <KycDrawer
+                          isOpen={isKycDrawerOpen}
+                          onClose={() => setIsKycDrawerOpen(false)}
+                          onResume={(stepId) => {
+                            // Navigate to the KYC page with the step pre-selected.
+                            // Replace with router.push('/kyc?step=' + stepId) when the
+                            // full KYC page exists.
+                            console.info('[KYC] Resume at step:', stepId);
+                          }}
+                          triggerRef={kycTriggerRef}
+                        />
+                        <CommandPalette
+                          isOpen={isPaletteOpen}
+                          onClose={() => setIsPaletteOpen(false)}
+                          triggerRef={paletteTriggerRef}
+                        />
+                      </div>
+                    </RouteHeadProvider>
+                  </BrowserRouter>
+                </ReducedMotionProvider>
+              </NotificationProvider>
+            </KycProvider>
+
+            <NotificationProvider>
+              <CreditDataProvider>
+                <KycProvider>
+                  <ReducedMotionProvider>
+                    <BrowserRouter>
+                      <AppShell />
+                    </BrowserRouter>
+                  </ReducedMotionProvider>
+                </KycProvider>
+              </CreditDataProvider>
+            </NotificationProvider>
+
+          </WalletProvider>
+
           <PrivacyModeProvider>
             <WalletProvider>
               <NotificationProvider>

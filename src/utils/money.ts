@@ -213,8 +213,10 @@ export function formatMoney(m: Money, locale?: string): string {
   return `${negative}${grouped}${decimalSep}${fracPart}`;
 }
 
-/** @deprecated use formatMoney */
+/** @deprecated use formatMoney — alias preserved for backward compatibility */
 export const formatMiney = formatMoney;
+/** @deprecated use formatMoney — alias preserved for backward compatibility */
+export const formatMoney_ = formatMoney;
 
 /**
  * Legacy shim: convert Money to a number for components that have not yet
@@ -263,5 +265,7 @@ export function formatMoneyCents(m: Money, locale?: string): string {
   });
 }
 
-/** @deprecated use formatMoneyCents */
+/** @deprecated use formatMoneyCents — alias preserved for backward compatibility */
 export const formatMineyCents = formatMoneyCents;
+/** @deprecated use formatMoneyCents — alias preserved for backward compatibility */
+export const formatMoneyCents_ = formatMoneyCents;

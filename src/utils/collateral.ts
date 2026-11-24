@@ -16,6 +16,87 @@ import type {
 
 // ─── LTV Calculations ─────────────────────────────────────────────────────────
 
+/** Warning threshold where borrower should consider adding collateral or repaying (80%). */
+export const LTV_WARNING_THRESHOLD = 0.80;
+
+/** Liquidation threshold where position is at immediate risk of liquidation (90%). */
+export const LTV_LIQUIDATION_THRESHOLD = 0.90;
+
+/**
+ * Hysteresis margin applied below thresholds to prevent notification flapping (5 percentage points).
+ * A line must fall strictly below (threshold - hysteresis) to reset/re-arm the alert level.
+ */
+export const LTV_HYSTERESIS = 0.05;
+
+export type CollateralAlertLevel = 'warning' | 'liquidation';
+export type LtvAlertLevel = CollateralAlertLevel;
+
+/**
+ * Determine whether a transition from `prev` to `next` represents an upward crossing.
+ * Recovery or remaining at the same severity does not count as upward crossing.
+ */
+export function isUpwardCrossing(
+  prev: LtvAlertLevel | null | undefined,
+  next: LtvAlertLevel | null | undefined
+): boolean {
+  if (!next) return false;
+  if (!prev) return true;
+  return prev === 'warning' && next === 'liquidation';
+}
+
+/**
+ * Pure evaluation function for collateral LTV alerts with hysteresis.
+ *
+ * @param prev  Previous alert level ('warning' | 'liquidation' | null) or previous LTV ratio number.
+ * @param next  Current LTV ratio number or LtvSnapshot.
+ * @returns The active alert level ('warning' | 'liquidation') or null (safe / recovered).
+ */
+export function evaluateLtvAlert(
+  prev: LtvAlertLevel | number | null | undefined,
+  next: number | { ltvRatio: number }
+): LtvAlertLevel | null {
+  const currentLtv = typeof next === 'number' ? next : next.ltvRatio;
+
+  let prevLevel: LtvAlertLevel | null = null;
+  if (typeof prev === 'number') {
+    if (prev >= LTV_LIQUIDATION_THRESHOLD) {
+      prevLevel = 'liquidation';
+    } else if (prev >= LTV_WARNING_THRESHOLD) {
+      prevLevel = 'warning';
+    }
+  } else if (prev === 'warning' || prev === 'liquidation') {
+    prevLevel = prev;
+  }
+
+  // 1. Check if currently at or above liquidation threshold
+  if (currentLtv >= LTV_LIQUIDATION_THRESHOLD) {
+    return 'liquidation';
+  }
+
+  // 2. Liquidation hysteresis: if previously in liquidation, stay in liquidation
+  // until dropping strictly below (LIQUIDATION_THRESHOLD - HYSTERESIS)
+  if (prevLevel === 'liquidation' && currentLtv >= LTV_LIQUIDATION_THRESHOLD - LTV_HYSTERESIS) {
+    return 'liquidation';
+  }
+
+  // 3. Check if currently at or above warning threshold
+  if (currentLtv >= LTV_WARNING_THRESHOLD) {
+    return 'warning';
+  }
+
+  // 4. Warning hysteresis: if previously in warning (or stepped down from liquidation),
+  // stay in warning until dropping strictly below (WARNING_THRESHOLD - HYSTERESIS)
+  if (
+    (prevLevel === 'warning' || prevLevel === 'liquidation') &&
+    currentLtv >= LTV_WARNING_THRESHOLD - LTV_HYSTERESIS
+  ) {
+    return 'warning';
+  }
+
+  // 5. Recovered below reset thresholds -> safe / re-armed
+  return null;
+}
+
 /**
  * Compute the LTV snapshot for a given collateral asset and loan balance.
  *

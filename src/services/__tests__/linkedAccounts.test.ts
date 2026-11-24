@@ -10,7 +10,7 @@
  * - Error handling and edge cases
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   fetchLinkedAccounts,
   initiateLinkAccount,
@@ -18,6 +18,8 @@ import {
   disconnectAccount,
   reconnectAccount,
   verifyAccount,
+  setLinkedAccountsDelay,
+  setLinkedAccountsFailureInjector,
   PROVIDER_INFO,
 } from '../linkedAccounts';
 import * as storage from '../../utils/storage';
@@ -34,9 +36,13 @@ describe('linkedAccounts service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    setLinkedAccountsFailureInjector(null);
+    setLinkedAccountsDelay(null);
   });
 
   afterEach(() => {
+    setLinkedAccountsFailureInjector(null);
+    setLinkedAccountsDelay(null);
     vi.useRealTimers();
   });
 
@@ -359,8 +365,6 @@ describe('linkedAccounts service', () => {
       };
 
       vi.mocked(storage.readJson).mockReturnValue([mockAccount]);
-      // Mock Math.random to always succeed verification
-      vi.spyOn(Math, 'random').mockReturnValue(0.5);
       const originalLastVerified = mockAccount.lastVerified;
 
       const promise = verifyAccount('google-123');
@@ -368,7 +372,9 @@ describe('linkedAccounts service', () => {
       const result = await promise;
 
       expect(result.status).toBe('connected');
-      expect(new Date(result.lastVerified).getTime()).not.toBe(new Date(mockAccount.lastVerified).getTime());
+      expect(new Date(result.lastVerified!).getTime()).not.toBe(
+        new Date(originalLastVerified!).getTime(),
+      );
       expect(storage.writeJson).toHaveBeenCalled();
     });
 
@@ -383,8 +389,15 @@ describe('linkedAccounts service', () => {
       };
 
       vi.mocked(storage.readJson).mockReturnValue([mockAccount]);
-      // Mock Math.random to trigger verification failure
-      vi.spyOn(Math, 'random').mockReturnValue(0.05);
+      setLinkedAccountsFailureInjector(operation => {
+        if (operation === 'verifyAccount') {
+          return {
+            code: 'provider_error',
+            message: 'Unable to verify account. The token may have been revoked.',
+          };
+        }
+        return null;
+      });
 
       const promise = verifyAccount('google-123');
       vi.advanceTimersByTime(1000);
@@ -402,6 +415,154 @@ describe('linkedAccounts service', () => {
       vi.advanceTimersByTime(1000);
 
       await expect(promise).rejects.toThrow('Account not found');
+    });
+  });
+
+  describe('deterministic ids, configurable delay, and failure injection', () => {
+    it('produces identical externalId across two runs with the same input', async () => {
+      setLinkedAccountsDelay(0);
+      vi.useRealTimers();
+
+      const stateData = {
+        state: 'deterministic-state-1',
+        provider: 'github',
+        timestamp: Date.now(),
+      };
+
+      vi.mocked(storage.readJson)
+        .mockReturnValueOnce(stateData)
+        .mockReturnValueOnce([])
+        .mockReturnValueOnce(stateData)
+        .mockReturnValueOnce([]);
+
+      const first = await completeOAuthLink({
+        provider: 'github',
+        code: 'code-1',
+        state: 'deterministic-state-1',
+      });
+      const second = await completeOAuthLink({
+        provider: 'github',
+        code: 'code-1',
+        state: 'deterministic-state-1',
+      });
+
+      expect(first.externalId).toBe(second.externalId);
+      expect(first.externalId).toMatch(/^user-[a-z0-9]+@github\.com$/);
+    });
+
+    it('produces distinct externalId for different state or provider', async () => {
+      setLinkedAccountsDelay(0);
+      vi.useRealTimers();
+
+      const now = Date.now();
+      vi.mocked(storage.readJson)
+        .mockReturnValueOnce({ state: 'state-a', provider: 'google', timestamp: now })
+        .mockReturnValueOnce([])
+        .mockReturnValueOnce({ state: 'state-b', provider: 'google', timestamp: now })
+        .mockReturnValueOnce([]);
+
+      const first = await completeOAuthLink({
+        provider: 'google',
+        code: 'code-1',
+        state: 'state-a',
+      });
+      const second = await completeOAuthLink({
+        provider: 'google',
+        code: 'code-1',
+        state: 'state-b',
+      });
+
+      expect(first.externalId).not.toBe(second.externalId);
+    });
+
+    it('resolves immediately when setLinkedAccountsDelay(0) is configured', async () => {
+      setLinkedAccountsDelay(0);
+      vi.useRealTimers();
+      vi.mocked(storage.readJson).mockReturnValue([]);
+
+      const accounts = await fetchLinkedAccounts();
+      expect(accounts).toEqual([]);
+
+      const linkResult = await initiateLinkAccount({ provider: 'google' });
+      expect(linkResult.authUrl).toContain('/oauth/google?state=');
+    });
+
+    it('injects failure in initiateLinkAccount with AccountLinkError shape', async () => {
+      setLinkedAccountsDelay(0);
+      vi.useRealTimers();
+      vi.mocked(storage.readJson).mockReturnValue([]);
+
+      setLinkedAccountsFailureInjector(op => {
+        if (op === 'initiateLinkAccount') {
+          return {
+            code: 'network_error',
+            message: 'Simulated initiate failure',
+          };
+        }
+        return null;
+      });
+
+      await expect(initiateLinkAccount({ provider: 'google' })).rejects.toMatchObject({
+        code: 'network_error',
+        message: 'Simulated initiate failure',
+      });
+    });
+
+    it('injects failure in completeOAuthLink with AccountLinkError shape', async () => {
+      setLinkedAccountsDelay(0);
+      vi.useRealTimers();
+
+      setLinkedAccountsFailureInjector(op => {
+        if (op === 'completeOAuthLink') {
+          throw {
+            code: 'auth_failed',
+            message: 'Simulated OAuth completion failure',
+          };
+        }
+      });
+
+      await expect(
+        completeOAuthLink({
+          provider: 'google',
+          code: 'code-1',
+          state: 'state-1',
+        }),
+      ).rejects.toMatchObject({
+        code: 'auth_failed',
+        message: 'Simulated OAuth completion failure',
+      });
+    });
+
+    it('injects failure in disconnectAccount (unlink)', async () => {
+      setLinkedAccountsDelay(0);
+      vi.useRealTimers();
+
+      setLinkedAccountsFailureInjector(op => {
+        if (op === 'disconnectAccount') {
+          return new Error('Simulated unlink failure');
+        }
+        return null;
+      });
+
+      await expect(disconnectAccount('google-123')).rejects.toThrow('Simulated unlink failure');
+    });
+
+    it('injects failure in reconnectAccount and clears injector when set to null', async () => {
+      setLinkedAccountsDelay(0);
+      vi.useRealTimers();
+
+      setLinkedAccountsFailureInjector(op => {
+        if (op === 'reconnectAccount') {
+          return new Error('Simulated reconnect failure');
+        }
+        return null;
+      });
+
+      await expect(reconnectAccount('google-123')).rejects.toThrow('Simulated reconnect failure');
+
+      setLinkedAccountsFailureInjector(null);
+      vi.mocked(storage.readJson).mockReturnValue([]);
+      await expect(fetchLinkedAccounts()).resolves.toEqual([]);
     });
   });
 

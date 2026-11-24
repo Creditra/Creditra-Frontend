@@ -9,6 +9,10 @@ describe('classifyDrawError — pre-existing behaviour', () => {
       kind: 'retryable',
       code: 'network_error',
     });
+    expect(classifyDrawError({ code: 'timeout' })).toMatchObject({
+      kind: 'retryable',
+      code: 'timeout',
+    });
     expect(classifyDrawError({ code: 'quote_expired' })).toMatchObject({
       kind: 'retryable',
       code: 'quote_expired',
@@ -20,26 +24,72 @@ describe('classifyDrawError — pre-existing behaviour', () => {
       kind: 'terminal',
       code: 'insufficient_availability',
     });
+    expect(classifyDrawError({ code: 'ineligible_line' })).toMatchObject({
+      kind: 'terminal',
+      code: 'ineligible_line',
+    });
+    expect(classifyDrawError({ code: 'contract_rejection' })).toMatchObject({
+      kind: 'terminal',
+      code: 'contract_rejection',
+    });
     expect(classifyDrawError({ code: 'user_rejected' })).toMatchObject({
       kind: 'terminal',
       code: 'user_rejected',
     });
   });
 
-  it('classifies uncoded network messages as retryable', () => {
+  it('classifies uncoded retryable messages as retryable', () => {
     expect(classifyDrawError(new Error('Network error while submitting'))).toMatchObject({
+      kind: 'retryable',
+    });
+    expect(classifyDrawError(new Error('Request timed out'))).toMatchObject({
+      kind: 'retryable',
+    });
+    expect(classifyDrawError(new Error('Quote expired before confirmation'))).toMatchObject({
       kind: 'retryable',
     });
   });
 
-  it('classifies uncoded rejection messages as terminal', () => {
+  it('classifies uncoded terminal messages as terminal', () => {
+    expect(classifyDrawError(new Error('Insufficient funds available'))).toMatchObject({
+      kind: 'terminal',
+    });
+    expect(classifyDrawError(new Error('Line is ineligible for draw'))).toMatchObject({
+      kind: 'terminal',
+    });
     expect(classifyDrawError(new Error('Transaction rejected by user'))).toMatchObject({
       kind: 'terminal',
     });
   });
 
-  it('falls back to the retryable default for unknown errors', () => {
+  it('handles string errors via message-based classification and fallback', () => {
+    expect(classifyDrawError('Connection timed out')).toMatchObject({
+      kind: 'retryable',
+      code: 'unknown_error',
+      message: 'Connection timed out',
+    });
+    expect(classifyDrawError('Insufficient collateral')).toMatchObject({
+      kind: 'terminal',
+      code: 'unknown_error',
+      message: 'Insufficient collateral',
+    });
+    expect(classifyDrawError('Something went wrong')).toMatchObject({
+      kind: 'retryable',
+      code: 'unknown_error',
+      message: 'Something went wrong',
+    });
+  });
+
+  it('falls back to the retryable default for unknown, null, and undefined errors', () => {
     expect(classifyDrawError(new Error('Something unexpected'))).toMatchObject({
+      kind: 'retryable',
+      code: 'unknown_error',
+    });
+    expect(classifyDrawError(null)).toMatchObject({
+      kind: 'retryable',
+      code: 'unknown_error',
+    });
+    expect(classifyDrawError(undefined)).toMatchObject({
       kind: 'retryable',
       code: 'unknown_error',
     });

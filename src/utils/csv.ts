@@ -7,17 +7,22 @@
 
 export type CsvCell = string | number | boolean | null | undefined;
 
+const FORMULA_PREFIX_RE = /^[=+\-@]/;
+
 /**
  * Escape one CSV field according to RFC 4180-style rules.
  *
+ * Fields starting with spreadsheet formula characters (=, +, -, @) are
+ * prefixed with a single quote to neutralize formula injection.
  * Fields containing commas, quotes, carriage returns, or newlines are
  * wrapped in double quotes. Embedded quotes are doubled.
  */
 export function escapeCsvCell(value: CsvCell): string {
   const normalized = value == null ? "" : String(value);
-  const escaped = normalized.replace(/"/g, '""');
+  const safe = FORMULA_PREFIX_RE.test(normalized) ? `'${normalized}` : normalized;
+  const escaped = safe.replace(/"/g, '""');
 
-  return /[",\r\n]/.test(normalized) ? `"${escaped}"` : escaped;
+  return /[",\r\n]/.test(safe) ? `"${escaped}"` : escaped;
 }
 
 /**
