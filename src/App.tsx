@@ -11,7 +11,7 @@ import { KycProvider } from "./context/KycContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import { AuctionAlertWatcher } from "./components/AuctionAlertWatcher";
 import { ReducedMotionProvider } from "./context/ReducedMotionContext";
-import { KycDrawer } from "./components/KycDrawer";
+import { KycPanel } from "./components/KycPanel";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ShortcutHelpOverlay } from "./components/ShortcutHelpOverlay";
 import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
@@ -132,7 +132,7 @@ function AppShell() {
             onClose={() => setIsShortcutHelpOpen(false)}
             triggerRef={openedFromSettingsLink ? settingsTriggerRef : undefined}
           />
-          <KycDrawer
+          <KycPanel
             isOpen={isKycDrawerOpen}
             onClose={() => setIsKycDrawerOpen(false)}
             onResume={(stepId) => {
