@@ -936,6 +936,8 @@ export function TransactionHistory({
     };
   }, [creditLines, filteredTransactions]);
 
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+
   const exportDisabled = filteredTransactions.length === 0;
 
   const handleExportCsv = () => {
@@ -957,8 +959,85 @@ export function TransactionHistory({
     });
   };
 
-  const exportToPDF = () => {
-    window.print();
+  const exportToPDF = async () => {
+    if (exportDisabled || isExportingPdf) return;
+
+    setIsExportingPdf(true);
+    setLiveAnnouncement("Generating PDF statement...");
+
+    try {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+      const {
+        buildTransactionPdf,
+        buildTransactionPdfFilename,
+        downloadPdf,
+      } = await import("../lib/transaction-pdf");
+
+      const selectedLineObj = creditLines.find((cl) => cl.id === selectedLine);
+      const dateFilterLabel =
+        dateRange === "custom"
+          ? customStartDate || customEndDate
+            ? `${customStartDate || "any"} to ${customEndDate || "any"}`
+            : "custom"
+          : dateRange !== "all"
+            ? dateRange
+            : presetRange !== "all-time"
+              ? presetRange
+              : undefined;
+
+      const amountFilterLabel = isCustomAmountRangeActive
+        ? `${customAmountMin || "0"} - ${customAmountMax || "any"}`
+        : selectedAmountRange !== "all"
+          ? selectedAmountRange
+          : undefined;
+
+      const blob = buildTransactionPdf(filteredTransactions, {
+        asset: DEFAULT_TRANSACTION_CSV_ASSET,
+        generatedAt: clockNow(),
+        filters: {
+          line:
+            selectedLine !== "all"
+              ? (selectedLineObj?.name ?? selectedLine)
+              : undefined,
+          type: selectedType !== "all" ? selectedType : undefined,
+          status: selectedStatus !== "all" ? selectedStatus : undefined,
+          dateRange: dateFilterLabel,
+          amountRange: amountFilterLabel,
+          searchQuery: searchQuery.trim() || undefined,
+        },
+      });
+      const filename = buildTransactionPdfFilename(filteredTransactions);
+
+      downloadPdf(filename, blob);
+
+      setLiveAnnouncement(
+        `PDF statement downloaded as ${filename} with ${filteredTransactions.length} ${
+          filteredTransactions.length === 1 ? "transaction" : "transactions"
+        }.`,
+      );
+      addToast({
+        type: "success",
+        category: "transaction",
+        title: "PDF export ready",
+        message: `Your filtered transaction statement was downloaded as ${filename}.`,
+        saveToHistory: false,
+      });
+    } catch (err) {
+      setLiveAnnouncement("Failed to generate PDF statement.");
+      addToast({
+        type: "error",
+        category: "transaction",
+        title: "PDF export failed",
+        message:
+          err instanceof Error
+            ? err.message
+            : "Unable to generate the PDF statement. Please try again.",
+        saveToHistory: false,
+      });
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   const handleToggleExpand = (txId: string) => {
@@ -1429,9 +1508,14 @@ export function TransactionHistory({
               type="button"
               className="export-btn export-btn-secondary"
               onClick={exportToPDF}
+              disabled={exportDisabled || isExportingPdf}
+              aria-busy={isExportingPdf || undefined}
+              aria-describedby={
+                exportDisabled ? CSV_EXPORT_EMPTY_REASON_ID : undefined
+              }
             >
               <span aria-hidden="true">📑</span>
-              Export PDF
+              {isExportingPdf ? "Exporting PDF..." : "Export PDF"}
             </button>
           </div>
         </div>
