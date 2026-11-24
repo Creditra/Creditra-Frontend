@@ -18,6 +18,7 @@ import {
 import { getRepayableLines } from '../lib/repay-eligibility';
 import { getAccruedInterest } from '../lib/interest';
 import { roundToCents } from '../utils/currency';
+import { parseAmountInput } from '../utils/amountValidation';
 import {
   getRepayableBalance,
   moneyToNumber,
@@ -108,6 +109,8 @@ export function validate(
     errors.creditLineId = 'Select an available credit line.';
   }
 
+  const amt = parseAmountInput(form.amount);
+  if (!form.amount || amt === null || amt <= 0) {
   const amt = parseAutopayAmount(form.amount);
   if (amt === null) {
     errors.amount = 'Enter a payment amount greater than $0.';
@@ -248,6 +251,7 @@ export default function AutopayPage() {
       ? moneyToNumber(walletBalanceResult.amount)
       : null;
 
+  const parsedAmount = parseAmountInput(form.amount) ?? 0;
   const parsedAmount = parseAutopayAmount(form.amount) ?? 0;
   const amountExceedsLine =
     selectedLineRepayable !== null && parsedAmount > selectedLineRepayable;
@@ -322,6 +326,7 @@ export default function AutopayPage() {
         return;
       }
 
+      const amount = parseAmountInput(form.amount) ?? 0;
       const amount = parseAutopayAmount(form.amount) ?? 0;
       try {
         if (editingId) {

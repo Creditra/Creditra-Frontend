@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { getAccruedInterest, getAccruedInterestDays } from '@/lib/interest';
 import { PayoffProjection } from '../PayoffProjection';
 
@@ -260,5 +260,24 @@ describe('PayoffProjection', () => {
       expect(row.closest('[aria-live]')).toBeNull();
       expect(row.querySelector('[aria-live]')).toBeNull();
     });
+  });
+
+  it('rejects invalid monthly payment strings like "12abc" and "1e3"', () => {
+    render(<PayoffProjection {...BASE_PROPS} repayAmount={20_000} />);
+    fireEvent.click(screen.getByLabelText('Edit monthly payment amount'));
+    const input = screen.getByLabelText('Assumed monthly payment');
+
+    fireEvent.change(input, { target: { value: '12abc' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    // Should fall back to default monthly payment ($2,500), not $12
+    expect(screen.getByText(/\$2,500/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Edit monthly payment amount'));
+    fireEvent.change(screen.getByLabelText('Assumed monthly payment'), {
+      target: { value: '1e3' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    // Should still fall back to default monthly payment ($2,500), not $1,000
+    expect(screen.getByText(/\$2,500/)).toBeInTheDocument();
   });
 });

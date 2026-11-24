@@ -4,6 +4,17 @@ import { MemoryRouter } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { CreditLineDetailDrawer } from '../CreditLineDetailDrawer';
 import type { CreditLine } from '../../types/creditLine';
+import { getCreditNetworkConfig } from '../../config/creditNetwork';
+
+vi.mock('../../config/creditNetwork', () => ({
+  getCreditNetworkConfig: vi.fn(() => ({
+    network: 'PUBLIC',
+    horizonUrl: 'https://horizon.stellar.org',
+    sorobanRpcUrl: 'https://soroban.stellar.org',
+    networkPassphrase: 'Public Global Stellar Network ; September 2015',
+    creditContractId: 'CCREDIT123',
+  })),
+}));
 
 // Mock hooks to avoid layout side-effects in test environment
 vi.mock('../../hooks/useBodyScrollLock', () => ({
@@ -157,5 +168,73 @@ describe('CreditLineDetailDrawer', () => {
 
     // FocusTrap handles Escape internally and should trigger onClose
     expect(mockOnClose).toHaveBeenCalledTimes(1);
+  });
+
+  describe('Stellar Explorer transaction links', () => {
+    it('links transactions to the public explorer when network is PUBLIC', () => {
+      vi.mocked(getCreditNetworkConfig).mockReturnValueOnce({
+        network: 'PUBLIC',
+        horizonUrl: 'https://horizon.stellar.org',
+        sorobanRpcUrl: 'https://soroban.stellar.org',
+        networkPassphrase: 'Public Global Stellar Network ; September 2015',
+        creditContractId: 'CCREDIT123',
+      });
+
+      renderDrawer();
+
+      const explorerLink = screen.getByRole('link', {
+        name: /View transaction TX-TEST-001 on Stellar Explorer/i,
+      });
+      expect(explorerLink).toHaveAttribute(
+        'href',
+        'https://stellar.expert/explorer/public/tx/0xabc123'
+      );
+    });
+
+    it('links transactions to the testnet explorer when network is TESTNET', () => {
+      vi.mocked(getCreditNetworkConfig).mockReturnValueOnce({
+        network: 'TESTNET',
+        horizonUrl: 'https://horizon-testnet.stellar.org',
+        sorobanRpcUrl: 'https://soroban-testnet.stellar.org',
+        networkPassphrase: 'Test Stellar Network ; February 2015',
+        creditContractId: 'CCREDIT123',
+      });
+
+      renderDrawer();
+
+      const explorerLink = screen.getByRole('link', {
+        name: /View transaction TX-TEST-001 on Stellar Explorer/i,
+      });
+      expect(explorerLink).toHaveAttribute(
+        'href',
+        'https://stellar.expert/explorer/testnet/tx/0xabc123'
+      );
+    });
+
+    it('falls back to public explorer when getCreditNetworkConfig throws an error', () => {
+      vi.mocked(getCreditNetworkConfig).mockImplementationOnce(() => {
+        throw new Error('Config missing');
+      });
+
+      renderDrawer();
+
+      const explorerLink = screen.getByRole('link', {
+        name: /View transaction TX-TEST-001 on Stellar Explorer/i,
+      });
+      expect(explorerLink).toHaveAttribute(
+        'href',
+        'https://stellar.expert/explorer/public/tx/0xabc123'
+      );
+    });
+
+    it('does not render an explorer link for transactions without a txHash', () => {
+      renderDrawer();
+
+      expect(
+        screen.queryByRole('link', {
+          name: /View transaction TX-TEST-002 on Stellar Explorer/i,
+        })
+      ).not.toBeInTheDocument();
+    });
   });
 });

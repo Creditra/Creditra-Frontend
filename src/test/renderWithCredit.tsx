@@ -43,6 +43,7 @@ export function renderWithCredit(
       return mockSource.listCreditLines(borrower, requestOptions);
     },
     getCreditLine: (id, requestOptions) => mockSource.getCreditLine(id, requestOptions),
+    listTransactions: (lineId, requestOptions) => mockSource.listTransactions(lineId, requestOptions),
   };
   const Wrapper = ({ children }: { children: ReactNode }) => {
     const content = (
