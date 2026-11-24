@@ -70,6 +70,8 @@ import {
   getDrawEligibility,
 } from "@/lib/draw-eligibility";
 import { classifyDrawError } from "@/lib/draw-errors";
+import { drawCredit, SorobanWriteError } from "@/services/credit/sorobanWriteClient";
+import { generateIdempotencyKey } from "@/utils/idempotency";
 import { getDrawAmountValidation } from "@/utils/amountValidation";
 import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
 import { projectDraw } from "@/lib/draw-projection";
@@ -174,6 +176,7 @@ export default function DrawCreditPage() {
   // not immediately re-persisted under the new owner.
   const previousDraftOwner = useRef(draftOwner);
   const skipNextDraftSave = useRef(false);
+  const draftSessionRef = useRef<number>(Date.now());
   const draftSave = useDraftSaveStatus();
 
   /**
@@ -268,15 +271,14 @@ export default function DrawCreditPage() {
       draftSave.markError();
     }
   }, [
-    step,
-    selectedCreditLine,
-    amount,
+    state.step,
+    state.selectedCreditLine,
+    state.amount,
     draftOwner,
     draftSave.markSaved,
     draftSave.markError,
     draftSave.reset,
   ]);
-  }, [state.step, state.selectedCreditLine, state.amount, draftOwner]);
 
   /**
    * Concurrent submission guard (issue #932). The ref is flipped to `true`
@@ -302,11 +304,11 @@ export default function DrawCreditPage() {
 
   const { isReducedMotionActive } = useReducedMotion();
 
-  const amountStepValidation = selectedCreditLine
-    ? getDrawAmountValidation(String(amount), selectedCreditLine)
+  const amountStepValidation = state.selectedCreditLine
+    ? getDrawAmountValidation(String(state.amount), state.selectedCreditLine)
     : null;
-  const utilizedCredit = selectedCreditLine
-    ? Math.max(0, selectedCreditLine.limit - selectedCreditLine.available)
+  const utilizedCredit = state.selectedCreditLine
+    ? Math.max(0, state.selectedCreditLine.limit - state.selectedCreditLine.available)
     : 0;
 
   const handleSelectCreditLine = useCallback((creditLine: CreditLine) => {
@@ -379,46 +381,81 @@ export default function DrawCreditPage() {
     isSubmittingRef.current = true;
     dispatch({ type: "SUBMIT_START" });
 
+    const idempotencyKey = generateIdempotencyKey({
+      creditLineId: line.id,
+      incomingAssetId: `draw:${state.amount}`,
+      initiatedAtMs: draftSessionRef.current,
+    });
+
     // Guard mutation
     try {
       await offlineMutation({
         fn: async () => {
-          // Simulate API call
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+          try {
+            const result = await drawCredit(line.id, String(state.amount), {
+              source: wallet?.publicKey,
+              walletType: wallet?.type,
+              idempotencyKey,
+            });
 
-          const succeeded = Math.random() > 0.2;
-          const newTransaction: Transaction = {
-            id: `TXN-${Date.now()}`,
-            creditLineId: line.id,
-            amount: state.amount,
-            status: succeeded ? "success" : "error",
-            message: succeeded ? undefined : "Insufficient funds available",
-            timestamp: new Date(),
-          };
+            const newTransaction: Transaction = {
+              id: result.txHash,
+              txHash: result.txHash,
+              creditLineId: line.id,
+              amount: state.amount,
+              status: "success",
+              timestamp: new Date(),
+            };
 
-          if (succeeded) {
             emit("draw:success", {
               transactionId: newTransaction.id,
               creditLineId: line.id,
               creditLineName: line.name,
               amount: newTransaction.amount,
-              timestamp: newTransaction.timestamp?.toISOString() ?? new Date().toISOString(),
+              timestamp:
+                newTransaction.timestamp?.toISOString() ??
+                new Date().toISOString(),
             });
-          }
 
-          if (!isMountedRef.current) return;
+            if (!isMountedRef.current) return;
 
-          if (succeeded) {
             dispatch({ type: "SUBMIT_SUCCESS", transaction: newTransaction });
             navigate("/draw-credit/success", {
               replace: true,
               state: { transaction: newTransaction },
             });
-          } else {
+          } catch (err) {
+            if (!isMountedRef.current) return;
+
+            const classified = classifyDrawError(err);
+            const isUserRejected =
+              (err instanceof SorobanWriteError &&
+                err.code === "user_rejected") ||
+              classified.code === "user_rejected";
+
+            if (isUserRejected) {
+              dispatch({
+                type: "SUBMIT_USER_REJECTED",
+                message:
+                  "You cancelled the signature request in your wallet. Review your details and try again when ready.",
+              });
+              return;
+            }
+
+            const failedTransaction: Transaction = {
+              id: `ERR-${Date.now()}`,
+              creditLineId: line.id,
+              amount: state.amount,
+              status: "error",
+              message: classified.message,
+              timestamp: new Date(),
+            };
+
+            const classified = classifyDrawError(newTransaction);
             dispatch({
               type: "SUBMIT_ERROR",
-              transaction: newTransaction,
-              errorKind: classifyDrawError(newTransaction),
+              transaction: failedTransaction,
+              errorKind: classified.kind,
             });
           }
         },
@@ -438,6 +475,7 @@ export default function DrawCreditPage() {
   };
 
   const handleNewDraw = () => {
+    draftSessionRef.current = Date.now();
     navigate("/draw-credit", { replace: true });
     dispatch({ type: "RESET" });
   };
@@ -496,10 +534,10 @@ export default function DrawCreditPage() {
     capture: true,
     handler: (e) => {
       if (hasOpenDialog()) return;
-      if (step === "select") {
+      if (state.step === "select") {
         e.preventDefault();
         handleCancel();
-      } else if (step === "amount" || step === "confirm") {
+      } else if (state.step === "amount" || state.step === "confirm") {
         e.preventDefault();
         handleBack();
       }
@@ -513,21 +551,9 @@ export default function DrawCreditPage() {
     capture: true,
     handler: (e) => {
       if (hasOpenDialog()) return;
-      if (step === "amount" || step === "confirm") {
+      if (state.step === "amount" || state.step === "confirm") {
         e.preventDefault();
         handleBack();
-          if (state.step === "select") {
-          } else if (state.step === "amount" || state.step === "confirm") {
-          if (state.step === "amount" || state.step === "confirm") {
-          if (state.step === "amount" && state.selectedCreditLine) {
-              String(state.amount),
-              state.selectedCreditLine,
-              handleAmountNext(state.amount);
-              dispatch({
-                type: "SET_SUBMIT_ERROR",
-                error: validation.message,
-              });
-          if (state.step === "confirm" && state.confirmationAcknowledged) {
       }
     },
   });
@@ -539,34 +565,28 @@ export default function DrawCreditPage() {
     capture: true,
     handler: (e) => {
       if (hasOpenDialog()) return;
-      if (step === "amount" && selectedCreditLine) {
+      if (state.step === "amount" && state.selectedCreditLine) {
         e.preventDefault();
         const validation = getDrawAmountValidation(
-          String(amount),
-          selectedCreditLine,
+          String(state.amount),
+          state.selectedCreditLine,
         );
         if (validation.isValid) {
-          handleAmountNext(amount);
+          handleAmountNext(state.amount);
         } else {
           amountInputRef.current?.focus();
-          setSubmitError(validation.message);
+          dispatch({
+            type: "SET_SUBMIT_ERROR",
+            error: validation.message,
+          });
         }
       }
-      if (step === "confirm" && confirmationAcknowledged) {
+      if (state.step === "confirm" && state.confirmationAcknowledged) {
         e.preventDefault();
         void handleConfirm();
       }
     },
   });
-  }, [
-    state.step,
-    state.amount,
-    state.selectedCreditLine,
-    state.confirmationAcknowledged,
-    handleBack,
-    handleCancel,
-    isRiskModalOpen,
-  ]);
 
   return (
     <main className="dc-page" aria-label="Draw credit">
@@ -650,7 +670,7 @@ export default function DrawCreditPage() {
                 drawnAmount={
                   utilizedCredit + (amountStepValidation?.amount ?? 0)
                 }
-                totalLimit={selectedCreditLine.limit}
+                totalLimit={state.selectedCreditLine.limit}
                 drawnLabel="Utilised"
                 availableLabel="Available after draw"
                 announcePercentage={false}

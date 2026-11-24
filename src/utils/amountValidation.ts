@@ -72,15 +72,70 @@ const toCents = (dollars: number): number => Math.round(dollars * 100);
 /** Convert whole cents back to a dollar amount for display. */
 const fromCents = (cents: number): number => cents / 100;
 
+export interface ParseAmountInputOptions {
+  /** Maximum allowed fractional digits (defaults to 2). */
+  maxDecimals?: number;
+  /** When true, an empty/whitespace-only string returns 0 instead of null. */
+  allowEmpty?: boolean;
+  /** When true (default), valid thousands-grouped commas (e.g. "1,234.56") are stripped. */
+  allowCommas?: boolean;
+}
+
+const THOUSANDS_GROUPED_RE = /^\d{1,3}(?:,\d{3})*(?:\.\d*)?$/;
+const STRICT_DECIMAL_RE = /^(?:\d+(?:\.\d*)?|\.\d+)$/;
+
+/**
+ * Strictly parse a user-entered monetary string into a non-negative finite number.
+ *
+ * Rejects scientific notation ("1e3"), trailing garbage ("12abc"), signs ("-1", "+1"),
+ * hex ("0x10"), "Infinity", and values with more than `maxDecimals` fractional digits.
+ * Returns `null` when invalid (or `0` for empty input when `allowEmpty` is true).
+ */
+export function parseAmountInput(
+  value: string,
+  opts?: ParseAmountInputOptions,
+): number | null {
+  const maxDecimals = opts?.maxDecimals ?? 2;
+  const allowEmpty = opts?.allowEmpty ?? false;
+  const allowCommas = opts?.allowCommas ?? true;
+
+  const trimmed = value.trim();
+  if (trimmed === '') {
+    return allowEmpty ? 0 : null;
+  }
+
+  let normalized = trimmed;
+  if (normalized.includes(',')) {
+    if (!allowCommas || !THOUSANDS_GROUPED_RE.test(normalized)) {
+      return null;
+    }
+    normalized = normalized.replace(/,/g, '');
+  }
+
+  if (!STRICT_DECIMAL_RE.test(normalized)) {
+    return null;
+  }
+
+  const dotIndex = normalized.indexOf('.');
+  if (dotIndex !== -1) {
+    const fractionalLength = normalized.length - dotIndex - 1;
+    if (fractionalLength > maxDecimals) {
+      return null;
+    }
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
 /**
  * Parse a user-entered monetary string into whole cents so that all
  * subsequent arithmetic/comparisons are integer-exact instead of relying on
  * floating-point dollars. Blank or unparseable input yields 0.
  */
 const parseAmountToCents = (input: string): number => {
-  if (input.trim() === '') return 0;
-  const parsed = Number.parseFloat(input);
-  return Number.isNaN(parsed) ? 0 : Math.round(parsed * 100);
+  const parsed = parseAmountInput(input);
+  return parsed === null ? 0 : Math.round(parsed * 100);
 };
 
 /**
@@ -163,7 +218,7 @@ export function getDrawAmountValidation(
   amountInput: string,
   creditLine: { limit: number; available: number },
 ): DrawAmountValidationResult {
-  const amount = Number.parseFloat(amountInput) || 0;
+  const amount = parseAmountInput(amountInput) ?? 0;
   const hasEnteredAmount = amountInput.trim() !== '';
   const maxAmount = getMaximumDraw(creditLine.available);
   const remainingCredit = Math.max(

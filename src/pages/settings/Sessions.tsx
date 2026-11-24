@@ -33,9 +33,25 @@ import {
 } from 'lucide-react';
 import type { Session, RevokeState, RevokeStateMap } from '../../types/session';
 import { MOCK_SESSIONS } from '../../data/mockData';
+import { timeAgo } from '../../utils/dates';
 import './Sessions.css';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const DEFAULT_LOCALE = 'en-US';
+
+function getActiveLocale(locale?: string): string {
+  if (locale) return locale;
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = window.localStorage.getItem('locale');
+      if (stored) return stored;
+    } catch {
+      // ignore storage errors
+    }
+  }
+  return DEFAULT_LOCALE;
+}
 
 /** Picks a Lucide icon component for the given device type. */
 function DeviceIcon({ type, className }: { type: Session['deviceType']; className?: string }) {
@@ -48,21 +64,6 @@ function DeviceIcon({ type, className }: { type: Session['deviceType']; classNam
   }
 }
 
-/**
- * Formats an ISO timestamp as a relative human-readable string.
- * Examples: "just now", "3 hours ago", "7 days ago".
- */
-function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1)  return 'just now';
-  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24)   return `${hours} hour${hours === 1 ? '' : 's'} ago`;
-  const days = Math.floor(hours / 24);
-  return `${days} day${days === 1 ? '' : 's'} ago`;
-}
-
 /** Simulates a successful 600 ms server-side revoke call. */
 function simulateRevoke(_sessionId: string): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 600));
@@ -72,13 +73,15 @@ function simulateRevoke(_sessionId: string): Promise<void> {
 
 interface SessionRowProps {
   session: Session;
+  locale: string;
   revokeState: RevokeState;
   anyRevoking: boolean;
   onRevoke: (id: string) => void;
 }
 
-function SessionRow({ session, revokeState, anyRevoking, onRevoke }: SessionRowProps) {
+function SessionRow({ session, locale, revokeState, anyRevoking, onRevoke }: SessionRowProps) {
   const { id, isCurrent, deviceLabel, deviceType, ipAddress, location, lastActiveAt, createdAt } = session;
+  const now = new Date();
   const isRevoking = revokeState === 'loading';
   const isRevoked  = revokeState === 'success';
   const hasError   = revokeState === 'error';
@@ -122,8 +125,8 @@ function SessionRow({ session, revokeState, anyRevoking, onRevoke }: SessionRowP
           <li className="session-row__meta-item">
             <Clock size={12} aria-hidden="true" />
             <span>
-              Active {relativeTime(lastActiveAt)}{' '}
-              &mdash; signed in {relativeTime(createdAt)}
+              Active {timeAgo(lastActiveAt, now, locale)}{' '}
+              &mdash; signed in {timeAgo(createdAt, now, locale)}
             </span>
           </li>
         </ul>
@@ -176,11 +179,15 @@ function SessionRow({ session, revokeState, anyRevoking, onRevoke }: SessionRowP
 export interface SessionsSettingsProps {
   /** Revoke a session; defaults to a successful simulated request. */
   revokeSession?: (sessionId: string) => Promise<void>;
+  /** Optional BCP 47 locale override — defaults to stored locale or "en-US". */
+  locale?: string;
 }
 
 export default function SessionsSettings({
   revokeSession = simulateRevoke,
+  locale,
 }: SessionsSettingsProps = {}) {
+  const activeLocale = getActiveLocale(locale);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [revokeStates, setRevokeStates] = useState<RevokeStateMap>({});
@@ -374,6 +381,7 @@ export default function SessionsSettings({
               <SessionRow
                 key={session.id}
                 session={session}
+                locale={activeLocale}
                 revokeState={revokeStates[session.id] ?? 'idle'}
                 anyRevoking={anyRevoking}
                 onRevoke={handleRevoke}

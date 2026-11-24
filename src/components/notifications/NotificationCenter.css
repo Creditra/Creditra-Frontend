@@ -123,6 +123,20 @@
   text-align: center;
 }
 
+.nc-channel-status {
+  color: var(--muted, #8b949e);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.nc-channel-status[data-status="open"] {
+  color: var(--success, #3fb950);
+}
+
+.nc-channel-status[data-status="retrying"] {
+  color: var(--warning, #d29922);
+}
+
 .nc-header-actions {
   display: flex;
   align-items: center;
@@ -251,6 +265,50 @@
   height: 16px;
   cursor: pointer;
   accent-color: var(--accent, #58a6ff);
+}
+
+/* ── Search & severity filter bar ────────────────────────────────────────── */
+
+.nc-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  border-bottom: 1px solid var(--border, #30363d);
+  flex-shrink: 0;
+}
+
+.nc-search-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.nc-type-field {
+  flex-shrink: 0;
+}
+
+.nc-search-input,
+.nc-type-select {
+  width: 100%;
+  min-height: 36px;
+  padding: 0.4rem 0.625rem;
+  font-size: 0.8rem;
+  color: var(--text, #e6edf3);
+  background: var(--bg, #0d1117);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 6px;
+  transition: border-color 0.15s;
+}
+
+.nc-search-input::placeholder {
+  color: var(--muted, #8b949e);
+}
+
+.nc-search-input:focus-visible,
+.nc-type-select:focus-visible {
+  outline: 2px solid var(--accent, #58a6ff);
+  outline-offset: 2px;
+  border-color: var(--accent, #58a6ff);
 }
 
 /* ── Filter tabs ─────────────────────────────────────────────────────────── */
@@ -460,6 +518,10 @@
     justify-content: flex-end;
     flex-wrap: wrap;
     gap: 0.375rem;
+  }
+
+  .nc-search-bar {
+    padding-inline: 1rem;
   }
 
   .nc-filters {

@@ -29,6 +29,7 @@ import {
 
 beforeEach(() => {
   document.documentElement.removeAttribute('data-contrast');
+  window.localStorage.clear();
 });
 
 // ── Helper: render the toggle inside a real provider ─────────────────────────
@@ -101,5 +102,20 @@ describe('HighContrastToggle', () => {
       'aria-label',
       'Toggle high contrast mode',
     );
+  });
+
+  it('shows "Following system setting" when no user preference is stored', async () => {
+    renderToggle();
+    expect(
+      screen.getByText(/Following system setting/i),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('switch'));
+    expect(
+      screen.queryByText(/Following system setting/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Persisted across sessions/i),
+    ).toBeInTheDocument();
   });
 });

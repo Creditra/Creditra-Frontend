@@ -9,13 +9,19 @@
  * 6-second undo toast support for mark-all-read, clear-all, and
  * individual mark-as-read actions.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNotifications } from '../../context/NotificationContext';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
+import { useDebounceValue } from '../../hooks/useDebounceValue';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { useNotificationActionHandler } from '../../hooks/useNotificationActionHandler';
 import { useInertBackdrop } from '../../hooks/useInertBackdrop';
-import type { Notification, NotificationCategory } from '../../types/notification';
+import type {
+  Notification,
+  NotificationCategory,
+  NotificationType,
+} from '../../types/notification';
+import { filterNotifications } from './filterNotifications';
 import { CATEGORY_ICON, TYPE_COLOR, TYPE_ICON } from './notificationIcons';
 import { KbdHint } from '../KbdHint';
 import { useHotkey } from '../../lib/hotkeys';
@@ -75,6 +81,15 @@ const CATEGORIES: { value: NotificationCategory | 'all'; label: string }[] = [
   { value: 'system',      label: 'System' },
 ];
 
+const SEVERITY_TYPES: { value: NotificationType | 'all'; label: string }[] = [
+  { value: 'all',     label: 'All severities' },
+  { value: 'success', label: 'Success' },
+  { value: 'info',    label: 'Info' },
+  { value: 'warning', label: 'Warning' },
+  { value: 'error',   label: 'Error' },
+  { value: 'danger',  label: 'Danger' },
+];
+
 const relativeTime = (iso: string): string => {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60_000);
@@ -112,12 +127,12 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     closePanel,
     notifications,
     unreadCount,
+    notificationChannelStatus,
     markAsRead,
     markAllAsRead,
     undoRead,
     clearAll,
     restoreNotifications,
-    filterByCategory,
     preferences,
     updatePreferences,
     addToast,
@@ -125,9 +140,13 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
   } = useNotifications();
 
   const [activeFilter, setActiveFilter] = useState<NotificationCategory | 'all'>('all');
+  const [typeFilter, setTypeFilter] = useState<NotificationType | 'all'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const debouncedQuery = useDebounceValue(searchQuery, 200);
   const [showPrefs, setShowPrefs] = useState(false);
   const [announcement, setAnnouncement] = useState('');
   const announcementTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasFilterInteractedRef = useRef(false);
 
   const isMobileSheet = useMobileSheetActive();
   const [snapPoint, setSnapPoint] = useState<SheetSnapPoint>('half');
@@ -155,7 +174,42 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     };
   }, []);
 
-  const filtered = filterByCategory(activeFilter);
+  const filtered = useMemo(
+    () =>
+      filterNotifications(notifications, {
+        category: activeFilter,
+        type: typeFilter,
+        query: debouncedQuery,
+      }),
+    [notifications, activeFilter, typeFilter, debouncedQuery],
+  );
+
+  const hasActiveSearchOrType = debouncedQuery.trim().length > 0 || typeFilter !== 'all';
+
+  const listAriaLabel = hasActiveSearchOrType
+    ? filtered.length === 0
+      ? 'No results for your search'
+      : `${filtered.length} matching notification${filtered.length !== 1 ? 's' : ''}`
+    : `${filtered.length} notification${filtered.length !== 1 ? 's' : ''}`;
+
+  // Announce search/severity filter result counts to screen readers after interaction.
+  useEffect(() => {
+    if (!hasFilterInteractedRef.current) {
+      if (debouncedQuery.trim().length === 0 && typeFilter === 'all') {
+        return;
+      }
+      hasFilterInteractedRef.current = true;
+    }
+    const message =
+      filtered.length === 0
+        ? hasActiveSearchOrType
+          ? 'No results for your search'
+          : 'No notifications'
+        : listAriaLabel;
+    setAnnouncement(message);
+    if (announcementTimerRef.current) clearTimeout(announcementTimerRef.current);
+    announcementTimerRef.current = setTimeout(() => setAnnouncement(''), 3000);
+  }, [debouncedQuery, typeFilter, filtered.length, hasActiveSearchOrType, listAriaLabel]);
   const dragStartY = useRef<number | null>(null);
   const panelElRef = useRef<HTMLDivElement | null>(null);
   const emptyStateRef = useRef<HTMLDivElement | null>(null);
@@ -211,6 +265,9 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
     announcementTimerRef.current = setTimeout(() => setAnnouncement(''), 3000);
   }, []);
 
+  // Intentionally operates on the full notification inbox regardless of active
+  // category, severity-type, or search-query filters so bulk read semantics
+  // stay consistent with the unread badge and undo snapshot.
   const handleMarkAllAsRead = useCallback(() => {
     const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
     const count = unreadCount;
@@ -252,6 +309,9 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
 
   const pendingEmptyFocusRef = useRef(false);
 
+  // Intentionally clears the full notification inbox regardless of active
+  // category, severity-type, or search-query filters so bulk clear semantics
+  // stay consistent with the undo snapshot.
   const handleClearAll = useCallback(() => {
     const prior = [...notifications];
     let undone = false;
@@ -401,6 +461,20 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
                 {unreadCount}
               </span>
             )}
+            {notificationChannelStatus !== 'off' && (
+              <span
+                className="nc-channel-status"
+                data-status={notificationChannelStatus}
+                role="status"
+                aria-live="polite"
+              >
+                {notificationChannelStatus === 'open'
+                  ? 'Live'
+                  : notificationChannelStatus === 'retrying'
+                    ? 'Reconnecting…'
+                    : 'Connecting…'}
+              </span>
+            )}
           </div>
           <div className="nc-header-actions">
             <button
@@ -472,6 +546,39 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
           ))}
         </div>
 
+        <div className="nc-search-bar">
+          <div className="nc-search-field">
+            <label htmlFor="nc-search-input" className="sr-only">
+              Search notifications
+            </label>
+            <input
+              id="nc-search-input"
+              type="search"
+              className="nc-search-input"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search notifications..."
+            />
+          </div>
+          <div className="nc-type-field">
+            <label htmlFor="nc-type-select" className="sr-only">
+              Filter notifications by severity
+            </label>
+            <select
+              id="nc-type-select"
+              className="nc-type-select"
+              value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value as NotificationType | 'all')}
+            >
+              {SEVERITY_TYPES.map(t => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <div className="nc-filters" role="tablist" aria-label="Filter notifications by category">
           {CATEGORIES.map(cat => (
             <button
@@ -489,7 +596,7 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
         <div
           className="nc-list"
           role="feed"
-          aria-label={`${filtered.length} notification${filtered.length !== 1 ? 's' : ''}`}
+          aria-label={listAriaLabel}
           aria-busy="false"
         >
           {filtered.length === 0 ? (
@@ -500,7 +607,7 @@ export function NotificationCenter({ triggerRef }: NotificationCenterProps = {})
               tabIndex={-1}
             >
               <span className="nc-empty-icon" aria-hidden="true">🔔</span>
-              <p>No notifications</p>
+              <p>{hasActiveSearchOrType ? 'No results for your search' : 'No notifications'}</p>
             </div>
           ) : (
             filtered.map((n, index) => {

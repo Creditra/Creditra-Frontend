@@ -10,7 +10,12 @@ import {
 import { walletIdentityKey, useWallet } from './WalletContext';
 import { NotificationContext, type AddToastOptions } from './NotificationContext';
 import { createCreditDataSource } from '../services/credit';
-import type { CreditDataSource } from '../services/credit/CreditDataSource';
+import type {
+  CreditDataSource,
+  ListTransactionsOptions,
+  TransactionPage,
+} from '../services/credit/CreditDataSource';
+import { MockCreditDataSource } from '../services/credit/mockCreditDataSource';
 import { SorobanCreditDataSource } from '../services/credit/sorobanCreditDataSource';
 import {
   startCreditEventPoller,
@@ -33,6 +38,7 @@ export interface CreditDataState {
   wallet: WalletInfo | null;
   refetch: () => Promise<CreditLine[]>;
   setLines: (lines: CreditLine[]) => void;
+  listTransactions: (lineId: string, options?: ListTransactionsOptions) => Promise<TransactionPage>;
 }
 
 const CreditDataContext = createContext<CreditDataState | null>(null);
@@ -190,6 +196,11 @@ export function CreditDataProvider({ children, source }: CreditDataProviderProps
   }, [dataSource, load, owner]);
 
   const refetch = useCallback(() => load(), [load]);
+  const listTransactions = useCallback(
+    (lineId: string, options?: ListTransactionsOptions) =>
+      dataSource.listTransactions(lineId, options),
+    [dataSource],
+  );
   const setLines = useCallback((lines: CreditLine[]) => {
     if (!identity || identityRef.current !== identity) return;
     setStored((previous) => ({
@@ -219,6 +230,7 @@ export function CreditDataProvider({ children, source }: CreditDataProviderProps
         wallet,
         refetch,
         setLines,
+        listTransactions,
       }}
     >
       {children}
@@ -243,6 +255,8 @@ export function useCreditData(): CreditDataState {
       wallet: null,
       refetch: async () => MOCK_CREDIT_LINES,
       setLines: () => undefined,
+      listTransactions: (lineId, options) =>
+        new MockCreditDataSource(MOCK_CREDIT_LINES).listTransactions(lineId, options),
     };
   }
 

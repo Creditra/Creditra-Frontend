@@ -36,6 +36,7 @@ export type DrawWizardEvent =
   | { type: "SUBMIT_START" }
   | { type: "SUBMIT_SUCCESS"; transaction: Transaction }
   | { type: "SUBMIT_ERROR"; transaction: Transaction; errorKind?: DrawErrorKind }
+  | { type: "SUBMIT_USER_REJECTED"; message: string }
   | { type: "SUBMIT_OFFLINE_BLOCKED" }
   | { type: "BACK" }
   | { type: "RETRY"; targetStep?: DrawStep }
@@ -207,6 +208,18 @@ export function drawWizardReducer(
         isLoading: false,
         transaction: event.transaction,
         errorKind: event.errorKind,
+      };
+    }
+
+    case "SUBMIT_USER_REJECTED": {
+      if (!state.isLoading || state.step !== "status") return state;
+      return {
+        ...state,
+        isLoading: false,
+        step: "confirm",
+        submitError: event.message,
+        transaction: null,
+        errorKind: undefined,
       };
     }
 

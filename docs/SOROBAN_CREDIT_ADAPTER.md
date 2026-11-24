@@ -23,7 +23,7 @@ To point the application at Stellar Testnet and enable the on-chain Soroban adap
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `VITE_CREDIT_DATA_SOURCE` | Yes | `mock` | Set to `soroban` to enable the on-chain adapter (`mock` uses local fixture data). |
+| `VITE_CREDIT_DATA_SOURCE` | No | `mock` | Set to `mock` or `soroban` (case-insensitive; surrounding whitespace is ignored). Unset or empty values use `mock`; any other value fails during startup. |
 | `VITE_SOROBAN_RPC_URL` | No | `https://soroban-testnet.stellar.org` | URL of the Soroban RPC node. |
 | `VITE_NETWORK_PASSPHRASE` | No | `Test SDF Network ; September 2015` | Network passphrase for transaction simulation. |
 | `VITE_CREDIT_CONTRACT_ID` | Yes (for live contract) | `CA3D5KRYM6CB7OWQ6TWYRR3Z4T7GNZLKERYNZGGA5SOAOPIFY6YQGAXE` | Address of the deployed Creditra credit line contract on testnet. |
@@ -43,6 +43,7 @@ The adapter invokes the following read-only contract entrypoints:
 ### Entrypoints
 - `get_lines_by_borrower(borrower: Address) -> Vec<ContractCreditLine>`: Lists all active, suspended, or defaulted credit lines associated with the borrower's Stellar address.
 - `get_line(id: String) -> Option<ContractCreditLine>`: Fetches a single credit line by ID; returns `None` if the line does not exist.
+- `get_transactions(line_id: String, cursor: Option<String>, limit: Option<u32>) -> ContractTransactionPage`: Returns a paginated slice of ledger transactions for a credit line. `cursor` is an opaque pagination cursor returned by a previous call (`None` starts from the beginning); `limit` caps the page size (`None` uses the contract default).
 
 ### Return Struct (`ContractCreditLine`)
 ```rust
@@ -55,8 +56,31 @@ pub struct ContractCreditLine {
     pub apr: u32,                // Basis points or percentage
     pub risk_score: u32,         // 0–850
     pub opened_at: u64,          // Unix timestamp in seconds
-    pub updated_at: u64,          // Unix timestamp in seconds
+    pub updated_at: u64,         // Unix timestamp in seconds
     pub collateral: Option<String>,
+    pub transactions: Option<Vec<ContractTransaction>>,
+    pub status_history: Option<Vec<ContractStatusHistoryEntry>>,
+}
+
+pub struct ContractTransaction {
+    pub id: String,
+    pub r#type: Symbol,          // "Draw" | "Repay" | "Fee" | "Interest" | "StatusChange"
+    pub amount: i128,            // Base units (10^7 stroops)
+    pub date: u64,               // Unix timestamp in seconds (or ISO 8601 string)
+    pub status: Symbol,          // "Completed" | "Pending" | "Failed"
+    pub note: Option<String>,
+    pub tx_hash: Option<String>,
+}
+
+pub struct ContractStatusHistoryEntry {
+    pub status: Symbol,          // "Active" | "Suspended" | "Defaulted" | "Closed" | "Frozen"
+    pub date: u64,               // Unix timestamp in seconds (or ISO 8601 string)
+    pub note: Option<String>,
+}
+
+pub struct ContractTransactionPage {
+    pub items: Vec<ContractTransaction>,
+    pub next_cursor: Option<String>,
 }
 ```
 
@@ -76,7 +100,32 @@ When an RPC call fails, `SorobanCreditDataSource` categorizes the failure into a
 
 ---
 
-## 5. Bundle Footprint
+## 5. Write Flow (`SorobanWriteClient`)
+
+Draw and repay mutations use `src/services/credit/sorobanWriteClient.ts` to execute real Soroban contract invocations when `VITE_CREDIT_DATA_SOURCE=soroban` is enabled, and fall back to a deterministic `MockSorobanWriteClient` when `VITE_CREDIT_DATA_SOURCE=mock` (the default for local dev and unit tests).
+
+### Lifecycle (`submitContractCall`)
+1. **Load Source Account**: Fetches the connected borrower's sequence number via `rpc.Server#getAccount(source)`.
+2. **Build Invocation**: Constructs a `TransactionBuilder` with `Contract#call(method, ...args)`. Amounts are converted to 7-decimal `i128` stroops via `src/utils/money.ts` (`amountToStroops`) — never floating-point math.
+3. **Simulate**: Runs `rpc.Server#simulateTransaction(tx)`. Simulation errors are surfaced as classified `SorobanWriteError('simulation_error', ...)` without prompting the wallet or submitting.
+4. **Assemble**: Applies footprint, auth entries, and resource fees via `rpc.assembleTransaction(tx, simResponse).build()`.
+5. **Wallet Signature**: Calls `signTransaction(walletType, xdr, networkPassphrase)` in `src/utils/wallet.ts` (Freighter `signTransaction`, Albedo `tx`, xBull `signXDR`, Rabet `sign`). User cancellation throws `user_rejected`, returning the UI to the review step with a non-terminal message and never submitting.
+6. **Submit**: Sends the signed transaction via `rpc.Server#sendTransaction(signedTx)`.
+7. **Poll**: Polls `rpc.Server#getTransaction(txHash)` while `NOT_FOUND` until:
+   - `SUCCESS` — returns `{ txHash, status: 'SUCCESS' }`
+   - `FAILED` — throws a terminal `SorobanWriteError('transaction_failed', ...)`
+   - Timeout (`pollTimeoutMs`, default `30000` ms) — stops polling and throws a retryable `SorobanWriteError('timeout', ...)`
+
+### Write Entrypoints
+- `drawCredit(lineId, amount, options?)` -> invokes contract method `draw(line_id: String, amount: i128)`
+- `repayCredit(lineId, amount, options?)` -> invokes contract method `repay(line_id: String, amount: i128)`
+
+### Idempotency
+Both `DrawCreditPage` and `RepayModal` attach a deterministic `idempotencyKey` (via `src/utils/idempotency.ts`) per draft session. Concurrent or repeated submissions with the same key return the in-flight or completed `{ txHash, status }` without double-sending.
+
+---
+
+## 6. Bundle Footprint
 
 Bundle metrics recorded with `@stellar/stellar-sdk` split into manual chunk `stellar`:
 - `stellar` chunk: ~661 kB (~138.5 kB gzipped)

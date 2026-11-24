@@ -1,5 +1,6 @@
 export * from './CreditDataSource';
 export * from './sorobanCreditDataSource';
+export * from './sorobanWriteClient';
 export * from './mockCreditDataSource';
 export * from './config';
 export * from './decoder';

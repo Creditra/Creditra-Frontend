@@ -24,6 +24,10 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { CommandPalette } from '../CommandPalette';
 import { COMMAND_PALETTE_RECENTS_KEY } from '@/constants/storageKeys';
+import { renderWithCredit } from '@/test/renderWithCredit';
+import { MOCK_CREDIT_LINES } from '@/data/mockData';
+import type { CreditLine } from '@/types/creditLine';
+import type { CreditDataSource } from '@/services/credit/CreditDataSource';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -521,6 +525,161 @@ describe('CommandPalette', () => {
     await waitFor(() => {
       expect(screen.queryByText('Recent')).not.toBeInTheDocument();
       expect(screen.getAllByRole('option')[0]).toHaveTextContent('Dashboard');
+    });
+  });
+
+  // ── Credit lines & transactions search ──────────────────────────────────────
+
+  describe('credit line and transaction data items', () => {
+    it('does not include data items in the empty-query view or for 1-character queries', async () => {
+      renderWithCredit(<CommandPalette isOpen onClose={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Dashboard')).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText('Credit lines')).not.toBeInTheDocument();
+      expect(screen.queryByText('Transactions')).toBeInTheDocument(); // Default nav item "Transactions"
+      expect(screen.queryByText('Primary Business Line')).not.toBeInTheDocument();
+
+      await userEvent.type(screen.getByRole('textbox'), 'P');
+      await waitFor(() => {
+        expect(screen.queryByText('Primary Business Line')).not.toBeInTheDocument();
+        expect(screen.queryByText('Credit lines')).not.toBeInTheDocument();
+      });
+    });
+
+    it('shows matching credit line when typing its name and Enter navigates to /credit-lines?line=...', async () => {
+      const onClose = vi.fn();
+      renderWithCredit(<CommandPalette isOpen onClose={onClose} />);
+
+      await userEvent.type(screen.getByRole('textbox'), 'Primary Business');
+
+      await waitFor(() => {
+        expect(screen.getByText('Credit lines')).toBeInTheDocument();
+        expect(screen.getByText('Primary Business Line')).toBeInTheDocument();
+      });
+
+      const lineOption = document.getElementById('cp-item-credit-line-CL-2024-001');
+      expect(lineOption).toBeInTheDocument();
+      expect(lineOption).toHaveTextContent(/Active/i);
+      expect(lineOption).toHaveTextContent(/\$187,500/);
+
+      const dialog = screen.getByRole('dialog');
+      fireEvent.keyDown(dialog, { key: 'Enter' });
+
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(mockNavigate).toHaveBeenCalledWith('/credit-lines?line=CL-2024-001');
+    });
+
+    it('searches transactions by line name, type, or id and navigates to /transactions?q=...', async () => {
+      const onClose = vi.fn();
+      renderWithCredit(<CommandPalette isOpen onClose={onClose} />);
+
+      const input = screen.getByRole('textbox');
+      await userEvent.type(input, 'Expansion Capital');
+
+      await waitFor(() => {
+        expect(screen.getByText('Credit lines')).toBeInTheDocument();
+        expect(screen.getByText('Transactions')).toBeInTheDocument();
+        expect(screen.getByText('Draw $100,000')).toBeInTheDocument();
+      });
+
+      await userEvent.clear(input);
+      await userEvent.type(input, 'TX-001');
+
+      await waitFor(() => {
+        expect(screen.getByText('Transactions')).toBeInTheDocument();
+        expect(screen.getByText('Draw $50,000')).toBeInTheDocument();
+      });
+
+      const dialog = screen.getByRole('dialog');
+      fireEvent.keyDown(dialog, { key: 'Enter' });
+
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(mockNavigate).toHaveBeenCalledWith('/transactions?q=TX-001');
+    });
+
+    it('searches transactions by type', async () => {
+      renderWithCredit(<CommandPalette isOpen onClose={vi.fn()} />);
+
+      await userEvent.type(screen.getByRole('textbox'), 'Interest');
+
+      await waitFor(() => {
+        expect(screen.getByText('Transactions')).toBeInTheDocument();
+        expect(screen.getByText('Interest $1,328')).toBeInTheDocument();
+      });
+    });
+
+    it('caps data results per group at 5 items', async () => {
+      const manyLines: CreditLine[] = Array.from({ length: 8 }, (_, idx) => ({
+        ...MOCK_CREDIT_LINES[0],
+        id: `CL-CAP-${idx + 1}`,
+        name: `Alpha Facility ${idx + 1}`,
+      }));
+
+      renderWithCredit(<CommandPalette isOpen onClose={vi.fn()} />, {
+        lines: manyLines,
+      });
+
+      await userEvent.type(screen.getByRole('textbox'), 'Alpha Facility');
+
+      await waitFor(() => {
+        expect(screen.getByText('Credit lines')).toBeInTheDocument();
+        expect(screen.getByText('Transactions')).toBeInTheDocument();
+      });
+
+      const lineOptions = screen
+        .getAllByRole('option')
+        .filter((opt) => opt.id.startsWith('cp-item-credit-line-'));
+      const txOptions = screen
+        .getAllByRole('option')
+        .filter((opt) => opt.id.startsWith('cp-item-transaction-'));
+      expect(lineOptions).toHaveLength(5);
+      expect(txOptions).toHaveLength(5);
+    });
+
+    it('handles loading, empty, error, and disconnected wallet states without throwing', async () => {
+      const pendingSource: CreditDataSource = {
+        listCreditLines: () => new Promise(() => undefined),
+        getCreditLine: vi.fn(),
+      };
+      const { unmount: unmountLoading } = renderWithCredit(
+        <CommandPalette isOpen onClose={vi.fn()} />,
+        { source: pendingSource },
+      );
+
+      await userEvent.type(screen.getByRole('textbox'), 'Primary');
+      await waitFor(() => {
+        expect(screen.queryByText('Primary Business Line')).not.toBeInTheDocument();
+      });
+      unmountLoading();
+
+      const failingSource: CreditDataSource = {
+        listCreditLines: vi.fn().mockRejectedValue(new Error('Network failure')),
+        getCreditLine: vi.fn(),
+      };
+      const { unmount: unmountError } = renderWithCredit(
+        <CommandPalette isOpen onClose={vi.fn()} />,
+        { source: failingSource },
+      );
+
+      await userEvent.type(screen.getByRole('textbox'), 'Primary');
+      await waitFor(() => {
+        expect(screen.queryByText('Primary Business Line')).not.toBeInTheDocument();
+      });
+      unmountError();
+
+      const { unmount: unmountEmpty } = renderWithCredit(
+        <CommandPalette isOpen onClose={vi.fn()} />,
+        { lines: [] },
+      );
+
+      await userEvent.type(screen.getByRole('textbox'), 'Primary');
+      await waitFor(() => {
+        expect(screen.queryByText('Primary Business Line')).not.toBeInTheDocument();
+      });
+      unmountEmpty();
     });
   });
 });
