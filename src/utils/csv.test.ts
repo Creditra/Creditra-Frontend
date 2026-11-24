@@ -20,6 +20,16 @@ describe('escapeCsvCell', () => {
     expect(escapeCsvCell(null)).toBe('');
     expect(escapeCsvCell(undefined)).toBe('');
   });
+
+  it('neutralizes formula-leading cells (=, +, -, @)', () => {
+    expect(escapeCsvCell('=SUM(A1:A2)')).toBe("'=SUM(A1:A2)");
+    expect(escapeCsvCell('+1+1')).toBe("'+1+1");
+    expect(escapeCsvCell('-2+3')).toBe("'-2+3");
+    expect(escapeCsvCell('@SUM(1+1)')).toBe("'@SUM(1+1)");
+    expect(escapeCsvCell('=HYPERLINK("https://example.com", "click")')).toBe(
+      `"'=HYPERLINK(""https://example.com"", ""click"")"`,
+    );
+  });
 });
 
 describe('toCsv', () => {

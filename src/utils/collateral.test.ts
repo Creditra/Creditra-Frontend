@@ -22,6 +22,11 @@ import {
   DEFAULT_SLIPPAGE,
   MAX_RETRY_ATTEMPTS,
   STALE_QUOTE_THRESHOLD_MS,
+  LTV_WARNING_THRESHOLD,
+  LTV_LIQUIDATION_THRESHOLD,
+  LTV_HYSTERESIS,
+  evaluateLtvAlert,
+  isUpwardCrossing,
 } from './collateral';
 import type { CollateralAsset } from '../types/collateral';
 
@@ -402,6 +407,78 @@ describe('classifySubstitutionError', () => {
     const result = classifySubstitutionError(new Error('connect ECONNREFUSED'));
     expect(result.reason).toBe('network');
     expect(result.retryable).toBe(true);
+  });
+});
+
+// ─── LTV Alert Thresholds and evaluateLtvAlert ───────────────────────────────
+
+describe('LTV alert thresholds and evaluateLtvAlert', () => {
+  it('exports expected threshold constants', () => {
+    expect(LTV_WARNING_THRESHOLD).toBe(0.80);
+    expect(LTV_LIQUIDATION_THRESHOLD).toBe(0.90);
+    expect(LTV_HYSTERESIS).toBe(0.05);
+  });
+
+  it('evaluates safe LTV as null', () => {
+    expect(evaluateLtvAlert(null, 0.50)).toBeNull();
+    expect(evaluateLtvAlert(null, 0.79)).toBeNull();
+  });
+
+  it('crosses into warning when crossing warning threshold upward', () => {
+    expect(evaluateLtvAlert(null, 0.80)).toBe('warning');
+    expect(evaluateLtvAlert(null, 0.85)).toBe('warning');
+  });
+
+  it('jumps straight to liquidation when LTV crosses liquidation threshold from safe', () => {
+    expect(evaluateLtvAlert(null, 0.90)).toBe('liquidation');
+    expect(evaluateLtvAlert(null, 0.95)).toBe('liquidation');
+  });
+
+  it('advances from warning to liquidation when crossing liquidation threshold', () => {
+    expect(evaluateLtvAlert('warning', 0.90)).toBe('liquidation');
+    expect(evaluateLtvAlert('warning', 0.92)).toBe('liquidation');
+  });
+
+  it('hovers around threshold without flapping due to hysteresis', () => {
+    // In warning state, dropping slightly below 0.80 stays in warning until < 0.75
+    expect(evaluateLtvAlert('warning', 0.79)).toBe('warning');
+    expect(evaluateLtvAlert('warning', 0.76)).toBe('warning');
+    expect(evaluateLtvAlert('warning', 0.75)).toBe('warning');
+
+    // In liquidation state, dropping slightly below 0.90 stays in liquidation until < 0.85
+    expect(evaluateLtvAlert('liquidation', 0.89)).toBe('liquidation');
+    expect(evaluateLtvAlert('liquidation', 0.86)).toBe('liquidation');
+    expect(evaluateLtvAlert('liquidation', 0.85)).toBe('liquidation');
+  });
+
+  it('recovers and re-arms when LTV drops strictly below (threshold - hysteresis)', () => {
+    // Recovers from warning to null when below 0.75
+    expect(evaluateLtvAlert('warning', 0.749)).toBeNull();
+    expect(evaluateLtvAlert('warning', 0.60)).toBeNull();
+
+    // Recovers from liquidation to warning when below 0.85 but >= 0.75
+    expect(evaluateLtvAlert('liquidation', 0.84)).toBe('warning');
+
+    // Recovers from liquidation to null when below 0.75
+    expect(evaluateLtvAlert('liquidation', 0.70)).toBeNull();
+  });
+
+  it('supports numeric previous LTV as input', () => {
+    expect(evaluateLtvAlert(0.70, 0.82)).toBe('warning');
+    expect(evaluateLtvAlert(0.70, 0.92)).toBe('liquidation');
+    expect(evaluateLtvAlert(0.82, 0.78)).toBe('warning');
+    expect(evaluateLtvAlert(0.82, 0.72)).toBeNull();
+  });
+
+  it('evaluates isUpwardCrossing correctly', () => {
+    expect(isUpwardCrossing(null, 'warning')).toBe(true);
+    expect(isUpwardCrossing(null, 'liquidation')).toBe(true);
+    expect(isUpwardCrossing('warning', 'liquidation')).toBe(true);
+    expect(isUpwardCrossing('warning', 'warning')).toBe(false);
+    expect(isUpwardCrossing('liquidation', 'liquidation')).toBe(false);
+    expect(isUpwardCrossing('liquidation', 'warning')).toBe(false);
+    expect(isUpwardCrossing('warning', null)).toBe(false);
+    expect(isUpwardCrossing(null, null)).toBe(false);
   });
 });
 
