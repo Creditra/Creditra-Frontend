@@ -260,3 +260,9 @@ src/
 ├── test/                Vitest setup
 └── index.css            Global CSS custom properties and base styles
 ```
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
