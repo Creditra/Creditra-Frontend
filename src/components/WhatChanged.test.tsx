@@ -226,7 +226,7 @@ describe("WhatChanged Component", () => {
     const { container, rerender } = render(
       <WhatChanged metricId="total-limit" currentValue={10000} format="currency" />
     );
-    expect(screen.getByRole("tooltip")).toHaveTextContent("Previous:$8,000");
+    expect(screen.getByRole("tooltip", { hidden: true })).toHaveTextContent("Previous:$8,000");
 
     walletIdentity.current = "wallet-b";
     rerender(<WhatChanged metricId="total-limit" currentValue={12000} format="currency" />);

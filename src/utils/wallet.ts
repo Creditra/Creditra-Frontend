@@ -40,7 +40,8 @@ const ERROR_MESSAGES: Record<WalletErrorType, string> = {
  * - Wrong network
  * - Generic connection failure (catch-all)
  * 
- * Raw error details are logged in development but never shown to users.
+ * Only the derived code and resulting type are logged in development; the raw
+ * error object and message are never logged, since they may carry account data.
  */
 export const classifyWalletError = (raw: unknown): WalletConnectError => {
   // Already classified errors pass through unchanged
@@ -68,36 +69,45 @@ export const classifyWalletError = (raw: unknown): WalletConnectError => {
     ? (raw as any).code
     : undefined;
 
-  // Log raw error in development for debugging
-  if (process.env.NODE_ENV === 'development') {
-    console.error('[classifyWalletError] Raw error:', raw);
+  // Determine the classified error. The raw error object and its message may
+  // carry account data, so they are never logged — only the derived code and
+  // resulting type are surfaced in development.
+  const result = (() => {
+    // Check for user rejection signals
+    // EIP-1193 standard error code for user rejection
+    if (code === 4001) {
+      return new WalletConnectError('user_rejected', ERROR_MESSAGES.user_rejected);
+    }
+
+    // Check message for rejection keywords
+    const lowerMessage = message.toLowerCase();
+    const rejectionKeywords = ['reject', 'decline', 'cancel', 'denied', 'user denied'];
+    if (rejectionKeywords.some(keyword => lowerMessage.includes(keyword))) {
+      return new WalletConnectError('user_rejected', ERROR_MESSAGES.user_rejected);
+    }
+
+    // Check for extension not found
+    if (lowerMessage.includes('not found') || lowerMessage.includes('not installed')) {
+      return new WalletConnectError('not_found', ERROR_MESSAGES.not_found);
+    }
+
+    // Check for network mismatch
+    if (lowerMessage.includes('network') || lowerMessage.includes('testnet') || lowerMessage.includes('mainnet')) {
+      return new WalletConnectError('wrong_network', ERROR_MESSAGES.wrong_network);
+    }
+
+    // Default: generic connection failure
+    return new WalletConnectError('connection_failed', ERROR_MESSAGES.connection_failed);
+  })();
+
+  // Log only the code and resulting type in development. The raw error object
+  // and message are intentionally excluded — they may contain account data.
+  // Drop the log entirely when no code is present.
+  if (process.env.NODE_ENV === 'development' && code !== undefined) {
+    console.error('[classifyWalletError]', { code, type: result.type });
   }
 
-  // Check for user rejection signals
-  // EIP-1193 standard error code for user rejection
-  if (code === 4001) {
-    return new WalletConnectError('user_rejected', ERROR_MESSAGES.user_rejected);
-  }
-
-  // Check message for rejection keywords
-  const lowerMessage = message.toLowerCase();
-  const rejectionKeywords = ['reject', 'decline', 'cancel', 'denied', 'user denied'];
-  if (rejectionKeywords.some(keyword => lowerMessage.includes(keyword))) {
-    return new WalletConnectError('user_rejected', ERROR_MESSAGES.user_rejected);
-  }
-
-  // Check for extension not found
-  if (lowerMessage.includes('not found') || lowerMessage.includes('not installed')) {
-    return new WalletConnectError('not_found', ERROR_MESSAGES.not_found);
-  }
-
-  // Check for network mismatch
-  if (lowerMessage.includes('network') || lowerMessage.includes('testnet') || lowerMessage.includes('mainnet')) {
-    return new WalletConnectError('wrong_network', ERROR_MESSAGES.wrong_network);
-  }
-
-  // Default: generic connection failure
-  return new WalletConnectError('connection_failed', ERROR_MESSAGES.connection_failed);
+  return result;
 };
 
 // ─── Storage keys ──────────────────────────────────────────────────────────────

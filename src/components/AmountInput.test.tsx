@@ -745,4 +745,29 @@ describe("AmountInput", () => {
       vi.useRealTimers();
     }
   });
+
+  it("rejects pasted trailing-garbage and scientific-notation strings like '12abc' and '1e3'", () => {
+    const onAmountChange = vi.fn();
+    const { container } = render(
+      <AmountInput
+        creditLine={creditLine}
+        onAmountChange={onAmountChange}
+        onNext={vi.fn()}
+        onBack={vi.fn()}
+      />,
+    );
+    const input = container.querySelector<HTMLInputElement>("#draw-amount-input")!;
+
+    fireEvent.paste(input, {
+      clipboardData: { getData: () => "12abc" },
+    });
+    expect(input.value).toBe("");
+    expect(screen.getByText(/invalid amount pasted/i)).toBeInTheDocument();
+
+    fireEvent.paste(input, {
+      clipboardData: { getData: () => "1e3" },
+    });
+    expect(input.value).toBe("");
+    expect(screen.getByText(/invalid amount pasted/i)).toBeInTheDocument();
+  });
 });

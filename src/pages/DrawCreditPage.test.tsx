@@ -68,6 +68,22 @@ import {
 } from "react-router-dom";
 import { freezeTime, unfreezeTime } from "@/test/freezeTime";
 import { DRAFT_KEY, saveDraft } from "@/state/wizardDraft";
+import * as drawErrors from "@/lib/draw-errors";
+
+// Isolate DrawCreditPage tests from unrelated syntax errors in src/utils/dates.ts and src/state/riskEducation.ts
+vi.mock("@/utils/dates", () => ({
+  timeAgo: () => "just now",
+  formatRelative: () => "just now",
+  formatAbsolute: () => "Jan 1, 2026",
+  parseLocalDate: () => null,
+}));
+
+vi.mock("@/state/riskEducation", () => ({
+  RISK_EDUCATION_VERSION: 1,
+  getRiskEducationState: () => ({ acknowledgedVersion: 1 }),
+  acknowledgeRiskEducation: vi.fn(),
+  dismissRiskEducationBanner: vi.fn(),
+}));
 
 beforeEach(() => {
   freezeTime();
@@ -1336,5 +1352,93 @@ describe("DrawCreditPage — drawing limit indicator", () => {
 
     expect(screen.getByText("Exceeded")).toBeInTheDocument();
     expect(getDrawingLimitBar()).toHaveAttribute("aria-valuenow", "100");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — errorKind classification & Retry button (issue #1412)
+// ---------------------------------------------------------------------------
+
+describe("DrawCreditPage — errorKind classification on failed draw", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem(DEFAULT_RISK_ACK_KEY, "true");
+    __setMockLocation("/draw-credit");
+    __clearNavigateCalls();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  async function submitFailingDraw() {
+    vi.spyOn(Math, "random").mockReturnValue(0.1);
+    render(<DrawCreditPage />);
+
+    act(() => {
+      fireEvent.click(
+        screen.getByRole("button", { name: /select business line of credit/i }),
+      );
+    });
+    act(() => {
+      fireEvent.change(screen.getByRole("spinbutton"), {
+        target: { value: "100" },
+      });
+    });
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    });
+    const checkbox = screen.queryByRole("checkbox");
+    if (checkbox) {
+      act(() => {
+        fireEvent.click(checkbox);
+      });
+    }
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: /confirm|draw/i }));
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+  }
+
+  it("shows the Retry button when a failed draw is classified as retryable", async () => {
+    vi.spyOn(drawErrors, "classifyDrawError").mockReturnValue({
+      kind: "retryable",
+      code: "network_error",
+      message: "Network error. Check your connection and try again.",
+    });
+
+    await submitFailingDraw();
+
+    expect(
+      screen.getByRole("heading", { name: /draw failed/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /try again/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show the Retry button when a failed draw is classified as terminal", async () => {
+    vi.spyOn(drawErrors, "classifyDrawError").mockReturnValue({
+      kind: "terminal",
+      code: "insufficient_availability",
+      message: "The requested amount exceeds available credit.",
+    });
+
+    await submitFailingDraw();
+
+    expect(
+      screen.getByRole("heading", { name: /draw failed/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /try again/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /start over/i }),
+    ).toBeInTheDocument();
   });
 });

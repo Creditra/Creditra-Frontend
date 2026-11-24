@@ -23,7 +23,7 @@ To point the application at Stellar Testnet and enable the on-chain Soroban adap
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `VITE_CREDIT_DATA_SOURCE` | Yes | `mock` | Set to `soroban` to enable the on-chain adapter (`mock` uses local fixture data). |
+| `VITE_CREDIT_DATA_SOURCE` | No | `mock` | Set to `mock` or `soroban` (case-insensitive; surrounding whitespace is ignored). Unset or empty values use `mock`; any other value fails during startup. |
 | `VITE_SOROBAN_RPC_URL` | No | `https://soroban-testnet.stellar.org` | URL of the Soroban RPC node. |
 | `VITE_NETWORK_PASSPHRASE` | No | `Test SDF Network ; September 2015` | Network passphrase for transaction simulation. |
 | `VITE_CREDIT_CONTRACT_ID` | Yes (for live contract) | `CA3D5KRYM6CB7OWQ6TWYRR3Z4T7GNZLKERYNZGGA5SOAOPIFY6YQGAXE` | Address of the deployed Creditra credit line contract on testnet. |
@@ -43,6 +43,7 @@ The adapter invokes the following read-only contract entrypoints:
 ### Entrypoints
 - `get_lines_by_borrower(borrower: Address) -> Vec<ContractCreditLine>`: Lists all active, suspended, or defaulted credit lines associated with the borrower's Stellar address.
 - `get_line(id: String) -> Option<ContractCreditLine>`: Fetches a single credit line by ID; returns `None` if the line does not exist.
+- `get_transactions(line_id: String, cursor: Option<String>, limit: Option<u32>) -> ContractTransactionPage`: Returns a paginated slice of ledger transactions for a credit line. `cursor` is an opaque pagination cursor returned by a previous call (`None` starts from the beginning); `limit` caps the page size (`None` uses the contract default).
 
 ### Return Struct (`ContractCreditLine`)
 ```rust
@@ -55,8 +56,31 @@ pub struct ContractCreditLine {
     pub apr: u32,                // Basis points or percentage
     pub risk_score: u32,         // 0–850
     pub opened_at: u64,          // Unix timestamp in seconds
-    pub updated_at: u64,          // Unix timestamp in seconds
+    pub updated_at: u64,         // Unix timestamp in seconds
     pub collateral: Option<String>,
+    pub transactions: Option<Vec<ContractTransaction>>,
+    pub status_history: Option<Vec<ContractStatusHistoryEntry>>,
+}
+
+pub struct ContractTransaction {
+    pub id: String,
+    pub r#type: Symbol,          // "Draw" | "Repay" | "Fee" | "Interest" | "StatusChange"
+    pub amount: i128,            // Base units (10^7 stroops)
+    pub date: u64,               // Unix timestamp in seconds (or ISO 8601 string)
+    pub status: Symbol,          // "Completed" | "Pending" | "Failed"
+    pub note: Option<String>,
+    pub tx_hash: Option<String>,
+}
+
+pub struct ContractStatusHistoryEntry {
+    pub status: Symbol,          // "Active" | "Suspended" | "Defaulted" | "Closed" | "Frozen"
+    pub date: u64,               // Unix timestamp in seconds (or ISO 8601 string)
+    pub note: Option<String>,
+}
+
+pub struct ContractTransactionPage {
+    pub items: Vec<ContractTransaction>,
+    pub next_cursor: Option<String>,
 }
 ```
 

@@ -21,6 +21,7 @@ describe('StaleDataBanner', () => {
     const pendingSource: CreditDataSource = {
       listCreditLines: () => new Promise(() => {}),
       getCreditLine: () => new Promise(() => {}),
+      listTransactions: () => new Promise(() => {}),
     };
 
     const { container } = renderWithCredit(<StaleDataBanner />, {
@@ -38,6 +39,7 @@ describe('StaleDataBanner', () => {
     const failingSource: CreditDataSource = {
       listCreditLines: vi.fn().mockRejectedValue(new Error('Initial load failed')),
       getCreditLine: vi.fn(),
+      listTransactions: vi.fn().mockResolvedValue({ items: [] }),
     };
 
     renderWithCredit(<StaleDataBanner />, { source: failingSource });
@@ -53,6 +55,7 @@ describe('StaleDataBanner', () => {
     const source: CreditDataSource = {
       listCreditLines: vi.fn().mockResolvedValue(MOCK_CREDIT_LINES),
       getCreditLine: vi.fn(),
+      listTransactions: vi.fn().mockResolvedValue({ items: [] }),
     };
 
     renderWithCredit(<StaleDataBanner />, { source });
@@ -87,6 +90,7 @@ describe('StaleDataBanner', () => {
     const source: CreditDataSource = {
       listCreditLines: vi.fn().mockResolvedValue(MOCK_CREDIT_LINES),
       getCreditLine: vi.fn(),
+      listTransactions: vi.fn().mockResolvedValue({ items: [] }),
     };
 
     renderWithCredit(<StaleDataBanner pollIntervalMs={60 * 60 * 1000} />, {
@@ -125,6 +129,7 @@ describe('StaleDataBanner', () => {
     const source: CreditDataSource = {
       listCreditLines,
       getCreditLine: vi.fn(),
+      listTransactions: vi.fn().mockResolvedValue({ items: [] }),
     };
 
     renderWithCredit(<StaleDataBanner />, { source });
@@ -160,6 +165,7 @@ describe('StaleDataBanner', () => {
     const source: CreditDataSource = {
       listCreditLines,
       getCreditLine: vi.fn(),
+      listTransactions: vi.fn().mockResolvedValue({ items: [] }),
     };
 
     renderWithCredit(<StaleDataBanner />, { source });
@@ -187,6 +193,7 @@ describe('StaleDataBanner', () => {
     const source: CreditDataSource = {
       listCreditLines: vi.fn().mockResolvedValue(MOCK_CREDIT_LINES),
       getCreditLine: vi.fn(),
+      listTransactions: vi.fn().mockResolvedValue({ items: [] }),
     };
 
     renderWithCredit(<StaleDataBanner />, { source });
@@ -213,6 +220,7 @@ describe('StaleDataBanner', () => {
     const source: CreditDataSource = {
       listCreditLines: vi.fn().mockResolvedValue(MOCK_CREDIT_LINES),
       getCreditLine: vi.fn(),
+      listTransactions: vi.fn().mockResolvedValue({ items: [] }),
     };
 
     const { rerender } = renderWithCredit(<StaleDataBanner />, { source });

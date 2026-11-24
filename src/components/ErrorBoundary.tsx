@@ -41,6 +41,14 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
+  public override componentDidMount() {
+    window.addEventListener("popstate", this.handlePopState);
+  }
+
+  public override componentWillUnmount() {
+    window.removeEventListener("popstate", this.handlePopState);
+  }
+
   public override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
     recordDiagnosticError(error?.message ?? String(error));
@@ -50,9 +58,19 @@ export class ErrorBoundary extends Component<Props, State> {
     return isChunkLoadError(error);
   }
 
+  public reset = () => {
+    this.setState({ hasError: false, error: undefined });
+  };
+
+  private readonly handlePopState = () => {
+    if (this.state.hasError) {
+      this.reset();
+    }
+  };
+
   public override render() {
     if (this.state.hasError) {
-      return <ErrorPage error={this.state.error} />;
+      return <ErrorPage error={this.state.error} onRetry={this.reset} />;
     }
 
     return this.props.children;
@@ -61,9 +79,10 @@ export class ErrorBoundary extends Component<Props, State> {
 
 interface ErrorPageProps {
   error?: Error;
+  onRetry: () => void;
 }
 
-function ErrorPage({ error }: ErrorPageProps) {
+function ErrorPage({ error, onRetry }: ErrorPageProps) {
   const handleGoBack = () => {
     window.history.back();
   };
@@ -90,6 +109,14 @@ function ErrorPage({ error }: ErrorPageProps) {
         )}
         <div className="error-actions">
           <button
+            type="button"
+            className="error-btn error-btn-primary"
+            onClick={onRetry}
+          >
+            Try again
+          </button>
+          <button
+            type="button"
             className="error-btn error-btn-primary"
             onClick={handleGoBack}
             aria-label="Go back to previous page"
@@ -104,6 +131,7 @@ function ErrorPage({ error }: ErrorPageProps) {
             Dashboard
           </a>
           <button
+            type="button"
             className="error-btn error-btn-secondary"
             onClick={handleReload}
             aria-label="Reload the page"

@@ -1,0 +1,121 @@
+/* ─── Shared SVG Chart Primitives ─────────────────────────────────────────────
+ *
+ * Design tokens come from src/index.css (--surface, --border, --text, --muted,
+ * --accent). Respects prefers-reduced-motion, [data-motion='reduced'], and
+ * forced-colors: active (Windows High Contrast).
+ */
+
+.chart-frame-wrapper {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.chart-frame__svg {
+  display: block;
+}
+
+/* ── Keyboard-focusable data point targets ── */
+
+.chart-tooltip__point {
+  cursor: pointer;
+  outline: none;
+}
+
+.chart-tooltip__point-hit {
+  fill: transparent;
+  stroke: transparent;
+}
+
+.chart-tooltip__point-ring {
+  fill: none;
+  stroke: var(--accent, #58a6ff);
+  stroke-width: 1.5;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.chart-tooltip__point:focus-visible .chart-tooltip__point-ring,
+.chart-tooltip__point[data-active='true'] .chart-tooltip__point-ring {
+  opacity: 1;
+}
+
+.chart-tooltip__popover {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  z-index: 5;
+  pointer-events: none;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--border, #30363d);
+  background: var(--surface, #161b22);
+  color: var(--text, #e6edf3);
+  font-size: 0.72rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  transition: opacity 0.12s ease;
+}
+
+.chart-tooltip__popover-label {
+  color: var(--muted, #8b949e);
+  margin-right: 0.35rem;
+}
+
+.chart-tooltip__popover-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Toggleable data table fallback ── */
+
+.chart-data-table__toggle {
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border, #30363d);
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: var(--muted, #8b949e);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.chart-data-table__toggle:focus-visible {
+  outline: 2px solid var(--accent, #58a6ff);
+  outline-offset: 2px;
+}
+
+/* ── Reduced motion ── */
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-tooltip__point-ring,
+  .chart-tooltip__popover {
+    transition: none;
+  }
+}
+
+[data-motion='reduced'] .chart-tooltip__point-ring,
+[data-motion='reduced'] .chart-tooltip__popover {
+  transition: none;
+}
+
+/* ── High-contrast / forced-colors ── */
+
+@media (forced-colors: active) {
+  .chart-tooltip__point-ring {
+    stroke: Highlight;
+    stroke-width: 2;
+  }
+
+  .chart-tooltip__popover {
+    background: Canvas;
+    color: CanvasText;
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+
+  .chart-tooltip__popover-label {
+    color: CanvasText;
+  }
+}
