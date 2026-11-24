@@ -113,7 +113,8 @@ export function timeAgo(
     return INVALID_DATE_PLACEHOLDER;
   }
 
-  const diffSeconds = Math.round((then.getTime() - now.getTime()) / 1000);
+  const rawDiffSeconds = Math.round((then.getTime() - now.getTime()) / 1000);
+  const diffSeconds = rawDiffSeconds === 0 ? 0 : rawDiffSeconds;
   const absSeconds = Math.abs(diffSeconds);
 
   const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
@@ -129,7 +130,8 @@ export function timeAgo(
 
   for (const [unit, secondsPerUnit] of units) {
     if (absSeconds >= secondsPerUnit || unit === "second") {
-      const value = Math.round(diffSeconds / secondsPerUnit);
+      const rawValue = Math.round(diffSeconds / secondsPerUnit);
+      const value = rawValue === 0 ? 0 : rawValue;
       return rtf.format(value, unit);
     }
   }
