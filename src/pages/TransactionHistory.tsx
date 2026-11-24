@@ -36,6 +36,22 @@ import {
   matchesAmountFilter,
   type AmountFilter,
 } from "../utils/transactionAmountFilter";
+import {
+  DEFAULT_FILTERS,
+  FILTER_KEYS,
+  parseTransactionFilters,
+  serializeTransactionFilters,
+  type TransactionFilters,
+  type TransactionRange,
+} from "../lib/transaction-filters";
+import {
+  MAX_TRANSACTION_PRESETS,
+  deletePreset,
+  isBuiltinPreset,
+  loadPresets,
+  savePreset,
+  type TransactionPreset,
+} from "../lib/transaction-presets";
 import type {
   CreditLineStatus,
   TransactionStatus,
@@ -189,6 +205,46 @@ const RANGE_PRESET_OPTIONS: Array<{
   { value: "this-month", label: "This Month" },
   { value: "all-time", label: "All Time" },
 ];
+
+const DATE_PRESET_TO_RANGE: Record<DatePreset, TransactionRange> = {
+  today: "today",
+  "7d": "last-7-days",
+  "30d": "last-30-days",
+  "90d": "last-90-days",
+  custom: "custom",
+};
+
+const RANGE_TO_DATE_PRESET: Partial<Record<TransactionRange, DatePreset>> = {
+  today: "today",
+  "last-7-days": "7d",
+  "last-30-days": "30d",
+  "last-90-days": "90d",
+};
+
+function isNamedRange(
+  range: TransactionRange,
+): range is Exclude<RangePreset, "custom"> {
+  return (
+    range === "this-week" || range === "this-month" || range === "all-time"
+  );
+}
+
+function toPageType(type: TransactionFilters["type"]): TypeFilter {
+  return type === "Draw" ||
+    type === "Repay" ||
+    type === "Fee" ||
+    type === "Interest"
+    ? type
+    : "all";
+}
+
+function toPageStatus(status: TransactionFilters["status"]): string {
+  return status === "Completed" ||
+    status === "Pending" ||
+    status === "Failed"
+    ? status
+    : "all";
+}
 
 // ─── Helper Functions ─────────────────────────────────────────────────────────
 
@@ -569,6 +625,8 @@ export function TransactionHistory({
   const listboxRef = useRef<HTMLUListElement>(null);
   const SEARCH_LISTBOX_ID = "tx-search-listbox";
   const SEARCH_INPUT_ID = "tx-search-input";
+  const PRESET_SELECT_ID = "tx-preset-select";
+  const PRESET_NAME_ID = "tx-preset-name";
 
   const [expandedTx, setExpandedTx] = useState<string | null>(null);
   const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
@@ -582,6 +640,16 @@ export function TransactionHistory({
   const itemsPerPage = pageSize;
 
   const [liveAnnouncement, setLiveAnnouncement] = useState("");
+  const [presets, setPresets] = useState<TransactionPreset[]>(() =>
+    loadPresets(),
+  );
+  const [selectedPresetId, setSelectedPresetId] = useState("");
+  const [presetName, setPresetName] = useState("");
+  const [presetAnnouncement, setPresetAnnouncement] = useState({
+    name: "",
+    seq: 0,
+  });
+  const previousPresetSeq = useRef(0);
   const isFirstRender = useRef(true);
   const isResettingAllFilters = useRef(false);
   const prevStates = useRef({
@@ -600,17 +668,65 @@ export function TransactionHistory({
     currentPage,
   });
 
+  const currentTransactionFilters = useCallback((): TransactionFilters => {
+    const range: TransactionRange =
+      presetRange !== "custom"
+        ? presetRange
+        : DATE_PRESET_TO_RANGE[dateRange];
+    const usesCustomDates = range === "custom";
+
+    return {
+      ...DEFAULT_FILTERS,
+      line: selectedLine === "all" ? "" : selectedLine,
+      type: selectedType === "all" ? "" : selectedType,
+      status: selectedStatus === "all" ? "" : selectedStatus,
+      q: searchQuery,
+      range,
+      start: usesCustomDates ? customStartDate : "",
+      end: usesCustomDates ? customEndDate : "",
+      amount:
+        !isCustomAmountRangeActive && selectedAmountRange !== "all"
+          ? selectedAmountRange
+          : "",
+      min: isCustomAmountRangeActive ? customAmountMin : "",
+      max: isCustomAmountRangeActive ? customAmountMax : "",
+      page: 1,
+    };
+  }, [
+    customAmountMax,
+    customAmountMin,
+    customEndDate,
+    customStartDate,
+    dateRange,
+    isCustomAmountRangeActive,
+    presetRange,
+    searchQuery,
+    selectedAmountRange,
+    selectedLine,
+    selectedStatus,
+    selectedType,
+  ]);
+
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const rangeParam = params.get("range");
+    const rangeParam = params.get("range") as TransactionRange | null;
 
-    if (
-      rangeParam === "this-week" ||
-      rangeParam === "this-month" ||
-      rangeParam === "all-time"
-    ) {
+    if (rangeParam && isNamedRange(rangeParam)) {
       setPresetRange(rangeParam);
       setDateRange("custom");
+      setCustomStartDate("");
+      setCustomEndDate("");
+      return;
+    }
+
+    const datePreset = rangeParam
+      ? RANGE_TO_DATE_PRESET[rangeParam]
+      : undefined;
+    if (datePreset) {
+      setPresetRange("custom");
+      setDateRange(datePreset);
+      setCustomStartDate("");
+      setCustomEndDate("");
       return;
     }
 
@@ -1098,6 +1214,9 @@ export function TransactionHistory({
 
     if (wasResettingAllFilters) {
       message = `Filters cleared. ${resultCountText}.`;
+    } else if (presetAnnouncement.seq !== previousPresetSeq.current) {
+      previousPresetSeq.current = presetAnnouncement.seq;
+      message = `Preset applied: ${presetAnnouncement.name}. ${resultCountText}.`;
     } else if (currentPage !== prevStates.current.currentPage) {
       message = `Page ${currentPage} of ${totalPages} loaded. ${resultCountText}.`;
     } else if (selectedType !== prevStates.current.selectedType) {
@@ -1207,6 +1326,7 @@ export function TransactionHistory({
     customAmountMax,
     searchQuery,
     currentPage,
+    presetAnnouncement,
     resultCountText,
     totalPages,
     hasActiveFilters,
@@ -1331,6 +1451,100 @@ export function TransactionHistory({
       next.delete("amount");
       return next;
     });
+  };
+
+  const applyPreset = (preset: TransactionPreset) => {
+    const { filters } = parseTransactionFilters(preset.query);
+
+    setSelectedLine(filters.line || "all");
+    setSelectedType(toPageType(filters.type));
+    setSelectedStatus(toPageStatus(filters.status));
+    setSearchInputValue(filters.q);
+    setSearchQuery(filters.q);
+    setIsSuggestionsOpen(false);
+    setActiveSuggestionIndex(-1);
+
+    if (isNamedRange(filters.range)) {
+      setPresetRange(filters.range);
+      setDateRange("custom");
+      setCustomStartDate("");
+      setCustomEndDate("");
+    } else if (filters.range === "custom") {
+      setPresetRange("custom");
+      setDateRange("custom");
+      setCustomStartDate(filters.start);
+      setCustomEndDate(filters.end);
+    } else {
+      setPresetRange("custom");
+      setDateRange(RANGE_TO_DATE_PRESET[filters.range] ?? "custom");
+      setCustomStartDate("");
+      setCustomEndDate("");
+    }
+
+    if (filters.min || filters.max) {
+      setSelectedAmountRange("all");
+      setCustomAmountMin(filters.min);
+      setCustomAmountMax(filters.max);
+      setIsCustomAmountRangeActive(true);
+    } else {
+      setSelectedAmountRange(amountPresetFromUrl(filters.amount) ?? "all");
+      setCustomAmountMin("");
+      setCustomAmountMax("");
+      setIsCustomAmountRangeActive(false);
+    }
+
+    setCurrentPage(1);
+    setExpandedTx(null);
+    const nextParams = new URLSearchParams(searchParams);
+    for (const key of FILTER_KEYS) nextParams.delete(key);
+    new URLSearchParams(preset.query).forEach((value, key) => {
+      nextParams.set(key, value);
+    });
+    nextParams.delete("page");
+    setSearchParams(nextParams);
+
+    setPresetAnnouncement((prev) => ({ name: preset.name, seq: prev.seq + 1 }));
+  };
+
+  const handleApplyPreset = () => {
+    const preset = presets.find((entry) => entry.id === selectedPresetId);
+    if (preset) applyPreset(preset);
+  };
+
+  const handleSavePreset = () => {
+    const name = presetName.trim();
+    if (!name) return;
+
+    const next = savePreset(
+      name,
+      serializeTransactionFilters(currentTransactionFilters()),
+    );
+    setPresets(next);
+
+    const saved = next.find(
+      (preset) =>
+        !isBuiltinPreset(preset.id) &&
+        preset.name.toLowerCase() === name.toLowerCase(),
+    );
+    if (!saved) {
+      setLiveAnnouncement(
+        `Preset "${name}" could not be saved. You can keep up to ${MAX_TRANSACTION_PRESETS} presets.`,
+      );
+      return;
+    }
+
+    setPresetName("");
+    setSelectedPresetId(saved.id);
+    setLiveAnnouncement(`Preset saved: ${saved.name}.`);
+  };
+
+  const handleDeletePreset = () => {
+    const preset = presets.find((entry) => entry.id === selectedPresetId);
+    if (!preset || isBuiltinPreset(preset.id)) return;
+
+    setPresets(deletePreset(preset.id));
+    setSelectedPresetId("");
+    setLiveAnnouncement(`Preset deleted: ${preset.name}.`);
   };
 
   if (status === "loading") {
@@ -1795,6 +2009,69 @@ export function TransactionHistory({
               });
             }}
           />
+        </div>
+        <div className="th-filter-group th-filter-group-wide th-preset-group">
+          <span className="th-filter-label">Saved presets</span>
+          <div className="th-preset-controls">
+            <label htmlFor={PRESET_SELECT_ID} className="sr-only">
+              Saved presets
+            </label>
+            <select
+              id={PRESET_SELECT_ID}
+              value={selectedPresetId}
+              onChange={(e) => setSelectedPresetId(e.target.value)}
+            >
+              <option value="">Choose a preset…</option>
+              {presets.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.name}
+                  {isBuiltinPreset(preset.id) ? " (built-in)" : ""}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="th-filter-chip th-preset-btn"
+              onClick={handleApplyPreset}
+              disabled={!selectedPresetId}
+            >
+              Apply preset
+            </button>
+            <button
+              type="button"
+              className="th-filter-chip th-preset-btn"
+              onClick={handleDeletePreset}
+              disabled={!selectedPresetId || isBuiltinPreset(selectedPresetId)}
+            >
+              Delete preset
+            </button>
+          </div>
+          <div className="th-preset-save">
+            <label htmlFor={PRESET_NAME_ID} className="sr-only">
+              Preset name
+            </label>
+            <input
+              id={PRESET_NAME_ID}
+              type="text"
+              value={presetName}
+              placeholder="Name current filters…"
+              onChange={(e) => setPresetName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleSavePreset();
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="th-filter-chip th-preset-btn"
+              onClick={handleSavePreset}
+              disabled={!presetName.trim()}
+            >
+              Save current
+            </button>
+          </div>
         </div>
         {/*
          * ─── Accessible Search Combobox ──────────────────────────────────────
