@@ -45,3 +45,5 @@ enableMocking().then(() => {
 setTimeout(() => {
   initWebVitals();
 }, 0);
+  );
+});

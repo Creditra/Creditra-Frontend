@@ -4,10 +4,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { FileUploadZone } from '../FileUploadZone';
 
 // Mock DataTransfer for JSDOM
-class MockDataTransferItemList {
-  items: any[] = [];
+class MockDataTransferItemList extends Array<any> {
   add(item: File) {
-    this.items.push({
+    this.push({
       kind: 'file',
       getAsFile: () => item,
     });
@@ -24,11 +23,6 @@ describe('FileUploadZone', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     global.DataTransfer = MockDataTransfer as any;
-    // Mock fetch for upload simulation
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ success: true }),
-    });
   });
 
   it('renders the upload zone and instructions', () => {
@@ -108,6 +102,8 @@ describe('FileUploadZone', () => {
     render(<FileUploadZone onFilesUploaded={mockOnFilesUploaded} />);
     
     const file = new File(['pasted content'], 'pasted.pdf', { type: 'application/pdf' });
+    const dataTransfer = new MockDataTransfer();
+    dataTransfer.items.add(file);
     
     const pasteEvent = new Event('paste', { bubbles: true });
     Object.defineProperty(pasteEvent, 'clipboardData', {
