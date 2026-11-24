@@ -7,6 +7,7 @@
 
   // Repayment USD threshold requiring explicit confirmation (plain non-negative number; '0' disables)
   readonly VITE_REPAY_CONFIRM_THRESHOLD?: string;
+  readonly VITE_NOTIFICATIONS_SSE_URL?: string;
 
   // Build-time feature flags (truthy only for 'true' or '1'; default off)
   readonly VITE_FEATURE_COLLATERAL_SWAP?: string;

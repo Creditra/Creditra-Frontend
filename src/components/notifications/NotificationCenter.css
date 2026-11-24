@@ -123,6 +123,20 @@
   text-align: center;
 }
 
+.nc-channel-status {
+  color: var(--muted, #8b949e);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.nc-channel-status[data-status="open"] {
+  color: var(--success, #3fb950);
+}
+
+.nc-channel-status[data-status="retrying"] {
+  color: var(--warning, #d29922);
+}
+
 .nc-header-actions {
   display: flex;
   align-items: center;
