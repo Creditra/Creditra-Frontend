@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { TrustBadges } from '../TrustBadges';
 import type { TrustBadge } from '../TrustBadges';
 import { LoginPage } from '../../pages/LoginPage';
+import { WalletProvider } from '../../context/WalletContext';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -26,7 +27,9 @@ function renderTrustBadges(props?: Partial<React.ComponentProps<typeof TrustBadg
 function renderLoginPage() {
   return render(
     <MemoryRouter>
-      <LoginPage />
+      <WalletProvider initialWallet={null}>
+        <LoginPage />
+      </WalletProvider>
     </MemoryRouter>,
   );
 }

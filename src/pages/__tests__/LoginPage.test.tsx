@@ -20,12 +20,15 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { LoginPage } from '../LoginPage';
+import { WalletProvider } from '../../context/WalletContext';
 
 /** Helper: render LoginPage inside MemoryRouter (required for Link / useNavigate). */
 function renderPage() {
   return render(
     <MemoryRouter>
-      <LoginPage />
+      <WalletProvider initialWallet={null}>
+        <LoginPage />
+      </WalletProvider>
     </MemoryRouter>,
   );
 }

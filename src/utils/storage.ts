@@ -180,6 +180,16 @@ export function removeKey(key: string): void {
   }
 }
 
+/** Remove a key from sessionStorage. Silently no-ops when storage is unavailable. */
+export function removeSessionKey(key: string): void {
+  try {
+    if (typeof window === 'undefined' || !window.sessionStorage) return;
+    window.sessionStorage.removeItem(key);
+  } catch {
+    /* swallow */
+  }
+}
+
 /**
  * Write a value wrapped in a versioned `{ v, data }` envelope to localStorage.
  */

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Keypair } from '@stellar/stellar-sdk';
 import type { WalletType } from '../types/wallet';
-import { connectWallet } from './wallet';
+import { connectWallet, disconnectWallet, signTransaction } from './wallet';
 
 const SECRET_SEED = 'SAB5556L5AN5KSR5WF7UOEFDCIODEWEO7H2UR4S5R62DFTQOGLKOVZDY';
 const INVALID_ADDRESS_MESSAGE = 'Your wallet returned an invalid account address';
@@ -51,4 +52,40 @@ describe('connectWallet StrKey validation', () => {
       expect(window.localStorage.length).toBe(0);
     },
   );
+});
+
+describe('disconnectWallet auth session cleanup', () => {
+  it('clears remembered and session-scoped auth tokens', () => {
+    localStorage.setItem('auth_token', 'remembered-token');
+    sessionStorage.setItem('auth_token', 'session-token');
+
+    disconnectWallet();
+
+    expect(localStorage.getItem('auth_token')).toBeNull();
+    expect(sessionStorage.getItem('auth_token')).toBeNull();
+  });
+});
+
+describe('signTransaction', () => {
+  it('normalizes Freighter signed XDR responses', async () => {
+    const publicKey = Keypair.random().publicKey();
+    const sign = vi.fn().mockResolvedValue({ signedTxXdr: 'signed-envelope-xdr' });
+    window.freighter = {
+      getPublicKey: vi.fn().mockResolvedValue(publicKey),
+      getNetwork: vi.fn().mockResolvedValue('TESTNET'),
+      signTransaction: sign,
+    };
+
+    await expect(
+      signTransaction(
+        { type: 'freighter', publicKey, network: 'TESTNET' },
+        'challenge-xdr',
+        'test-passphrase',
+      ),
+    ).resolves.toBe('signed-envelope-xdr');
+    expect(sign).toHaveBeenCalledWith('challenge-xdr', {
+      networkPassphrase: 'test-passphrase',
+      address: publicKey,
+    });
+  });
 });
