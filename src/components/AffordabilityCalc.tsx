@@ -16,7 +16,7 @@
 
 import { useState, useMemo, useId } from 'react';
 import { AccessibleTooltip } from './AccessibleTooltip';
-import { formatMoney } from '@/utils/amountValidation';
+import { formatMoney, parseAmountInput } from '@/utils/amountValidation';
 
 /** Fraction of gross monthly income that may go toward total debt. */
 export const DEBT_RATIO = 0.36;
@@ -29,9 +29,8 @@ export const DEBT_RATIO = 0.36;
  */
 export function parseStrictAmount(raw: string): number | null {
   const trimmed = raw.trim();
-  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null;
-  const value = Number(trimmed);
-  return Number.isFinite(value) && value >= 0 ? value : null;
+  if (trimmed.startsWith('.')) return null;
+  return parseAmountInput(trimmed, { allowCommas: false });
 }
 
 /**
