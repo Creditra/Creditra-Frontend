@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FileUploadZone } from '../FileUploadZone';
 
 class MockXMLHttpRequest {
@@ -43,6 +43,12 @@ describe('FileUploadZone', () => {
     MockXMLHttpRequest.instances = [];
     global.DataTransfer = MockDataTransfer as any;
     global.XMLHttpRequest = MockXMLHttpRequest as any;
+  });
+
+  afterEach(() => {
+    // Restore spies and stubbed globals
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('renders the upload zone and instructions', () => {
@@ -130,6 +136,10 @@ describe('FileUploadZone', () => {
     dataTransfer.items.add(file);
     const dataTransfer = new DataTransfer();
 
+    const dataTransfer = {
+      items: [{ kind: 'file', getAsFile: () => file }],
+    };
+
     const pasteEvent = new Event('paste', { bubbles: true });
     Object.defineProperty(pasteEvent, 'clipboardData', {
       value: dataTransfer,
@@ -198,5 +208,54 @@ describe('FileUploadZone', () => {
     await waitFor(() => {
       expect(screen.queryByText('cancel.pdf')).not.toBeInTheDocument();
     });
+  });
+
+  it('uses distinct UUID ids for two selected files and does not log', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.stubGlobal('crypto', {
+      randomUUID: vi
+        .fn()
+        .mockReturnValueOnce('11111111-1111-4111-8111-111111111111')
+        .mockReturnValueOnce('22222222-2222-4222-8222-222222222222'),
+    });
+
+    const first = new File(['first'], 'first.pdf', { type: 'application/pdf' });
+    const second = new File(['second'], 'second.csv', { type: 'text/csv' });
+
+    fireEvent.change(input, { target: { files: [first, second] } });
+
+      expect(screen.getByText('first.pdf')).toBeInTheDocument();
+      expect(screen.getByText('second.csv')).toBeInTheDocument();
+    });
+
+    const items = screen.getAllByRole('listitem');
+    expect(items).toHaveLength(2);
+    expect(items[0].id).toBe('11111111-1111-4111-8111-111111111111');
+    expect(items[1].id).toBe('22222222-2222-4222-8222-222222222222');
+    expect(items[0].id).not.toBe(items[1].id);
+    expect(screen.getByLabelText('Remove first.pdf')).toHaveAttribute(
+      'aria-controls',
+      items[0].id,
+    );
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it('uses distinct counter-based fallback ids when randomUUID is unavailable', async () => {
+    vi.stubGlobal('crypto', {});
+
+    const first = new File(['first'], 'fallback-one.pdf', { type: 'application/pdf' });
+    const second = new File(['second'], 'fallback-two.csv', { type: 'text/csv' });
+
+    fireEvent.change(input, { target: { files: [first, second] } });
+
+      expect(screen.getByText('fallback-one.pdf')).toBeInTheDocument();
+      expect(screen.getByText('fallback-two.csv')).toBeInTheDocument();
+    });
+
+    const items = screen.getAllByRole('listitem');
+    expect(items).toHaveLength(2);
+    expect(items[0].id).toMatch(/^file-fallback-\d+$/);
+    expect(items[1].id).toMatch(/^file-fallback-\d+$/);
+    expect(items[0].id).not.toBe(items[1].id);
   });
 });
