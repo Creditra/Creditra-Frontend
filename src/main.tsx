@@ -13,6 +13,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { recordDiagnosticError } from "./utils/diagnostics";
+import { initWebVitals } from "./utils/web-vitals";
 import "./index.css";
 
 window.addEventListener("error", (event) => {
@@ -37,5 +38,12 @@ enableMocking().then(() => {
     <React.StrictMode>
       <App />
     </React.StrictMode>,
+  );
+});
+
+// Initialise Core Web Vitals collection after first render
+setTimeout(() => {
+  initWebVitals();
+}, 0);
   );
 });

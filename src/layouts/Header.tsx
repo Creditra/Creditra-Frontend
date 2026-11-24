@@ -4,8 +4,9 @@ import { NetworkStatus } from "../components/NetworkStatus";
 import { KycTriggerButton } from "../components/KycDrawer";
 import { QuickRepayTrigger } from "../components/QuickRepayTrigger";
 import { WalletButton } from "../components/WalletButton";
+import { PrivacyModeToggle } from "../components/PrivacyModeToggle";
 import { NotificationWidget } from "../components/notifications/NotificationWidget";
-import { ROUTE_MANIFEST } from "../routes/manifest";
+import { getEnabledRoutes } from "../routes/manifest";
 
 export interface HeaderProps {
   settingsTriggerRef: RefObject<HTMLButtonElement | null>;
@@ -27,12 +28,12 @@ export function Header({
   const { pathname } = useLocation();
 
   // On narrow screens the nav is a horizontally scrolling row; keep the
-  // active link in view (adjust scrollLeft only, never the page scroll).
+  // active link in view using the browser's direction-aware inline scrolling.
   useEffect(() => {
     const nav = navRef.current;
     const active = nav?.querySelector<HTMLElement>(".header-nav-link.active");
     if (!nav || !active || nav.scrollWidth <= nav.clientWidth) return;
-    nav.scrollLeft = active.offsetLeft - nav.offsetLeft - (nav.clientWidth - active.offsetWidth) / 2;
+    active.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [pathname]);
 
   return (
@@ -51,7 +52,7 @@ export function Header({
           - 2.4.7: Focus Visible - outline differs from active underline
           - 2.4.8: Location - aria-current="page" indicates current page
         */}
-        {ROUTE_MANIFEST.filter((route) => Boolean(route.nav?.header)).map((route) => (
+        {getEnabledRoutes().filter((route) => Boolean(route.nav?.header)).map((route) => (
           <NavLink
             key={route.path}
             to={route.path}
@@ -75,6 +76,7 @@ export function Header({
       <NetworkStatus />
       <KycTriggerButton triggerRef={kycTriggerRef} onClick={onKycClick} />
       <QuickRepayTrigger />
+      <PrivacyModeToggle />
       <NotificationWidget />
       <WalletButton />
     </header>

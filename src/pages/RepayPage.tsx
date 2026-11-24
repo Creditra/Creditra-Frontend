@@ -1,7 +1,9 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { AlertCircle, AlertTriangle, CheckCircle, Info, ArrowLeft, RefreshCw, X } from 'lucide-react';
 import { Skeleton } from '@/components/Skeleton';
+import { Amount } from '@/components/Amount';
 import { PayoffProjection } from '@/components/PayoffProjection';
 import { RepaymentVisualizer } from '@/components/RepaymentVisualizer';
 import { InlineHelpOverlay } from '@/components/InlineHelpOverlay';
@@ -39,9 +41,11 @@ import {
 } from '@/components/TypedAmountConfirm';
 import { KbdHint } from '@/components/KbdHint';
 import { RepayPreviewModal } from '@/components/RepayPreviewModal';
+import { AffordabilityCalc } from '@/components/AffordabilityCalc';
 import { CopyToClipboard } from '@/components/CopyToClipboard';
 import { Tooltip } from '@/components/Tooltip';
 import { submitRepayment } from '@/services/repayService';
+import { emit } from '@/lib/event-bus';
 import { motionClasses, useReducedMotion } from '@/context/ReducedMotionContext';
 import { useWallet, walletIdentityKey } from '@/context/WalletContext';
 import { useCreditLine, useCreditLines } from '@/hooks/useCreditLines';
@@ -65,6 +69,7 @@ import {
 } from '@/state/repayDraft';
 import { useDraftSaveStatus } from '@/hooks/useDraftSaveStatus';
 import { DraftSavedIndicator } from '@/components/DraftSavedIndicator';
+import { PendingButton } from '@/components/PendingButton';
 
 /**
  * Reason a saved draft was discarded instead of being offered for recovery.
@@ -211,6 +216,10 @@ export default function RepayPage() {
   const helpTriggerRef = useRef<HTMLButtonElement>(null);
   const previewTriggerRef = useRef<HTMLButtonElement>(null);
   const { isReducedMotionActive } = useReducedMotion();
+
+  // Warn on unload while the form holds an unsaved amount. The page navigates
+  // away on success, so checking amountStr alone is sufficient.
+  useUnsavedChangesGuard(amountStr !== '' && !isSubmittingRef.current);
 
   // ── Repayable lines — single predicate used by picker and deep-link ──
   // Issue #1185: getRepayableLines (utilized > 0 && status !== Closed) replaces
@@ -455,6 +464,14 @@ export default function RepayPage() {
         nextPaymentAmount: selectedLine.nextPaymentAmount,
       });
     }
+    emit('repay:success', {
+      transactionId,
+      creditLineId: selectedLine.id,
+      creditLineName: selectedLine.name,
+      amount,
+      remainingDebt,
+      timestamp,
+    });
     navigate(`/repay/success?tx=${encodeURIComponent(transactionId)}`, {
       state: {
         amount,
@@ -1095,7 +1112,7 @@ export default function RepayPage() {
               <span className="font-medium text-foreground">{recoveredDraft.creditLineId}</span>
               {' '}—{' '}
               <span className="font-medium text-foreground num-tabular">
-                {formatMoney(parseFloat(recoveredDraft.amountStr) || 0)}
+                <Amount value={parseFloat(recoveredDraft.amountStr) || 0} format={formatMoney} maskedLabel="Repayment amount hidden for privacy" />
               </span>
               . Saved {new Date(recoveredDraft.savedAt).toLocaleTimeString()}.
             </p>
@@ -1236,15 +1253,6 @@ export default function RepayPage() {
                   } ${motionClasses(isReducedMotionActive, 'transition duration-200 ease-in-out')}`}
                 />
               </button>
-                      const planned = appliedPlan?.allocations.find((a) => a.lineId === cl.id);
-                      if (planned && planned.amount > 0) {
-                        setAmountStr(planned.amount.toFixed(2));
-                        setSrAnnouncement(
-                          `Selected ${cl.name}. Prefilled ${formatMoney(planned.amount)} from your ${appliedPlan?.strategy} plan.`,
-                        );
-                      } else {
-                        setSrAnnouncement(`Selected ${cl.name}. Choose a repayment amount.`);
-                      }
             </div>
 
             {isMultiLineMode ? (
@@ -1299,7 +1307,7 @@ export default function RepayPage() {
                             <p className="mt-0.5 text-xs opacity-90">
                               Total repaid:{' '}
                               <span className="font-semibold num-tabular">
-                                {formatMoney(totalPaid)}
+                                <Amount value={totalPaid} format={formatMoney} maskedLabel="Total repaid hidden for privacy" />
                               </span>
                               {failed.length > 0 &&
                                 ` · ${failed.length} ${failed.length === 1 ? 'line' : 'lines'} failed`}
@@ -1351,10 +1359,10 @@ export default function RepayPage() {
                                     )}
                                   </td>
                                   <td className="py-2.5 px-3 text-right font-medium num-tabular text-foreground">
-                                    {formatMoney(res.amount)}
+                                    <Amount value={res.amount} format={formatMoney} maskedLabel="Repayment amount hidden for privacy" />
                                   </td>
                                   <td className="py-2.5 pl-3 text-right font-medium num-tabular text-foreground">
-                                    {formatMoney(res.allocation.remainingTotal)}
+                                    <Amount value={res.allocation.remainingTotal} format={formatMoney} maskedLabel="Remaining balance hidden for privacy" />
                                   </td>
                                 </tr>
                               ))}
@@ -1435,7 +1443,7 @@ export default function RepayPage() {
                                 </div>
                                 <div className="text-right">
                                   <p className="font-semibold text-foreground num-tabular">
-                                    {formatMoney(lineOwed)}
+                                    <Amount value={lineOwed} format={formatMoney} maskedLabel="Total owed hidden for privacy" />
                                   </p>
                                   <p className="text-xs text-muted">
                                     Total owed
@@ -1506,7 +1514,7 @@ export default function RepayPage() {
                         Wallet:{' '}
                         <span className="num-tabular font-medium text-foreground">
                           {hasRepayableBalance
-                            ? formatMoney(walletBalance)
+                            ? <Amount value={walletBalance} format={formatMoney} maskedLabel="Wallet balance hidden for privacy" />
                             : 'Unavailable'}
                         </span>
                       </span>
@@ -1556,7 +1564,7 @@ export default function RepayPage() {
                               }}
                               className="rounded border border-accent/30 px-2 py-0.5 text-xs font-medium text-accent hover:bg-accent/10 disabled:opacity-50"
                             >
-                              MAX ({formatMoney(Math.min(batchTotalOwed, walletBalance))})
+                              MAX (<Amount value={Math.min(batchTotalOwed, walletBalance)} format={formatMoney} maskedLabel="Maximum repayment hidden for privacy" />)
                             </button>
                           </div>
                           <div className="relative mt-2">
@@ -1771,7 +1779,7 @@ export default function RepayPage() {
                 })}
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     );
@@ -1837,7 +1845,7 @@ export default function RepayPage() {
               <span className="font-medium text-foreground">{recoveredDraft.creditLineId}</span>
               {' '}—{' '}
               <span className="font-medium text-foreground num-tabular">
-                {formatMoney(parseFloat(recoveredDraft.amountStr) || 0)}
+                <Amount value={parseFloat(recoveredDraft.amountStr) || 0} format={formatMoney} maskedLabel="Repayment amount hidden for privacy" />
               </span>
               . Saved {new Date(recoveredDraft.savedAt).toLocaleTimeString()}.
             </p>
@@ -1937,7 +1945,7 @@ export default function RepayPage() {
                       <span className="text-xs text-muted">
                         Wallet:{' '}
                         <span className="num-tabular">
-                          {hasRepayableBalance ? formatMoney(walletBalance) : 'Unavailable'}
+                          {hasRepayableBalance ? <Amount value={walletBalance} format={formatMoney} maskedLabel="Wallet balance hidden for privacy" /> : 'Unavailable'}
                         </span>
                       </span>
                     )}
@@ -2074,6 +2082,26 @@ export default function RepayPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* AffordabilityCalc disclosure – collapsed by default so it
+                    doesn't obscure the amount input, but keyboard-accessible
+                    via the native <details>/<summary> element. onApply fills
+                    amountStr (respecting existing amount validation). */}
+                <details className="rounded-lg border border-border bg-surface">
+                  <summary className="cursor-pointer select-none list-none px-4 py-3 text-xs font-semibold uppercase text-muted [&::-webkit-details-marker]:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+                    <span className="flex items-center gap-2">
+                      <span>Affordability Calculator</span>
+                      <span className="text-muted font-normal normal-case">(optional)</span>
+                    </span>
+                  </summary>
+                  <div className="border-t border-border">
+                    <AffordabilityCalc
+                      onApply={(suggested) => {
+                        setAmountStr(suggested.toFixed(2));
+                      }}
+                    />
+                  </div>
+                </details>
 
                 <div className="rounded-lg border border-border bg-surface p-4">
                   <p className="text-xs font-semibold uppercase text-muted">
@@ -2385,17 +2413,23 @@ export default function RepayPage() {
                   Back <KbdHint keys={['Esc']} />
                 </span>
               </button>
-              <button
-                type="button"
-                onClick={handleConfirm}
-                disabled={isReviewConfirmDisabled}
-                aria-disabled={isReviewConfirmDisabled || undefined}
-                className={`rp-confirm-btn flex-[2] rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${motionClasses(isReducedMotionActive, 'transition-all hover:brightness-110')}`}
-              >
-                <span className="flex items-center justify-center gap-2">
-                  Confirm Repayment <KbdHint keys={['Enter']} />
-                </span>
-              </button>
+              <div className="flex-[2] flex flex-col">
+                <PendingButton
+                  type="button"
+                  onClick={handleConfirm}
+                  pending={false}
+                  pendingLabel="Confirming..."
+                  disabled={isReviewConfirmDisabled}
+                  aria-disabled={isReviewConfirmDisabled || undefined}
+                  requiresOnline
+                  offlineReason="You're offline — reconnect to repay"
+                  className={`rp-confirm-btn w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${motionClasses(isReducedMotionActive, 'transition-all hover:brightness-110')}`}
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    Confirm Repayment <KbdHint keys={['Enter']} />
+                  </span>
+                </PendingButton>
+              </div>
             </div>
             <DraftSavedIndicator
               status={draftSave.status}

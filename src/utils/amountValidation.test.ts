@@ -1,10 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  CREDIT_RESERVE_LIMIT_RATIO,
+  CREDIT_RESERVE_MIN,
+  DEFAULT_REPAY_CONFIRM_THRESHOLD,
+  getCreditReserveFloor,
   getDrawAmountValidation,
   getRepayAmountValidation,
   getRepayConfirmThreshold,
+  getWalletReserveFloor,
   REPAY_CONFIRM_THRESHOLD,
   requiresRepayConfirmation,
+  WALLET_RESERVE_MIN,
+  WALLET_RESERVE_RATIO,
 } from './amountValidation';
 
 describe('getDrawAmountValidation', () => {
@@ -171,5 +178,38 @@ describe('requiresRepayConfirmation', () => {
   it('returns true for non-integer amounts at or above the threshold', () => {
     expect(requiresRepayConfirmation(5000.01)).toBe(true);
     expect(requiresRepayConfirmation(5250.50)).toBe(true);
+  });
+});
+
+describe('reserve floors and named constants', () => {
+  it('falls back to the named default repay threshold', () => {
+    expect(DEFAULT_REPAY_CONFIRM_THRESHOLD).toBe(5000);
+    expect(getRepayConfirmThreshold({})).toBe(DEFAULT_REPAY_CONFIRM_THRESHOLD);
+    expect(getRepayConfirmThreshold({ VITE_REPAY_CONFIRM_THRESHOLD: 'abc' })).toBe(
+      DEFAULT_REPAY_CONFIRM_THRESHOLD,
+    );
+  });
+
+  it('uses the credit reserve minimum at the limit where 10% equals it', () => {
+    const boundaryLimit = CREDIT_RESERVE_MIN / CREDIT_RESERVE_LIMIT_RATIO;
+
+    expect(boundaryLimit).toBe(50000);
+    expect(getCreditReserveFloor(boundaryLimit, 35000)).toBe(CREDIT_RESERVE_MIN);
+    expect(getCreditReserveFloor(boundaryLimit + 10000, 35000)).toBe(6000);
+    expect(getCreditReserveFloor(boundaryLimit - 10000, 35000)).toBe(CREDIT_RESERVE_MIN);
+  });
+
+  it('caps the credit reserve at available credit when it is smaller than the floor', () => {
+    expect(getCreditReserveFloor(50000, CREDIT_RESERVE_MIN - 1)).toBe(CREDIT_RESERVE_MIN - 1);
+    expect(getCreditReserveFloor(50000, 0)).toBe(0);
+  });
+
+  it('uses the wallet reserve minimum at the balance where 10% equals it', () => {
+    const boundaryBalance = WALLET_RESERVE_MIN / WALLET_RESERVE_RATIO;
+
+    expect(boundaryBalance).toBe(1000);
+    expect(getWalletReserveFloor(boundaryBalance)).toBe(WALLET_RESERVE_MIN);
+    expect(getWalletReserveFloor(boundaryBalance + 1000)).toBe(200);
+    expect(getWalletReserveFloor(WALLET_RESERVE_MIN / 2)).toBe(WALLET_RESERVE_MIN / 2);
   });
 });

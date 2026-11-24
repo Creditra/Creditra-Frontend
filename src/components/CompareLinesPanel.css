@@ -1,0 +1,8 @@
+.compare-lines-panel {
+  border-inline-start: 1px solid var(--border);
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.1);
+}
+
+[dir="rtl"] .compare-lines-panel {
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.1);
+}
