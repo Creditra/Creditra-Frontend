@@ -117,6 +117,22 @@ export function parseMoney(
     );
   }
 
+  // The shape regex above also accepts strings that contain no digit at all
+  // (`""` is handled as empty input further up, but `"."` matches). A bare
+  // decimal point is not a number, and parsing it used to fall through to
+  // `dollarPart === '' ? '0' : dollarPart` and return zero, which silently
+  // turned a stray keypress into a $0 amount. Reject it instead.
+  //
+  // Forms with a digit on at least one side of the point stay valid, because
+  // they unambiguously mean a number: `5.` is 5 and `.5` is 0.5. Only the
+  // digit-less case is an error.
+  if (!/[0-9]/.test(trimmed)) {
+    throw new MoneyError(
+      'invalid_input',
+      `Money input must contain at least one digit: "${input}"`,
+    );
+  }
+
   const [dollarPart, fracPart = ''] = trimmed.split('.');
 
   if (fracPart.length > decimals) {
