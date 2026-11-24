@@ -21,6 +21,9 @@ import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatc
 import { StaleDataBanner } from "./components/StaleDataBanner";
 import { DemoDataBanner } from "./components/DemoDataBanner";
 import { ToastContainer } from "./components/notifications/ToastContainer";
+import { OfflineBanner } from "./components/OfflineBanner";
+import { OfflineQueuePanel } from "./components/OfflineQueuePanel";
+import { startOfflineQueueAutoRetry } from "./utils/offline";
 import { BannerAlerts } from "./components/notifications/BannerAlert";
 import { Header } from "./layouts/Header";
 import { Skeleton } from "./components/Skeleton";
@@ -59,6 +62,9 @@ function AppShell() {
   const { refetch } = useCreditData();
 
   useEffect(() => registerEventSubscribers({ addToast, refetch }), [addToast, refetch]);
+
+  // Flush offline-queued draws/uploads as soon as the browser reconnects.
+  useEffect(() => startOfflineQueueAutoRetry(), []);
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [openedFromSettingsLink, setOpenedFromSettingsLink] = useState(false);
   const [isKycDrawerOpen, setIsKycDrawerOpen] = useState(false);
@@ -167,6 +173,8 @@ function AppShell() {
             ]}
           />
           <ToastContainer />
+          <OfflineBanner />
+          <OfflineQueuePanel />
         </div>
       </RouteHeadProvider>
     </>

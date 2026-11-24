@@ -29,6 +29,9 @@ describe('createCreditDataSource', () => {
   it('creates SorobanCreditDataSource for a case-insensitive configured value', () => {
     vi.stubEnv('VITE_CREDIT_DATA_SOURCE', ' SOROBAN ');
     const source = createCreditDataSource();
+    const source = createCreditDataSource('soroban', {
+      contractId: 'CA3D5KRYM6CB7OWQ6TWYRR3Z4T7GNZLKERYNZGGA5SOAOPIFY6YQGAXE',
+    });
     expect(source).toBeInstanceOf(SorobanCreditDataSource);
   });
 
@@ -43,6 +46,10 @@ describe('createCreditDataSource', () => {
     expect(() => createCreditDataSource('sorobna')).toThrow(
       'Unknown credit data source type "sorobna". Allowed values are "mock" and "soroban".',
     );
+  });
+
+  it('rejects a soroban data source without a contract id', () => {
+    expect(() => createCreditDataSource('soroban')).toThrow(/CONTRACT_ID/);
   });
 
   it('MockCreditDataSource lists and gets credit lines', async () => {

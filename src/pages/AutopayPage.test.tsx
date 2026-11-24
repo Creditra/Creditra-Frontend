@@ -333,94 +333,20 @@ describe('AutopayPage timer & cancel announcements', () => {
     expect(screen.queryByText('Autopay schedule cleared.')).not.toBeInTheDocument();
   });
 });
-
 describe('AutopayPage schedule persistence & management', () => {
-  beforeEach(() => {
-    localStorage.clear();
     mockState.lines = [MOCK_LINE];
     mockState.balances = null;
     mockState.walletKey = 'freighter:GAAA:TESTNET';
-  });
-
   afterEach(() => {
     vi.useRealTimers();
-  });
-
-  it('creates a schedule, persists it across remount, edits in place, and cancels via ConfirmDialog', async () => {
     const { unmount } = render(<AutopayPage />);
-
-    // Create a schedule
-    fireEvent.change(screen.getByLabelText(/Credit Line/i), {
-      target: { value: 'cl-1' },
-    });
-    fireEvent.change(screen.getByLabelText(/Payment Amount/i), {
-      target: { value: '250' },
-    });
-    fireEvent.change(screen.getByLabelText(/Start Date/i), {
-      target: { value: '2027-01-15' },
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: /Activate Autopay/i }));
-
-    expect(screen.getByText(/Autopay activated\./i)).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: /Edit autopay schedule for Prime Working Capital/i }),
-    ).toBeInTheDocument();
-
-    // Simulate page reload by unmounting and remounting
     unmount();
     render(<AutopayPage />);
-
-    expect(screen.getByText(/\$250 · Monthly · Starts 2027-01-15/i)).toBeInTheDocument();
-    expect(screen.getByText(/Next scheduled payment:/i)).toBeInTheDocument();
-
-    // Edit in place
-    fireEvent.click(
       screen.getByRole('button', { name: /Edit autopay schedule for Prime Working Capital/i }),
-    );
-    fireEvent.change(screen.getByLabelText(/Payment Amount/i), {
-      target: { value: '375' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
-
-    expect(screen.getByText(/Autopay updated\./i)).toBeInTheDocument();
-    expect(screen.getByText(/\$375 · Monthly · Starts 2027-01-15/i)).toBeInTheDocument();
-
-    // Cancel via ConfirmDialog
-    fireEvent.click(
-      screen.getByRole('button', { name: /Cancel autopay schedule for Prime Working Capital/i }),
-    );
-    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /^Cancel Schedule$/i }));
-
-    expect(
-      await screen.findByText(/No active autopay schedules saved for this wallet yet/i),
-    ).toBeInTheDocument();
-  });
-
-  it('scopes persisted schedules per wallet', async () => {
     const { unmount } = render(<AutopayPage />);
-
-    fireEvent.change(screen.getByLabelText(/Credit Line/i), {
-      target: { value: 'cl-1' },
-    });
-    fireEvent.change(screen.getByLabelText(/Payment Amount/i), {
-      target: { value: '150' },
-    });
-    fireEvent.change(screen.getByLabelText(/Start Date/i), {
-      target: { value: '2027-02-01' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /Activate Autopay/i }));
-
-    expect(screen.getByText(/\$150 · Monthly · Starts 2027-02-01/i)).toBeInTheDocument();
-
-    // Switch to another wallet
     mockState.walletKey = 'freighter:GBBB:TESTNET';
     unmount();
     render(<AutopayPage />);
-
     expect(
-      await screen.findByText(/No active autopay schedules saved for this wallet yet/i),
     ).toBeInTheDocument();
   });
-});

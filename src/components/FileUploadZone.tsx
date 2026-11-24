@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useOnline } from '../hooks/useOnline';
+import { offlineMutation, queueOfflineAction } from '../utils/offline';
 import './FileUploadZone.css';
 
 interface FileUploadItem {
@@ -33,7 +33,7 @@ const createFileUploadId = (): string => {
 };
 
 export function FileUploadZone({
-  onFilesUploaded,
+  onFilesUploaded: _onFilesUploaded,
   acceptedTypes = ['.pdf', '.csv'],
   maxSizeMB = 10,
 }: FileUploadZoneProps) {
@@ -41,7 +41,6 @@ export function FileUploadZone({
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const zoneRef = useRef<HTMLDivElement>(null);
-  const { queueAction } = useOnline();
   const uploadQueueRef = useRef<FileUploadItem[]>([]);
   const activeUploadsRef = useRef(0);
 
@@ -108,6 +107,13 @@ export function FileUploadZone({
       updateItem(item.id, { status: 'error', errorMessage: 'Upload cancelled', xhr: undefined });
       finishUpload();
     };
+          queueOfflineAction({
+            type: 'upload',
+            label: `Upload ${item.file.name}`,
+            description: `${formatSize(item.file.size)} · ${item.file.name.split('.').pop()?.toUpperCase() ?? 'file'}`,
+            dedupeKey: `upload-${item.id}`,
+            run: () => uploadFile(item),
+          });
 
     updateItem(item.id, { status: 'uploading', xhr });
     try {

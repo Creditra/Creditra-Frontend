@@ -8,7 +8,7 @@ import {
   dashboardValuesStableKey,
 } from "../constants/storageKeys";
 import { useWalletIdentityKey } from "../hooks/useWalletIdentityKey";
-import { readJson, readSessionJson, writeJson, writeSessionJson } from "../utils/storage";
+import { readSessionJson, writeJson, writeSessionJson } from "../utils/storage";
 import "./WhatChanged.css";
 
 const DASHBOARD_VALUES_SCHEMA_VERSION = 1;
