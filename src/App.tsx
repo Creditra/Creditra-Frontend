@@ -17,6 +17,7 @@ import { ShortcutHelpOverlay } from "./components/ShortcutHelpOverlay";
 import { WalletReconnectBanner } from "./components/WalletReconnectBanner";
 import { NetworkMismatchBanner } from "./components/notifications/NetworkMismatchBanner";
 import { StaleDataBanner } from "./components/StaleDataBanner";
+import { DemoDataBanner } from "./components/DemoDataBanner";
 import { ToastContainer } from "./components/notifications/ToastContainer";
 import { BannerAlerts } from "./components/notifications/BannerAlert";
 import { Header } from "./layouts/Header";
@@ -114,6 +115,7 @@ function AppShell() {
           </Suspense>
           <main className="main">
             <BannerAlerts />
+            <DemoDataBanner />
             <NetworkMismatchBanner />
             <StaleDataBanner />
             <Suspense fallback={<RouteLoadingFallback />}>
