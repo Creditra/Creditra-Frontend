@@ -23,7 +23,7 @@ To point the application at Stellar Testnet and enable the on-chain Soroban adap
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `VITE_CREDIT_DATA_SOURCE` | Yes | `mock` | Set to `soroban` to enable the on-chain adapter (`mock` uses local fixture data). |
+| `VITE_CREDIT_DATA_SOURCE` | No | `mock` | Set to `mock` or `soroban` (case-insensitive; surrounding whitespace is ignored). Unset or empty values use `mock`; any other value fails during startup. |
 | `VITE_SOROBAN_RPC_URL` | No | `https://soroban-testnet.stellar.org` | URL of the Soroban RPC node. |
 | `VITE_NETWORK_PASSPHRASE` | No | `Test SDF Network ; September 2015` | Network passphrase for transaction simulation. |
 | `VITE_CREDIT_CONTRACT_ID` | Yes (for live contract) | `CA3D5KRYM6CB7OWQ6TWYRR3Z4T7GNZLKERYNZGGA5SOAOPIFY6YQGAXE` | Address of the deployed Creditra credit line contract on testnet. |
