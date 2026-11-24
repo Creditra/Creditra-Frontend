@@ -43,6 +43,7 @@ The adapter invokes the following read-only contract entrypoints:
 ### Entrypoints
 - `get_lines_by_borrower(borrower: Address) -> Vec<ContractCreditLine>`: Lists all active, suspended, or defaulted credit lines associated with the borrower's Stellar address.
 - `get_line(id: String) -> Option<ContractCreditLine>`: Fetches a single credit line by ID; returns `None` if the line does not exist.
+- `get_transactions(line_id: String, cursor: Option<String>, limit: Option<u32>) -> ContractTransactionPage`: Returns a paginated slice of ledger transactions for a credit line. `cursor` is an opaque pagination cursor returned by a previous call (`None` starts from the beginning); `limit` caps the page size (`None` uses the contract default).
 
 ### Return Struct (`ContractCreditLine`)
 ```rust
@@ -55,8 +56,31 @@ pub struct ContractCreditLine {
     pub apr: u32,                // Basis points or percentage
     pub risk_score: u32,         // 0–850
     pub opened_at: u64,          // Unix timestamp in seconds
-    pub updated_at: u64,          // Unix timestamp in seconds
+    pub updated_at: u64,         // Unix timestamp in seconds
     pub collateral: Option<String>,
+    pub transactions: Option<Vec<ContractTransaction>>,
+    pub status_history: Option<Vec<ContractStatusHistoryEntry>>,
+}
+
+pub struct ContractTransaction {
+    pub id: String,
+    pub r#type: Symbol,          // "Draw" | "Repay" | "Fee" | "Interest" | "StatusChange"
+    pub amount: i128,            // Base units (10^7 stroops)
+    pub date: u64,               // Unix timestamp in seconds (or ISO 8601 string)
+    pub status: Symbol,          // "Completed" | "Pending" | "Failed"
+    pub note: Option<String>,
+    pub tx_hash: Option<String>,
+}
+
+pub struct ContractStatusHistoryEntry {
+    pub status: Symbol,          // "Active" | "Suspended" | "Defaulted" | "Closed" | "Frozen"
+    pub date: u64,               // Unix timestamp in seconds (or ISO 8601 string)
+    pub note: Option<String>,
+}
+
+pub struct ContractTransactionPage {
+    pub items: Vec<ContractTransaction>,
+    pub next_cursor: Option<String>,
 }
 ```
 

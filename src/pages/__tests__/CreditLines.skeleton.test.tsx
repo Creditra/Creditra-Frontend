@@ -10,6 +10,7 @@ function pendingSource(): CreditDataSource {
   return {
     listCreditLines: vi.fn(() => new Promise<CreditLine[]>(() => undefined)),
     getCreditLine: vi.fn(),
+    listTransactions: vi.fn().mockResolvedValue({ items: [] }),
   };
 }
 

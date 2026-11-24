@@ -15,6 +15,7 @@ function failingOnceSource(): CreditDataSource {
       .mockRejectedValueOnce(new Error('Credit network unavailable'))
       .mockResolvedValue(MOCK_CREDIT_LINES),
     getCreditLine: vi.fn(),
+    listTransactions: vi.fn().mockResolvedValue({ items: [] }),
   };
 }
 
