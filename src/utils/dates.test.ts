@@ -66,6 +66,40 @@ describe("timeAgo", () => {
     const result = timeAgo(inOneHour, NOW);
     expect(result).toMatch(/hour/);
   });
+
+  it("handles clock skew and zero-second boundaries without -0 or 'in 0 seconds'", () => {
+    const slightlyPast = new Date(NOW.getTime() - 200);
+    const slightlyFuture = new Date(NOW.getTime() + 200);
+    const fiveSecondsFuture = new Date(NOW.getTime() + 5_000);
+
+    expect(timeAgo(NOW, NOW)).toBe("now");
+    expect(timeAgo(slightlyPast, NOW)).toBe("now");
+    expect(timeAgo(slightlyFuture, NOW)).toBe("now");
+    expect(timeAgo(fiveSecondsFuture, NOW)).toBe("in 5 seconds");
+  });
+
+  it("handles exact 60 s and 24 h boundaries", () => {
+    const sixtySecondsAgo = new Date(NOW.getTime() - 60_000);
+    const twentyFourHoursAgo = new Date(NOW.getTime() - 24 * 60 * 60_000);
+
+    expect(timeAgo(sixtySecondsAgo, NOW)).toBe("1 minute ago");
+    expect(timeAgo(twentyFourHoursAgo, NOW)).toBe("yesterday");
+  });
+
+  it("returns placeholder without throwing for invalid ISO strings", () => {
+    expect(() => timeAgo("not-a-date", NOW)).not.toThrow();
+    expect(timeAgo("not-a-date", NOW)).toBe("—");
+  });
+
+  it("formats relative times in non-English locales (es, de)", () => {
+    const fiveMinutesAgo = new Date(NOW.getTime() - 5 * 60_000);
+    const oneDayAgo = new Date(NOW.getTime() - 24 * 60 * 60_000);
+
+    expect(timeAgo(fiveMinutesAgo, NOW, "es")).toBe("hace 5 minutos");
+    expect(timeAgo(oneDayAgo, NOW, "es")).toBe("ayer");
+    expect(timeAgo(fiveMinutesAgo, NOW, "de")).toBe("vor 5 Minuten");
+    expect(timeAgo(oneDayAgo, NOW, "de")).toBe("gestern");
+  });
 });
 
 describe("isSameDay", () => {

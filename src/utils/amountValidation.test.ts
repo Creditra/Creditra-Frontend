@@ -8,6 +8,7 @@ import {
   getRepayAmountValidation,
   getRepayConfirmThreshold,
   getWalletReserveFloor,
+  parseAmountInput,
   REPAY_CONFIRM_THRESHOLD,
   requiresRepayConfirmation,
   WALLET_RESERVE_MIN,
@@ -211,5 +212,55 @@ describe('reserve floors and named constants', () => {
     expect(getWalletReserveFloor(boundaryBalance)).toBe(WALLET_RESERVE_MIN);
     expect(getWalletReserveFloor(boundaryBalance + 1000)).toBe(200);
     expect(getWalletReserveFloor(WALLET_RESERVE_MIN / 2)).toBe(WALLET_RESERVE_MIN / 2);
+  });
+});
+
+describe('parseAmountInput', () => {
+  it('rejects trailing garbage like "12abc"', () => {
+    expect(parseAmountInput('12abc')).toBeNull();
+  });
+
+  it('rejects scientific notation like "1e3"', () => {
+    expect(parseAmountInput('1e3')).toBeNull();
+    expect(parseAmountInput('1E3')).toBeNull();
+  });
+
+  it('parses leading and trailing decimal forms (".5" and "5.")', () => {
+    expect(parseAmountInput('.5')).toBe(0.5);
+    expect(parseAmountInput('5.')).toBe(5);
+    expect(parseAmountInput('.')).toBeNull();
+  });
+
+  it('strips valid thousands-grouped commas by default and rejects them when allowCommas is false', () => {
+    expect(parseAmountInput('1,234.56')).toBe(1234.56);
+    expect(parseAmountInput('1,234.56', { allowCommas: false })).toBeNull();
+    expect(parseAmountInput('1,23')).toBeNull();
+  });
+
+  it('parses zero and integers', () => {
+    expect(parseAmountInput('0')).toBe(0);
+    expect(parseAmountInput('7')).toBe(7);
+    expect(parseAmountInput('  7  ')).toBe(7);
+  });
+
+  it('rejects signs, hex, and Infinity', () => {
+    expect(parseAmountInput('-1')).toBeNull();
+    expect(parseAmountInput('+1')).toBeNull();
+    expect(parseAmountInput('0x10')).toBeNull();
+    expect(parseAmountInput('Infinity')).toBeNull();
+  });
+
+  it('enforces maxDecimals (default 2)', () => {
+    expect(parseAmountInput('1.23')).toBe(1.23);
+    expect(parseAmountInput('1.234')).toBeNull();
+    expect(parseAmountInput('1.234', { maxDecimals: 2 })).toBeNull();
+    expect(parseAmountInput('1.234', { maxDecimals: 3 })).toBe(1.234);
+  });
+
+  it('handles empty input according to allowEmpty', () => {
+    expect(parseAmountInput('')).toBeNull();
+    expect(parseAmountInput('   ')).toBeNull();
+    expect(parseAmountInput('', { allowEmpty: true })).toBe(0);
+    expect(parseAmountInput('   ', { allowEmpty: true })).toBe(0);
   });
 });

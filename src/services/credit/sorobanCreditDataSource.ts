@@ -13,10 +13,12 @@ import {
   CreditDataError,
   type CreditDataOptions,
   type CreditDataSource,
+  type ListTransactionsOptions,
+  type TransactionPage,
 } from './CreditDataSource';
 import { ConfigError } from '../../config/creditNetwork';
 import { getSorobanConfig, type SorobanCreditConfig } from './config';
-import { decodeCreditLine } from './decoder';
+import { decodeCreditLine, decodeTransaction } from './decoder';
 
 export interface SorobanCreditDataSourceOptions {
   rpcUrl?: string;
@@ -465,5 +467,99 @@ export class SorobanCreditDataSource implements CreditDataSource {
     }
 
     return decodeCreditLine(nativeVal);
+  }
+
+  async listTransactions(
+    lineId: string,
+    options?: ListTransactionsOptions,
+  ): Promise<TransactionPage> {
+    if (!lineId || typeof lineId !== 'string') {
+      throw new CreditDataError('invalid_response', 'Credit line id is required');
+    }
+
+    if (
+      options?.limit !== undefined &&
+      (!Number.isInteger(options.limit) || options.limit <= 0)
+    ) {
+      throw new CreditDataError(
+        'invalid_response',
+        `Invalid limit: expected positive integer, got ${String(options.limit)}`,
+      );
+    }
+
+    let lineIdScVal: xdr.ScVal;
+    let cursorScVal: xdr.ScVal;
+    let limitScVal: xdr.ScVal;
+    try {
+      lineIdScVal = nativeToScVal(lineId, { type: 'string' });
+      cursorScVal =
+        options?.cursor !== undefined
+          ? nativeToScVal(options.cursor, { type: 'string' })
+          : xdr.ScVal.scvVoid();
+      limitScVal =
+        options?.limit !== undefined
+          ? nativeToScVal(options.limit, { type: 'u32' })
+          : xdr.ScVal.scvVoid();
+    } catch (err) {
+      throw new CreditDataError(
+        'invalid_response',
+        `Invalid arguments for listTransactions on line ${lineId}`,
+        { cause: err },
+      );
+    }
+
+    const retval = await this.simulateCall(
+      'get_transactions',
+      [lineIdScVal, cursorScVal, limitScVal],
+      options,
+    );
+
+    let nativeVal: unknown;
+    try {
+      nativeVal = scValToNative(retval);
+    } catch (err) {
+      throw new CreditDataError('invalid_response', 'Failed to decode ScVal return value', {
+        cause: err,
+      });
+    }
+
+    if (Array.isArray(nativeVal)) {
+      return {
+        items: nativeVal.map((item) => decodeTransaction(item)),
+      };
+    }
+
+    if (!nativeVal || typeof nativeVal !== 'object') {
+      throw new CreditDataError(
+        'invalid_response',
+        `Malformed ScVal: expected transaction page object or array, got ${nativeVal === null ? 'null' : typeof nativeVal}`,
+      );
+    }
+
+    const record = nativeVal as Record<string, unknown>;
+    if (!Array.isArray(record.items)) {
+      throw new CreditDataError(
+        'invalid_response',
+        `Malformed ScVal: expected array for "items", got ${typeof record.items}`,
+      );
+    }
+
+    const items = record.items.map((item) => decodeTransaction(item));
+    const rawNextCursor = record.next_cursor ?? record.nextCursor;
+    if (
+      rawNextCursor !== undefined &&
+      rawNextCursor !== null &&
+      typeof rawNextCursor !== 'string'
+    ) {
+      throw new CreditDataError(
+        'invalid_response',
+        `Malformed ScVal: expected string for "next_cursor", got ${typeof rawNextCursor}`,
+      );
+    }
+
+    const nextCursor =
+      typeof rawNextCursor === 'string' && rawNextCursor.length > 0 ? rawNextCursor : undefined;
+
+    return nextCursor !== undefined ? { items, nextCursor } : { items };
   }
 }

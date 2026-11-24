@@ -25,6 +25,7 @@ function source(): CreditDataSource {
   return {
     listCreditLines: vi.fn().mockResolvedValue(TEST_LINES),
     getCreditLine: vi.fn(),
+    listTransactions: vi.fn().mockResolvedValue({ items: [] }),
   };
 }
 

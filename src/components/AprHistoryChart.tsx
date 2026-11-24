@@ -19,6 +19,7 @@
  * • The active window button is aria-pressed="true".
  * • The SVG has role="img" and an aria-labelledby pointing to a hidden
  *   <title> element that summarises the visible range.
+ * • Keyboard-focusable data points expose tooltip values.
  * • A <table> data summary is rendered for screen-readers (sr-only).
  * • prefers-reduced-motion: area fill animation is suppressed.
  *
@@ -32,6 +33,17 @@
 
 import { useMemo, useState, useId } from "react";
 import type { AprHistoryEntry } from "../types/creditLine";
+import {
+  ChartFrame,
+  ChartTooltip,
+  ChartTooltipPoints,
+  ChartDataTable,
+  createLinearScale,
+  buildPolylinePoints,
+  buildAreaPath,
+  useChartTooltip,
+} from "./charts";
+import type { ChartTooltipPoint } from "./charts";
 import "./AprHistoryChart.css";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -62,6 +74,8 @@ const VB_H = 80;
 const PADDING_X = 4;
 /** Vertical padding so lines/dots are never clipped at the edge. */
 const PADDING_Y = 6;
+
+const TABLE_COLUMNS = [{ header: "Date" }, { header: "APR (%)" }] as const;
 
 // ─── Helper: filter history to the most-recent N days ────────────────────────
 
@@ -97,6 +111,10 @@ function projectPoints(entries: AprHistoryEntry[]): {
   minApr: number;
   maxApr: number;
 } {
+  if (entries.length === 0) {
+    return { points: [], minApr: 0, maxApr: 0 };
+  }
+
   const aprs = entries.map((e) => e.apr);
   let minApr = Math.min(...aprs);
   let maxApr = Math.max(...aprs);
@@ -108,38 +126,22 @@ function projectPoints(entries: AprHistoryEntry[]): {
     maxApr = mid + 0.05;
   }
 
-  const drawW = VB_W - PADDING_X * 2;
-  const drawH = VB_H - PADDING_Y * 2;
-  const n = entries.length;
+  const xScale = createLinearScale(
+    [0, Math.max(entries.length - 1, 1)],
+    [PADDING_X, VB_W - PADDING_X],
+  );
+  const yScale = createLinearScale(
+    [minApr, maxApr],
+    [VB_H - PADDING_Y, PADDING_Y],
+  );
 
   const points: Point[] = entries.map((entry, i) => ({
-    x: PADDING_X + (i / (n - 1)) * drawW,
-    y: PADDING_Y + ((maxApr - entry.apr) / (maxApr - minApr)) * drawH,
+    x: xScale(i),
+    y: yScale(entry.apr),
     entry,
   }));
 
   return { points, minApr, maxApr };
-}
-
-// ─── Helper: build SVG polyline points string ────────────────────────────────
-
-function toPolylinePoints(points: Point[]): string {
-  return points.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
-}
-
-// ─── Helper: build closed SVG path for the filled area ────────────────────────
-
-function toAreaPath(points: Point[]): string {
-  if (points.length < 2) return "";
-  const line = points
-    .map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`)
-    .join(" L ");
-  const bottom = VB_H - PADDING_Y;
-  return (
-    `M ${points[0].x.toFixed(2)},${bottom} ` +
-    `L ${line} ` +
-    `L ${points[points.length - 1].x.toFixed(2)},${bottom} Z`
-  );
 }
 
 // ─── Helper: format dates for tooltips / aria ────────────────────────────────
@@ -165,7 +167,6 @@ export function AprHistoryChart({
   label = "APR History",
 }: AprHistoryChartProps) {
   const [window, setWindow] = useState<WindowDays>(90);
-  const chartTitleId = useId();
   const uniqueId = useId().replace(/:/g, "");
   const sanitizedLineId = lineId.replace(/[^a-z0-9]/gi, "");
   const clipId = `apr-clip-${sanitizedLineId}-${uniqueId}`;
@@ -191,13 +192,39 @@ export function AprHistoryChart({
       ? "var(--success, #3fb950)"
       : "var(--error, #f85149)";
 
-  const polylinePoints = isEmpty ? "" : toPolylinePoints(points);
-  const areaPath = isEmpty ? "" : toAreaPath(points);
+  const polylinePoints = isEmpty ? "" : buildPolylinePoints(points);
+  const areaPath = isEmpty ? "" : buildAreaPath(points, VB_H - PADDING_Y);
+
+  const tooltipPoints: ChartTooltipPoint[] = useMemo(
+    () =>
+      isEmpty
+        ? []
+        : points.map((p) => ({
+            key: p.entry.date,
+            x: p.x,
+            y: p.y,
+            label: fmtDate(p.entry.date),
+            value: `${p.entry.apr.toFixed(2)}%`,
+          })),
+    [isEmpty, points],
+  );
+
+  const { activeIndex, setActiveIndex, activePoint } =
+    useChartTooltip(tooltipPoints);
 
   const summaryText = isEmpty
     ? `No ${label} data`
     : `${label} from ${fmtDate(firstPoint.entry.date)} to ${fmtDate(lastPoint.entry.date)}, ` +
       `range ${minApr.toFixed(2)}%–${maxApr.toFixed(2)}%`;
+
+  const tableRows = useMemo(
+    () =>
+      visible.map((entry) => ({
+        key: entry.date,
+        cells: [fmtDate(entry.date), entry.apr.toFixed(2)],
+      })),
+    [visible],
+  );
 
   return (
     <div className="apr-history-chart" data-testid="apr-history-chart">
@@ -224,78 +251,82 @@ export function AprHistoryChart({
       </div>
 
       {/* ── SVG chart ── */}
-      <svg
-        className="apr-history-chart__svg"
-        viewBox={`0 0 ${VB_W} ${VB_H}`}
-        preserveAspectRatio="none"
-        role="img"
-        aria-labelledby={chartTitleId}
-        focusable="false"
-      >
-        {/* Accessible title (hidden visually, read by screen-readers) */}
-        <title id={chartTitleId}>{summaryText}</title>
+      <div className="chart-frame-wrapper">
+        <ChartFrame
+          width={VB_W}
+          height={VB_H}
+          title={summaryText}
+          preserveAspectRatio="none"
+          className="apr-history-chart__svg"
+        >
+          <defs>
+            {/* Gradient fill below the line */}
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={trendColor} stopOpacity="0.22" />
+              <stop offset="100%" stopColor={trendColor} stopOpacity="0.02" />
+            </linearGradient>
+            {/* Clip to drawing area so dots/lines are never clipped at edges */}
+            <clipPath id={clipId}>
+              <rect x="0" y="0" width={VB_W} height={VB_H} />
+            </clipPath>
+          </defs>
 
-        <defs>
-          {/* Gradient fill below the line */}
-          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={trendColor} stopOpacity="0.22" />
-            <stop offset="100%" stopColor={trendColor} stopOpacity="0.02" />
-          </linearGradient>
-          {/* Clip to drawing area so dots/lines are never clipped at edges */}
-          <clipPath id={clipId}>
-            <rect x="0" y="0" width={VB_W} height={VB_H} />
-          </clipPath>
-        </defs>
-
-        {isEmpty ? (
-          // Empty state: render a subtle dashed centre line
-          <line
-            x1={PADDING_X}
-            y1={VB_H / 2}
-            x2={VB_W - PADDING_X}
-            y2={VB_H / 2}
-            stroke="var(--border, #30363d)"
-            strokeWidth="1"
-            strokeDasharray="4 4"
-          />
-        ) : (
-          <g clipPath={`url(#${clipId})`} className="apr-history-chart__series">
-            {/* Filled area */}
-            <path
-              className="apr-history-chart__area"
-              d={areaPath}
-              fill={`url(#${gradientId})`}
+          {isEmpty ? (
+            // Empty state: render a subtle dashed centre line
+            <line
+              x1={PADDING_X}
+              y1={VB_H / 2}
+              x2={VB_W - PADDING_X}
+              y2={VB_H / 2}
+              stroke="var(--border, #30363d)"
+              strokeWidth="1"
+              strokeDasharray="4 4"
             />
-            {/* Line */}
-            <polyline
-              className="apr-history-chart__line"
-              points={polylinePoints}
-              fill="none"
-              stroke={trendColor}
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            {/* First-point dot */}
-            <circle
-              cx={firstPoint.x}
-              cy={firstPoint.y}
-              r="2.5"
-              fill={trendColor}
-              opacity="0.7"
-              aria-hidden="true"
-            />
-            {/* Last-point dot (current APR) */}
-            <circle
-              cx={lastPoint.x}
-              cy={lastPoint.y}
-              r="3"
-              fill={trendColor}
-              aria-hidden="true"
-            />
-          </g>
-        )}
-      </svg>
+          ) : (
+            <g clipPath={`url(#${clipId})`} className="apr-history-chart__series">
+              {/* Filled area */}
+              <path
+                className="apr-history-chart__area"
+                d={areaPath}
+                fill={`url(#${gradientId})`}
+              />
+              {/* Line */}
+              <polyline
+                className="apr-history-chart__line"
+                points={polylinePoints}
+                fill="none"
+                stroke={trendColor}
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              {/* First-point dot */}
+              <circle
+                cx={firstPoint.x}
+                cy={firstPoint.y}
+                r="2.5"
+                fill={trendColor}
+                opacity="0.7"
+                aria-hidden="true"
+              />
+              {/* Last-point dot (current APR) */}
+              <circle
+                cx={lastPoint.x}
+                cy={lastPoint.y}
+                r="3"
+                fill={trendColor}
+                aria-hidden="true"
+              />
+              <ChartTooltipPoints
+                points={tooltipPoints}
+                activeIndex={activeIndex}
+                onActiveChange={setActiveIndex}
+              />
+            </g>
+          )}
+        </ChartFrame>
+        <ChartTooltip point={activePoint} />
+      </div>
 
       {/* ── Axis labels ── */}
       {!isEmpty ? (
@@ -320,23 +351,12 @@ export function AprHistoryChart({
       )}
 
       {/* ── Screen-reader data table (visually hidden) ── */}
-      <table className="sr-only" aria-label={`${label} data table`}>
-        <caption>{summaryText}</caption>
-        <thead>
-          <tr>
-            <th scope="col">Date</th>
-            <th scope="col">APR (%)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visible.map((entry) => (
-            <tr key={entry.date}>
-              <td>{fmtDate(entry.date)}</td>
-              <td>{entry.apr.toFixed(2)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <ChartDataTable
+        ariaLabel={`${label} data table`}
+        caption={summaryText}
+        columns={TABLE_COLUMNS}
+        rows={tableRows}
+      />
     </div>
   );
 }

@@ -1290,3 +1290,48 @@
   color: var(--accent, #6366f1);
   outline: none;
 }
+
+/* ─── Saved filter presets (issue #1447) ───────────────────────────────────── */
+
+.th-preset-controls,
+.th-preset-save {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.th-preset-controls select {
+    flex: 1 1 180px;
+}
+
+.th-preset-save input {
+    flex: 1 1 180px;
+    min-height: 44px;
+    padding: var(--space-sm) var(--space-md);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text);
+    font-size: 0.85rem;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.th-preset-save input:focus {
+    border-color: var(--accent);
+}
+
+.th-preset-btn {
+    flex-shrink: 0;
+}
+
+.th-filter-chip:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.th-filter-chip:disabled:hover {
+    border-color: var(--border);
+    background: var(--bg);
+}

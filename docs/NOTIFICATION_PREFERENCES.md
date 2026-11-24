@@ -47,6 +47,29 @@ App.tsx
 
 ---
 
+## Repayment Reminder Milestones
+
+In-app repayment reminders are emitted under the **`credit_line`** category by `usePaymentReminders` (mounted in `App.tsx`) using `computeDueReminders` (`src/lib/payment-reminders.ts`) on top of `getPaymentDueState` (`src/lib/payment-due.ts`).
+
+| Milestone | Condition | Severity | Dedupe Key |
+|---|---|---|---|
+| `7d` | 2–7 calendar days before `nextPaymentDate` | `info` | `${lineId}:${nextPaymentDate}:7d` |
+| `1d` | 1 calendar day before `nextPaymentDate` | `warning` | `${lineId}:${nextPaymentDate}:1d` |
+| `due_today` | On `nextPaymentDate` (0 calendar days) | `warning` | `${lineId}:${nextPaymentDate}:due_today` |
+| `overdue` | 1 day past `nextPaymentDate` | `danger` | `${lineId}:${nextPaymentDate}:overdue` |
+| `overdue_<N>d` | 2–7 days past due (daily), then weekly (`overdue_14d`, `overdue_21d`, …) capped at 90 days | `danger` | `${lineId}:${nextPaymentDate}:overdue_<N>d` |
+
+### Semantics & Deduplication
+
+- **Once per cycle per milestone:** Sent keys are persisted per wallet in `localStorage` under `creditra_payment_reminders_sent_v1:<walletIdentity>` and read fresh on every evaluation so reloads and multiple tabs never duplicate a reminder.
+- **Cycle reset on payment:** When a payment advances or clears `nextPaymentDate`, the new due date produces distinct dedupe keys, enabling reminders for the next billing cycle.
+- **Eligible lines only:** `Closed`, `Frozen`, and `Defaulted` lines, as well as lines without a valid `nextPaymentDate`, never emit reminders.
+- **Preference respect:** Disabling the `credit_line` category suppresses reminder notifications without consuming their dedupe keys.
+- **Triggers & pruning:** Reminders are evaluated on mount, on credit-line changes, on tab `visibilitychange`, and at local midnight (DST-aware). Keys older than 90 days past due are pruned automatically.
+- **Action CTA:** Each reminder includes a route action to `/repay?line=<id>`.
+
+---
+
 ## Features & Controls
 
 1. **Master Toggle ("Enable All Notification Categories"):**

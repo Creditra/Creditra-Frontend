@@ -8,16 +8,14 @@ import {
   FLUSH_INTERVAL_MS,
   MAX_QUEUE_SIZE,
 } from '../analytics';
+import { http, HttpResponse } from 'msw';
+import { server } from '../../mocks/server';
 import * as storage from '../storage';
 import { AnalyticsPreferences } from '../../types/analytics';
 
-// Mock storage and fetch
 vi.mock('../storage', () => ({
   readJson: vi.fn(),
 }));
-
-const mockFetch = vi.fn();
-global.fetch = mockFetch;
 
 const ALL_CONSENT: AnalyticsPreferences = {
   usage: true,
@@ -44,7 +42,6 @@ describe('Analytics Engine', () => {
   beforeEach(async () => {
     vi.useFakeTimers();
     vi.resetAllMocks();
-    mockFetch.mockResolvedValue({ ok: true, status: 200 });
     vi.mocked(storage.readJson).mockReturnValue(NO_CONSENT);
     // Ensure queue and timers are completely drained before each test
     await flushAnalytics();
@@ -155,6 +152,14 @@ describe('Analytics Engine', () => {
   describe('trackEvent and batching', () => {
     it('does not send or queue event if consent is missing', async () => {
       vi.mocked(storage.readJson).mockReturnValue(NO_CONSENT);
+      let requestCount = 0;
+      server.use(
+        http.post('/api/analytics', () => {
+          requestCount += 1;
+          return HttpResponse.json({ accepted: true }, { status: 202 });
+        }),
+      );
+
 
       await trackEvent({
         eventName: 'TestEvent',
@@ -163,15 +168,31 @@ describe('Analytics Engine', () => {
       });
 
       await vi.advanceTimersByTimeAsync(FLUSH_INTERVAL_MS);
-      expect(mockFetch).not.toHaveBeenCalled();
+      expect(requestCount).toBe(0);
       expect(vi.getTimerCount()).toBe(0);
     });
 
     it('fails closed when storage is unavailable', async () => {
       vi.mocked(storage.readJson).mockImplementation(() => {
         throw new Error('SecurityError: storage unavailable');
+      let capturedBody: any = null;
+      server.use(
+        http.post('/api/analytics', async ({ request }) => {
+          capturedBody = await request.json();
+          return HttpResponse.json({ accepted: true }, { status: 202 });
+        }),
+      );
+
       });
 
+      expect(capturedBody).not.toBeNull();
+      expect(capturedBody.event).toBe('TestEvent');
+      expect(capturedBody.category).toBe('usage');
+      expect(capturedBody.payload.amount).toBe('[REDACTED]');
+      expect(capturedBody.payload.safe).toBe(true);
+      server.use(
+        http.post('/api/analytics', () => HttpResponse.error()),
+      );
       await trackEvent({
         eventName: 'StorageFailEvent',
         category: 'usage',
@@ -181,14 +202,26 @@ describe('Analytics Engine', () => {
       await vi.advanceTimersByTimeAsync(FLUSH_INTERVAL_MS);
       expect(mockFetch).not.toHaveBeenCalled();
       expect(vi.getTimerCount()).toBe(0);
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[Analytics] Failed to send event "FailEvent" in category "usage".',
+      );
+
     });
 
     it('aborts cleanly on invalid events', async () => {
+      let requestCount = 0;
+      server.use(
+        http.post('/api/analytics', () => {
+          requestCount += 1;
+          return HttpResponse.json({ accepted: true }, { status: 202 });
+        }),
+      );
       const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       await trackEvent(null as any);
       expect(consoleSpy).toHaveBeenCalledWith('[Analytics] Invalid event payload');
-      expect(mockFetch).not.toHaveBeenCalled();
+      expect(requestCount).toBe(0);
+
       expect(vi.getTimerCount()).toBe(0);
 
       consoleSpy.mockRestore();

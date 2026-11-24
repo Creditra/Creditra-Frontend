@@ -77,15 +77,30 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
 
     // Check if the session is already active
     const sessionActive = readSessionJson<boolean>(sessionActiveKey, false);
-    const lastVisitData = readVersioned<Record<string, number>>(
-      DASHBOARD_VALUES_STABLE_KEY,
-      {
-        version: DASHBOARD_VALUES_SCHEMA_VERSION,
-        fallback: {},
-        migrate: migrateDashboardValues,
-        validate: isMetricRecord,
-      },
-    );
+    const storedData = readJson<unknown>(stableKey, null);
+    let lastVisitData: Record<string, number> = {};
+    if (storedData && isDashboardValues(storedData) && Object.keys(storedData).length > 0) {
+      lastVisitData = storedData;
+    } else {
+      const legacyData = readVersioned<Record<string, number>>(
+        DASHBOARD_VALUES_STABLE_KEY,
+        {
+          version: DASHBOARD_VALUES_SCHEMA_VERSION,
+          fallback: {},
+          migrate: migrateDashboardValues,
+          validate: isMetricRecord,
+        },
+      );
+      if (Object.keys(legacyData).length > 0) {
+        lastVisitData = legacyData;
+        writeJson(stableKey, legacyData);
+        try {
+          localStorage.removeItem(DASHBOARD_VALUES_STABLE_KEY);
+        } catch {
+          // ignore storage error
+        }
+      }
+    }
 
     if (!sessionActive) {
       // First render of this session:
@@ -94,9 +109,6 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
       
       // Save current values to localStorage for the next visit
       const newStableData = { ...lastVisitData, [metricId]: currentValue };
-      writeVersioned(DASHBOARD_VALUES_STABLE_KEY, newStableData, {
-        version: DASHBOARD_VALUES_SCHEMA_VERSION,
-      });
       writeJson(stableKey, newStableData);
       
       writeSessionJson(sessionActiveKey, true);
@@ -114,9 +126,6 @@ export function WhatChanged({ metricId, currentValue, format, label }: WhatChang
       
       // Update the localStorage stable value so that the latest value is saved for the next visit
       const newStableData = { ...lastVisitData, [metricId]: currentValue };
-      writeVersioned(DASHBOARD_VALUES_STABLE_KEY, newStableData, {
-        version: DASHBOARD_VALUES_SCHEMA_VERSION,
-      });
       writeJson(stableKey, newStableData);
     }
   }, [owner, metricId, currentValue]);

@@ -70,6 +70,8 @@ import {
   getDrawEligibility,
 } from "@/lib/draw-eligibility";
 import { classifyDrawError } from "@/lib/draw-errors";
+import { drawCredit, SorobanWriteError } from "@/services/credit/sorobanWriteClient";
+import { generateIdempotencyKey } from "@/utils/idempotency";
 import { getDrawAmountValidation } from "@/utils/amountValidation";
 import { getDrawPricingQuote } from "@/lib/draw-credit-pricing";
 import { projectDraw } from "@/lib/draw-projection";
@@ -172,6 +174,7 @@ export default function DrawCreditPage() {
   // not immediately re-persisted under the new owner.
   const previousDraftOwner = useRef(draftOwner);
   const skipNextDraftSave = useRef(false);
+  const draftSessionRef = useRef<number>(Date.now());
   const draftSave = useDraftSaveStatus();
 
   /**
@@ -268,9 +271,9 @@ export default function DrawCreditPage() {
       draftSave.markError();
     }
   }, [
-    step,
-    selectedCreditLine,
-    amount,
+    state.step,
+    state.selectedCreditLine,
+    state.amount,
     draftOwner,
     draftSave.markSaved,
     draftSave.markError,
@@ -300,11 +303,11 @@ export default function DrawCreditPage() {
 
   const { isReducedMotionActive } = useReducedMotion();
 
-  const amountStepValidation = selectedCreditLine
-    ? getDrawAmountValidation(String(amount), selectedCreditLine)
+  const amountStepValidation = state.selectedCreditLine
+    ? getDrawAmountValidation(String(state.amount), state.selectedCreditLine)
     : null;
-  const utilizedCredit = selectedCreditLine
-    ? Math.max(0, selectedCreditLine.limit - selectedCreditLine.available)
+  const utilizedCredit = state.selectedCreditLine
+    ? Math.max(0, state.selectedCreditLine.limit - state.selectedCreditLine.available)
     : 0;
 
   const handleSelectCreditLine = useCallback((creditLine: CreditLine) => {
@@ -423,10 +426,64 @@ export default function DrawCreditPage() {
     isSubmittingRef.current = true;
     dispatch({ type: "SUBMIT_START" });
 
+    const idempotencyKey = generateIdempotencyKey({
+      creditLineId: line.id,
+      incomingAssetId: `draw:${state.amount}`,
+      initiatedAtMs: draftSessionRef.current,
+    });
+
     // Guard mutation
     try {
       await offlineMutation({
         fn: () => submitDraw(line, state.amount),
+          try {
+            const result = await drawCredit(line.id, String(state.amount), {
+              source: wallet?.publicKey,
+              walletType: wallet?.type,
+              idempotencyKey,
+            const newTransaction: Transaction = {
+              id: result.txHash,
+              txHash: result.txHash,
+              amount: state.amount,
+              status: "success",
+              timestamp: new Date(),
+            };
+              creditLineId: line.id,
+              timestamp:
+                newTransaction.timestamp?.toISOString() ??
+                new Date().toISOString(),
+            if (!isMountedRef.current) return;
+          } catch (err) {
+            if (!isMountedRef.current) return;
+
+            const classified = classifyDrawError(err);
+            const isUserRejected =
+              (err instanceof SorobanWriteError &&
+                err.code === "user_rejected") ||
+              classified.code === "user_rejected";
+
+            if (isUserRejected) {
+              dispatch({
+                type: "SUBMIT_USER_REJECTED",
+                message:
+                  "You cancelled the signature request in your wallet. Review your details and try again when ready.",
+              });
+              return;
+            }
+
+            const failedTransaction: Transaction = {
+              id: `ERR-${Date.now()}`,
+              creditLineId: line.id,
+              amount: state.amount,
+              status: "error",
+              message: classified.message,
+              timestamp: new Date(),
+            };
+
+            const classified = classifyDrawError(newTransaction);
+              transaction: failedTransaction,
+              errorKind: classified.kind,
+            });
         onOffline: () => {
           const amount = state.amount;
           queueOfflineAction({
@@ -448,6 +505,7 @@ export default function DrawCreditPage() {
   };
 
   const handleNewDraw = () => {
+    draftSessionRef.current = Date.now();
     navigate("/draw-credit", { replace: true });
     dispatch({ type: "RESET" });
   };
@@ -506,10 +564,10 @@ export default function DrawCreditPage() {
     capture: true,
     handler: (e) => {
       if (hasOpenDialog()) return;
-      if (step === "select") {
+      if (state.step === "select") {
         e.preventDefault();
         handleCancel();
-      } else if (step === "amount" || step === "confirm") {
+      } else if (state.step === "amount" || state.step === "confirm") {
         e.preventDefault();
         handleBack();
       }
@@ -523,7 +581,7 @@ export default function DrawCreditPage() {
     capture: true,
     handler: (e) => {
       if (hasOpenDialog()) return;
-      if (step === "amount" || step === "confirm") {
+      if (state.step === "amount" || state.step === "confirm") {
         e.preventDefault();
         handleBack();
       }
@@ -537,23 +595,25 @@ export default function DrawCreditPage() {
     capture: true,
     handler: (e) => {
       if (hasOpenDialog()) return;
-      if (step === "amount" && selectedCreditLine) {
+      if (state.step === "amount" && state.selectedCreditLine) {
         e.preventDefault();
         const validation = getDrawAmountValidation(
-          String(amount),
-          selectedCreditLine,
+          String(state.amount),
+          state.selectedCreditLine,
         );
         if (validation.isValid) {
-          handleAmountNext(amount);
+          handleAmountNext(state.amount);
         } else {
           document.getElementById("draw-amount-input")?.focus();
+            error: validation.feedback.message,
+          });
           dispatch({
             type: "SET_SUBMIT_ERROR",
-            error: validation.feedback.message,
+            error: validation.message,
           });
         }
       }
-      if (step === "confirm" && confirmationAcknowledged) {
+      if (state.step === "confirm" && state.confirmationAcknowledged) {
         e.preventDefault();
         void handleConfirm();
       }

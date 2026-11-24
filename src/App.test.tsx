@@ -1,7 +1,8 @@
-import { render, screen, within, fireEvent } from "@testing-library/react";
+import { render, screen, within, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import "@testing-library/jest-dom";
 import App from "./App";
+import { BELOW_MD_MEDIA } from "./hooks/useMediaQuery";
 
 describe("App Navigation Header", () => {
   beforeEach(() => {
@@ -322,5 +323,151 @@ describe("Feature-flagged routes", () => {
 
     expect(await screen.findByRole("heading", { level: 1 })).toBeInTheDocument();
     expect(document.title).toBe("Creditra · Collateral Swap");
+  });
+});
+
+describe("Responsive KYC panel", () => {
+  const originalMatchMedia = window.matchMedia;
+
+  function mockBelowMdMatchMedia(initialMatches: boolean) {
+    let matches = initialMatches;
+    const listeners = new Set<(event: MediaQueryListEvent) => void>();
+
+    const mock = vi.fn().mockImplementation((query: string) => ({
+      get matches() {
+        return query === BELOW_MD_MEDIA ? matches : false;
+      },
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn((event: string, cb: (e: MediaQueryListEvent) => void) => {
+        if (query === BELOW_MD_MEDIA && event === "change") {
+          listeners.add(cb);
+        }
+      }),
+      removeEventListener: vi.fn((event: string, cb: (e: MediaQueryListEvent) => void) => {
+        if (query === BELOW_MD_MEDIA && event === "change") {
+          listeners.delete(cb);
+        }
+      }),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      configurable: true,
+      value: mock,
+    });
+
+    return {
+      setMatches(next: boolean) {
+        matches = next;
+        act(() => {
+          listeners.forEach((cb) => cb({ matches: next, media: BELOW_MD_MEDIA } as MediaQueryListEvent));
+        });
+      },
+    };
+  }
+
+  beforeEach(() => {
+    window.history.pushState({}, "", "/");
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      configurable: true,
+      value: originalMatchMedia,
+    });
+    window.history.pushState({}, "", "/");
+  });
+
+  it("renders KycDrawer on wide viewports and returns focus to the trigger on close", () => {
+    mockBelowMdMatchMedia(false);
+    render(<App />);
+
+    const [kycTrigger] = screen.getAllByRole("button", {
+      name: /kyc verification/i,
+    });
+    fireEvent.click(kycTrigger);
+
+    expect(document.getElementById("kyc-progress-drawer")).toBeInTheDocument();
+    expect(document.getElementById("kyc-bottom-sheet")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("dialog", { name: /kyc progress/i })).toHaveLength(1);
+
+    const closeBtn = screen.getByRole("button", {
+      name: /close kyc progress drawer/i,
+    });
+    fireEvent.click(closeBtn);
+
+    expect(document.getElementById("kyc-progress-drawer")).not.toBeInTheDocument();
+    expect(kycTrigger).toHaveFocus();
+  });
+
+  it("renders KycBottomSheet on narrow viewports, returns focus on close, and resumes to /kyc", async () => {
+    mockBelowMdMatchMedia(true);
+    render(<App />);
+
+    const [kycTrigger] = screen.getAllByRole("button", {
+      name: /kyc verification/i,
+    });
+    fireEvent.click(kycTrigger);
+
+    expect(document.getElementById("kyc-bottom-sheet")).toBeInTheDocument();
+    expect(document.getElementById("kyc-progress-drawer")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("dialog", { name: /kyc progress/i })).toHaveLength(1);
+
+    const closeBtn = screen.getByRole("button", {
+      name: /close kyc bottom sheet/i,
+    });
+    fireEvent.click(closeBtn);
+
+    expect(document.getElementById("kyc-bottom-sheet")).not.toBeInTheDocument();
+    expect(kycTrigger).toHaveFocus();
+
+    // Re-open and verify onResume navigates to /kyc
+    fireEvent.click(kycTrigger);
+    const dialog = screen.getByRole("dialog", { name: /kyc progress/i });
+    const resumeBtn = within(dialog).getByRole("button", {
+      name: /start verification|resume verification/i,
+    });
+    fireEvent.click(resumeBtn);
+
+    expect(document.getElementById("kyc-bottom-sheet")).not.toBeInTheDocument();
+    const heading = await screen.findByRole("heading", {
+      level: 1,
+      name: "Identity Verification",
+    });
+    expect(heading).toBeInTheDocument();
+  });
+
+  it("swaps between KycDrawer and KycBottomSheet when resizing across the breakpoint while closed", () => {
+    const mq = mockBelowMdMatchMedia(false);
+    render(<App />);
+
+    const [kycTrigger] = screen.getAllByRole("button", {
+      name: /kyc verification/i,
+    });
+
+    // Wide viewport -> KycDrawer
+    fireEvent.click(kycTrigger);
+    expect(document.getElementById("kyc-progress-drawer")).toBeInTheDocument();
+    expect(document.getElementById("kyc-bottom-sheet")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /close kyc progress drawer/i }));
+
+    // Resize to narrow while closed -> KycBottomSheet
+    mq.setMatches(true);
+    fireEvent.click(kycTrigger);
+    expect(document.getElementById("kyc-bottom-sheet")).toBeInTheDocument();
+    expect(document.getElementById("kyc-progress-drawer")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /close kyc bottom sheet/i }));
+
+    // Resize back to wide while closed -> KycDrawer
+    mq.setMatches(false);
+    fireEvent.click(kycTrigger);
+    expect(document.getElementById("kyc-progress-drawer")).toBeInTheDocument();
+    expect(document.getElementById("kyc-bottom-sheet")).not.toBeInTheDocument();
   });
 });

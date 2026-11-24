@@ -18,8 +18,10 @@ import {
   type NotificationAction,
   type NotificationActionDescriptor,
 } from '../types/notification';
-import { mergeNotifications } from './notificationMerge';
+import { createSseChannel, type NotificationChannelStatus } from './notificationChannel';
+import { MAX_NOTIFICATIONS, mergeNotifications } from './notificationMerge';
 import {
+  MAX_INBOX_SIZE,
   parseInbox,
   parsePreferences,
   serializeInbox,
@@ -63,6 +65,7 @@ interface NotificationContextValue {
   // Notification center
   notifications: Notification[];
   unreadCount: number;
+  notificationChannelStatus: NotificationChannelStatus;
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
   undoRead: (ids: string[]) => void;
@@ -176,6 +179,13 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     preferencesInit.current = { parsed: DEFAULT_PREFS, needsRewrite: false };
   }
   const [preferences, setPreferences] = useState<NotificationPreferences>(preferencesInit.current.parsed);
+  const notificationSseUrl = import.meta.env.VITE_NOTIFICATIONS_SSE_URL;
+  const [notificationChannelStatus, setNotificationChannelStatus] =
+    useState<NotificationChannelStatus>(
+      notificationSseUrl ? 'connecting' : 'off',
+    );
+  const preferencesRef = useRef(preferences);
+  preferencesRef.current = preferences;
 
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -201,6 +211,27 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     writeJson(PREFS_KEY, serializePreferences(preferences));
   }, [preferences]);
+
+  const handleChannelNotification = useCallback((notification: Notification) => {
+    if (!preferencesRef.current[notification.category]) return;
+    setNotifications(current =>
+      mergeNotifications([notification], current, MAX_NOTIFICATIONS)
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!notificationSseUrl) {
+      setNotificationChannelStatus('off');
+      return;
+    }
+
+    const channel = createSseChannel({
+      url: notificationSseUrl,
+      onNotification: handleChannelNotification,
+      onStatus: setNotificationChannelStatus,
+    });
+    return () => channel.close();
+  }, [notificationSseUrl, handleChannelNotification]);
 
   // Clear all pending toast timers on provider unmount
   useEffect(() => {
@@ -276,7 +307,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         // Persist descriptor only
         action: opts.actionDescriptor,
       };
-      setNotifications(prev => [notification, ...prev].slice(0, 100));
+      setNotifications(prev => [notification, ...prev].slice(0, MAX_INBOX_SIZE));
     }
 
     return id;
@@ -345,6 +376,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         dismissBanner,
         notifications,
         unreadCount,
+        notificationChannelStatus,
         markAsRead,
         markAllAsRead,
         undoRead,

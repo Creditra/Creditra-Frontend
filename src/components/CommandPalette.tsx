@@ -38,9 +38,13 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { useInertBackdrop } from '../hooks/useInertBackdrop';
 import { useDebounceValue } from '../hooks/useDebounceValue';
+import { usePaletteDataItems } from '../hooks/usePaletteDataItems';
 import { getEnabledRoutes } from '../routes/manifest';
 import { getRecentIds, recordRecent } from '../utils/commandRecents';
 import './CommandPalette.css';
+
+const MIN_DATA_QUERY_LENGTH = 2;
+const MAX_DATA_ITEMS_PER_GROUP = 5;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -109,7 +113,7 @@ export { DEFAULT_ITEMS as COMMAND_PALETTE_DEFAULT_ITEMS };
  * Intentionally minimal — no Unicode normalisation or accent stripping needed
  * since all item labels are ASCII.
  */
-function normalize(s: string): string {
+export function normalize(s: string): string {
   return s.toLowerCase().replace(/\s+/g, '');
 }
 
@@ -125,7 +129,7 @@ function normalize(s: string): string {
  * @param query  Raw user input (not yet normalised).
  * @returns      Subset of items that match, or all items when `query` is empty.
  */
-function filterItems(items: CommandItem[], query: string): CommandItem[] {
+export function filterItems(items: CommandItem[], query: string): CommandItem[] {
   const q = normalize(query);
   if (!q) return items;
   return items.filter(
@@ -221,10 +225,16 @@ export function CommandPalette({
 
   // Merge built-in defaults with any context-sensitive extras.
   const allItems = [...getCommandPaletteDefaultItems(), ...extraItems];
-  const isEmptyQuery = normalize(debouncedQuery).length === 0;
+  const { creditLineItems, transactionItems } = usePaletteDataItems();
+  const normalizedQuery = normalize(debouncedQuery);
+  const isEmptyQuery = normalizedQuery.length === 0;
+  const includeDataItems = normalizedQuery.length >= MIN_DATA_QUERY_LENGTH;
 
   let recentItems: CommandItem[] = [];
   let otherItems: CommandItem[] = [];
+  let commandResults: CommandItem[] = [];
+  let matchedCreditLines: CommandItem[] = [];
+  let matchedTransactions: CommandItem[] = [];
   let results: CommandItem[];
 
   if (isEmptyQuery) {
@@ -243,7 +253,18 @@ export function CommandPalette({
     otherItems = allItems.filter((item) => !recentIdSet.has(item.id));
     results = [...recentItems, ...otherItems];
   } else {
-    results = filterItems(allItems, debouncedQuery);
+    commandResults = filterItems(allItems, debouncedQuery);
+    if (includeDataItems) {
+      matchedCreditLines = filterItems(creditLineItems, debouncedQuery).slice(
+        0,
+        MAX_DATA_ITEMS_PER_GROUP,
+      );
+      matchedTransactions = filterItems(transactionItems, debouncedQuery).slice(
+        0,
+        MAX_DATA_ITEMS_PER_GROUP,
+      );
+    }
+    results = [...commandResults, ...matchedCreditLines, ...matchedTransactions];
   }
 
   // ── Side-effects ───────────────────────────────────────────────────────────
@@ -501,8 +522,35 @@ export function CommandPalette({
                 </>
               )}
             </>
-          ) : (
+          ) : isEmptyQuery ? (
             results.map((item, index) => renderOption(item, index))
+          ) : (
+            <>
+              {commandResults.map((item, index) => renderOption(item, index))}
+              {matchedCreditLines.length > 0 && (
+                <>
+                  <li className="cp-group-label" role="presentation">
+                    Credit lines
+                  </li>
+                  {matchedCreditLines.map((item, offset) =>
+                    renderOption(item, commandResults.length + offset),
+                  )}
+                </>
+              )}
+              {matchedTransactions.length > 0 && (
+                <>
+                  <li className="cp-group-label" role="presentation">
+                    Transactions
+                  </li>
+                  {matchedTransactions.map((item, offset) =>
+                    renderOption(
+                      item,
+                      commandResults.length + matchedCreditLines.length + offset,
+                    ),
+                  )}
+                </>
+              )}
+            </>
           )}
         </ul>
 
