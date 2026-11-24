@@ -44,6 +44,7 @@ import {
   computeLtvSnapshot,
   computeSlippage,
   computeSubstitutionFee,
+  DEFAULT_SLIPPAGE,
   fmtLtv,
   fmtLtvDelta,
   isStaleQuote,
@@ -116,6 +117,15 @@ interface CollateralSubstitutionModalProps {
    * tests to deterministically simulate failures and verify retry behavior.
    */
   submitCollateralSwap?: (payload: SubmitCollateralSwapPayload) => Promise<void>;
+  /**
+   * Optional pre-selected incoming asset. When provided, the modal opens
+   * directly on the review or confirm step instead of the asset selector.
+   */
+  initialIncomingAsset?: CollateralAsset;
+  /** Optional initial slippage tolerance preset. */
+  initialSlippage?: SlippageTolerance;
+  /** Which step to open on when `initialIncomingAsset` is provided. */
+  initialStep?: 'review' | 'confirm';
   /**
    * Simulated network delay in ms for the default submission Promise.
    * Defaults to 1800. Override in tests to keep them fast.
@@ -659,13 +669,38 @@ export function CollateralSubstitutionModal({
   currentAsset,
   triggerRef,
   submitCollateralSwap,
+  initialIncomingAsset,
+  initialSlippage,
+  initialStep = 'confirm',
   _delayMs = 1800,
 }: CollateralSubstitutionModalProps) {
   const modalId = 'collateral-substitution-modal';
 
   // The reducer owns the complete modal lifecycle. Each phase carries only
   // the data valid for that phase, so submitting cannot coexist with a stale quote.
-  const [state, dispatch] = useReducer(collateralSubstitutionReducer, undefined, createInitialState);
+  const [state, dispatch] = useReducer(
+    collateralSubstitutionReducer,
+    undefined,
+    () => {
+      if (initialIncomingAsset) {
+        const snap = computeLtvSnapshot(initialIncomingAsset, loanBalance);
+        return {
+          phase: 'reviewing' as const,
+          step: initialStep,
+          selectedAsset: initialIncomingAsset,
+          confirmText: '',
+          slippageTolerance: initialSlippage ?? DEFAULT_SLIPPAGE,
+          quote: {
+            ltvRatio: snap.ltvRatio,
+            timestampMs: Date.now(),
+          },
+          retryCount: 0,
+          staleQuote: false,
+        };
+      }
+      return createInitialState();
+    },
+  );
   const selected = state.selectedAsset;
   const confirmText = state.confirmText;
   const slippageTolerance = state.slippageTolerance;
