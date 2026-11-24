@@ -76,7 +76,32 @@ When an RPC call fails, `SorobanCreditDataSource` categorizes the failure into a
 
 ---
 
-## 5. Bundle Footprint
+## 5. Write Flow (`SorobanWriteClient`)
+
+Draw and repay mutations use `src/services/credit/sorobanWriteClient.ts` to execute real Soroban contract invocations when `VITE_CREDIT_DATA_SOURCE=soroban` is enabled, and fall back to a deterministic `MockSorobanWriteClient` when `VITE_CREDIT_DATA_SOURCE=mock` (the default for local dev and unit tests).
+
+### Lifecycle (`submitContractCall`)
+1. **Load Source Account**: Fetches the connected borrower's sequence number via `rpc.Server#getAccount(source)`.
+2. **Build Invocation**: Constructs a `TransactionBuilder` with `Contract#call(method, ...args)`. Amounts are converted to 7-decimal `i128` stroops via `src/utils/money.ts` (`amountToStroops`) — never floating-point math.
+3. **Simulate**: Runs `rpc.Server#simulateTransaction(tx)`. Simulation errors are surfaced as classified `SorobanWriteError('simulation_error', ...)` without prompting the wallet or submitting.
+4. **Assemble**: Applies footprint, auth entries, and resource fees via `rpc.assembleTransaction(tx, simResponse).build()`.
+5. **Wallet Signature**: Calls `signTransaction(walletType, xdr, networkPassphrase)` in `src/utils/wallet.ts` (Freighter `signTransaction`, Albedo `tx`, xBull `signXDR`, Rabet `sign`). User cancellation throws `user_rejected`, returning the UI to the review step with a non-terminal message and never submitting.
+6. **Submit**: Sends the signed transaction via `rpc.Server#sendTransaction(signedTx)`.
+7. **Poll**: Polls `rpc.Server#getTransaction(txHash)` while `NOT_FOUND` until:
+   - `SUCCESS` — returns `{ txHash, status: 'SUCCESS' }`
+   - `FAILED` — throws a terminal `SorobanWriteError('transaction_failed', ...)`
+   - Timeout (`pollTimeoutMs`, default `30000` ms) — stops polling and throws a retryable `SorobanWriteError('timeout', ...)`
+
+### Write Entrypoints
+- `drawCredit(lineId, amount, options?)` -> invokes contract method `draw(line_id: String, amount: i128)`
+- `repayCredit(lineId, amount, options?)` -> invokes contract method `repay(line_id: String, amount: i128)`
+
+### Idempotency
+Both `DrawCreditPage` and `RepayModal` attach a deterministic `idempotencyKey` (via `src/utils/idempotency.ts`) per draft session. Concurrent or repeated submissions with the same key return the in-flight or completed `{ txHash, status }` without double-sending.
+
+---
+
+## 6. Bundle Footprint
 
 Bundle metrics recorded with `@stellar/stellar-sdk` split into manual chunk `stellar`:
 - `stellar` chunk: ~661 kB (~138.5 kB gzipped)

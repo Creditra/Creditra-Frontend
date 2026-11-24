@@ -36,8 +36,18 @@ function extractCode(err: unknown): string | undefined {
   if (!err || typeof err !== 'object') {
     return undefined;
   }
-  const candidate = err as { code?: unknown; errorCode?: unknown; reason?: unknown };
-  for (const value of [candidate.code, candidate.errorCode, candidate.reason]) {
+  const candidate = err as {
+    code?: unknown;
+    errorCode?: unknown;
+    reason?: unknown;
+    type?: unknown;
+  };
+  for (const value of [
+    candidate.code,
+    candidate.errorCode,
+    candidate.reason,
+    candidate.type,
+  ]) {
     if (typeof value === 'string' && value.length > 0) {
       return value;
     }
@@ -135,6 +145,22 @@ export function classifyDrawError(err: unknown): ClassifiedDrawError {
   const soroban = classifySorobanError(err);
   if (soroban) {
     return soroban;
+  }
+
+  if (code === 'simulation_error' || code === 'transaction_failed') {
+    return {
+      kind: 'terminal',
+      code,
+      message: extractMessage(err) ?? DEFAULT_TERMINAL_MESSAGE,
+    };
+  }
+
+  if (code === 'wallet_not_connected') {
+    return {
+      kind: 'retryable',
+      code,
+      message: extractMessage(err) ?? 'Connect your Stellar wallet and try again.',
+    };
   }
 
   // Message-based classification for errors that lack a code.

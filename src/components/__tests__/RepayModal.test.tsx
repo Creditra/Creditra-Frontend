@@ -1,8 +1,13 @@
 import React, { useRef } from 'react';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { RepayModal } from '../RepayModal';
+import {
+  setCreditWriteClientForTesting,
+  SorobanWriteError,
+  type CreditWriteClient,
+} from '@/services/credit/sorobanWriteClient';
 
 // Suppress DOM side-effects from companion hooks
 vi.mock('@/hooks/useBodyScrollLock', () => ({ useBodyScrollLock: vi.fn() }));
@@ -183,5 +188,65 @@ describe('RepayModal – Repay all shortcut', () => {
 
     const repayAll = screen.getByTestId('repay-all-shortcut');
     expect(repayAll).toHaveClass('repay-modal-repay-all-btn');
+  });
+});
+
+describe('RepayModal – Soroban write client integration', () => {
+  afterEach(() => {
+    setCreditWriteClientForTesting(null);
+    vi.clearAllMocks();
+  });
+
+  it('submits repayment via write client and displays the real txHash', async () => {
+    const user = userEvent.setup();
+    const txHash = 'b'.repeat(64);
+    const repayCredit = vi.fn().mockResolvedValue({ txHash, status: 'SUCCESS' });
+    setCreditWriteClientForTesting({
+      submitContractCall: vi.fn(),
+      drawCredit: vi.fn(),
+      repayCredit,
+    } as unknown as CreditWriteClient);
+
+    render(<TestWrapper />);
+
+    await user.type(screen.getByTestId('repay-amount-input'), '500');
+    await user.click(screen.getByRole('button', { name: /review repayment/i }));
+    await user.click(screen.getByRole('button', { name: /confirm repayment/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('repay-tx-hash')).toHaveTextContent(txHash);
+    });
+    expect(repayCredit).toHaveBeenCalledTimes(1);
+    expect(repayCredit).toHaveBeenCalledWith(
+      'CL-001',
+      '500',
+      expect.objectContaining({ idempotencyKey: expect.stringMatching(/^idem_/) }),
+    );
+  });
+
+  it('returns to review step with a non-terminal message on wallet user_rejected', async () => {
+    const user = userEvent.setup();
+    const repayCredit = vi
+      .fn()
+      .mockRejectedValue(
+        new SorobanWriteError('user_rejected', 'User declined signature'),
+      );
+    setCreditWriteClientForTesting({
+      submitContractCall: vi.fn(),
+      drawCredit: vi.fn(),
+      repayCredit,
+    } as unknown as CreditWriteClient);
+
+    render(<TestWrapper />);
+
+    await user.type(screen.getByTestId('repay-amount-input'), '500');
+    await user.click(screen.getByRole('button', { name: /review repayment/i }));
+    await user.click(screen.getByRole('button', { name: /confirm repayment/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('repay-submit-error')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('repay-submit-error')).toHaveTextContent(/cancelled/i);
+    expect(screen.getByRole('button', { name: /confirm repayment/i })).toBeInTheDocument();
   });
 });

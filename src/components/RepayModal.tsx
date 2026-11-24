@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle, Info } from 'lucide-react';
 import { formatMoney, getRepayAmountValidation, requiresRepayConfirmation } from '../utils/amountValidation';
 import {
@@ -7,6 +7,11 @@ import {
 } from '../utils/currency';
 import { getAccruedInterest, getAccruedInterestDays } from '../lib/interest';
 import { allocateRepayment } from '../lib/repay-allocation';
+import { classifyDrawError } from '../lib/draw-errors';
+import { WalletContext } from '../context/WalletContext';
+import { repayCredit, SorobanWriteError } from '../services/credit/sorobanWriteClient';
+import { generateIdempotencyKey } from '../utils/idempotency';
+import { offlineMutation } from '../utils/offline';
 import { InlineHelpOverlay } from './InlineHelpOverlay';
 import { PendingButton } from './PendingButton';
 import './RepayModal.css';
@@ -99,6 +104,8 @@ export function RepayModal({
   onSuccess,
   triggerRef,
 }: RepayModalProps) {
+  const walletContext = useContext(WalletContext);
+  const wallet = walletContext?.wallet ?? null;
   const [step, setStep] = useState<ModalStep>('input');
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const helpTriggerRef = useRef<HTMLButtonElement>(null);
@@ -107,7 +114,22 @@ export function RepayModal({
   const [confirmAmountStr, setConfirmAmountStr] = useState('');
   const [isRepayAllLocked, setIsRepayAllLocked] = useState(false);
   const [repayAllLockAnnouncement, setRepayAllLockAnnouncement] = useState('');
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<{
+    message: string;
+    retryable: boolean;
+  } | null>(null);
   const amountInputRef = useRef<HTMLInputElement>(null);
+  const isSubmittingRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const draftSessionRef = useRef<number>(Date.now());
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (step === 'review') {
@@ -187,15 +209,56 @@ export function RepayModal({
 
   const handleReview = () => {
     if (!isInvalid) {
+      setSubmitError(null);
       setStep('review');
     }
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setSubmitError(null);
     setStep('pending');
-    setTimeout(() => {
-      setStep('success');
-    }, 2500);
+
+    const repayAmountStr = amountStr.trim() || String(amount);
+    const idempotencyKey = generateIdempotencyKey({
+      creditLineId: creditLine.id,
+      incomingAssetId: `repay:${repayAmountStr}`,
+      initiatedAtMs: draftSessionRef.current,
+    });
+
+    try {
+      await offlineMutation({
+        fn: async () => {
+          const result = await repayCredit(creditLine.id, repayAmountStr, {
+            source: wallet?.publicKey,
+            walletType: wallet?.type,
+            idempotencyKey,
+          });
+          if (!isMountedRef.current) return;
+          setTxHash(result.txHash);
+          setStep('success');
+        },
+        offlineMessage:
+          'You are offline, so your repayment cannot be processed right now. Please reconnect and try again.',
+      });
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      const classified = classifyDrawError(err);
+      const isUserRejected =
+        (err instanceof SorobanWriteError && err.code === 'user_rejected') ||
+        classified.code === 'user_rejected';
+
+      setSubmitError({
+        message: isUserRejected
+          ? 'You cancelled the signature request in your wallet. Review your details and try again when ready.'
+          : classified.message,
+        retryable: isUserRejected || classified.kind === 'retryable',
+      });
+      setStep('review');
+    } finally {
+      isSubmittingRef.current = false;
+    }
   };
 
   const handleCloseComplete = () => {
@@ -580,6 +643,30 @@ export function RepayModal({
             </div>
           )}
 
+          {submitError && (
+            <div
+              role="alert"
+              aria-live="assertive"
+              data-testid="repay-submit-error"
+              style={{
+                display: 'flex',
+                gap: '0.5rem',
+                alignItems: 'flex-start',
+                border: `1px solid ${submitError.retryable ? 'rgba(210,153,34,0.35)' : 'rgba(248,81,73,0.35)'}`,
+                background: submitError.retryable ? 'rgba(210,153,34,0.08)' : 'rgba(248,81,73,0.08)',
+                color: submitError.retryable ? COLOR.warning : COLOR.danger,
+                borderRadius: 8,
+                padding: '0.75rem',
+                marginBottom: '1rem',
+                fontSize: '0.84rem',
+                lineHeight: 1.5,
+              }}
+            >
+              <AlertCircle size={16} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>{submitError.message}</span>
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: '1rem' }}>
             <button className="focus-ring" onClick={() => setStep('input')} style={{ ...btn.outline, flex: 1 }}>
               Back
@@ -685,7 +772,7 @@ export function RepayModal({
             </p>
             <p
               style={{
-                margin: 0,
+                margin: txHash ? '0 0 0.4rem' : 0,
                 fontSize: '0.8rem',
                 color: COLOR.muted,
                 display: 'flex',
@@ -697,6 +784,34 @@ export function RepayModal({
                 Reduced to <span className="tabular-nums">{newPct}%</span>
               </span>
             </p>
+            {txHash && (
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: '0.78rem',
+                  color: COLOR.muted,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: '0.5rem',
+                }}
+              >
+                <span>Transaction Hash:</span>
+                <span
+                  data-testid="repay-tx-hash"
+                  style={{
+                    color: COLOR.text,
+                    fontFamily: 'monospace',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    maxWidth: '60%',
+                  }}
+                  title={txHash}
+                >
+                  {txHash}
+                </span>
+              </p>
+            )}
           </div>
 
           <button className="focus-ring" onClick={handleCloseComplete} style={{ ...btn.primary, width: '100%' }}>

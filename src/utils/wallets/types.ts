@@ -18,6 +18,10 @@ export interface FreighterWallet {
   getPublicKey: () => Promise<string>;
   getNetwork: () => Promise<string>;
   switchNetwork?: (network: string) => Promise<void>;
+  signTransaction?: (
+    xdr: string,
+    opts?: { networkPassphrase?: string; network?: string; accountToSign?: string },
+  ) => Promise<string | { signedTxXdr?: string; error?: string }>;
   /** Newer Freighter builds expose the full account list (non-interactive). */
   getAddresses?: () => Promise<string[] | { addresses?: string[] }>;
   getAccounts?: () => Promise<string[]>;
@@ -25,18 +29,31 @@ export interface FreighterWallet {
 
 export interface AlbedoWallet {
   publicKey: (options: Record<string, never>) => Promise<{ pubkey: string }>;
+  tx?: (params: {
+    xdr: string;
+    network?: string;
+    submit?: boolean;
+  }) => Promise<{ signed_envelope_xdr: string; tx_hash?: string }>;
   getAddresses?: () => Promise<string[] | { addresses?: string[] }>;
   getAccounts?: () => Promise<string[]>;
 }
 
 export interface XBullWallet {
   getPublicKey: () => Promise<string>;
+  signXDR?: (
+    xdr: string,
+    opts?: { network?: string; publicKey?: string },
+  ) => Promise<string | { xdr?: string }>;
   getAddresses?: () => Promise<string[] | { addresses?: string[] }>;
   getAccounts?: () => Promise<string[]>;
 }
 
 export interface RabetWallet {
   connect: () => Promise<{ publicKey: string }>;
+  sign?: (
+    xdr: string,
+    network: 'mainnet' | 'testnet',
+  ) => Promise<{ xdr?: string; error?: string } | string>;
   getAddresses?: () => Promise<string[] | { addresses?: string[] }>;
   getAccounts?: () => Promise<string[]>;
 }

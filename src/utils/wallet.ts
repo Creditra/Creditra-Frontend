@@ -241,6 +241,144 @@ export const connectWallet = async (type: WalletType): Promise<WalletInfo> => {
   }
 };
 
+const isTestnetPassphrase = (networkPassphrase: string): boolean =>
+  networkPassphrase.toLowerCase().includes('test');
+
+/**
+ * Request a transaction signature from the connected Stellar wallet.
+ *
+ * Supports Freighter (`signTransaction`), Albedo (`tx`), xBull (`signXDR`),
+ * and Rabet (`sign`). Errors (including user cancellation/rejection) are
+ * normalized into `WalletConnectError` (with `type: 'user_rejected'` on
+ * cancellation).
+ */
+export const signTransaction = async (
+  type: WalletType,
+  xdr: string,
+  networkPassphrase: string,
+): Promise<string> => {
+  if (!isWalletInstalled(type)) {
+    const walletNames: Record<WalletType, string> = {
+      freighter: 'Freighter',
+      albedo: 'Albedo',
+      xbull: 'xBull',
+      rabet: 'Rabet',
+    };
+    throw new WalletConnectError(
+      'not_found',
+      `${walletNames[type]} wallet not found. Please install the extension.`,
+    );
+  }
+
+  const testnet = isTestnetPassphrase(networkPassphrase);
+
+  try {
+    if (type === 'freighter') {
+      const signFn = window.freighter?.signTransaction;
+      if (typeof signFn !== 'function') {
+        throw new WalletConnectError(
+          'connection_failed',
+          'Freighter wallet does not support transaction signing.',
+        );
+      }
+      const result = await signFn.call(window.freighter, xdr, { networkPassphrase });
+      if (typeof result === 'string' && result.length > 0) {
+        return result;
+      }
+      if (result && typeof result === 'object') {
+        if (result.error) {
+          throw new Error(result.error);
+        }
+        if (typeof result.signedTxXdr === 'string' && result.signedTxXdr.length > 0) {
+          return result.signedTxXdr;
+        }
+      }
+      throw new WalletConnectError(
+        'connection_failed',
+        'Freighter returned an empty signed transaction.',
+      );
+    }
+
+    if (type === 'albedo') {
+      const txFn = window.albedo?.tx;
+      if (typeof txFn !== 'function') {
+        throw new WalletConnectError(
+          'connection_failed',
+          'Albedo wallet does not support transaction signing.',
+        );
+      }
+      const result = await txFn.call(window.albedo, {
+        xdr,
+        network: testnet ? 'testnet' : 'public',
+        submit: false,
+      });
+      if (typeof result?.signed_envelope_xdr === 'string' && result.signed_envelope_xdr.length > 0) {
+        return result.signed_envelope_xdr;
+      }
+      throw new WalletConnectError(
+        'connection_failed',
+        'Albedo returned an empty signed transaction.',
+      );
+    }
+
+    if (type === 'xbull') {
+      const signXdrFn = window.xBullSDK?.signXDR;
+      if (typeof signXdrFn !== 'function') {
+        throw new WalletConnectError(
+          'connection_failed',
+          'xBull wallet does not support transaction signing.',
+        );
+      }
+      const result = await signXdrFn.call(window.xBullSDK, xdr, {
+        network: networkPassphrase,
+      });
+      if (typeof result === 'string' && result.length > 0) {
+        return result;
+      }
+      if (result && typeof result === 'object' && typeof result.xdr === 'string' && result.xdr.length > 0) {
+        return result.xdr;
+      }
+      throw new WalletConnectError(
+        'connection_failed',
+        'xBull returned an empty signed transaction.',
+      );
+    }
+
+    if (type === 'rabet') {
+      const signFn = window.rabet?.sign;
+      if (typeof signFn !== 'function') {
+        throw new WalletConnectError(
+          'connection_failed',
+          'Rabet wallet does not support transaction signing.',
+        );
+      }
+      const result = await signFn.call(window.rabet, xdr, testnet ? 'testnet' : 'mainnet');
+      if (typeof result === 'string' && result.length > 0) {
+        return result;
+      }
+      if (result && typeof result === 'object') {
+        if (result.error) {
+          throw new Error(result.error);
+        }
+        if (typeof result.xdr === 'string' && result.xdr.length > 0) {
+          return result.xdr;
+        }
+      }
+      throw new WalletConnectError(
+        'connection_failed',
+        'Rabet returned an empty signed transaction.',
+      );
+    }
+
+    throw new Error('Unsupported wallet type');
+  } catch (error: unknown) {
+    if (error instanceof WalletConnectError) {
+      throw error;
+    }
+    throw classifyWalletError(error);
+  }
+};
+
 // ─── Multi-account discovery ─────────────────────────────────────────────────
 
 /**
