@@ -315,6 +315,20 @@ export const ROUTE_MANIFEST: RouteManifestEntry[] = [
       },
     },
   },
+  {
+    path: '/simulator',
+    pageName: 'Simulator',
+    description: 'Model draw fees, interest accrual, payoff timelines, and repayment schedules side by side.',
+    load: () => import('../pages/Simulator'),
+    Component: lazy(() => import('../pages/Simulator')),
+    nav: {
+      palette: {
+        label: 'Simulator',
+        icon: '🧮',
+        description: 'Simulate draw fees, interest, and payoff plans',
+      },
+    },
+  },
 ];
 
 export function getEnabledRoutes(): RouteManifestEntry[] {

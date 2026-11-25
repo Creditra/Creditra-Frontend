@@ -7,37 +7,52 @@
  *
  * `safeReturnPath` only accepts same-origin, in-app paths. Everything else
  * silently falls back to `fallback`. In development a warning is logged with
- * the rejected value so bad call sites are visible during development.
+ * the rejection reason so bad call sites are visible during development.
  *
  * Validation is done by parsing with the `URL` constructor and comparing
  * origins — never by regex alone.
  */
 const MAX_LENGTH = 512;
-const ALLOWED_PREFIXES = ['/linked-accounts', '/profile', '/settings', '/open-credit'];
+const ALLOWED_PREFIXES = [
+  '/linked-accounts',
+  '/profile',
+  '/settings',
+  '/open-credit',
+  '/dashboard',
+];
 const ROOT_PATH = '/';
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
+type RejectReason =
+  | 'not-a-string'
+  | 'too-long'
+  | 'not-relative'
+  | 'control-characters'
+  | 'parse-error'
+  | 'cross-origin'
+  | 'not-allowlisted';
+
 export function safeReturnPath(input: unknown, fallback = '/linked-accounts'): string {
   if (typeof input !== 'string') {
-    warn(input);
+    warn('not-a-string');
     return fallback;
   }
 
   if (input.length > MAX_LENGTH) {
-    warn(input);
+    warn('too-long');
     return fallback;
   }
 
   // Must start with a single '/' and not be protocol-relative ('//') or use a
   // backslash trick ('/\...').
   if (!input.startsWith('/') || input.startsWith('//') || input.startsWith('/\\')) {
-    warn(input);
+    warn('not-relative');
     return fallback;
   }
 
   // No control characters or backslashes.
   if (CONTROL_CHARACTERS.test(input) || input.includes('\\')) {
-    warn(input);
+    warn('control-characters');
     return fallback;
   }
 
@@ -45,13 +60,13 @@ export function safeReturnPath(input: unknown, fallback = '/linked-accounts'): s
   try {
     parsed = new URL(input, window.location.origin);
   } catch {
-    warn(input);
+    warn('parse-error');
     return fallback;
   }
 
   // Must resolve to the same origin (blocks absolute and protocol-relative URLs).
   if (parsed.origin !== window.location.origin) {
-    warn(input);
+    warn('cross-origin');
     return fallback;
   }
 
@@ -61,15 +76,15 @@ export function safeReturnPath(input: unknown, fallback = '/linked-accounts'): s
     ALLOWED_PREFIXES.some((prefix) => parsed.pathname.startsWith(prefix));
 
   if (!isAllowed) {
-    warn(parsed.pathname);
+    warn('not-allowlisted');
     return fallback;
   }
 
   return parsed.pathname + parsed.search + parsed.hash;
 }
 
-function warn(value: unknown): void {
+function warn(reason: RejectReason): void {
   if (import.meta.env.DEV) {
-    console.warn(`[safeReturnPath] rejected value and fell back to default: ${String(value)}`);
+    console.warn(`[safeReturnPath] rejected redirect: ${reason}`);
   }
 }

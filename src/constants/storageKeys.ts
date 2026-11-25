@@ -76,6 +76,9 @@ export const dashboardSessionActiveKey = (owner: string): string =>
 /** App-wide privacy mode preference (`PrivacyContext`). */
 export const PRIVACY_MODE_STORAGE_KEY = 'creditra.privacy_mode';
 
+/** Saved transaction filter presets (`transaction-presets`). */
+export const TRANSACTION_PRESETS_STORAGE_KEY = 'creditra.transaction_presets';
+
 /** Per-wallet autopay schedules persistence key. */
 export function autopaySchedulesStorageKey(owner: string): string {
   return `creditra.autopay_schedules.${owner}.v1`;

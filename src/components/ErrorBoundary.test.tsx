@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { BrowserRouter } from "react-router-dom";
 import { vi } from "vitest";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -58,15 +58,75 @@ describe("ErrorBoundary", () => {
     );
 
     expect(
+      screen.getByRole("button", { name: /try again/i }),
+    ).toHaveAttribute("type", "button");
+    expect(
       screen.getByRole("button", { name: /go back/i }),
-    ).toBeInTheDocument();
+    ).toHaveAttribute("type", "button");
     expect(
       screen.getByRole("link", { name: /dashboard/i }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /reload/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /reload/i })).toHaveAttribute(
+      "type",
+      "button",
+    );
     expect(
       screen.getByRole("link", { name: /contact support/i }),
     ).toBeInTheDocument();
+  });
+
+  it("recovers after Try again when the child stops throwing", () => {
+    let shouldThrow = true;
+    const FlakyChild = () => {
+      if (shouldThrow) {
+        throw new Error("Transient error");
+      }
+      return <div>Recovered content</div>;
+    };
+
+    render(
+      <BrowserRouter>
+        <ErrorBoundary>
+          <FlakyChild />
+        </ErrorBoundary>
+      </BrowserRouter>,
+    );
+
+    expect(screen.getByText("Something went wrong")).toBeInTheDocument();
+
+    shouldThrow = false;
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+
+    expect(screen.getByText("Recovered content")).toBeInTheDocument();
+    expect(screen.queryByText("Something went wrong")).not.toBeInTheDocument();
+  });
+
+  it("clears the fallback on popstate navigation", () => {
+    let shouldThrow = true;
+    const FlakyChild = () => {
+      if (shouldThrow) {
+        throw new Error("Navigation error");
+      }
+      return <div>Recovered after back</div>;
+    };
+
+    render(
+      <BrowserRouter>
+        <ErrorBoundary>
+          <FlakyChild />
+        </ErrorBoundary>
+      </BrowserRouter>,
+    );
+
+    expect(screen.getByText("Something went wrong")).toBeInTheDocument();
+
+    shouldThrow = false;
+    act(() => {
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    expect(screen.getByText("Recovered after back")).toBeInTheDocument();
+    expect(screen.queryByText("Something went wrong")).not.toBeInTheDocument();
   });
 
   it("records render errors in the diagnostics buffer", () => {

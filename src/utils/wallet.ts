@@ -5,9 +5,10 @@ import {
   WalletErrorType,
   StoredWalletPreference,
 } from '../types/wallet';
-import { readJson, writeJson, removeKey } from './storage';
+import { readJson, writeJson, removeKey, removeSessionKey } from './storage';
 import { isValidAccountId } from './strkey';
-import { getCreditNetworkConfig } from '../config/creditNetwork';
+import { getCreditNetworkConfig, type CreditNetwork } from '../config/creditNetwork';
+import { AUTH_TOKEN_KEY } from '../constants/storageKeys';
 import { getWalletAdapter } from './wallets';
 
 // Re-export types for convenience
@@ -40,7 +41,8 @@ const ERROR_MESSAGES: Record<WalletErrorType, string> = {
  * - Wrong network
  * - Generic connection failure (catch-all)
  * 
- * Raw error details are logged in development but never shown to users.
+ * Only the derived code and resulting type are logged in development; the raw
+ * error object and message are never logged, since they may carry account data.
  */
 export const classifyWalletError = (raw: unknown): WalletConnectError => {
   // Already classified errors pass through unchanged
@@ -68,36 +70,45 @@ export const classifyWalletError = (raw: unknown): WalletConnectError => {
     ? (raw as any).code
     : undefined;
 
-  // Log raw error in development for debugging
-  if (process.env.NODE_ENV === 'development') {
-    console.error('[classifyWalletError] Raw error:', raw);
+  // Determine the classified error. The raw error object and its message may
+  // carry account data, so they are never logged — only the derived code and
+  // resulting type are surfaced in development.
+  const result = (() => {
+    // Check for user rejection signals
+    // EIP-1193 standard error code for user rejection
+    if (code === 4001) {
+      return new WalletConnectError('user_rejected', ERROR_MESSAGES.user_rejected);
+    }
+
+    // Check message for rejection keywords
+    const lowerMessage = message.toLowerCase();
+    const rejectionKeywords = ['reject', 'decline', 'cancel', 'denied', 'user denied'];
+    if (rejectionKeywords.some(keyword => lowerMessage.includes(keyword))) {
+      return new WalletConnectError('user_rejected', ERROR_MESSAGES.user_rejected);
+    }
+
+    // Check for extension not found
+    if (lowerMessage.includes('not found') || lowerMessage.includes('not installed')) {
+      return new WalletConnectError('not_found', ERROR_MESSAGES.not_found);
+    }
+
+    // Check for network mismatch
+    if (lowerMessage.includes('network') || lowerMessage.includes('testnet') || lowerMessage.includes('mainnet')) {
+      return new WalletConnectError('wrong_network', ERROR_MESSAGES.wrong_network);
+    }
+
+    // Default: generic connection failure
+    return new WalletConnectError('connection_failed', ERROR_MESSAGES.connection_failed);
+  })();
+
+  // Log only the code and resulting type in development. The raw error object
+  // and message are intentionally excluded — they may contain account data.
+  // Drop the log entirely when no code is present.
+  if (process.env.NODE_ENV === 'development' && code !== undefined) {
+    console.error('[classifyWalletError]', { code, type: result.type });
   }
 
-  // Check for user rejection signals
-  // EIP-1193 standard error code for user rejection
-  if (code === 4001) {
-    return new WalletConnectError('user_rejected', ERROR_MESSAGES.user_rejected);
-  }
-
-  // Check message for rejection keywords
-  const lowerMessage = message.toLowerCase();
-  const rejectionKeywords = ['reject', 'decline', 'cancel', 'denied', 'user denied'];
-  if (rejectionKeywords.some(keyword => lowerMessage.includes(keyword))) {
-    return new WalletConnectError('user_rejected', ERROR_MESSAGES.user_rejected);
-  }
-
-  // Check for extension not found
-  if (lowerMessage.includes('not found') || lowerMessage.includes('not installed')) {
-    return new WalletConnectError('not_found', ERROR_MESSAGES.not_found);
-  }
-
-  // Check for network mismatch
-  if (lowerMessage.includes('network') || lowerMessage.includes('testnet') || lowerMessage.includes('mainnet')) {
-    return new WalletConnectError('wrong_network', ERROR_MESSAGES.wrong_network);
-  }
-
-  // Default: generic connection failure
-  return new WalletConnectError('connection_failed', ERROR_MESSAGES.connection_failed);
+  return result;
 };
 
 // ─── Storage keys ──────────────────────────────────────────────────────────────
@@ -241,6 +252,144 @@ export const connectWallet = async (type: WalletType): Promise<WalletInfo> => {
   }
 };
 
+const isTestnetPassphrase = (networkPassphrase: string): boolean =>
+  networkPassphrase.toLowerCase().includes('test');
+
+/**
+ * Request a transaction signature from the connected Stellar wallet.
+ *
+ * Supports Freighter (`signTransaction`), Albedo (`tx`), xBull (`signXDR`),
+ * and Rabet (`sign`). Errors (including user cancellation/rejection) are
+ * normalized into `WalletConnectError` (with `type: 'user_rejected'` on
+ * cancellation).
+ */
+export const signTransaction = async (
+  type: WalletType,
+  xdr: string,
+  networkPassphrase: string,
+): Promise<string> => {
+  if (!isWalletInstalled(type)) {
+    const walletNames: Record<WalletType, string> = {
+      freighter: 'Freighter',
+      albedo: 'Albedo',
+      xbull: 'xBull',
+      rabet: 'Rabet',
+    };
+    throw new WalletConnectError(
+      'not_found',
+      `${walletNames[type]} wallet not found. Please install the extension.`,
+    );
+  }
+
+  const testnet = isTestnetPassphrase(networkPassphrase);
+
+  try {
+    if (type === 'freighter') {
+      const signFn = window.freighter?.signTransaction;
+      if (typeof signFn !== 'function') {
+        throw new WalletConnectError(
+          'connection_failed',
+          'Freighter wallet does not support transaction signing.',
+        );
+      }
+      const result = await signFn.call(window.freighter, xdr, { networkPassphrase });
+      if (typeof result === 'string' && result.length > 0) {
+        return result;
+      }
+      if (result && typeof result === 'object') {
+        if (result.error) {
+          throw new Error(result.error);
+        }
+        if (typeof result.signedTxXdr === 'string' && result.signedTxXdr.length > 0) {
+          return result.signedTxXdr;
+        }
+      }
+      throw new WalletConnectError(
+        'connection_failed',
+        'Freighter returned an empty signed transaction.',
+      );
+    }
+
+    if (type === 'albedo') {
+      const txFn = window.albedo?.tx;
+      if (typeof txFn !== 'function') {
+        throw new WalletConnectError(
+          'connection_failed',
+          'Albedo wallet does not support transaction signing.',
+        );
+      }
+      const result = await txFn.call(window.albedo, {
+        xdr,
+        network: testnet ? 'testnet' : 'public',
+        submit: false,
+      });
+      if (typeof result?.signed_envelope_xdr === 'string' && result.signed_envelope_xdr.length > 0) {
+        return result.signed_envelope_xdr;
+      }
+      throw new WalletConnectError(
+        'connection_failed',
+        'Albedo returned an empty signed transaction.',
+      );
+    }
+
+    if (type === 'xbull') {
+      const signXdrFn = window.xBullSDK?.signXDR;
+      if (typeof signXdrFn !== 'function') {
+        throw new WalletConnectError(
+          'connection_failed',
+          'xBull wallet does not support transaction signing.',
+        );
+      }
+      const result = await signXdrFn.call(window.xBullSDK, xdr, {
+        network: networkPassphrase,
+      });
+      if (typeof result === 'string' && result.length > 0) {
+        return result;
+      }
+      if (result && typeof result === 'object' && typeof result.xdr === 'string' && result.xdr.length > 0) {
+        return result.xdr;
+      }
+      throw new WalletConnectError(
+        'connection_failed',
+        'xBull returned an empty signed transaction.',
+      );
+    }
+
+    if (type === 'rabet') {
+      const signFn = window.rabet?.sign;
+      if (typeof signFn !== 'function') {
+        throw new WalletConnectError(
+          'connection_failed',
+          'Rabet wallet does not support transaction signing.',
+        );
+      }
+      const result = await signFn.call(window.rabet, xdr, testnet ? 'testnet' : 'mainnet');
+      if (typeof result === 'string' && result.length > 0) {
+        return result;
+      }
+      if (result && typeof result === 'object') {
+        if (result.error) {
+          throw new Error(result.error);
+        }
+        if (typeof result.xdr === 'string' && result.xdr.length > 0) {
+          return result.xdr;
+        }
+      }
+      throw new WalletConnectError(
+        'connection_failed',
+        'Rabet returned an empty signed transaction.',
+      );
+    }
+
+    throw new Error('Unsupported wallet type');
+  } catch (error: unknown) {
+    if (error instanceof WalletConnectError) {
+      throw error;
+    }
+    throw classifyWalletError(error);
+  }
+};
+
 // ─── Multi-account discovery ─────────────────────────────────────────────────
 
 /**
@@ -376,6 +525,69 @@ export const disconnectWallet = () => {
   removeKey(STORAGE_KEY_PREFERENCE_LEGACY);
   removeKey(STORAGE_KEY_REMEMBER);
   removeKey(STORAGE_KEY_ACCOUNT);
+  removeKey(AUTH_TOKEN_KEY);
+  removeSessionKey(AUTH_TOKEN_KEY);
+};
+
+function extractSignedXdr(result: unknown): string {
+  if (typeof result === 'string' && result.length > 0) return result;
+  if (result && typeof result === 'object') {
+    const record = result as Record<string, unknown>;
+    for (const key of [
+      'signedTxXdr',
+      'signedXdr',
+      'signedXDR',
+      'signed_envelope_xdr',
+      'xdr',
+    ]) {
+      if (typeof record[key] === 'string' && record[key]) return record[key] as string;
+    }
+  }
+  throw new WalletConnectError(
+    'connection_failed',
+    'Your wallet did not return a signed transaction.',
+  );
+}
+
+/** Ask the connected wallet to sign a transaction XDR for the configured network. */
+export const signTransaction = async (
+  wallet: WalletInfo,
+  xdr: string,
+  networkPassphrase: string,
+): Promise<string> => {
+  try {
+    let result: unknown;
+    if (wallet.type === 'freighter' && window.freighter?.signTransaction) {
+      result = await window.freighter.signTransaction(xdr, {
+        networkPassphrase,
+        address: wallet.publicKey,
+      });
+    } else if (wallet.type === 'albedo' && window.albedo?.tx) {
+      result = await window.albedo.tx({
+        xdr,
+        network: wallet.network.toLowerCase(),
+      });
+    } else if (wallet.type === 'xbull' && window.xBullSDK) {
+      const sign = window.xBullSDK.signXDR ?? window.xBullSDK.signTransaction;
+      if (!sign) {
+        throw new WalletConnectError(
+          'connection_failed',
+          'Transaction signing is not supported by this wallet.',
+        );
+      }
+      result = await sign.call(window.xBullSDK, xdr, wallet.network);
+    } else if (wallet.type === 'rabet' && window.rabet?.signTransaction) {
+      result = await window.rabet.signTransaction(xdr, wallet.network);
+    } else {
+      throw new WalletConnectError(
+        'connection_failed',
+        'Transaction signing is not supported by this wallet.',
+      );
+    }
+    return extractSignedXdr(result);
+  } catch (error) {
+    throw classifyWalletError(error);
+  }
 };
 
 /**
@@ -540,7 +752,19 @@ export const setWalletRemembered = (remember: boolean): void => {
 };
 
 
-export const EXPECTED_NETWORK = 'TESTNET';
+/**
+ * Network the app expects wallets to be connected to, derived from the single
+ * source of truth in `src/config/creditNetwork.ts`. Falls back to TESTNET when
+ * the environment is invalid so importing this module never throws; callers
+ * that need the configuration itself still get a loud `ConfigError`.
+ */
+export const EXPECTED_NETWORK: CreditNetwork = (() => {
+  try {
+    return getCreditNetworkConfig().network;
+  } catch {
+    return 'TESTNET';
+  }
+})();
 
 export const isSwitchSupported = (type: WalletType): boolean => {
   return Boolean(getWalletAdapter(type)?.switchNetwork);
@@ -557,6 +781,16 @@ export const switchNetwork = async (type: WalletType, network: string): Promise<
 
 export const getExplorerBaseUrl = (network: string): string => {
   const normalized = network?.toUpperCase?.() ?? 'PUBLIC';
+  try {
+    const config = getCreditNetworkConfig();
+    // The unified config describes the network the app is deployed against;
+    // only reuse its explorer root when the caller asks about that network.
+    if (normalized === config.network) {
+      return `${config.explorerBaseUrl}/tx`;
+    }
+  } catch {
+    // Invalid environment: fall through to the canonical explorer roots below.
+  }
   if (normalized === 'TESTNET') {
     return 'https://stellar.expert/explorer/testnet/tx';
   }

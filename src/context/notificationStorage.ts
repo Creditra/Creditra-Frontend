@@ -1,9 +1,12 @@
 import type {
+  NotificationActionDescriptor,
   Notification,
   NotificationCategory,
+  NotificationCommandId,
   NotificationPreferences,
   NotificationType,
 } from '../types/notification';
+import { NOTIFICATION_COMMAND_IDS } from '../types/notification';
 
 const VALID_TYPES: NotificationType[] = ['success', 'error', 'warning', 'info', 'danger'];
 const VALID_CATEGORIES: NotificationCategory[] = [
@@ -11,17 +14,22 @@ const VALID_CATEGORIES: NotificationCategory[] = [
   'credit_line',
   'risk_score',
   'rate_change',
+  'auction',
   'system',
 ];
 
 const STORAGE_VERSION = 1;
-const MAX_INBOX_SIZE = 100;
+export const MAX_INBOX_SIZE = 100;
+/** Retention window for persisted notifications (30 days). */
+export const MAX_INBOX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const VALID_COMMAND_IDS: ReadonlySet<string> = new Set(NOTIFICATION_COMMAND_IDS);
 
 const DEFAULT_PREFS: NotificationPreferences = {
   transaction: true,
   credit_line: true,
   risk_score: true,
   rate_change: true,
+  auction: true,
   system: true,
 };
 
@@ -58,13 +66,38 @@ function isValidNotification(notification: unknown): notification is Notificatio
     n.title.length > 0 &&
     typeof n.message === 'string' &&
     isValidISO8601Timestamp(n.timestamp) &&
-    typeof n.read === 'boolean' &&
-    (n.action === undefined ||
-      (typeof n.action === 'object' &&
-        n.action !== null &&
-        typeof (n.action as Record<string, unknown>).label === 'string' &&
-        typeof (n.action as Record<string, unknown>).onClick === 'function'))
+    typeof n.read === 'boolean'
   );
+}
+
+function parseActionDescriptor(
+  action: unknown,
+): NotificationActionDescriptor | undefined {
+  if (!action || typeof action !== 'object') return undefined;
+  const descriptor = action as Record<string, unknown>;
+  if (typeof descriptor.label !== 'string' || typeof descriptor.kind !== 'string') {
+    return undefined;
+  }
+  if (
+    descriptor.kind === 'route' &&
+    typeof descriptor.to === 'string' &&
+    descriptor.to.startsWith('/') &&
+    !descriptor.to.includes('://')
+  ) {
+    return { label: descriptor.label, kind: 'route', to: descriptor.to };
+  }
+  if (
+    descriptor.kind === 'command' &&
+    typeof descriptor.id === 'string' &&
+    VALID_COMMAND_IDS.has(descriptor.id)
+  ) {
+    return {
+      label: descriptor.label,
+      kind: 'command',
+      id: descriptor.id as NotificationCommandId,
+    };
+  }
+  return undefined;
 }
 
 function parseEnvelope(raw: unknown): Notification[] | null {
@@ -78,7 +111,23 @@ function parseEnvelope(raw: unknown): Notification[] | null {
   return envelope.items;
 }
 
-export function parseInbox(raw: unknown): Notification[] {
+function isWithinRetentionWindow(timestamp: string, now: number): boolean {
+  const ts = Date.parse(timestamp);
+  if (Number.isNaN(ts)) return false;
+  return ts >= now - MAX_INBOX_AGE_MS;
+}
+
+/**
+ * Parse and validate persisted inbox data (versioned envelope or legacy bare array).
+ *
+ * Pruning rules:
+ * 1. Drop invalid entries and duplicate IDs (keeping the first occurrence).
+ * 2. Drop entries older than `MAX_INBOX_AGE_MS` relative to `now` (entries exactly at
+ *    the cutoff or future-dated are retained).
+ * 3. Cap at `MAX_INBOX_SIZE` entries (all severities, including unread `danger`/`error`,
+ *    follow the same FIFO count cap).
+ */
+export function parseInbox(raw: unknown, now: number = Date.now()): Notification[] {
   let notifications: Notification[] = [];
 
   // Try to parse as versioned envelope first
@@ -93,14 +142,17 @@ export function parseInbox(raw: unknown): Notification[] {
     return [];
   }
 
-  // Filter valid notifications, preserve order, deduplicate by id
+  // Filter valid, in-window notifications, preserve order, deduplicate by id
   const seen = new Set<string>();
   const valid: Notification[] = [];
 
   for (const n of notifications) {
-    if (isValidNotification(n) && !seen.has(n.id)) {
+    if (isValidNotification(n) && !seen.has(n.id) && isWithinRetentionWindow(n.timestamp, now)) {
       seen.add(n.id);
-      valid.push(n);
+      valid.push({
+        ...n,
+        action: n.action === undefined ? undefined : parseActionDescriptor(n.action),
+      });
     }
   }
 
@@ -129,14 +181,23 @@ export function parsePreferences(raw: unknown): NotificationPreferences {
     credit_line: result.credit_line ?? DEFAULT_PREFS.credit_line,
     risk_score: result.risk_score ?? DEFAULT_PREFS.risk_score,
     rate_change: result.rate_change ?? DEFAULT_PREFS.rate_change,
+    auction: result.auction ?? DEFAULT_PREFS.auction,
     system: result.system ?? DEFAULT_PREFS.system,
   };
 }
 
-export function serializeInbox(notifications: Notification[]): StorageEnvelope {
+/**
+ * Serialize inbox into a versioned storage envelope.
+ * Applies age pruning first, then caps at `MAX_INBOX_SIZE` (all severities follow the same FIFO cap).
+ */
+export function serializeInbox(
+  notifications: Notification[],
+  now: number = Date.now()
+): StorageEnvelope {
+  const fresh = notifications.filter((n) => isWithinRetentionWindow(n.timestamp, now));
   return {
     v: STORAGE_VERSION,
-    items: notifications.slice(0, MAX_INBOX_SIZE),
+    items: fresh.slice(0, MAX_INBOX_SIZE),
   };
 }
 
