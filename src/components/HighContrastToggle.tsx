@@ -22,7 +22,7 @@ interface HighContrastToggleProps {
 }
 
 export function HighContrastToggle({ compact = false }: HighContrastToggleProps) {
-  const { contrastMode, toggleContrast } = useContrast();
+  const { contrastMode, source, toggleContrast } = useContrast();
   const isOn = contrastMode === 'high';
 
   return (
@@ -33,8 +33,10 @@ export function HighContrastToggle({ compact = false }: HighContrastToggleProps)
             High Contrast
           </span>
           <span className="hc-toggle-description" id="hc-toggle-desc">
-            Boosts all semantic colour contrasts to WCAG AAA (≥7:1). Persisted
-            across sessions.
+            Boosts all semantic colour contrasts to WCAG AAA (≥7:1).{' '}
+            {source === 'system'
+              ? 'Following system setting.'
+              : 'Persisted across sessions.'}
           </span>
         </div>
       )}

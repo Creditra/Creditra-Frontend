@@ -34,6 +34,8 @@ export interface UseCreditTransactionsOptions {
   lineId?: string;
   cursor?: string;
   limit?: number;
+  /** Skip the default date sort when a downstream worker will sort the full ledger. */
+  sort?: boolean;
 }
 
 export interface UseCreditTransactionsResult {
@@ -110,10 +112,13 @@ export function useCreditTransactions(
         });
       }
     }
-    return sortTransactions(transactions);
-  }, [lines, query.lineId]);
+    return query.sort === false ? transactions : sortTransactions(transactions);
+  }, [lines, query.lineId, query.sort]);
 
-  const page = paginateTransactions(allTransactions, query);
+  const page =
+    query.sort === false && query.cursor === undefined && query.limit === undefined
+      ? { transactions: allTransactions, nextCursor: null }
+      : paginateTransactions(allTransactions, query);
 
   return {
     status,
@@ -129,7 +134,9 @@ export function useCreditTransactions(
           lineStatus: line.status,
         })),
       );
-      return paginateTransactions(sortTransactions(refreshed), query).transactions;
+      const ordered =
+        query.sort === false ? refreshed : sortTransactions(refreshed);
+      return paginateTransactions(ordered, query).transactions;
     },
     lastUpdatedAt,
     owner,

@@ -5,7 +5,7 @@
  * typed WalletConnectError instances with appropriate user-facing messages.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { classifyWalletError } from '../wallet';
 import { WalletConnectError } from '../../types/wallet';
 
@@ -210,6 +210,66 @@ describe('classifyWalletError', () => {
       const result = classifyWalletError(error);
       
       expect(result.type).toBe('not_found');
+    });
+  });
+
+  describe('development logging', () => {
+    // A sentinel secret placed inside the raw error's message and fields.
+    // Nothing written to console.error during classification may contain it.
+    const SECRET = 'SENTINEL_SECRET_DO_NOT_LEAK_7Q3XZ9A1';
+
+    beforeEach(() => {
+      vi.stubEnv('NODE_ENV', 'development');
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.restoreAllMocks();
+    });
+
+    it('does not log when no code is present', () => {
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      classifyWalletError({ message: `Something went wrong: ${SECRET}` });
+
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    });
+
+    it('logs only the code and resulting type, never the raw object or message', () => {
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      classifyWalletError({ code: 4001, message: 'User rejected the request' });
+
+      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+      const [label, payload] = consoleErrorSpy.mock.calls[0];
+      expect(label).toBe('[classifyWalletError]');
+      expect(payload).toEqual({ code: 4001, type: 'user_rejected' });
+    });
+
+    it('does not leak a sentinel secret placed in the raw error message and fields', () => {
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const raw = {
+        code: 4001,
+        message: `User rejected the request: ${SECRET}`,
+        account: SECRET,
+        secretKey: SECRET,
+        data: { nested: SECRET },
+      };
+
+      classifyWalletError(raw);
+
+      expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain(SECRET);
+    });
+
+    it('does not leak the secret when classification falls back to message matching', () => {
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const raw = {
+        code: 5000,
+        message: `rejected: ${SECRET}`,
+        account: SECRET,
+      };
+
+      classifyWalletError(raw);
+
+      expect(JSON.stringify(consoleErrorSpy.mock.calls)).not.toContain(SECRET);
     });
   });
 });

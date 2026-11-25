@@ -1,5 +1,5 @@
 // src/pages/RegisterPage.tsx
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   RegisterFormData,
@@ -13,6 +13,11 @@ import {
 } from "../utils/password-strength";
 import { PendingButton } from "../components/PendingButton";
 import { FormField } from "../components/FormField";
+import {
+  fetchWithTimeout,
+  FetchTimeoutError,
+  isAbortError,
+} from "../utils/fetchWithTimeout";
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -26,6 +31,13 @@ export function RegisterPage() {
     useState<PasswordStrength>("weak");
   const [error, setError] = useState<AuthError | null>(null);
   const [loading, setLoading] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   const handlePasswordChange = (password: string) => {
     setFormData({ ...formData, password });
@@ -75,15 +87,23 @@ export function RegisterPage() {
 
     setLoading(true);
 
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
-      const response = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-        }),
-      });
+      const response = await fetchWithTimeout(
+        "/api/auth/register",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: formData.email,
+            password: formData.password,
+          }),
+        },
+        { signal: controller.signal },
+      );
 
       const data = await response.json();
 
@@ -93,10 +113,22 @@ export function RegisterPage() {
       }
 
       navigate("/login?registered=true");
-    } catch {
+    } catch (err) {
+      if (controller.signal.aborted || isAbortError(err)) {
+        return;
+      }
+      if (err instanceof FetchTimeoutError) {
+        setError({ message: "Request timed out. Please try again." });
+        return;
+      }
       setError({ message: "An error occurred. Please try again." });
     } finally {
-      setLoading(false);
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   };
 

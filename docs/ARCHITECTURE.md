@@ -224,12 +224,34 @@ modal provides actionable feedback instead of closing silently.
 - `banners` — page-level alerts, persist until dismissed
 - `notifications` — inbox, persisted to `localStorage` capped at 100 entries
 - `preferences` — per-category mute switches (`transaction`, `credit_line`, `risk_score`,
-  `rate_change`, `system`)
+  `rate_change`, `auction`, `system`)
 - `unreadCount`, `markAsRead`, `markAllAsRead`, `clearAll`
 - `isPanelOpen` + open/close handlers for the `NotificationCenter`
 
 Each notification carries a `category` so users can mute classes (e.g. silence rate-change
 notifications while keeping transaction confirmations).
+
+#### Optional server-sent-event inbox channel
+
+Set `VITE_NOTIFICATIONS_SSE_URL` to enable the optional inbox stream. When it is unset,
+the provider opens no connection and reports the channel status as `off`. The configured
+URL must serve standard `message` events whose `data` is a JSON `Notification`:
+
+```text
+data: {"id":"evt-123","type":"info","category":"system","title":"Update","message":"Your account was updated.","timestamp":"2026-11-24T09:00:00.000Z","read":false}
+```
+
+The payload follows `src/types/notification.ts`: `id`, `type`, `category`, `title`,
+`message`, ISO-8601 `timestamp`, and boolean `read` are required; `action` is optional
+and uses a route or registered-command descriptor. Invalid JSON or invalid notification
+shapes are ignored. Notifications muted by the corresponding in-app category preference
+are not added. The inbox merge keeps ids unique and retains at most 100 entries.
+
+Connection failures close the current `EventSource` and trigger exponential retries
+starting at one second, capped at 30 seconds, with up to 20% jitter. The delay resets
+after a successful open. `useNotifications()` exposes
+`notificationChannelStatus` (`connecting`, `open`, `retrying`, or `off`) for the
+notification center.
 
 ---
 
@@ -400,16 +422,29 @@ src/
 
 ---
 
-## Deployment — Vercel security headers
+## Money handling
 
-`vercel.json` applies the following response headers to every route via a `source: "/(.*)"` catch-all rule:
+All monetary arithmetic uses the exact `Money` type from `src/utils/money.ts` (`{ units: bigint, decimals: number, asset: string }`). Never add `CreditLine.limit` or `CreditLine.utilized` as plain JS numbers — float addition of many sub-cent values drifts by up to 1 ULP per operation.
 
-| Header | Value | Purpose |
-|--------|-------|---------|
-| `X-Content-Type-Options` | `nosniff` | Prevents MIME-type sniffing |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` | Limits referrer leakage across origins |
-| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=(), usb=()` | Disables browser features not used by this app |
-| `X-Frame-Options` | `DENY` | Clickjacking protection for older browsers |
-| `Content-Security-Policy` | `frame-ancestors 'none'` | Clickjacking protection for modern browsers |
+**Canonical pattern**
 
-A full CSP (script-src, connect-src, etc.) is tracked in a separate issue.
+```ts
+import { lineMoney } from '@/lib/credit-summary';
+import { add, roundMoneyToCents, toDisplayNumber } from '@/utils/money';
+
+const total = lines.reduce((sum, l) => add(sum, lineMoney(l.utilized)), ZERO);
+const display = toDisplayNumber(roundMoneyToCents(total)); // safe for rendering
+```
+
+**Key functions**
+
+| Function | Location | Purpose |
+|----------|----------|---------|
+| `lineMoney(value)` | `src/lib/credit-summary.ts` | Convert a `CreditLine` number field to `Money` via `parseMoney` on a fixed-precision string |
+| `summarizeCreditLinesExact(lines)` | `src/lib/credit-summary.ts` | Exact `Money` aggregation of credit-line totals |
+| `summarizeCreditLines(lines)` | `src/lib/credit-summary.ts` | Number-based API (delegates to exact variant internally) |
+| `utilisationBps(utilized, limit)` | `src/lib/credit-summary.ts` | Utilisation as integer basis points — no float division |
+| `parseMoney`, `add`, `sub`, `mulRate` | `src/utils/money.ts` | Core exact arithmetic |
+| `roundMoneyToCents` | `src/utils/money.ts` | Round to 2 dp before display |
+
+**Naming note**: `formatMiney` and `formatMineyCents` in `src/utils/money.ts` are typo-aliases preserved for backward compatibility. Prefer `formatMoney` and `formatMoneyCents` in new code.

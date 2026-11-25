@@ -1235,6 +1235,7 @@ export default function RepayPage() {
                 <p className="text-xs text-muted">
                   Select several credit lines and split one payment across them
                 </p>
+              </div>
               <button
                 id="multi-line-repay-toggle"
                 type="button"
@@ -1779,7 +1780,7 @@ export default function RepayPage() {
                 })}
               </div>
             )}
-          </div>
+          </>
         )}
       </div>
     );

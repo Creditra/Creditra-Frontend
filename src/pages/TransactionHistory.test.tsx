@@ -1445,6 +1445,46 @@ describe("TransactionHashMenu", () => {
     // This is a soft assertion — not all data has missing hashes, but the component must not crash
     expect(muted).toBeDefined();
   });
+
+  describe("PDF export", () => {
+    it("generates a real PDF download for filtered rows instead of calling window.print()", async () => {
+      const printSpy = vi.spyOn(window, "print").mockImplementation(() => {});
+      const clickSpy = vi
+        .spyOn(HTMLAnchorElement.prototype, "click")
+        .mockImplementation(() => {});
+
+      renderTransactionHistory(["/transactions?type=Draw"]);
+      await screen.findByRole("table");
+
+      const pdfBtn = screen.getByRole("button", { name: /export pdf/i });
+      expect(pdfBtn).not.toBeDisabled();
+
+      fireEvent.click(pdfBtn);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10);
+      });
+
+      expect(printSpy).not.toHaveBeenCalled();
+      expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+      const blobArg = (URL.createObjectURL as ReturnType<typeof vi.fn>).mock
+        .calls[0][0] as Blob;
+      expect(blobArg).toBeInstanceOf(Blob);
+      expect(blobArg.type).toBe("application/pdf");
+      expect(clickSpy).toHaveBeenCalled();
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
+
+      printSpy.mockRestore();
+      clickSpy.mockRestore();
+    });
+
+    it("disables Export PDF when zero rows match the current filters", async () => {
+      renderTransactionHistory(["/transactions?q=__no_matching_tx_xyz__"]);
+
+      const pdfBtn = screen.getByRole("button", { name: /export pdf/i });
+      expect(pdfBtn).toBeDisabled();
+    });
+  });
 });
 
 describe("TransactionRow memoisation", () => {

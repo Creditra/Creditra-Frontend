@@ -60,21 +60,6 @@ function createDateTimeFormat(
   }
 }
 
-}
-
-  }
-  }
-  }
-}
-
-  );
-  }
-}
-
-  );
-  }
-}
-
 /**
  * Parse a date string into a `Date`, treating date-only `YYYY-MM-DD` strings
  * as local calendar dates rather than UTC midnight (so western timezones do
@@ -86,7 +71,7 @@ function createDateTimeFormat(
  */
 export function parseLocalDate(dateStr: string): Date | null {
   if (!dateStr) return null;
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
   if (dateOnly) {
     const year = Number(dateOnly[1]);
     const month = Number(dateOnly[2]) - 1;
@@ -105,34 +90,6 @@ export function parseLocalDate(dateStr: string): Date | null {
   const parsed = new Date(dateStr);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
-}
-
-/**
- * Parse a date-only ISO string (`YYYY-MM-DD`) as a local calendar date to avoid
- * UTC-midnight off-by-one shifts in negative UTC offsets. Full ISO timestamps
- * (e.g. with time/timezone) fall back to standard `new Date(input)` parsing.
- * Returns `null` for empty or invalid inputs.
- */
-export function parseLocalDate(input: string): Date | null {
-  if (!input) return null;
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input.trim());
-  if (dateOnly) {
-    const year = Number(dateOnly[1]);
-    const month = Number(dateOnly[2]);
-    const day = Number(dateOnly[3]);
-    const d = new Date(year, month - 1, day);
-    if (
-      Number.isNaN(d.getTime()) ||
-      d.getFullYear() !== year ||
-      d.getMonth() !== month - 1 ||
-      d.getDate() !== day
-    ) {
-      return null;
-    }
-    return d;
-  }
-  const d = new Date(input);
-  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 /**
@@ -156,7 +113,8 @@ export function timeAgo(
     return INVALID_DATE_PLACEHOLDER;
   }
 
-  const diffSeconds = Math.round((then.getTime() - now.getTime()) / 1000);
+  const rawDiffSeconds = Math.round((then.getTime() - now.getTime()) / 1000);
+  const diffSeconds = rawDiffSeconds === 0 ? 0 : rawDiffSeconds;
   const absSeconds = Math.abs(diffSeconds);
 
   const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
@@ -172,7 +130,8 @@ export function timeAgo(
 
   for (const [unit, secondsPerUnit] of units) {
     if (absSeconds >= secondsPerUnit || unit === "second") {
-      const value = Math.round(diffSeconds / secondsPerUnit);
+      const rawValue = Math.round(diffSeconds / secondsPerUnit);
+      const value = rawValue === 0 ? 0 : rawValue;
       return rtf.format(value, unit);
     }
   }
