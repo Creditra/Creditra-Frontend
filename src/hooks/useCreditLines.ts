@@ -4,6 +4,9 @@ import { MOCK_CREDIT_LINES } from '../data/mockData';
 import type { CreditLine, Transaction } from '../types/creditLine';
 import type { WalletInfo } from '../types/wallet';
 import { useCreditData } from '../context/CreditDataContext';
+import { paginateTransactions } from '../utils/cursorPagination';
+
+export { paginateTransactions } from '../utils/cursorPagination';
 
 export interface UseCreditLinesResult {
   status: 'idle' | 'loading' | 'success' | 'error';
@@ -42,6 +45,8 @@ export interface UseCreditTransactionsResult {
   status: 'idle' | 'loading' | 'success' | 'error';
   transactions: CreditTransaction[];
   nextCursor: string | null;
+  /** True when the requested cursor no longer exists in the loaded ledger. */
+  staleCursor: boolean;
   error: Error | null;
   refetch: () => Promise<CreditTransaction[]>;
   lastUpdatedAt: Date | null;
@@ -52,22 +57,6 @@ export interface UseCreditTransactionsResult {
 let legacyLines: CreditLine[] = [...MOCK_CREDIT_LINES];
 export const setGlobalCreditLines = (lines: CreditLine[]) => { legacyLines = [...lines]; };
 export const getGlobalCreditLines = () => legacyLines;
-
-function paginateTransactions(
-  transactions: CreditTransaction[],
-  query: UseCreditTransactionsOptions,
-): Pick<UseCreditTransactionsResult, 'transactions' | 'nextCursor'> {
-  const cursorIndex = query.cursor
-    ? Math.max(0, transactions.findIndex((transaction) => transaction.id === query.cursor) + 1)
-    : 0;
-  const limit = query.limit === undefined ? transactions.length : Math.max(0, query.limit);
-  const page = transactions.slice(cursorIndex, cursorIndex + limit);
-  const hasNext = cursorIndex + limit < transactions.length;
-  return {
-    transactions: page,
-    nextCursor: hasNext && page.length > 0 ? page[page.length - 1].id : null,
-  };
-}
 
 function sortTransactions(transactions: CreditTransaction[]): CreditTransaction[] {
   return transactions.sort((a, b) => {
@@ -117,7 +106,7 @@ export function useCreditTransactions(
 
   const page =
     query.sort === false && query.cursor === undefined && query.limit === undefined
-      ? { transactions: allTransactions, nextCursor: null }
+      ? { transactions: allTransactions, nextCursor: null, staleCursor: false }
       : paginateTransactions(allTransactions, query);
 
   return {

@@ -28,12 +28,13 @@ function Probe({ id = 'missing' }: { id?: string }) {
 }
 
 function TransactionProbe({ cursor, testId }: { cursor?: string; testId: string }) {
-  const { status, transactions, nextCursor } = useCreditTransactions({ cursor, limit: 1 });
+  const { status, transactions, nextCursor, staleCursor } = useCreditTransactions({ cursor, limit: 1 });
   return (
     <div>
       <span data-testid={`${testId}-status`}>{status}</span>
       <span data-testid={`${testId}-transaction`}>{transactions[0]?.id ?? ''}</span>
       <span data-testid={`${testId}-cursor`}>{nextCursor ?? ''}</span>
+      <span data-testid={`${testId}-stale`}>{String(staleCursor)}</span>
     </div>
   );
 }
@@ -148,6 +149,31 @@ describe('CreditDataProvider', () => {
     expect(screen.getByTestId('first-transaction')).toHaveTextContent(expected[0].id);
     expect(screen.getByTestId('first-cursor')).toHaveTextContent(expected[0].id);
     expect(screen.getByTestId('second-transaction')).toHaveTextContent(expected[1].id);
+    expect(listCreditLines).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a stale cursor without repeating the first page', async () => {
+    const listCreditLines = vi.fn().mockResolvedValue(MOCK_CREDIT_LINES);
+    const source: CreditDataSource = {
+      listCreditLines,
+      getCreditLine: vi.fn(),
+      listTransactions: vi.fn().mockResolvedValue({ items: [] }),
+    };
+    const expected = MOCK_CREDIT_LINES.flatMap((line) => line.transactions)
+      .sort((a, b) =>
+        new Date(b.date).getTime() - new Date(a.date).getTime() || b.id.localeCompare(a.id),
+      );
+    render(tree(walletA, source, <>
+      <TransactionProbe testId="first" />
+      <TransactionProbe cursor="removed-transaction" testId="stale" />
+    </>));
+
+    await waitFor(() => expect(screen.getByTestId('stale-status')).toHaveTextContent('success'));
+    expect(screen.getByTestId('first-transaction')).toHaveTextContent(expected[0].id);
+    expect(screen.getByTestId('first-stale')).toHaveTextContent('false');
+    expect(screen.getByTestId('stale-transaction')).toBeEmptyDOMElement();
+    expect(screen.getByTestId('stale-cursor')).toBeEmptyDOMElement();
+    expect(screen.getByTestId('stale-stale')).toHaveTextContent('true');
     expect(listCreditLines).toHaveBeenCalledTimes(1);
   });
 
