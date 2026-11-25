@@ -136,6 +136,7 @@ const ConnectedWalletDropdown = () => {
   return (
     <div className="wallet-connected">
       <button
+        type="button"
         className="wallet-address-btn"
         onClick={handleToggleDropdown}
         aria-haspopup="true"
@@ -194,6 +195,7 @@ const ConnectedWalletDropdown = () => {
             <div className="balance-list">{balanceDisplay}</div>
           </div>
           <button
+            type="button"
             className="refresh-btn"
             onClick={handleRefresh}
             aria-label="Refresh wallet balance"
@@ -297,7 +299,7 @@ const DisconnectedWalletButton = () => {
 
   return (
     <>
-      <button ref={triggerRef} className="connect-wallet-btn" onClick={handleConnect}>
+      <button ref={triggerRef} type="button" className="connect-wallet-btn" onClick={handleConnect}>
         Connect Wallet
       </button>
       <WalletConnectionModal

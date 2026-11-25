@@ -54,6 +54,7 @@ export function OfflineBanner() {
         )}
         {!isOnline && (
           <button
+            type="button"
             onClick={checkOnlineStatus}
             className="offline-banner__retry-button"
             aria-label="Retry connection"
