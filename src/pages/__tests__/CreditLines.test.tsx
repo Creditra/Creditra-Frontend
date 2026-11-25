@@ -4,6 +4,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import CreditLines from '../CreditLines';
 import { mockCreditLines } from '../../data/mockData';
 import { freezeTime, unfreezeTime } from '../../test/freezeTime';
+import { renderWithCredit } from '../../test/renderWithCredit';
 
 beforeEach(() => {
   freezeTime();
@@ -28,6 +29,39 @@ function renderPage() {
 }
 
 describe('CreditLines page', () => {
+  it('submits a limit increase request and restores its pending chip after remount', async () => {
+    localStorage.clear();
+    const line = mockCreditLines.find((item) => item.name === 'Primary Business Line')!;
+    const page = renderWithCredit(<CreditLines defaultLoading={false} />, {
+      lines: [line],
+      route: '/credit-lines',
+    });
+
+    fireEvent.click(await screen.findByLabelText('Menu for Primary Business Line'));
+    fireEvent.click(
+      screen.getByRole('menuitem', { name: 'Request limit increase' }),
+    );
+    await screen.findByRole('dialog', { name: 'Request a limit increase' });
+    fireEvent.change(screen.getByLabelText('Requested amount'), {
+      target: { value: '1000' },
+    });
+    fireEvent.change(screen.getByLabelText('Reason'), {
+      target: { value: 'Working capital' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit request' }));
+
+    expect(await screen.findByText('Request submitted')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(await screen.findByText('Increase pending')).toBeInTheDocument();
+
+    page.unmount();
+    renderWithCredit(<CreditLines defaultLoading={false} />, {
+      lines: [line],
+      route: '/credit-lines',
+    });
+    expect(await screen.findByText('Increase pending')).toBeInTheDocument();
+  });
+
   it('renders the page header', () => {
     renderPage();
     expect(screen.getByText('Credit Lines')).toBeInTheDocument();

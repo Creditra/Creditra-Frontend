@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { MoreHorizontal, ArrowUpCircle, ArrowDownCircle, Calendar, Info, Snowflake, Shield } from 'lucide-react';
+import React, { useState, useRef, useEffect, useId } from 'react';
+import { MoreHorizontal, ArrowUpCircle, ArrowDownCircle, Calendar, Info, Snowflake, Shield, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 interface CreditLineRowMenuProps {
@@ -13,6 +13,8 @@ interface CreditLineRowMenuProps {
   onFreeze?: (lineId: string) => void;
   onUnfreeze?: (lineId: string) => void;
   onAdjustCollateral?: (lineId: string) => void;
+  onRequestLimitIncrease?: (lineId: string) => void;
+  limitIncreaseDisabledReasons?: string[];
 }
 
 /**
@@ -37,9 +39,12 @@ export function CreditLineRowMenu({
   onFreeze,
   onUnfreeze,
   onAdjustCollateral,
+  onRequestLimitIncrease,
+  limitIncreaseDisabledReasons = [],
 }: CreditLineRowMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const reasonId = useId();
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -105,6 +110,32 @@ export function CreditLineRowMenu({
             <ArrowDownCircle className="w-4 h-4" />
             Draw
           </Link>
+
+          {onRequestLimitIncrease && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  onRequestLimitIncrease(lineId);
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-accent/10 hover:text-accent transition-colors text-left disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-foreground"
+                role="menuitem"
+                disabled={limitIncreaseDisabledReasons.length > 0}
+                aria-describedby={
+                  limitIncreaseDisabledReasons.length > 0 ? reasonId : undefined
+                }
+              >
+                <TrendingUp className="w-4 h-4" />
+                Request limit increase
+              </button>
+              {limitIncreaseDisabledReasons.length > 0 && (
+                <p id={reasonId} className="px-4 pb-2 text-xs text-muted" role="note">
+                  {limitIncreaseDisabledReasons.join(' ')}
+                </p>
+              )}
+            </>
+          )}
 
           {/* Freeze / Unfreeze */}
           {(onFreeze || onUnfreeze) && (

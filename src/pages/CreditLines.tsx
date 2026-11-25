@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, useMemo, useCallback, lazy, Suspense } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback, lazy, Suspense, useContext } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { StatusBadge } from "../components/StatusBadge";
 import { CreditLineRowMenu } from "../components/CreditLineRowMenu";
+import { LimitIncreaseModal } from "../components/LimitIncreaseModal";
 import { Skeleton } from "../components/Skeleton";
 import CompareLinesPanel from "../components/CompareLinesPanel";
 import { CollateralSubstitutionModal } from "../components/CollateralSubstitutionModal";
@@ -48,6 +49,13 @@ import { LastActivityStamp } from "../components/LastActivityStamp";
 import { RepaymentPlanChart } from "../components/RepaymentPlanChart";
 import { CreditLineAging } from "../components/CreditLineAging";
 import { now as clockNow } from "../lib/clock";
+import { evaluateLimitIncreaseEligibility } from "../lib/limit-increase";
+import { walletIdentityKey } from "../context/WalletContext";
+import { NotificationContext } from "../context/NotificationContext";
+import {
+  getLatestLimitIncreaseRequest,
+  useLimitIncreaseRequestsForWallet,
+} from "../state/limitIncreaseRequests";
 import {
   RepaymentSchedule,
   buildRepaymentScheduleFromLines,
@@ -154,6 +162,9 @@ function CreditLineCard({
   onDetails,
   onFreeze,
   onUnfreeze,
+  limitIncreaseDisabledReasons,
+  onRequestLimitIncrease,
+  increasePending,
 }: {
   line: CreditLine;
   isSelected: boolean;
@@ -174,6 +185,12 @@ function CreditLineCard({
   ) => void;
   onFreeze?: (lineId: string) => void;
   onUnfreeze?: (lineId: string) => void;
+  limitIncreaseDisabledReasons: string[];
+  onRequestLimitIncrease: (
+    line: CreditLine,
+    triggerRef: React.RefObject<HTMLButtonElement | null>,
+  ) => void;
+  increasePending: boolean;
 }) {
   const pct = utilizationPct(line.utilized, line.limit);
   const level = getUtilizationLevel(line.utilized, line.limit);
@@ -215,6 +232,11 @@ function CreditLineCard({
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge status={line.status} />
+          {increasePending && (
+            <span className="cl-limit-increase-pending">
+              Increase pending
+            </span>
+          )}
           <CreditLineAging line={line} />
           <CreditLineRowMenu
             lineId={line.id}
@@ -231,6 +253,10 @@ function CreditLineCard({
             onUnfreeze={canUnfreeze ? onUnfreeze : undefined}
             onSchedule={onSchedule}
             onDetails={onDetails ? (id) => onDetails(id, menuTriggerRef) : undefined}
+            onRequestLimitIncrease={(id) => {
+              if (id === line.id) onRequestLimitIncrease(line, menuTriggerRef);
+            }}
+            limitIncreaseDisabledReasons={limitIncreaseDisabledReasons}
           />
         </div>
       </div>
@@ -556,7 +582,37 @@ export default function CreditLines({
   //    freeze/unfreeze changes are visible to Dashboard, Quick Repay, etc.
   //    The hook reads from the in-memory store in useCreditLines.ts; the
   //    setLineFrozen service writes to that same store.
-  const { lines: creditLines, status, error, refetch, setLines } = useCreditLines();
+  const { lines: creditLines, status, error, refetch, setLines, owner, wallet } = useCreditLines();
+  const walletKey = wallet ? walletIdentityKey(wallet) : owner;
+  const { requests, create: createLimitIncreaseRequest } =
+    useLimitIncreaseRequestsForWallet(walletKey);
+  const notificationContext = useContext(NotificationContext);
+  const increaseStateByLine = useMemo(
+    () =>
+      new Map(
+        creditLines.map((line) => {
+          const latestRequest = getLatestLimitIncreaseRequest(requests, line.id);
+          const eligibility = evaluateLimitIncreaseEligibility(
+            line,
+            clockNow(),
+            latestRequest?.createdAt,
+          );
+          const disabledReasons = [...eligibility.reasons];
+          const increasePending = requests.some(
+            (request) => request.creditLineId === line.id && request.status === "pending",
+          );
+          if (!walletKey) disabledReasons.push("Connect a wallet to request a limit increase.");
+          if (increasePending) {
+            disabledReasons.push("A limit increase request is already pending.");
+          }
+          return [
+            line.id,
+            { maxRequestable: eligibility.maxRequestable, disabledReasons, increasePending },
+          ] as const;
+        }),
+      ),
+    [creditLines, requests, walletKey],
+  );
   void defaultLoading;
 
   // ── Freeze/unfreeze optimistic state ─────────────────────────────────
@@ -697,6 +753,45 @@ export default function CreditLines({
     line: CreditLine;
     triggerRef: React.RefObject<HTMLButtonElement | null>;
   } | null>(null);
+  const [limitIncreaseTarget, setLimitIncreaseTarget] = useState<{
+    line: CreditLine;
+    maxRequestable: number;
+    triggerRef: React.RefObject<HTMLButtonElement | null>;
+  } | null>(null);
+
+  const handleOpenLimitIncrease = (
+    line: CreditLine,
+    triggerRef: React.RefObject<HTMLButtonElement | null>,
+  ) => {
+    const state = increaseStateByLine.get(line.id);
+    if (!walletKey || !state || state.disabledReasons.length > 0) return;
+    setLimitIncreaseTarget({ line, maxRequestable: state.maxRequestable, triggerRef });
+  };
+
+  const handleSubmitLimitIncrease = ({
+    amount,
+    reason,
+  }: {
+    amount: number;
+    reason: string;
+  }) => {
+    if (!walletKey) throw new Error("Connect a wallet before submitting a request.");
+    if (!limitIncreaseTarget) {
+      throw new Error("Select a credit line before submitting a request.");
+    }
+    createLimitIncreaseRequest({
+      creditLineId: limitIncreaseTarget.line.id,
+      amount,
+      reason,
+    });
+    notificationContext?.addToast({
+      type: "success",
+      category: "credit_line",
+      title: "Limit increase requested",
+      message: `Your request for ${limitIncreaseTarget.line.name} has been saved.`,
+      saveToHistory: true,
+    });
+  };
 
   const handleModalClose = () => setModalTarget(null);
   const handleModalSuccess = (_incomingAsset: CollateralAsset) => {
@@ -1283,6 +1378,15 @@ export default function CreditLines({
                     onUnfreeze={handleUnfreeze}
                     onSchedule={() => handleSchedule(line.id)}
                     onDetails={handleDetails}
+                    limitIncreaseDisabledReasons={
+                      increaseStateByLine.get(line.id)?.disabledReasons ?? [
+                        "Eligibility could not be determined.",
+                      ]
+                    }
+                    increasePending={
+                      increaseStateByLine.get(line.id)?.increasePending ?? false
+                    }
+                    onRequestLimitIncrease={handleOpenLimitIncrease}
                   />
                 ))}
               </div>
@@ -1392,6 +1496,16 @@ export default function CreditLines({
           }}
           creditLine={adjustModalTarget.line}
           triggerRef={adjustModalTarget.triggerRef}
+        />
+      )}
+
+      {limitIncreaseTarget && (
+        <LimitIncreaseModal
+          line={limitIncreaseTarget.line}
+          maxRequestable={limitIncreaseTarget.maxRequestable}
+          triggerRef={limitIncreaseTarget.triggerRef}
+          onClose={() => setLimitIncreaseTarget(null)}
+          onSubmit={handleSubmitLimitIncrease}
         />
       )}
 
