@@ -53,6 +53,8 @@ import { NoRiskGauge } from "../components/illustrations/EmptyStateIllustrations
 import { COLOR, RISK_COLOR, fmtDate } from "../utils/tokens";
 import { KbdHint } from "../components/KbdHint";
 import { useReducedMotion } from "../context/ReducedMotionContext";
+import { RiskFactorBreakdown } from "../components/RiskFactorBreakdown";
+import type { RiskFactor } from "../types/attestation";
 import "../components/RiskGauge.css";
 import "../styles/patterns.css";
 
@@ -87,6 +89,12 @@ export interface RiskGaugeProps {
    * gauge listing all three bands with score ranges.
    */
   showSRTable?: boolean;
+  /**
+   * Optional array of attestation-derived risk factors to display in the
+   * `RiskFactorBreakdown` card beside the gauge.  When absent or empty the
+   * breakdown card renders its own empty state rather than crashing.
+   */
+  riskFactors?: RiskFactor[];
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -379,6 +387,7 @@ export function RiskGauge({
   onSectorActivate,
   showSectors = true,
   showSRTable = true,
+  riskFactors,
 }: RiskGaugeProps) {
   const normalizedScore = Math.min(MAX_SCORE, Math.max(0, score ?? 0));
   const offset = CIRCUMFERENCE - (normalizedScore / MAX_SCORE) * CIRCUMFERENCE;
@@ -490,7 +499,8 @@ export function RiskGauge({
   const arcPath = `M ${CX - RADIUS} ${CY} A ${RADIUS} ${RADIUS} 0 0 1 ${CX + RADIUS} ${CY}`;
 
   return (
-    <div className="risk-gauge-container">
+    <div className="risk-gauge-page-layout">
+      <div className="risk-gauge-container">
       {/*
         Live region — outside the SVG so AT implementations that skip inline
         SVG <title> elements still announce score and sector changes.
@@ -628,5 +638,13 @@ export function RiskGauge({
         />
       </div>
     </div>
+
+    {/* Risk factor breakdown — rendered beside the gauge */}
+    <RiskFactorBreakdown
+      factors={riskFactors}
+      scale={MAX_SCORE}
+      className="risk-gauge-page-layout__breakdown"
+    />
+  </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { CreditLine } from '../../types/creditLine';
+import type { CreditLine, Transaction } from '../../types/creditLine';
 
 export type CreditDataErrorCode =
   | 'network'
@@ -39,9 +39,20 @@ export interface CreditDataOptions {
   force?: boolean;
 }
 
+export interface ListTransactionsOptions extends CreditDataOptions {
+  cursor?: string;
+  limit?: number;
+}
+
+export interface TransactionPage {
+  items: Transaction[];
+  nextCursor?: string;
+}
+
 export interface CreditDataSource {
   listCreditLines(borrower: string, options?: CreditDataOptions): Promise<CreditLine[]>;
   getCreditLine(id: string, options?: CreditDataOptions): Promise<CreditLine>;
+  listTransactions(lineId: string, options?: ListTransactionsOptions): Promise<TransactionPage>;
 }
 
 export { createCreditDataSource } from './factory';

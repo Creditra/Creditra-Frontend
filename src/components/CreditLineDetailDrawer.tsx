@@ -1,9 +1,7 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { X, ExternalLink, Calendar, Activity, ArrowUpCircle, ArrowDownCircle, List } from 'lucide-react';
-import { useFocusTrap } from '../hooks/useFocusTrap';
-import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
-import { useInertBackdrop } from '../hooks/useInertBackdrop';
+import { Sheet } from './Sheet';
 import { StatusBadge } from './StatusBadge';
 import ActivityTimeline, { type ActivityEntry } from './ActivityTimeline';
 import { AprHistoryChart } from './AprHistoryChart';
@@ -18,6 +16,8 @@ import {
   UTIL_COLOR,
 } from '../utils/tokens';
 import { timeAgo } from '../utils/dates';
+import { getExplorerBaseUrl } from '../utils/wallet';
+import { getCreditNetworkConfig } from '../config/creditNetwork';
 import type { CreditLine } from '../types/creditLine';
 import './CreditLineDetailDrawer.css';
 
@@ -28,23 +28,18 @@ interface CreditLineDetailDrawerProps {
 }
 
 export function CreditLineDetailDrawer({ line, onClose, triggerRef }: CreditLineDetailDrawerProps) {
-  // Lock body scroll when drawer is open
-  useBodyScrollLock({ isLocked: true });
-
-  // Make background content inert to screen readers
-  useInertBackdrop({ isInert: true, modalId: 'cl-details-drawer' });
-
-  // Trap focus inside the drawer
-  const drawerRef = useFocusTrap({
-    isActive: true,
-    triggerRef,
-    onEscape: onClose,
-  });
-
   const pct = utilizationPct(line.utilized, line.limit);
   const utilizationLevel = getUtilizationLevel(line.utilized, line.limit);
   const available = line.limit - line.utilized;
   const currentHealthFactor = deriveHealthFactor(line.limit, line.utilized);
+
+  let explorerBase: string;
+  try {
+    const config = getCreditNetworkConfig();
+    explorerBase = getExplorerBaseUrl(config?.network);
+  } catch {
+    explorerBase = getExplorerBaseUrl('PUBLIC');
+  }
 
   const timelineEntries = useMemo<ActivityEntry[]>(() => {
     const txEntries: ActivityEntry[] = line.transactions.map((tx) => ({
@@ -114,18 +109,20 @@ export function CreditLineDetailDrawer({ line, onClose, triggerRef }: CreditLine
   }, [runningBalances, line.limit]);
 
   return (
-    <div className="cl-drawer-overlay" onClick={onClose}>
-      <div
-        id="cl-details-drawer"
-        ref={drawerRef}
-        className="cl-drawer-container"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="cl-drawer-title"
-        aria-describedby="cl-drawer-desc"
-        onClick={(e) => e.stopPropagation()}
-        tabIndex={-1}
-      >
+    <Sheet
+      isOpen
+      side="right"
+      portalId="cl-details-drawer-portal"
+      dialogId="cl-details-drawer"
+      ariaLabelledBy="cl-drawer-title"
+      ariaDescribedBy="cl-drawer-desc"
+      onClose={onClose}
+      triggerRef={triggerRef}
+      portalClassName="cl-drawer-overlay"
+      backdropClassName="cl-drawer-backdrop"
+      panelClassName="cl-drawer-container"
+    >
+      <>
         {/* Drawer Header */}
         <header className="cl-drawer-header">
           <div>
@@ -372,7 +369,7 @@ export function CreditLineDetailDrawer({ line, onClose, triggerRef }: CreditLine
                         </span>
                         {tx.txHash && (
                           <a
-                            href={`https://stellar.expert/explorer/public/tx/${tx.txHash}`}
+                            href={`${explorerBase}/${tx.txHash}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="tx-explorer-link"
@@ -389,7 +386,7 @@ export function CreditLineDetailDrawer({ line, onClose, triggerRef }: CreditLine
             )}
           </section>
         </div>
-      </div>
-    </div>
+      </>
+    </Sheet>
   );
 }

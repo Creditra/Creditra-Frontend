@@ -90,7 +90,7 @@ Use the template in **[CHECKLIST.md](CHECKLIST.md)** to create your GitHub issue
 ### For Overview
 
 - **[PROJECT_SUMMARY.md](PROJECT_SUMMARY.md)** - Complete project summary
-- **[README.md](README.md)** - Updated project README
+- **[README.md](../../README.md)** - Updated project README
 
 ---
 

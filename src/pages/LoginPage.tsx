@@ -1,11 +1,20 @@
 // src/pages/LoginPage.tsx
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, useRef, useEffect } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AlertCircle } from "lucide-react";
 import { LoginFormData, AuthError } from "../types/auth.types";
 import { PendingButton } from "../components/PendingButton";
 import { FormField } from "../components/FormField";
 import { TrustBadges } from "../components/TrustBadges";
+import {
+  fetchWithTimeout,
+  FetchTimeoutError,
+  isAbortError,
+} from "../utils/fetchWithTimeout";
+import { useWallet } from "../context/WalletContext";
+import { signInWithWallet, Sep10AuthError } from "../services/sep10";
+import { AUTH_TOKEN_KEY } from "../constants/storageKeys";
+import { safeReturnPath } from "../utils/safe-redirect";
 import "../styles/patterns.css";
 
 /**
@@ -27,6 +36,8 @@ import "../styles/patterns.css";
  */
 export function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { wallet } = useWallet();
   const [formData, setFormData] = useState<LoginFormData>({
     emailOrUsername: "",
     password: "",
@@ -34,18 +45,54 @@ export function LoginPage() {
   });
   const [error, setError] = useState<AuthError | null>(null);
   const [loading, setLoading] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+  const [walletLoading, setWalletLoading] = useState(false);
+
+  const storeToken = (token: string) => {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    if (formData.rememberMe) {
+      localStorage.setItem(AUTH_TOKEN_KEY, token);
+    } else {
+      sessionStorage.setItem(AUTH_TOKEN_KEY, token);
+    }
+  };
+
+  const redirectAfterSignIn = () => {
+    const params = new URLSearchParams(location.search);
+    const requestedPath = params.get("redirect") ?? params.get("returnTo");
+    navigate(
+      requestedPath
+        ? safeReturnPath(requestedPath, "/dashboard")
+        : "/dashboard",
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
+      const response = await fetchWithTimeout(
+        "/api/auth/login",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        },
+        { signal: controller.signal },
+      );
 
       const data = await response.json();
 
@@ -55,18 +102,48 @@ export function LoginPage() {
       }
 
       // Store token if remember me is checked
-      if (formData.rememberMe) {
-        localStorage.setItem("auth_token", data.token);
-      } else {
-        sessionStorage.setItem("auth_token", data.token);
-      }
+      storeToken(data.token);
 
       // Redirect to dashboard
       navigate("/dashboard");
     } catch (err) {
+      if (controller.signal.aborted || isAbortError(err)) {
+        return;
+      }
+      if (err instanceof FetchTimeoutError) {
+        setError({ message: "Request timed out. Please try again." });
+        return;
+      }
       setError({ message: "An error occurred. Please try again." });
     } finally {
-      setLoading(false);
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleWalletSignIn = async () => {
+    if (!wallet) return;
+    setError(null);
+    setWalletLoading(true);
+    try {
+      const session = await signInWithWallet(wallet);
+      storeToken(session.token);
+      redirectAfterSignIn();
+    } catch (err) {
+      if (err instanceof Sep10AuthError) {
+        setError({ message: err.message, code: err.code });
+      } else {
+        setError({
+          message: "Wallet sign-in failed. Please try again.",
+          code: "wallet_error",
+        });
+      }
+    } finally {
+      setWalletLoading(false);
     }
   };
 
@@ -191,12 +268,36 @@ export function LoginPage() {
             <PendingButton
               type="submit"
               pending={loading}
+              disabled={walletLoading}
               pendingLabel="Signing in..."
               className={`w-full bg-[#58a6ff] hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-3 rounded-lg transition-colors ${loading ? "lp-btn--pending" : ""}`}
             >
               Login
             </PendingButton>
           </form>
+
+          <div className="mt-5">
+            <div className="relative flex items-center" aria-hidden="true">
+              <div className="flex-grow border-t border-gray-700" />
+              <span className="px-3 text-xs text-gray-500">OR</span>
+              <div className="flex-grow border-t border-gray-700" />
+            </div>
+            <PendingButton
+              type="button"
+              pending={walletLoading}
+              disabled={!wallet || loading}
+              pendingLabel="Waiting for wallet..."
+              onClick={handleWalletSignIn}
+              className={`mt-5 w-full border border-gray-600 bg-transparent text-white font-medium py-3 rounded-lg transition-colors hover:bg-gray-800 disabled:opacity-50 ${walletLoading ? "lp-btn--pending" : ""}`}
+            >
+              Sign in with wallet
+            </PendingButton>
+            {!wallet && (
+              <p className="mt-2 text-center text-xs text-gray-500">
+                Connect a Stellar wallet to sign in.
+              </p>
+            )}
+          </div>
 
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">

@@ -17,12 +17,13 @@
  */
 
 import { act, render, screen, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { freezeTime, unfreezeTime } from '../../../test/freezeTime';
 import SessionsSettings from '../Sessions';
 
 // ── Mock data ─────────────────────────────────────────────────────────────────
-// We mock the module so tests are deterministic and don't depend on the
-// dynamic timestamps in MOCK_SESSIONS.
+// Fixed timestamps anchored to DEFAULT_FROZEN_TIME (2025-02-25T12:00:00.000Z)
+// so relative-time assertions are completely deterministic.
 vi.mock('../../../data/mockData', () => ({
   MOCK_SESSIONS: [
     {
@@ -32,8 +33,8 @@ vi.mock('../../../data/mockData', () => ({
       deviceType: 'desktop',
       ipAddress: '203.0.113.42',
       location: 'San Francisco, CA, US',
-      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-      lastActiveAt: new Date().toISOString(),
+      createdAt: '2025-02-25T10:00:00.000Z',   // 2 hours ago
+      lastActiveAt: '2025-02-25T12:00:00.000Z', // now
     },
     {
       id: 'sess-002',
@@ -42,8 +43,8 @@ vi.mock('../../../data/mockData', () => ({
       deviceType: 'mobile',
       ipAddress: '198.51.100.7',
       location: 'New York, NY, US',
-      createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      lastActiveAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      createdAt: '2025-02-24T12:00:00.000Z',   // 24 hours ago (yesterday)
+      lastActiveAt: '2025-02-25T11:55:00.000Z', // 5 minutes ago
     },
     {
       id: 'sess-003',
@@ -52,19 +53,21 @@ vi.mock('../../../data/mockData', () => ({
       deviceType: 'desktop',
       ipAddress: '192.0.2.188',
       location: 'Austin, TX, US',
-      createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-      lastActiveAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+      createdAt: '2025-02-18T12:00:00.000Z',   // 7 days ago
+      lastActiveAt: '2025-02-20T12:00:00.000Z', // 5 days ago
     },
   ],
 }));
 
 // ── Fake timers setup ─────────────────────────────────────────────────────────
 beforeEach(() => {
-  vi.useFakeTimers({ shouldAdvanceTime: false });
+  window.localStorage.removeItem('locale');
+  freezeTime();
 });
 
 afterEach(() => {
-  vi.useRealTimers();
+  window.localStorage.removeItem('locale');
+  unfreezeTime();
   vi.restoreAllMocks();
 });
 
@@ -185,6 +188,40 @@ describe('SessionsSettings page', () => {
       // 2 non-current sessions → 2 Revoke buttons
       const revokeButtons = screen.getAllByRole('button', { name: /^revoke session/i });
       expect(revokeButtons).toHaveLength(2);
+    });
+
+    it('formats relative session timestamps using Intl.RelativeTimeFormat in en-US by default', async () => {
+      render(<SessionsSettings />);
+      await waitForLoad();
+
+      const currentRow = screen.getByRole('listitem', {
+        name: /chrome 124 on macos, current session/i,
+      });
+      expect(currentRow).toHaveTextContent(/active now/i);
+      expect(currentRow).toHaveTextContent(/signed in 2 hours ago/i);
+
+      const iphoneRow = screen.getByRole('listitem', { name: /safari on iphone/i });
+      expect(iphoneRow).toHaveTextContent(/active 5 minutes ago/i);
+      expect(iphoneRow).toHaveTextContent(/signed in yesterday/i);
+    });
+
+    it('formats relative session timestamps using the stored locale (es)', async () => {
+      window.localStorage.setItem('locale', 'es');
+      render(<SessionsSettings />);
+      await waitForLoad();
+
+      const iphoneRow = screen.getByRole('listitem', { name: /safari on iphone/i });
+      expect(iphoneRow).toHaveTextContent(/hace 5 minutos/i);
+      expect(iphoneRow).toHaveTextContent(/ayer/i);
+    });
+
+    it('formats relative session timestamps using an explicit locale prop (de)', async () => {
+      render(<SessionsSettings locale="de" />);
+      await waitForLoad();
+
+      const iphoneRow = screen.getByRole('listitem', { name: /safari on iphone/i });
+      expect(iphoneRow).toHaveTextContent(/vor 5 Minuten/i);
+      expect(iphoneRow).toHaveTextContent(/gestern/i);
     });
   });
 

@@ -1,7 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { FormMessage } from './FormMessage';
-import { offlineMutation } from '../utils/offline';
-import { useOnline } from '../hooks/useOnline';
+import { offlineMutation, queueOfflineAction } from '../utils/offline';
 import './FileUploadZone.css';
 
 interface FileUploadItem {
@@ -10,7 +8,7 @@ interface FileUploadItem {
   progress: number;
   status: 'queued' | 'uploading' | 'success' | 'error';
   errorMessage?: string;
-  abortController?: AbortController;
+  xhr?: XMLHttpRequest;
 }
 
 interface FileUploadZoneProps {
@@ -19,8 +17,23 @@ interface FileUploadZoneProps {
   maxSizeMB?: number;
 }
 
+let fallbackFileIdCounter = 0;
+
+const createFileUploadId = (): string => {
+  try {
+    if (typeof globalThis.crypto?.randomUUID === 'function') {
+      return globalThis.crypto.randomUUID();
+    }
+  } catch {
+    // Fall through to the collision-safe counter fallback.
+  }
+
+  fallbackFileIdCounter += 1;
+  return `file-fallback-${fallbackFileIdCounter}`;
+};
+
 export function FileUploadZone({
-  onFilesUploaded,
+  onFilesUploaded: _onFilesUploaded,
   acceptedTypes = ['.pdf', '.csv'],
   maxSizeMB = 10,
 }: FileUploadZoneProps) {
@@ -28,7 +41,8 @@ export function FileUploadZone({
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const zoneRef = useRef<HTMLDivElement>(null);
-  const { queueAction } = useOnline();
+  const uploadQueueRef = useRef<FileUploadItem[]>([]);
+  const activeUploadsRef = useRef(0);
 
   const formatSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
@@ -50,63 +64,92 @@ export function FileUploadZone({
   };
 
   const updateItem = (id: string, updates: Partial<FileUploadItem>) => {
-    setFiles(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
+    setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...updates } : f)));
   };
 
-  const uploadFile = async (item: FileUploadItem) => {
-    const controller = new AbortController();
-    updateItem(item.id, { status: 'uploading', abortController: controller });
+  const finishUpload = () => {
+    activeUploadsRef.current = Math.max(0, activeUploadsRef.current - 1);
+    drainUploadQueue();
+  };
 
-    try {
-      // Simulate progress since we don't have a real endpoint
-      // In a real scenario, we would use XMLHttpRequest to track actual upload progress
-      for (let i = 0; i <= 100; i += 25) {
-        if (controller.signal.aborted) throw new Error('Upload cancelled');
-        await new Promise(resolve => setTimeout(resolve, 400));
-        updateItem(item.id, { progress: i });
+  const startUpload = (item: FileUploadItem) => {
+    activeUploadsRef.current += 1;
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+    formData.append('file', item.file);
+
+    xhr.open('POST', '/api/mock-upload', true);
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        updateItem(item.id, {
+          progress: Math.round((event.loaded * 100) / event.total),
+        });
       }
+    };
 
-      // Guard the actual mutation. Previously a fake `.catch(() => ({ ok: true }))`
-      // fabricated success on any failure; now the upload never claims to have
-      // succeeded when no confirmation was received.
-      await offlineMutation({
-        fn: async () => {
-          const formData = new FormData();
-          formData.append('file', item.file);
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        updateItem(item.id, { status: 'success', progress: 100, xhr: undefined });
+        onFilesUploaded([item.file]);
+      } else {
+        updateItem(item.id, { status: 'error', errorMessage: 'Upload failed', xhr: undefined });
+      }
+      finishUpload();
+    };
 
-          const response = await fetch('/api/mock-upload', {
-            method: 'POST',
-            body: formData,
-            signal: controller.signal,
+    xhr.onerror = () => {
+      updateItem(item.id, { status: 'error', errorMessage: 'Upload failed', xhr: undefined });
+      finishUpload();
+    };
+
+    xhr.onabort = () => {
+      updateItem(item.id, { status: 'error', errorMessage: 'Upload cancelled', xhr: undefined });
+      finishUpload();
+    };
+          queueOfflineAction({
+            type: 'upload',
+            label: `Upload ${item.file.name}`,
+            description: `${formatSize(item.file.size)} · ${item.file.name.split('.').pop()?.toUpperCase() ?? 'file'}`,
+            dedupeKey: `upload-${item.id}`,
+            run: () => uploadFile(item),
           });
 
-          if (controller.signal.aborted) throw new Error('Upload cancelled');
-          if (!response.ok) throw new Error('Upload failed');
-        },
-        onOffline: () => {
-          queueAction(() => {
-            uploadFile(item);
-          }, `upload-${item.id}`);
-        },
-        offlineMessage:
-          'You are offline. Upload queued and will retry when you reconnect.',
-      });
+    updateItem(item.id, { status: 'uploading', xhr });
+    try {
+      xhr.send(formData);
+    } catch {
+      updateItem(item.id, { status: 'error', errorMessage: 'Upload failed', xhr: undefined });
+      finishUpload();
+    }
+  };
 
-      updateItem(item.id, { status: 'success', progress: 100 });
-    } catch (e: any) {
-      updateItem(item.id, { status: 'error', errorMessage: e.message || 'Upload failed' });
+  const enqueueUpload = (item: FileUploadItem, reconnecting = false) => {
+    if (!reconnecting && typeof navigator !== 'undefined' && !navigator.onLine) {
+      updateItem(item.id, { status: 'queued', progress: 0, errorMessage: undefined });
+      queueAction(() => enqueueUpload(item, true), `upload-${item.id}`);
+      return;
+    }
+
+    uploadQueueRef.current.push(item);
+    drainUploadQueue();
+  };
+
+  const drainUploadQueue = () => {
+    while (activeUploadsRef.current < 3 && uploadQueueRef.current.length > 0) {
+      const item = uploadQueueRef.current.shift();
+      if (item) startUpload(item);
     }
   };
 
   const handleFiles = useCallback((newFiles: FileList | File[]) => {
-    console.log('Handling files:', newFiles);
     const allItems: FileUploadItem[] = [];
     const itemsToUpload: FileUploadItem[] = [];
 
-    Array.from(newFiles).forEach(file => {
+    Array.from(newFiles).forEach((file) => {
       const error = validateFile(file);
-      const id = Math.random().toString(36).substring(7);
-      
+      const id = createFileUploadId();
+
       if (error) {
         allItems.push({
           id,
@@ -116,7 +159,7 @@ export function FileUploadZone({
           errorMessage: error,
         });
       } else {
-        const item = {
+        const item: FileUploadItem = {
           id,
           file,
           progress: 0,
@@ -127,24 +170,27 @@ export function FileUploadZone({
       }
     });
 
-    setFiles(prev => [...prev, ...allItems]);
-    
+    setFiles((prev) => [...prev, ...allItems]);
+
     // Trigger uploads for valid files
-    itemsToUpload.forEach(item => uploadFile(item));
+    itemsToUpload.forEach((item) => enqueueUpload(item));
   }, []);
 
-  const onPaste = useCallback((e: ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
+  const onPaste = useCallback(
+    (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
 
-    const files: File[] = [];
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].kind === 'file') {
-        files.push(items[i].getAsFile()!);
+      const files: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].kind === 'file') {
+          files.push(items[i].getAsFile()!);
+        }
       }
-    }
-    if (files.length > 0) handleFiles(files);
-  }, [handleFiles]);
+      if (files.length > 0) handleFiles(files);
+    },
+    [handleFiles],
+  );
 
   useEffect(() => {
     window.addEventListener('paste', onPaste);
@@ -152,14 +198,15 @@ export function FileUploadZone({
   }, [onPaste]);
 
   const removeFile = (id: string) => {
-    const item = files.find(f => f.id === id);
-    if (item?.abortController) item.abortController.abort();
-    setFiles(prev => prev.filter(f => f.id !== id));
+    const item = files.find((f) => f.id === id);
+    if (item?.xhr) item.xhr.abort();
+    uploadQueueRef.current = uploadQueueRef.current.filter((queued) => queued.id !== id);
+    setFiles((prev) => prev.filter((f) => f.id !== id));
   };
 
   const retryFile = (item: FileUploadItem) => {
     updateItem(item.id, { status: 'queued', progress: 0, errorMessage: undefined });
-    uploadFile(item);
+    enqueueUpload(item);
   };
 
   const onDrop = (e: React.DragEvent) => {
@@ -188,7 +235,7 @@ export function FileUploadZone({
         onDragLeave={onDragLeave}
         onDrop={onDrop}
         onClick={() => fileInputRef.current?.click()}
-        onKeyDown={e => e.key === 'Enter' && fileInputRef.current?.click()}
+        onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
         aria-label="Upload revenue files. Drag and drop files here or click to browse."
       >
         <span className="file-upload-zone-title">Upload Revenue Statements</span>
@@ -200,24 +247,21 @@ export function FileUploadZone({
           multiple
           className="sr-only"
           accept=".pdf,.csv"
-          onChange={e => e.target.files && handleFiles(e.target.files)}
+          onChange={(e) => e.target.files && handleFiles(e.target.files)}
           aria-label="Upload revenue files"
         />
       </div>
 
       <div className="file-list" role="list">
-        {files.map(item => (
-          <div key={item.id} className="file-item" role="listitem">
+        {files.map((item) => (
+          <div key={item.id} id={item.id} className="file-item" role="listitem">
             <div className="file-item-info">
               <div className="file-item-name">{item.file.name}</div>
               <div className="file-item-meta">{formatSize(item.file.size)}</div>
-              
+
               {item.status === 'uploading' && (
                 <div className="file-progress-container">
-                  <div 
-                    className="file-progress-bar" 
-                    style={{ width: `${item.progress}%` }} 
-                  />
+                  <div className="file-progress-bar" style={{ width: `${item.progress}%` }} />
                 </div>
               )}
 
@@ -227,28 +271,28 @@ export function FileUploadZone({
                 </div>
               )}
               {item.status === 'success' && (
-                <div className="file-item-status status--success">
-                  Successfully uploaded
-                </div>
+                <div className="file-item-status status--success">Successfully uploaded</div>
               )}
             </div>
-            
+
             <div className="file-item-actions">
               {item.status === 'error' && (
-                <button 
-                  className="file-action-btn" 
+                <button
+                  className="file-action-btn"
                   onClick={() => retryFile(item)}
                   title="Retry upload"
                   aria-label={`Retry upload for ${item.file.name}`}
+                  aria-controls={item.id}
                 >
                   🔄
                 </button>
               )}
-              <button 
-                className="file-action-btn file-action-btn--danger" 
+              <button
+                className="file-action-btn file-action-btn--danger"
                 onClick={() => removeFile(item.id)}
                 title="Remove file"
                 aria-label={`Remove ${item.file.name}`}
+                aria-controls={item.id}
               >
                 ✕
               </button>
@@ -259,9 +303,9 @@ export function FileUploadZone({
 
       {/* Live region for progress announcements */}
       <div className="sr-only" role="status" aria-live="polite">
-        {files.map(f => f.status === 'uploading' && 
-          `Uploading ${f.file.name}: ${f.progress}%`
-        ).join(', ')}
+        {files
+          .map((f) => f.status === 'uploading' && `Uploading ${f.file.name}: ${f.progress}%`)
+          .join(', ')}
       </div>
     </div>
   );

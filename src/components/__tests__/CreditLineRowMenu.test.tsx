@@ -88,4 +88,19 @@ describe('CreditLineRowMenu', () => {
 
     expect(defaultProps.onDetails).toHaveBeenCalledWith('line-123');
   });
+
+  test('renders and calls onAdjustCollateral when Adjust Collateral is clicked', () => {
+    const onAdjustCollateral = vi.fn();
+    render(
+      <MemoryRouter>
+        <CreditLineRowMenu {...defaultProps} onAdjustCollateral={onAdjustCollateral} />
+      </MemoryRouter>
+    );
+    fireEvent.click(screen.getByLabelText(/Menu for Test Credit Line/i));
+    const item = screen.getByRole('menuitem', { name: /Adjust Collateral/i });
+    expect(item).toBeInTheDocument();
+
+    fireEvent.click(item);
+    expect(onAdjustCollateral).toHaveBeenCalledWith('line-123');
+  });
 });
