@@ -46,6 +46,27 @@ export interface PasswordResetData {
 export interface AuthError {
   field?: string
   message: string
+  code?: AuthErrorCode
+}
+
+export type AuthErrorCode =
+  | 'user_rejected'
+  | 'wrong_network'
+  | 'challenge_expired'
+  | 'invalid_challenge'
+  | 'wallet_error'
+  | 'request_failed'
+  | 'configuration_error'
+
+/** SEP-10 transaction returned by the authentication endpoint. */
+export interface Sep10Challenge {
+  transaction: string
+  network_passphrase: string
+}
+
+/** Authenticated session returned after a SEP-10 challenge is verified. */
+export interface Sep10Session {
+  token: string
 }
 
 /**

@@ -5,9 +5,10 @@ import {
   WalletErrorType,
   StoredWalletPreference,
 } from '../types/wallet';
-import { readJson, writeJson, removeKey } from './storage';
+import { readJson, writeJson, removeKey, removeSessionKey } from './storage';
 import { isValidAccountId } from './strkey';
 import { getCreditNetworkConfig, type CreditNetwork } from '../config/creditNetwork';
+import { AUTH_TOKEN_KEY } from '../constants/storageKeys';
 import { getWalletAdapter } from './wallets';
 
 // Re-export types for convenience
@@ -524,6 +525,69 @@ export const disconnectWallet = () => {
   removeKey(STORAGE_KEY_PREFERENCE_LEGACY);
   removeKey(STORAGE_KEY_REMEMBER);
   removeKey(STORAGE_KEY_ACCOUNT);
+  removeKey(AUTH_TOKEN_KEY);
+  removeSessionKey(AUTH_TOKEN_KEY);
+};
+
+function extractSignedXdr(result: unknown): string {
+  if (typeof result === 'string' && result.length > 0) return result;
+  if (result && typeof result === 'object') {
+    const record = result as Record<string, unknown>;
+    for (const key of [
+      'signedTxXdr',
+      'signedXdr',
+      'signedXDR',
+      'signed_envelope_xdr',
+      'xdr',
+    ]) {
+      if (typeof record[key] === 'string' && record[key]) return record[key] as string;
+    }
+  }
+  throw new WalletConnectError(
+    'connection_failed',
+    'Your wallet did not return a signed transaction.',
+  );
+}
+
+/** Ask the connected wallet to sign a transaction XDR for the configured network. */
+export const signTransaction = async (
+  wallet: WalletInfo,
+  xdr: string,
+  networkPassphrase: string,
+): Promise<string> => {
+  try {
+    let result: unknown;
+    if (wallet.type === 'freighter' && window.freighter?.signTransaction) {
+      result = await window.freighter.signTransaction(xdr, {
+        networkPassphrase,
+        address: wallet.publicKey,
+      });
+    } else if (wallet.type === 'albedo' && window.albedo?.tx) {
+      result = await window.albedo.tx({
+        xdr,
+        network: wallet.network.toLowerCase(),
+      });
+    } else if (wallet.type === 'xbull' && window.xBullSDK) {
+      const sign = window.xBullSDK.signXDR ?? window.xBullSDK.signTransaction;
+      if (!sign) {
+        throw new WalletConnectError(
+          'connection_failed',
+          'Transaction signing is not supported by this wallet.',
+        );
+      }
+      result = await sign.call(window.xBullSDK, xdr, wallet.network);
+    } else if (wallet.type === 'rabet' && window.rabet?.signTransaction) {
+      result = await window.rabet.signTransaction(xdr, wallet.network);
+    } else {
+      throw new WalletConnectError(
+        'connection_failed',
+        'Transaction signing is not supported by this wallet.',
+      );
+    }
+    return extractSignedXdr(result);
+  } catch (error) {
+    throw classifyWalletError(error);
+  }
 };
 
 /**

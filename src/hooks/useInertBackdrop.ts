@@ -15,6 +15,58 @@ interface UseInertBackdropOptions {
   modalId: string;
 }
 
+interface InertState {
+  count: number;
+  inert: boolean;
+  ariaHidden: string | null;
+  pointerEvents: string;
+}
+
+const inertStates = new WeakMap<Element, InertState>();
+
+function acquireInert(element: Element) {
+  const existingState = inertStates.get(element);
+  if (existingState) {
+    existingState.count += 1;
+    return;
+  }
+
+  inertStates.set(element, {
+    count: 1,
+    inert: element.hasAttribute('inert'),
+    ariaHidden: element.getAttribute('aria-hidden'),
+    pointerEvents: (element as HTMLElement).style.pointerEvents,
+  });
+
+  if ('inert' in HTMLElement.prototype) {
+    (element as HTMLElement).inert = true;
+  } else {
+    element.setAttribute('aria-hidden', 'true');
+    (element as HTMLElement).style.pointerEvents = 'none';
+  }
+}
+
+function releaseInert(element: Element) {
+  const state = inertStates.get(element);
+  if (!state) return;
+
+  state.count -= 1;
+  if (state.count > 0) return;
+
+  if ('inert' in HTMLElement.prototype) {
+    (element as HTMLElement).inert = state.inert;
+  } else {
+    if (state.ariaHidden === null) {
+      element.removeAttribute('aria-hidden');
+    } else {
+      element.setAttribute('aria-hidden', state.ariaHidden);
+    }
+    (element as HTMLElement).style.pointerEvents = state.pointerEvents;
+  }
+
+  inertStates.delete(element);
+}
+
 /**
  * Make everything outside a given modal container unreachable to both
  * pointer input and assistive technology while the modal is open.
@@ -22,7 +74,9 @@ interface UseInertBackdropOptions {
  * Prefers the native `inert` attribute when supported; falls back to
  * `aria-hidden` plus `pointer-events: none` for older browsers. Original
  * attribute values are restored on cleanup so this hook is safe to
- * compose with manually managed `aria-hidden` regions.
+ * compose with manually managed `aria-hidden` regions. Overlapping modal
+ * locks are reference-counted so a background stays inert until the last
+ * modal that depends on the lock closes.
  */
 export function useInertBackdrop({ isInert, modalId }: UseInertBackdropOptions) {
   useEffect(() => {
@@ -32,18 +86,12 @@ export function useInertBackdrop({ isInert, modalId }: UseInertBackdropOptions) 
     if (!modal) return;
 
     const elementsToInert = new Set<Element>();
-    const originalStates: Array<{
-      element: Element;
-      inert: boolean | null;
-      ariaHidden: string | null;
-      pointerEvents: string;
-    }> = [];
 
     // Inert only siblings outside the modal subtree so we never disable an
     // ancestor that still contains the active dialog.
     let current: Element | null = modal;
     while (current && current !== document.body) {
-      const parent = current.parentElement;
+      const parent: HTMLElement | null = current.parentElement;
       if (!parent) break;
 
       Array.from(parent.children).forEach((sibling) => {
@@ -60,39 +108,10 @@ export function useInertBackdrop({ isInert, modalId }: UseInertBackdropOptions) 
       current = parent;
     }
 
-    elementsToInert.forEach((element) => {
-      originalStates.push({
-        element,
-        inert: element.hasAttribute('inert') ? true : null,
-        ariaHidden: element.getAttribute('aria-hidden'),
-        pointerEvents: (element as HTMLElement).style.pointerEvents,
-      });
-
-      if ('inert' in HTMLElement.prototype) {
-        (element as HTMLElement).inert = true;
-      } else {
-        element.setAttribute('aria-hidden', 'true');
-        (element as HTMLElement).style.pointerEvents = 'none';
-      }
-    });
+    elementsToInert.forEach(acquireInert);
 
     return () => {
-      originalStates.forEach(({ element, inert, ariaHidden, pointerEvents }) => {
-        if ('inert' in HTMLElement.prototype) {
-          if (inert === null) {
-            (element as HTMLElement).removeAttribute('inert');
-          } else {
-            (element as HTMLElement).inert = true;
-          }
-        } else {
-          if (ariaHidden === null) {
-            element.removeAttribute('aria-hidden');
-          } else {
-            element.setAttribute('aria-hidden', ariaHidden);
-          }
-          (element as HTMLElement).style.pointerEvents = pointerEvents;
-        }
-      });
+      elementsToInert.forEach(releaseInert);
     };
   }, [isInert, modalId]);
 }

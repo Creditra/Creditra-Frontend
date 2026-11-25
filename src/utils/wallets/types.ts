@@ -17,6 +17,10 @@ export interface WalletAdapter {
 export interface FreighterWallet {
   getPublicKey: () => Promise<string>;
   getNetwork: () => Promise<string>;
+  signTransaction?: (
+    xdr: string,
+    options: { networkPassphrase: string; address?: string },
+  ) => Promise<unknown>;
   switchNetwork?: (network: string) => Promise<void>;
   signTransaction?: (
     xdr: string,
@@ -34,6 +38,7 @@ export interface AlbedoWallet {
     network?: string;
     submit?: boolean;
   }) => Promise<{ signed_envelope_xdr: string; tx_hash?: string }>;
+  tx?: (options: { xdr: string; network: string }) => Promise<unknown>;
   getAddresses?: () => Promise<string[] | { addresses?: string[] }>;
   getAccounts?: () => Promise<string[]>;
 }
@@ -44,6 +49,8 @@ export interface XBullWallet {
     xdr: string,
     opts?: { network?: string; publicKey?: string },
   ) => Promise<string | { xdr?: string }>;
+  signXDR?: (xdr: string, network: string) => Promise<unknown>;
+  signTransaction?: (xdr: string, network: string) => Promise<unknown>;
   getAddresses?: () => Promise<string[] | { addresses?: string[] }>;
   getAccounts?: () => Promise<string[]>;
 }
@@ -54,6 +61,7 @@ export interface RabetWallet {
     xdr: string,
     network: 'mainnet' | 'testnet',
   ) => Promise<{ xdr?: string; error?: string } | string>;
+  signTransaction?: (xdr: string, network: string) => Promise<unknown>;
   getAddresses?: () => Promise<string[] | { addresses?: string[] }>;
   getAccounts?: () => Promise<string[]>;
 }

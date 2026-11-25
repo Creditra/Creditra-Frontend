@@ -20,20 +20,24 @@ import {
   type AmountRangePreset,
 } from "../components/AmountRangeChips";
 import { useDebounceValue } from "../hooks/useDebounceValue";
+import { useLedgerWorker } from "../hooks/useLedgerWorker";
 import { getExplorerBaseUrl } from "../utils/wallet";
 import { getCreditNetworkConfig } from "../config/creditNetwork";
 import { copyTextToClipboard } from "../utils/clipboard";
 import { downloadCsv } from "../utils/csv";
 import {
-  buildTransactionCsv,
-  buildTransactionCsvFilename,
   DEFAULT_TRANSACTION_CSV_ASSET,
 } from "../lib/transaction-csv";
+import {
+  queryTransactions,
+  type LedgerTransaction,
+  type TransactionQueryFilters,
+  type TransactionQueryResult,
+} from "../lib/transaction-query";
 import { useNotifications } from "../context/NotificationContext";
 import { useCreditLines, useCreditTransactions } from "../hooks/useCreditLines";
 import {
   amountPresetFromUrl,
-  matchesAmountFilter,
   type AmountFilter,
 } from "../utils/transactionAmountFilter";
 import {
@@ -53,13 +57,10 @@ import {
   type TransactionPreset,
 } from "../lib/transaction-presets";
 import type {
-  CreditLineStatus,
   TransactionStatus,
   TransactionType,
 } from "../types/creditLine";
 import {
-  startOfMonth,
-  startOfWeek,
   getCalendarGroup,
   relativeTime as formatCalendarRelative,
 } from "../utils/dates";
@@ -122,19 +123,6 @@ import { VirtualList, type VirtualListHandle } from "../components/VirtualList";
  * - Clear filters button appears only when filters are active and return 0 results
  * - Icon and messaging distinguish between data absence and filter mismatch
  */
-
-interface TransactionWithLine {
-  id: string;
-  type: TransactionType;
-  amount: number;
-  date: string;
-  note?: string;
-  status: TransactionStatus;
-  txHash?: string;
-  lineId: string;
-  lineName: string;
-  lineStatus: CreditLineStatus;
-}
 
 const TX_TYPE_LABELS: Record<TransactionType, string> = {
   Draw: "Draw",
@@ -382,7 +370,7 @@ function TransactionRow({
   onFocus,
   onKeyDown,
 }: {
-  tx: TransactionWithLine;
+  tx: LedgerTransaction;
   expanded: boolean;
   onToggle: () => void;
   ariaRowIndex?: number;
@@ -560,8 +548,19 @@ const CSV_EXPORT_EMPTY_REASON_ID = "csv-export-empty-reason";
  */
 const ITEMS_PER_PAGE = DEFAULT_HISTORY_PAGE_SIZE;
 const DEFAULT_VIRTUALIZE_THRESHOLD = 100;
+const LEDGER_WORKER_THRESHOLD = 2_000;
 const ESTIMATED_ROW_HEIGHT = 64;
 const ESTIMATED_EXPANDED_ROW_HEIGHT = 260;
+const EMPTY_TRANSACTION_ROWS: LedgerTransaction[] = [];
+
+function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    error.name === "AbortError"
+  );
+}
 
 export interface TransactionHistoryProps {
   /** Override items per page (defaults to 15; values > 50 bypass cursor cap for large virtualized views). */
@@ -578,7 +577,7 @@ export function TransactionHistory({
   const navigate = useNavigate();
   const { addToast } = useNotifications();
   const { lines: creditLines, status, error, refetch } = useCreditLines();
-  const { transactions } = useCreditTransactions();
+  const { transactions } = useCreditTransactions({ sort: false });
 
   // ─── Filter and UI State ───
   const [selectedLine, setSelectedLine] = useState<string>("all");
@@ -747,15 +746,6 @@ export function TransactionHistory({
     }
   }, [location.search]);
 
-  const allTransactions = useMemo(() => {
-    return transactions.map((tx) => ({ ...tx })).sort((a, b) => {
-      const aTime = new Date(a.date).getTime();
-      const bTime = new Date(b.date).getTime();
-      if (bTime !== aTime) return bTime - aTime;
-      return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
-    });
-  }, [transactions]);
-
   // Sync the debounced input value into the filter state and reset page.
   // This is the only place `searchQuery` (which drives filteredTransactions)
   // is updated from user input, keeping keystroke and filter concerns separate.
@@ -764,125 +754,6 @@ export function TransactionHistory({
     setCurrentPage(1);
   }, [debouncedSearch]);
 
-  /**
-   * Build a deduplicated list of suggestion strings from the full transaction
-   * set that contain the current raw input value.  Suggestions surface
-   * credit-line names, line IDs, and notes — matching the same fields that
-   * the filter already searches.  Capped at 8 items for a manageable list.
-   *
-   * Computed from `searchInputValue` (not the debounced value) so that
-   * the dropdown tracks the live keystroke, while filtering is debounced.
-   */
-  const suggestions = useMemo<string[]>(() => {
-    const q = searchInputValue.trim().toLowerCase();
-    if (!q) return [];
-
-    const seen = new Set<string>();
-    const results: string[] = [];
-
-    for (const tx of allTransactions) {
-      if (results.length >= 8) break;
-
-      const candidates: (string | undefined)[] = [
-        tx.lineName,
-        tx.lineId,
-        tx.note,
-      ];
-
-      for (const c of candidates) {
-        if (!c) continue;
-        const lower = c.toLowerCase();
-        if (lower.includes(q) && !seen.has(c)) {
-          seen.add(c);
-          results.push(c);
-          if (results.length >= 8) break;
-        }
-      }
-    }
-
-    return results;
-  }, [searchInputValue, allTransactions]);
-
-  const filteredTransactions = useMemo(() => {
-    return allTransactions.filter((tx) => {
-      const txTime = new Date(tx.date).getTime();
-      if (Number.isNaN(txTime)) return false;
-
-      if (selectedLine !== "all" && tx.lineId !== selectedLine) return false;
-      if (selectedType !== "all" && tx.type !== selectedType) return false;
-      if (selectedStatus !== "all" && tx.status !== selectedStatus)
-        return false;
-      if (!matchesAmountFilter(amountFilter, tx.amount)) return false;
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const matchesNote = tx.note?.toLowerCase().includes(query);
-        const matchesLine = tx.lineName.toLowerCase().includes(query);
-        const matchesId = tx.lineId.toLowerCase().includes(query);
-        const matchesHash = tx.txHash?.toLowerCase().includes(query);
-        if (!matchesNote && !matchesLine && !matchesId && !matchesHash)
-          return false;
-      }
-
-      const now = clockNow();
-      const startOfToday = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-      ).getTime();
-
-      if (dateRange === "today" && txTime < startOfToday) return false;
-      if (dateRange === "7d" && txTime < clockNowMs() - 7 * 24 * 60 * 60 * 1000) {
-        return false;
-      }
-      if (
-        dateRange === "30d" &&
-        txTime < clockNowMs() - 30 * 24 * 60 * 60 * 1000
-      ) {
-        return false;
-      }
-      if (
-        dateRange === "90d" &&
-        txTime < clockNowMs() - 90 * 24 * 60 * 60 * 1000
-      ) {
-        return false;
-      }
-
-      if (presetRange === "this-week") {
-        const weekStart = startOfWeek(now).getTime();
-        if (txTime < weekStart) return false;
-      } else if (presetRange === "this-month") {
-        const monthStart = startOfMonth(now).getTime();
-        if (txTime < monthStart) return false;
-      } else if (presetRange === "all-time") {
-        // No lower bound; keep all historical transactions.
-      } else if (presetRange === "custom" && dateRange === "custom") {
-        if (customStartDate) {
-          const start = new Date(`${customStartDate}T00:00:00`).getTime();
-          if (txTime < start) return false;
-        }
-
-        if (customEndDate) {
-          const end = new Date(`${customEndDate}T23:59:59.999`).getTime();
-          if (txTime > end) return false;
-        }
-      }
-
-      return true;
-    });
-  }, [
-    allTransactions,
-    selectedLine,
-    selectedType,
-    selectedStatus,
-    searchQuery,
-    amountFilter,
-    dateRange,
-    presetRange,
-    customStartDate,
-    customEndDate,
-  ]);
-
-  const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
   const filterKey = JSON.stringify([
     selectedLine,
     selectedType,
@@ -897,6 +768,124 @@ export function TransactionHistory({
     customAmountMax,
     searchQuery,
   ]);
+  const queryKey = JSON.stringify([filterKey, searchInputValue]);
+  const queryFilters = useMemo<TransactionQueryFilters>(
+    () => ({
+      selectedLine,
+      selectedType,
+      selectedStatus,
+      searchQuery,
+      amountFilter,
+      dateRange,
+      presetRange,
+      customStartDate,
+      customEndDate,
+    }),
+    [
+      amountFilter,
+      customEndDate,
+      customStartDate,
+      dateRange,
+      presetRange,
+      searchQuery,
+      selectedLine,
+      selectedStatus,
+      selectedType,
+    ],
+  );
+  const shouldUseWorker = transactions.length > LEDGER_WORKER_THRESHOLD;
+  const inlineQueryResult = useMemo<TransactionQueryResult | null>(() => {
+    if (shouldUseWorker) return null;
+    return queryTransactions(transactions, queryFilters, {
+      nowMs: clockNowMs(),
+      suggestionQuery: searchInputValue,
+    });
+  }, [queryFilters, searchInputValue, shouldUseWorker, transactions]);
+  const {
+    query: queryInWorker,
+    exportCsv: exportLedgerCsv,
+    cancelQueries,
+    isQuerying,
+    isExporting,
+  } = useLedgerWorker();
+  const [workerQueryState, setWorkerQueryState] = useState<{
+    transactions: typeof transactions;
+    filterKey: string;
+    suggestionQuery: string;
+    result: TransactionQueryResult;
+  } | null>(null);
+  const [workerQueryError, setWorkerQueryError] = useState<{
+    transactions: typeof transactions;
+    key: string;
+    message: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!shouldUseWorker) {
+      cancelQueries();
+      setWorkerQueryState(null);
+      setWorkerQueryError(null);
+      return;
+    }
+
+    let isCurrent = true;
+    void queryInWorker(transactions, queryFilters, {
+      nowMs: clockNowMs(),
+      suggestionQuery: searchInputValue,
+    })
+      .then((result) => {
+        if (!isCurrent || !result) return;
+        setWorkerQueryState({
+          transactions,
+          filterKey,
+          suggestionQuery: searchInputValue,
+          result,
+        });
+      })
+      .catch((error: unknown) => {
+        if (!isCurrent || isAbortError(error)) return;
+        setWorkerQueryError({
+          transactions,
+          key: queryKey,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [
+    cancelQueries,
+    filterKey,
+    queryFilters,
+    queryInWorker,
+    queryKey,
+    searchInputValue,
+    shouldUseWorker,
+    transactions,
+  ]);
+
+  const activeWorkerQuery =
+    workerQueryState?.transactions === transactions &&
+    workerQueryState.filterKey === filterKey
+      ? workerQueryState
+      : null;
+  const queryResult = inlineQueryResult ?? activeWorkerQuery?.result ?? null;
+  const suggestions =
+    inlineQueryResult?.suggestions ??
+    (activeWorkerQuery?.suggestionQuery === searchInputValue
+      ? activeWorkerQuery.result.suggestions
+      : []);
+  const hasCurrentQueryError =
+    workerQueryError?.transactions === transactions &&
+    workerQueryError.key === queryKey;
+  const isQueryPending =
+    shouldUseWorker && !activeWorkerQuery && !hasCurrentQueryError;
+  const isLedgerBusy = isQuerying || isExporting || isQueryPending;
+  const filteredTransactions =
+    queryResult?.filteredTransactions ?? EMPTY_TRANSACTION_ROWS;
+  const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
+
   const previousFilterKey = useRef(filterKey);
   useEffect(() => {
     if (previousFilterKey.current === filterKey) return;
@@ -927,7 +916,7 @@ export function TransactionHistory({
   const paginatedTransactions = currentPageResult.items;
 
   const paginatedGrouped = useMemo(() => {
-    const groups: Record<string, TransactionWithLine[]> = {};
+    const groups: Record<string, LedgerTransaction[]> = {};
     paginatedTransactions.forEach((tx) => {
       const group = getDateGroup(tx.date);
       if (!groups[group]) groups[group] = [];
@@ -1054,25 +1043,34 @@ export function TransactionHistory({
 
   const [isExportingPdf, setIsExportingPdf] = useState(false);
 
-  const exportDisabled = filteredTransactions.length === 0;
+  const exportDisabled =
+    filteredTransactions.length === 0 || isQueryPending || hasCurrentQueryError;
+  const [csvExportError, setCsvExportError] = useState<string | null>(null);
 
-  const handleExportCsv = () => {
-    if (exportDisabled) return;
+  const handleExportCsv = async () => {
+    if (exportDisabled || isExporting) return;
 
-    const csv = buildTransactionCsv(filteredTransactions, {
-      asset: DEFAULT_TRANSACTION_CSV_ASSET,
-    });
-    const filename = buildTransactionCsvFilename(filteredTransactions);
+    setCsvExportError(null);
+    try {
+      const { csv, filename } = await exportLedgerCsv(filteredTransactions, {
+        asset: DEFAULT_TRANSACTION_CSV_ASSET,
+      });
 
-    downloadCsv(filename, csv);
+      downloadCsv(filename, csv);
 
-    addToast({
-      type: "success",
-      category: "transaction",
-      title: "CSV export ready",
-      message: `Your filtered transaction history was downloaded as ${filename}.`,
-      saveToHistory: false,
-    });
+      addToast({
+        type: "success",
+        category: "transaction",
+        title: "CSV export ready",
+        message: `Your filtered transaction history was downloaded as ${filename}.`,
+        saveToHistory: false,
+      });
+    } catch (error) {
+      if (isAbortError(error)) return;
+      setCsvExportError(
+        `CSV export failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   };
 
   const exportToPDF = async () => {
@@ -1250,7 +1248,7 @@ export function TransactionHistory({
   );
 
   const hasLines = creditLines.length > 0;
-  const hasTransactions = allTransactions.length > 0;
+  const hasTransactions = transactions.length > 0;
 
   const hasActiveFilters =
     selectedLine !== "all" ||
@@ -1263,7 +1261,11 @@ export function TransactionHistory({
     customEndDate.length > 0 ||
     searchInputValue.trim().length > 0;
 
-  const resultCountText = `${filteredTransactions.length} ${filteredTransactions.length === 1 ? "transaction" : "transactions"} shown`;
+  const resultCountText = isQueryPending
+    ? "Updating transaction results…"
+    : hasCurrentQueryError
+      ? "Transaction results could not be updated."
+      : `${filteredTransactions.length} ${filteredTransactions.length === 1 ? "transaction" : "transactions"} shown`;
 
   useEffect(() => {
     if (isFirstRender.current) {
@@ -1710,13 +1712,14 @@ export function TransactionHistory({
               type="button"
               className="export-btn"
               onClick={handleExportCsv}
-              disabled={exportDisabled}
+              disabled={exportDisabled || isExporting}
+              aria-busy={isExporting}
               aria-describedby={
                 exportDisabled ? CSV_EXPORT_EMPTY_REASON_ID : undefined
               }
             >
               <span aria-hidden="true">📥</span>
-              Export CSV
+              {isExporting ? "Preparing CSV…" : "Export CSV"}
             </button>
             <button
               type="button"
@@ -1736,9 +1739,15 @@ export function TransactionHistory({
       </div>
 
       <p id={CSV_EXPORT_EMPTY_REASON_ID} className="th-export-help">
-        {exportDisabled
-          ? "Export CSV is unavailable because the current filters do not match any transactions."
-          : ""}
+        {csvExportError
+          ? <span role="alert">{csvExportError}</span>
+          : isQueryPending
+            ? "Export CSV is unavailable while transaction results are updating."
+            : hasCurrentQueryError
+              ? "Export CSV is unavailable because transaction results could not be updated."
+              : filteredTransactions.length === 0
+                ? "Export CSV is unavailable because the current filters do not match any transactions."
+                : ""}
       </p>
 
       <div className="th-stats">
@@ -2317,6 +2326,7 @@ export function TransactionHistory({
           role="status"
           aria-live="polite"
           aria-atomic="true"
+          aria-busy={isLedgerBusy}
         >
           {resultCountText}
         </div>
@@ -2324,13 +2334,24 @@ export function TransactionHistory({
 
       <div
         ref={tableScrollContainerRef}
+        aria-busy={isLedgerBusy}
         className={`th-table-container${
           flatPageTransactions.length >= virtualizeThreshold
             ? " th-table-container--virtualized"
             : ""
         }`}
       >
-        {filteredTransactions.length === 0 ? (
+        {isQueryPending ? (
+          <div className="empty-state" role="status" aria-live="polite">
+            <h2>Updating transaction results</h2>
+            <p>Your current filters are being applied.</p>
+          </div>
+        ) : hasCurrentQueryError ? (
+          <div className="empty-state" role="alert">
+            <h2>Unable to update transaction results</h2>
+            <p>{workerQueryError?.message ?? "The background task failed."}</p>
+          </div>
+        ) : filteredTransactions.length === 0 ? (
           <div className="empty-state" role="status" aria-live="polite">
             <NoDataGraph className="empty-state-illustration--muted" />
             <h2>No transactions found</h2>

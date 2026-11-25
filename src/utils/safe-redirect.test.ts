@@ -72,6 +72,10 @@ describe('safeReturnPath', () => {
     expect(safeReturnPath('/')).toBe('/');
   });
 
+  it('allows the dashboard as a post-login destination', () => {
+    expect(safeReturnPath('/dashboard?tab=activity')).toBe('/dashboard?tab=activity');
+  });
+
   it('accepts nested allowlisted routes', () => {
     expect(safeReturnPath('/settings/accounts?tab=tokens')).toBe('/settings/accounts?tab=tokens');
   });

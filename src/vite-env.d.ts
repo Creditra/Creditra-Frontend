@@ -17,6 +17,8 @@
  */
   /** `mock` (default) or `soroban`. */
   readonly VITE_CREDIT_DATA_SOURCE?: 'mock' | 'soroban' | string;
+  readonly VITE_SEP10_AUTH_URL?: string;
+  readonly VITE_SEP10_HOME_DOMAIN?: string;
 
   // Build-time feature flags (truthy only for 'true' or '1'; default off)
   readonly VITE_FEATURE_COLLATERAL_SWAP?: string;

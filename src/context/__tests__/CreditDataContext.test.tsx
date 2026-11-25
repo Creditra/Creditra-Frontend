@@ -38,6 +38,15 @@ function TransactionProbe({ cursor, testId }: { cursor?: string; testId: string 
   );
 }
 
+function UnsortedTransactionProbe() {
+  const { transactions } = useCreditTransactions({ sort: false });
+  return (
+    <span data-testid="unsorted-transactions">
+      {transactions.map((transaction) => transaction.id).join(',')}
+    </span>
+  );
+}
+
 function tree(wallet: WalletInfo | null, source: CreditDataSource, probe = <Probe />) {
   return (
     <WalletProvider initialWallet={wallet}>
@@ -140,6 +149,33 @@ describe('CreditDataProvider', () => {
     expect(screen.getByTestId('first-cursor')).toHaveTextContent(expected[0].id);
     expect(screen.getByTestId('second-transaction')).toHaveTextContent(expected[1].id);
     expect(listCreditLines).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves transaction order when sorting is delegated to a downstream worker', async () => {
+    const transactions = [
+      {
+        ...MOCK_CREDIT_LINES[0].transactions[1],
+        id: 'older',
+        date: '2024-01-01T00:00:00Z',
+      },
+      {
+        ...MOCK_CREDIT_LINES[0].transactions[0],
+        id: 'newer',
+        date: '2025-01-01T00:00:00Z',
+      },
+    ];
+    const line = { ...MOCK_CREDIT_LINES[0], transactions };
+    const source: CreditDataSource = {
+      listCreditLines: vi.fn().mockResolvedValue([line]),
+      getCreditLine: vi.fn(),
+    };
+    render(tree(walletA, source, <UnsortedTransactionProbe />));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('unsorted-transactions')).toHaveTextContent(
+        'older,newer',
+      );
+    });
   });
 });
 

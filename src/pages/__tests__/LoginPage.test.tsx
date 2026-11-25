@@ -22,12 +22,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LoginPage } from '../LoginPage';
 import { FetchTimeoutError } from '../../utils/fetchWithTimeout';
 import * as fetchWithTimeoutModule from '../../utils/fetchWithTimeout';
+import { WalletProvider } from '../../context/WalletContext';
 
 /** Helper: render LoginPage inside MemoryRouter (required for Link / useNavigate). */
 function renderPage() {
   return render(
     <MemoryRouter>
-      <LoginPage />
+      <WalletProvider initialWallet={null}>
+        <LoginPage />
+      </WalletProvider>
     </MemoryRouter>,
   );
 }

@@ -19,6 +19,8 @@ export interface CreditNetworkConfig {
   explorerBaseUrl: string;
   /** Friendbot funding endpoint. Testnet only; `undefined` on PUBLIC. */
   friendbotUrl?: string;
+  sep10AuthUrl?: string;
+  sep10HomeDomain?: string;
 }
 
 export class ConfigError extends Error {
@@ -177,9 +179,27 @@ export function getCreditNetworkConfig(
   const networkPassphrase =
     readEnv(env, 'VITE_STELLAR_NETWORK_PASSPHRASE') ?? defaults.networkPassphrase;
   const creditContractId = readEnv(env, 'VITE_CREDIT_CONTRACT_ID') ?? '';
+  const sep10AuthUrl = readEnv('VITE_SEP10_AUTH_URL');
+  const sep10HomeDomain = readEnv('VITE_SEP10_HOME_DOMAIN');
 
   validateUrl('VITE_HORIZON_URL', horizonUrl, problems, env);
   validateUrl('VITE_SOROBAN_RPC_URL', sorobanRpcUrl, problems, env);
+  if (sep10AuthUrl) validateUrl('VITE_SEP10_AUTH_URL', sep10AuthUrl, problems);
+  if (sep10HomeDomain) {
+    try {
+      const domainUrl = new URL(`https://${sep10HomeDomain}`);
+      if (
+        domainUrl.hostname !== sep10HomeDomain ||
+        domainUrl.pathname !== '/' ||
+        domainUrl.search ||
+        domainUrl.hash
+      ) {
+        problems.push('VITE_SEP10_HOME_DOMAIN must be a plain hostname.');
+      }
+    } catch {
+      problems.push('VITE_SEP10_HOME_DOMAIN must be a plain hostname.');
+    }
+  }
 
   const expectedPassphrase = DEFAULTS[effectiveNetwork].networkPassphrase;
   if (networkPassphrase !== expectedPassphrase) {
@@ -207,6 +227,8 @@ export function getCreditNetworkConfig(
     creditContractId,
     explorerBaseUrl: defaults.explorerBaseUrl,
     friendbotUrl: defaults.friendbotUrl,
+    sep10AuthUrl,
+    sep10HomeDomain
   };
 
   return cached;
