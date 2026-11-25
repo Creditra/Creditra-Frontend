@@ -18,7 +18,7 @@ import {
 import { getRepayableLines } from '../lib/repay-eligibility';
 import { getAccruedInterest } from '../lib/interest';
 import { roundToCents } from '../utils/currency';
-import { parseAmountInput } from '../utils/amountValidation';
+import { useForm } from '../hooks/useForm';
 import {
   getRepayableBalance,
   moneyToNumber,
@@ -109,8 +109,6 @@ export function validate(
     errors.creditLineId = 'Select an available credit line.';
   }
 
-  const amt = parseAmountInput(form.amount);
-  if (!form.amount || amt === null || amt <= 0) {
   const amt = parseAutopayAmount(form.amount);
   if (amt === null) {
     errors.amount = 'Enter a payment amount greater than $0.';
@@ -185,8 +183,6 @@ export default function AutopayPage() {
   const { activeSchedules, create, update, cancel } = useAutopaySchedules();
   const { confirm, dialog: confirmDialog } = useConfirm();
 
-  const [form, setForm] = useState<AutopayFormState>(EMPTY_FORM);
-  const [errors, setErrors] = useState<FormErrors>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [savedBanner, setSavedBanner] = useState<{
@@ -214,6 +210,31 @@ export default function AutopayPage() {
       }
     };
   }, []);
+
+  const submitHandlerRef = useRef<(values: AutopayFormState) => Promise<void>>(
+    async () => undefined,
+  );
+
+  const formState = useForm<AutopayFormState>({
+    initialValues: EMPTY_FORM,
+    validate: (values) => {
+      if (!walletKey) {
+        return {
+          creditLineId: 'Connect your wallet to save an autopay schedule.',
+        };
+      }
+      return validate(values, repayableLineIds, activeSchedules, editingId);
+    },
+    onSubmit: (values) => submitHandlerRef.current(values),
+    fieldIds: {
+      creditLineId: 'autopay-credit-line',
+      amount: 'autopay-amount',
+      startDate: 'autopay-start',
+      endDate: 'autopay-end',
+    },
+  });
+
+  const { values: form, errors } = formState;
 
   // Warn on unload while the form holds unsaved input.
   const isFormDirty =
@@ -251,7 +272,6 @@ export default function AutopayPage() {
       ? moneyToNumber(walletBalanceResult.amount)
       : null;
 
-  const parsedAmount = parseAmountInput(form.amount) ?? 0;
   const parsedAmount = parseAutopayAmount(form.amount) ?? 0;
   const amountExceedsLine =
     selectedLineRepayable !== null && parsedAmount > selectedLineRepayable;
@@ -287,86 +307,53 @@ export default function AutopayPage() {
   const handleChange = useCallback(
     <K extends keyof AutopayFormState>(field: K, value: AutopayFormState[K]) => {
       setSubmitted(false);
-      setForm(prev => ({ ...prev, [field]: value }));
-      // Clear the field's error on change so the user gets real-time relief.
-      setErrors(prev => {
-        if (!prev[field as keyof FormErrors]) return prev;
-        const next = { ...prev };
-        delete next[field as keyof FormErrors];
-        return next;
-      });
+      formState.setValue(field, value);
       setSavedBanner(null);
     },
-    [],
+    [formState.setValue],
   );
 
   const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!walletKey) {
-        setErrors({
-          creditLineId: 'Connect your wallet to save an autopay schedule.',
-        });
-        document.getElementById('autopay-credit-line')?.focus();
-        return;
-      }
-
-      const errs = validate(form, repayableLineIds, activeSchedules, editingId);
-      if (Object.keys(errs).length > 0) {
-        setErrors(errs);
-        // Move focus to the first errored field
-        const firstErrorId = errs.creditLineId
-          ? 'autopay-credit-line'
-          : errs.amount
-            ? 'autopay-amount'
-            : errs.startDate
-              ? 'autopay-start'
-              : 'autopay-end';
-        document.getElementById(firstErrorId)?.focus();
-        return;
-      }
-
-      const amount = parseAmountInput(form.amount) ?? 0;
-      const amount = parseAutopayAmount(form.amount) ?? 0;
+    async (values: AutopayFormState) => {
+      const amount = parseAutopayAmount(values.amount) ?? 0;
       try {
         if (editingId) {
           update(editingId, {
-            creditLineId: form.creditLineId,
+            creditLineId: values.creditLineId,
             amount,
-            frequency: form.frequency,
-            startDate: form.startDate,
-            endDate: form.endDate || undefined,
+            frequency: values.frequency,
+            startDate: values.startDate,
+            endDate: values.endDate || undefined,
           });
           setSavedBanner({
             action: 'updated',
             amount,
-            startDate: form.startDate,
+            startDate: values.startDate,
           });
           announce('Autopay schedule updated successfully.');
           setEditingId(null);
         } else {
           create({
-            creditLineId: form.creditLineId,
+            creditLineId: values.creditLineId,
             amount,
-            frequency: form.frequency,
-            startDate: form.startDate,
-            endDate: form.endDate || undefined,
+            frequency: values.frequency,
+            startDate: values.startDate,
+            endDate: values.endDate || undefined,
           });
           setSavedBanner({
             action: 'created',
             amount,
-            startDate: form.startDate,
+            startDate: values.startDate,
           });
           announce('Autopay schedule saved successfully.');
         }
-        setForm(EMPTY_FORM);
-        setErrors({});
+        formState.reset();
         setSubmitted(true);
       } catch (err) {
-        setErrors({
-          creditLineId:
-            err instanceof Error ? err.message : 'Unable to save autopay schedule.',
-        });
+        formState.setError(
+          'creditLineId',
+          err instanceof Error ? err.message : 'Unable to save autopay schedule.',
+        );
         document.getElementById('autopay-credit-line')?.focus();
       }
       await new Promise<void>(resolve => {
@@ -380,35 +367,35 @@ export default function AutopayPage() {
       });
       if (!isMountedRef.current) return;
     },
-    [walletKey, form, repayableLineIds, activeSchedules, editingId, create, update, announce],
+    [editingId, create, update, announce, formState.reset, formState.setError],
   );
+
+  submitHandlerRef.current = handleSubmit;
 
   const handleCancel = useCallback(() => {
     setSubmitted(false);
-    setForm(EMPTY_FORM);
-    setErrors({});
+    formState.reset();
     setSavedBanner(null);
     const wasEditing = editingId !== null;
     setEditingId(null);
     announce(wasEditing ? 'Schedule edit cancelled.' : 'Autopay schedule cleared.');
-  }, [editingId, announce]);
+  }, [editingId, announce, formState.reset]);
 
   const handleEditSchedule = useCallback(
     (record: AutopayScheduleRecord) => {
       setEditingId(record.id);
-      setForm({
+      formState.reset({
         creditLineId: record.creditLineId,
         amount: String(record.amount),
         frequency: record.frequency,
         startDate: record.startDate,
         endDate: record.endDate ?? '',
       });
-      setErrors({});
       setSavedBanner(null);
       announce('Editing autopay schedule.');
       document.getElementById('autopay-amount')?.focus();
     },
-    [announce],
+    [announce, formState.reset],
   );
 
   const handleCancelSchedule = useCallback(
@@ -427,14 +414,13 @@ export default function AutopayPage() {
       cancel(record.id);
       if (editingId === record.id) {
         setEditingId(null);
-        setForm(EMPTY_FORM);
-        setErrors({});
+        formState.reset();
         setSubmitted(true);
       }
       setSavedBanner(null);
       announce(`Autopay schedule for ${lineName} cancelled.`);
     },
-    [lines, confirm, cancel, editingId, announce],
+    [lines, confirm, cancel, editingId, announce, formState.reset],
   );
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -501,7 +487,7 @@ export default function AutopayPage() {
             </h2>
 
             <form
-              onSubmit={handleSubmit}
+              onSubmit={formState.handleSubmit}
               noValidate
               aria-label="Autopay schedule configuration"
             >

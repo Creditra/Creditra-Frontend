@@ -9,19 +9,21 @@ import {
 } from "../utils/password-strength";
 import { PendingButton } from "../components/PendingButton";
 import { FormField } from "../components/FormField";
+import { matches, minLength, required, useForm } from "../hooks/useForm";
 import {
   fetchWithTimeout,
   FetchTimeoutError,
   isAbortError,
 } from "../utils/fetchWithTimeout";
 
+interface ResetFormValues {
+  newPassword: string;
+  confirmPassword: string;
+}
+
 export function ResetPasswordPage() {
   const location = useLocation();
   const [token, setToken] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
-    newPassword: "",
-    confirmPassword: "",
-  });
   const [passwordStrength, setPasswordStrength] =
     useState<PasswordStrength>("weak");
   const [error, setError] = useState<AuthError | null>(null);
@@ -45,40 +47,13 @@ export function ResetPasswordPage() {
     }
   }, [location.search]);
 
-  const handlePasswordChange = (password: string) => {
-    setFormData({ ...formData, newPassword: password });
-    setPasswordStrength(calculatePasswordStrength(password));
-  };
-
-  const validateForm = (): boolean => {
-    if (!formData.newPassword || !formData.confirmPassword) {
-      setError({ message: "All fields are required" });
-      return false;
-    }
-    if (formData.newPassword.length < 8) {
-      setError({
-        field: "newPassword",
-        message: "Password must be at least 8 characters",
-      });
-      return false;
-    }
-    if (formData.newPassword !== formData.confirmPassword) {
-      setError({ field: "confirmPassword", message: "Passwords do not match" });
-      return false;
-    }
-    return true;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitReset = async (values: ResetFormValues) => {
     setError(null);
 
     if (!token) {
       setError({ message: "Invalid reset token" });
       return;
     }
-
-    if (!validateForm()) return;
 
     setLoading(true);
 
@@ -92,7 +67,7 @@ export function ResetPasswordPage() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token, newPassword: formData.newPassword }),
+          body: JSON.stringify({ token, newPassword: values.newPassword }),
         },
         { signal: controller.signal },
       );
@@ -122,6 +97,35 @@ export function ResetPasswordPage() {
         setLoading(false);
       }
     }
+  };
+
+  const form = useForm<ResetFormValues>({
+    initialValues: { newPassword: "", confirmPassword: "" },
+    validators: {
+      newPassword: [
+        required("All fields are required"),
+        minLength(8, "Password must be at least 8 characters"),
+      ],
+      confirmPassword: [
+        required("All fields are required"),
+        matches("newPassword", "Passwords do not match"),
+      ],
+    },
+    onSubmit: submitReset,
+  });
+
+  const handlePasswordChange = (password: string) => {
+    form.setValue("newPassword", password);
+    setPasswordStrength(calculatePasswordStrength(password));
+  };
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    if (!token) {
+      event.preventDefault();
+      setError({ message: "Invalid reset token" });
+      return;
+    }
+    void form.handleSubmit(event);
   };
 
   if (success) {
@@ -176,22 +180,22 @@ export function ResetPasswordPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6" noValidate>
             <FormField
               id="newPassword"
+              name="newPassword"
               label="New Password"
               type="password"
               required
               helpText="Must be at least 8 characters with letters and numbers"
-              error={error?.field === 'newPassword' ? error.message : undefined}
-              inputProps={{
-                value: formData.newPassword,
-                onChange: (e) => handlePasswordChange(e.target.value),
-                placeholder: "Create a strong password",
-                autoComplete: "new-password"
-              }}
+              error={error?.field === 'newPassword' ? error.message : form.errors.newPassword}
+              value={form.values.newPassword}
+              onChange={handlePasswordChange}
+              onBlur={() => form.handleBlur("newPassword")}
+              placeholder="Create a strong password"
+              autoComplete="new-password"
             />
-            {formData.newPassword && (
+            {form.values.newPassword && (
               <div className="mt-2">
                 <div className="flex gap-1 mb-1">
                   <div
@@ -212,16 +216,20 @@ export function ResetPasswordPage() {
 
             <FormField
               id="confirmPassword"
+              name="confirmPassword"
               label="Confirm Password"
               type="password"
               required
-              error={error?.field === 'confirmPassword' ? error.message : undefined}
-              inputProps={{
-                value: formData.confirmPassword,
-                onChange: (e) => setFormData({ ...formData, confirmPassword: e.target.value }),
-                placeholder: "Re-enter your password",
-                autoComplete: "new-password"
-              }}
+              error={
+                error?.field === 'confirmPassword'
+                  ? error.message
+                  : form.errors.confirmPassword
+              }
+              value={form.values.confirmPassword}
+              onChange={(value) => form.setValue("confirmPassword", value)}
+              onBlur={() => form.handleBlur("confirmPassword")}
+              placeholder="Re-enter your password"
+              autoComplete="new-password"
             />
 
             <PendingButton

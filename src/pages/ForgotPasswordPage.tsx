@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { PasswordResetRequestData, AuthError } from "../types/auth.types";
 import { PendingButton } from "../components/PendingButton";
 import { FormField } from "../components/FormField";
+import { email, useForm } from "../hooks/useForm";
 import {
   fetchWithTimeout,
   FetchTimeoutError,
@@ -11,9 +12,6 @@ import {
 } from "../utils/fetchWithTimeout";
 
 export function ForgotPasswordPage() {
-  const [formData, setFormData] = useState<PasswordResetRequestData>({
-    email: "",
-  });
   const [error, setError] = useState<AuthError | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -25,16 +23,9 @@ export function ForgotPasswordPage() {
     };
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitRequest = async (values: PasswordResetRequestData) => {
     setError(null);
     setLoading(true);
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      setError({ message: "Please enter a valid email address" });
-      setLoading(false);
-      return;
-    }
 
     abortControllerRef.current?.abort();
     const controller = new AbortController();
@@ -46,7 +37,7 @@ export function ForgotPasswordPage() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
+          body: JSON.stringify(values),
         },
         { signal: controller.signal },
       );
@@ -78,6 +69,14 @@ export function ForgotPasswordPage() {
     }
   };
 
+  const form = useForm<PasswordResetRequestData>({
+    initialValues: { email: "" },
+    validators: {
+      email: email("Please enter a valid email address"),
+    },
+    onSubmit: submitRequest,
+  });
+
   if (success) {
     return (
       <div className="min-h-screen flex items-center justify-center  px-4">
@@ -102,7 +101,7 @@ export function ForgotPasswordPage() {
             </h1>
             <p className="text-gray-600 mb-6">
               We've sent a password reset link to{" "}
-              <strong>{formData.email}</strong>
+              <strong>{form.values.email}</strong>
             </p>
 
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
@@ -141,20 +140,20 @@ export function ForgotPasswordPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={form.handleSubmit} className="space-y-6" noValidate>
             <FormField
               id="email"
+              name="email"
               label="Email Address"
               type="email"
               required
               helpText="Enter the email associated with your account"
-              error={error?.field === 'email' ? error.message : undefined}
-              inputProps={{
-                value: formData.email,
-                onChange: (e) => setFormData({ email: e.target.value }),
-                placeholder: "you@example.com",
-                autoComplete: "email"
-              }}
+              error={error?.field === 'email' ? error.message : form.errors.email}
+              value={form.values.email}
+              onChange={(value) => form.setValue("email", value)}
+              onBlur={() => form.handleBlur("email")}
+              placeholder="you@example.com"
+              autoComplete="email"
             />
 
             <PendingButton
