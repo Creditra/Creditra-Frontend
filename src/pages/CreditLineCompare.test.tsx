@@ -468,3 +468,94 @@ describe('CreditLineCompare — edge cases', () => {
     expect(desc?.textContent).toMatch(/six/i);
   });
 });
+
+// ─── 9. Multi-line comparison (3 & 4 lines, ?ids=, duplicates, unknown IDs) ───
+
+describe('CreditLineCompare — multi-line comparison (3 to 4 lines)', () => {
+  const ID_D = 'CL-2023-004';
+  const LINE_C = MOCK_CREDIT_LINES.find((l) => l.id === ID_C)!;
+  const LINE_D = MOCK_CREDIT_LINES.find((l) => l.id === ID_D)!;
+
+  it('renders 3 credit lines side-by-side using ?ids=a,b,c', () => {
+    renderPage(`?ids=${ID_A},${ID_B},${ID_C}`);
+    expect(screen.getByRole('table')).toBeInTheDocument();
+
+    // Headers for A, B, C within the table
+    const thTags = Array.from(document.querySelectorAll('.clc-th-tag')).map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(thTags).toEqual(['A', 'B', 'C']);
+
+    // All 3 line names appear
+    expect(screen.getAllByText(LINE_A.name).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(LINE_B.name).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(LINE_C.name).length).toBeGreaterThanOrEqual(1);
+
+    // Scorecard renders items for all 3 lines plus ties
+    const scorecardItems = document.querySelectorAll('.clc-scorecard-item');
+    expect(scorecardItems.length).toBe(4); // 3 lines + Ties
+  });
+
+  it('renders 4 credit lines side-by-side using ?ids=a,b,c,d', () => {
+    renderPage(`?ids=${ID_A},${ID_B},${ID_C},${ID_D}`);
+    expect(screen.getByRole('table')).toBeInTheDocument();
+
+    // Headers for A, B, C, D within the table
+    const thTags = Array.from(document.querySelectorAll('.clc-th-tag')).map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(thTags).toEqual(['A', 'B', 'C', 'D']);
+
+    // All 4 line IDs appear in table
+    expect(screen.getByText(ID_A)).toBeInTheDocument();
+    expect(screen.getByText(ID_B)).toBeInTheDocument();
+    expect(screen.getByText(ID_C)).toBeInTheDocument();
+    expect(screen.getByText(ID_D)).toBeInTheDocument();
+
+    // 4 lines + Ties = 5 scorecard items
+    const scorecardItems = document.querySelectorAll('.clc-scorecard-item');
+    expect(scorecardItems.length).toBe(5);
+  });
+
+  it('drops unknown IDs and still renders comparison when at least 2 valid lines exist', () => {
+    renderPage(`?ids=${ID_A},UNKNOWN_CREDIT_LINE,${ID_B}`);
+    // UNKNOWN_CREDIT_LINE should be dropped, comparing ID_A and ID_B
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.getAllByText(LINE_A.name).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(LINE_B.name).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('drops duplicate IDs in ?ids= URL parameter', () => {
+    renderPage(`?ids=${ID_A},${ID_B},${ID_A},${ID_C}`);
+    // Duplicates are collapsed: exactly 3 lines compared
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    const thTags = Array.from(document.querySelectorAll('.clc-th-tag')).map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(thTags).toEqual(['A', 'B', 'C']);
+  });
+
+  it('caps selection to 4 when 5 or more IDs are passed in ?ids=', () => {
+    const ID_E = 'CL-2022-005';
+    renderPage(`?ids=${ID_A},${ID_B},${ID_C},${ID_D},${ID_E}`);
+    expect(screen.getByRole('table')).toBeInTheDocument();
+
+    // Column headers should only go up to D (4 columns)
+    const thTags = Array.from(document.querySelectorAll('.clc-th-tag')).map((el) =>
+      el.textContent?.trim(),
+    );
+    expect(thTags).toEqual(['A', 'B', 'C', 'D']);
+  });
+
+  it('shows error alert and falls through to picker when unknown IDs leave fewer than 2 valid lines', () => {
+    renderPage('?ids=CL-UNKNOWN-1,CL-UNKNOWN-2');
+    const alert = screen.getByRole('alert');
+    expect(alert).toBeInTheDocument();
+    expect(alert.textContent).toMatch(/CL-UNKNOWN-1/);
+    expect(alert.textContent).toMatch(/CL-UNKNOWN-2/);
+    expect(
+      screen.getByRole('heading', { level: 2, name: /select two credit lines/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+});

@@ -7,7 +7,18 @@ export interface CreditNetworkConfig {
   horizonUrl: string;
   sorobanRpcUrl: string;
   networkPassphrase: string;
+  /**
+   * Deployed Creditra contract address.
+   *
+   * Optional here because the mock data source does not need a contract. The
+   * Soroban data source treats an empty value as a configuration error (see
+   * `src/services/credit/sorobanCreditDataSource.ts`).
+   */
   creditContractId: string;
+  /** Explorer root for the selected network, without a `/tx` suffix. */
+  explorerBaseUrl: string;
+  /** Friendbot funding endpoint. Testnet only; `undefined` on PUBLIC. */
+  friendbotUrl?: string;
   sep10AuthUrl?: string;
   sep10HomeDomain?: string;
 }
@@ -23,36 +34,68 @@ export class ConfigError extends Error {
   }
 }
 
-const TESTNET_PASSPHRASE = 'Test Stellar Network ; February 2015';
+const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
 const PUBLIC_PASSPHRASE = 'Public Global Stellar Network ; September 2015';
 
 const DEFAULTS = {
   TESTNET: {
     horizonUrl: 'https://horizon-testnet.stellar.org',
     sorobanRpcUrl: 'https://soroban-testnet.stellar.org',
-    networkPassphrase: TESTNET_PASSPHRASE
+    networkPassphrase: TESTNET_PASSPHRASE,
+    explorerBaseUrl: 'https://stellar.expert/explorer/testnet',
+    friendbotUrl: 'https://friendbot.stellar.org',
   },
   PUBLIC: {
     horizonUrl: 'https://horizon.stellar.org',
     sorobanRpcUrl: 'https://soroban.stellar.org',
-    networkPassphrase: PUBLIC_PASSPHRASE
-  }
+    networkPassphrase: PUBLIC_PASSPHRASE,
+    explorerBaseUrl: 'https://stellar.expert/explorer/public',
+    friendbotUrl: undefined,
+  },
 } as const;
 
-function readEnv(key: string): string | undefined {
-  const env = (import.meta as { env?: Record<string, unknown> }).env;
-  const value = env?.[key];
+/**
+ * Variable names that older builds read directly. They are ignored now; a
+ * warning points contributors at the single supported spelling.
+ */
+const LEGACY_PASSPHRASE_ENV_VARS = [
+  'VITE_STELLAR_NETWORK_PASSTHRASE',
+  'VITE_NETWORK_PASSPHRASE',
+] as const;
+
+type CreditNetworkEnv = Record<string, unknown>;
+
+function defaultEnv(): CreditNetworkEnv {
+  return (import.meta as { env?: CreditNetworkEnv }).env ?? {};
+}
+
+function readEnv(env: CreditNetworkEnv, key: string): string | undefined {
+  const value = env[key];
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed === '' ? undefined : trimmed;
 }
 
-function isDevMode(): boolean {
-  const env = (import.meta as { env?: Record<string, unknown> }).env;
-  return env?.MODE === 'development';
+function isDevMode(env: CreditNetworkEnv): boolean {
+  return env.MODE === 'development';
 }
 
-function validateUrl(name: string, value: string, problems: string[]): void {
+function warnAboutLegacyEnvVars(env: CreditNetworkEnv): void {
+  for (const key of LEGACY_PASSPHRASE_ENV_VARS) {
+    if (readEnv(env, key) !== undefined) {
+      console.warn(
+        `[creditNetwork] ${key} is no longer read. Use VITE_STELLAR_NETWORK_PASSPHRASE instead.`
+      );
+    }
+  }
+}
+
+function validateUrl(
+  name: string,
+  value: string,
+  problems: string[],
+  env: CreditNetworkEnv,
+): void {
   let parsed: URL;
   try {
     parsed = new URL(value);
@@ -66,7 +109,7 @@ function validateUrl(name: string, value: string, problems: string[]): void {
   if (parsed.protocol === 'http:') {
     const isLocalhost =
       parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
-    if (isLocalhost && isDevMode()) return;
+    if (isLocalhost && isDevMode(env)) return;
     problems.push(
       `${name} must use https: (http is only allowed for localhost in development) (received "${value}").`
     );
@@ -101,12 +144,24 @@ function validateContractId(value: string, problems: string[]): void {
 
 let cached: CreditNetworkConfig | undefined;
 
-export function getCreditNetworkConfig(): CreditNetworkConfig {
+/**
+ * Resolve the single Stellar/Soroban network configuration used by Horizon,
+ * Soroban RPC, wallet network checks and explorer links.
+ *
+ * Every problem found in the environment is reported together in one
+ * `ConfigError`, so a misconfigured deploy fails loudly in one place rather
+ * than silently pointing different subsystems at different networks.
+ */
+export function getCreditNetworkConfig(
+  env: CreditNetworkEnv = defaultEnv(),
+): CreditNetworkConfig {
   if (cached) return cached;
 
   const problems: string[] = [];
 
-  const rawNetwork = readEnv('VITE_STELLAR_NETWORK');
+  warnAboutLegacyEnvVars(env);
+
+  const rawNetwork = readEnv(env, 'VITE_STELLAR_NETWORK');
   const network: CreditNetwork = rawNetwork ? (rawNetwork.toUpperCase() as CreditNetwork) : 'TESTNET';
 
   if (network !== 'TESTNET' && network !== 'PUBLIC') {
@@ -119,16 +174,16 @@ export function getCreditNetworkConfig(): CreditNetworkConfig {
     network === 'PUBLIC' ? 'PUBLIC' : 'TESTNET';
   const defaults = DEFAULTS[effectiveNetwork];
 
-  const horizonUrl = readEnv('VITE_HORIZON_URL') ?? defaults.horizonUrl;
-  const sorobanRpcUrl = readEnv('VITE_SOROBAN_RPC_URL') ?? defaults.sorobanRpcUrl;
+  const horizonUrl = readEnv(env, 'VITE_HORIZON_URL') ?? defaults.horizonUrl;
+  const sorobanRpcUrl = readEnv(env, 'VITE_SOROBAN_RPC_URL') ?? defaults.sorobanRpcUrl;
   const networkPassphrase =
-    readEnv('VITE_STELLAR_NETWORK_PASSTHRASE') ?? defaults.networkPassphrase;
-  const creditContractId = readEnv('VITE_CREDIT_CONTRACT_ID') ?? '';
+    readEnv(env, 'VITE_STELLAR_NETWORK_PASSPHRASE') ?? defaults.networkPassphrase;
+  const creditContractId = readEnv(env, 'VITE_CREDIT_CONTRACT_ID') ?? '';
   const sep10AuthUrl = readEnv('VITE_SEP10_AUTH_URL');
   const sep10HomeDomain = readEnv('VITE_SEP10_HOME_DOMAIN');
 
-  validateUrl('VITE_HORIZON_URL', horizonUrl, problems);
-  validateUrl('VITE_SOROBAN_RPC_URL', sorobanRpcUrl, problems);
+  validateUrl('VITE_HORIZON_URL', horizonUrl, problems, env);
+  validateUrl('VITE_SOROBAN_RPC_URL', sorobanRpcUrl, problems, env);
   if (sep10AuthUrl) validateUrl('VITE_SEP10_AUTH_URL', sep10AuthUrl, problems);
   if (sep10HomeDomain) {
     try {
@@ -149,13 +204,14 @@ export function getCreditNetworkConfig(): CreditNetworkConfig {
   const expectedPassphrase = DEFAULTS[effectiveNetwork].networkPassphrase;
   if (networkPassphrase !== expectedPassphrase) {
     problems.push(
-      `VITE_STELLAR_NETWORK_PASSTHRASE does not match the ${effectiveNetwork} network. Expected "${expectedPassphrase}" but received "${networkPassphrase}".`
+      `VITE_STELLAR_NETWORK_PASSPHRASE does not match the ${effectiveNetwork} network. Expected "${expectedPassphrase}" but received "${networkPassphrase}".`
     );
   }
 
-  if (creditContractId === '') {
-    problems.push('VITE_CREDIT_CONTRACT_ID is required.');
-  } else {
+  // Contract id policy: optional for the mock data source, required for the
+  // Soroban adapter (which raises its own ConfigError). Only validate the shape
+  // when a value is supplied.
+  if (creditContractId !== '') {
     validateContractId(creditContractId, problems);
   }
 
@@ -169,6 +225,8 @@ export function getCreditNetworkConfig(): CreditNetworkConfig {
     sorobanRpcUrl,
     networkPassphrase,
     creditContractId,
+    explorerBaseUrl: defaults.explorerBaseUrl,
+    friendbotUrl: defaults.friendbotUrl,
     sep10AuthUrl,
     sep10HomeDomain
   };

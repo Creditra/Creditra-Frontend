@@ -1,4 +1,11 @@
-import type { CreditLine, CreditLineStatus } from '../../types/creditLine';
+import type {
+  CreditLine,
+  CreditLineStatus,
+  StatusHistoryEntry,
+  Transaction,
+  TransactionStatus,
+  TransactionType,
+} from '../../types/creditLine';
 import { CreditDataError } from './CreditDataSource';
 
 const VALID_STATUSES: Set<string> = new Set<CreditLineStatus>([
@@ -7,6 +14,20 @@ const VALID_STATUSES: Set<string> = new Set<CreditLineStatus>([
   'Defaulted',
   'Closed',
   'Frozen',
+]);
+
+const VALID_TRANSACTION_TYPES: Set<string> = new Set<TransactionType>([
+  'Draw',
+  'Repay',
+  'Fee',
+  'Interest',
+  'StatusChange',
+]);
+
+const VALID_TRANSACTION_STATUSES: Set<string> = new Set<TransactionStatus>([
+  'Completed',
+  'Pending',
+  'Failed',
 ]);
 
 const STROOPS_PER_UNIT = 10_000_000n;
@@ -91,6 +112,107 @@ function decodeNumber(raw: unknown, fieldName: string): number {
   );
 }
 
+export function decodeTransaction(raw: unknown): Transaction {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new CreditDataError(
+      'invalid_response',
+      `Malformed ScVal: expected object for Transaction, got ${raw === null ? 'null' : typeof raw}`,
+    );
+  }
+
+  const record = raw as Record<string, unknown>;
+
+  const id = record.id;
+  if (typeof id !== 'string' || id.trim().length === 0) {
+    throw new CreditDataError('invalid_response', 'Malformed ScVal: missing or invalid transaction "id"');
+  }
+
+  const rawType = record.type;
+  if (typeof rawType !== 'string' || !VALID_TRANSACTION_TYPES.has(rawType)) {
+    throw new CreditDataError(
+      'invalid_response',
+      `Malformed ScVal: unknown transaction type "${String(rawType)}"`,
+    );
+  }
+  const type = rawType as TransactionType;
+
+  const rawStatus = record.status;
+  if (typeof rawStatus !== 'string' || !VALID_TRANSACTION_STATUSES.has(rawStatus)) {
+    throw new CreditDataError(
+      'invalid_response',
+      `Malformed ScVal: unknown transaction status "${String(rawStatus)}"`,
+    );
+  }
+  const status = rawStatus as TransactionStatus;
+
+  if (!('amount' in record) || record.amount === undefined || record.amount === null) {
+    throw new CreditDataError('invalid_response', 'Malformed ScVal: missing transaction "amount"');
+  }
+  const amount = decodeLosslessAmount(record.amount);
+
+  const rawDate = record.date ?? record.timestamp;
+  const date = decodeTimestamp(rawDate, 'date');
+
+  const rawNote = record.note;
+  const note =
+    typeof rawNote === 'string' && rawNote.trim().length > 0 ? rawNote : undefined;
+
+  const rawTxHash = record.tx_hash ?? record.txHash;
+  const txHash =
+    typeof rawTxHash === 'string' && rawTxHash.trim().length > 0 ? rawTxHash : undefined;
+
+  const tx: Transaction = {
+    id,
+    type,
+    amount,
+    date,
+    status,
+  };
+  if (note !== undefined) {
+    tx.note = note;
+  }
+  if (txHash !== undefined) {
+    tx.txHash = txHash;
+  }
+  return tx;
+}
+
+export function decodeStatusHistoryEntry(raw: unknown): StatusHistoryEntry {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new CreditDataError(
+      'invalid_response',
+      `Malformed ScVal: expected object for StatusHistoryEntry, got ${raw === null ? 'null' : typeof raw}`,
+    );
+  }
+
+  const record = raw as Record<string, unknown>;
+
+  const rawStatus = record.status;
+  if (typeof rawStatus !== 'string' || !VALID_STATUSES.has(rawStatus)) {
+    throw new CreditDataError(
+      'invalid_response',
+      `Malformed ScVal: unknown status history variant "${String(rawStatus)}"`,
+    );
+  }
+  const status = rawStatus as CreditLineStatus;
+
+  const rawDate = record.date ?? record.timestamp;
+  const date = decodeTimestamp(rawDate, 'date');
+
+  const rawNote = record.note;
+  const note =
+    typeof rawNote === 'string' && rawNote.trim().length > 0 ? rawNote : undefined;
+
+  const entry: StatusHistoryEntry = {
+    status,
+    date,
+  };
+  if (note !== undefined) {
+    entry.note = note;
+  }
+  return entry;
+}
+
 export function decodeCreditLine(raw: unknown): CreditLine {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new CreditDataError(
@@ -155,6 +277,30 @@ export function decodeCreditLine(raw: unknown): CreditLine {
       ? rawCollateral
       : undefined;
 
+  const rawTransactions = record.transactions;
+  let transactions: Transaction[] = [];
+  if (rawTransactions !== undefined && rawTransactions !== null) {
+    if (!Array.isArray(rawTransactions)) {
+      throw new CreditDataError(
+        'invalid_response',
+        `Malformed ScVal: expected array for "transactions", got ${typeof rawTransactions}`,
+      );
+    }
+    transactions = rawTransactions.map((item) => decodeTransaction(item));
+  }
+
+  const rawStatusHistory = record.status_history ?? record.statusHistory;
+  let statusHistory: StatusHistoryEntry[] = [];
+  if (rawStatusHistory !== undefined && rawStatusHistory !== null) {
+    if (!Array.isArray(rawStatusHistory)) {
+      throw new CreditDataError(
+        'invalid_response',
+        `Malformed ScVal: expected array for "status_history", got ${typeof rawStatusHistory}`,
+      );
+    }
+    statusHistory = rawStatusHistory.map((item) => decodeStatusHistoryEntry(item));
+  }
+
   return {
     id,
     name,
@@ -166,7 +312,7 @@ export function decodeCreditLine(raw: unknown): CreditLine {
     collateral,
     openedAt,
     updatedAt,
-    transactions: [],
-    statusHistory: [],
+    transactions,
+    statusHistory,
   };
 }

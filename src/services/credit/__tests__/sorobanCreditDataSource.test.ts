@@ -5,6 +5,7 @@ import {
   nativeToScVal,
 } from '@stellar/stellar-sdk';
 import { CreditDataError } from '../CreditDataSource';
+import { decodeCreditLine, decodeStatusHistoryEntry, decodeTransaction } from '../decoder';
 import {
   SorobanCreditDataSource,
   type SorobanCreditDataSourceOptions,
@@ -602,6 +603,238 @@ describe('SorobanCreditDataSource', () => {
         resolveSim(createSuccessSimulation(xdr.ScVal.scvVec([])));
         await expect(pLong).resolves.toEqual([]);
         expect(mockSimulateTransaction).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  // ── Scenario 10: Transactions & statusHistory decoding ─────────────────────
+  describe('10. Transactions and statusHistory decoding', () => {
+    it('decodes transactions and status_history on a Soroban credit line including huge i128 amounts', async () => {
+      const hugeStroops = 20_000_000_000_000_000n; // 2_000_000_000 units > Number.MAX_SAFE_INTEGER
+      const rawLine = {
+        id: 'cl-with-history',
+        name: 'Treasury Line',
+        status: 'Active',
+        limit: 50_000_000_000n,
+        utilized: 10_000_000_000n,
+        apr: 9n,
+        risk_score: 760n,
+        opened_at: 1704067200n,
+        updated_at: 1706745600n,
+        transactions: [
+          {
+            id: 'tx-1',
+            type: 'Draw',
+            amount: hugeStroops,
+            date: 1704153600n,
+            status: 'Completed',
+            note: 'Initial draw',
+            tx_hash: 'abc123',
+          },
+          {
+            id: 'tx-2',
+            type: 'Repay',
+            amount: 5_000_000_000n,
+            date: 1704240000n,
+            status: 'Pending',
+          },
+        ],
+        status_history: [
+          {
+            status: 'Active',
+            date: 1704067200n,
+            note: 'Line opened',
+          },
+          {
+            status: 'Suspended',
+            date: 1706745600n,
+          },
+        ],
+      };
+
+      const scval = nativeToScVal(rawLine);
+      mockSimulateTransaction.mockResolvedValueOnce(createSuccessSimulation(scval));
+
+      const line = await adapter.getCreditLine('cl-with-history');
+      expect(line.transactions).toEqual([
+        {
+          id: 'tx-1',
+          type: 'Draw',
+          amount: 2_000_000_000,
+          date: new Date(1704153600 * 1000).toISOString(),
+          status: 'Completed',
+          note: 'Initial draw',
+          txHash: 'abc123',
+        },
+        {
+          id: 'tx-2',
+          type: 'Repay',
+          amount: 500,
+          date: new Date(1704240000 * 1000).toISOString(),
+          status: 'Pending',
+        },
+      ]);
+      expect(line.statusHistory).toEqual([
+        {
+          status: 'Active',
+          date: new Date(1704067200 * 1000).toISOString(),
+          note: 'Line opened',
+        },
+        {
+          status: 'Suspended',
+          date: new Date(1706745600 * 1000).toISOString(),
+        },
+      ]);
+    });
+
+    it('defaults empty or omitted transactions and status_history to []', () => {
+      const line = decodeCreditLine({
+        id: 'cl-empty',
+        name: 'Empty History Line',
+        status: 'Active',
+        limit: 10_000_000_000n,
+        utilized: 0n,
+        apr: 5n,
+        risk_score: 700n,
+        opened_at: 1704067200n,
+        updated_at: 1706745600n,
+        transactions: [],
+        status_history: [],
+      });
+      expect(line.transactions).toEqual([]);
+      expect(line.statusHistory).toEqual([]);
+    });
+
+    it('throws invalid_response on unknown transaction type or status or bad timestamp (no partial line)', () => {
+      expect(() =>
+        decodeTransaction({
+          id: 'tx-bad-type',
+          type: 'WireTransfer',
+          amount: 10_000_000n,
+          date: 1704153600n,
+          status: 'Completed',
+        }),
+      ).toThrowError(expect.objectContaining({ code: 'invalid_response' }));
+
+      expect(() =>
+        decodeTransaction({
+          id: 'tx-bad-status',
+          type: 'Draw',
+          amount: 10_000_000n,
+          date: 1704153600n,
+          status: 'Settled',
+        }),
+      ).toThrowError(expect.objectContaining({ code: 'invalid_response' }));
+
+      expect(() =>
+        decodeTransaction({
+          id: 'tx-bad-date',
+          type: 'Draw',
+          amount: 10_000_000n,
+          date: 'not-a-date',
+          status: 'Completed',
+        }),
+      ).toThrowError(expect.objectContaining({ code: 'invalid_response' }));
+
+      expect(() =>
+        decodeStatusHistoryEntry({
+          status: 'Unknown',
+          date: 1704153600n,
+        }),
+      ).toThrowError(expect.objectContaining({ code: 'invalid_response' }));
+
+      expect(() =>
+        decodeCreditLine({
+          id: 'cl-partial',
+          name: 'Partial Line',
+          status: 'Active',
+          limit: 10_000_000_000n,
+          utilized: 0n,
+          apr: 5n,
+          risk_score: 700n,
+          opened_at: 1704067200n,
+          updated_at: 1706745600n,
+          transactions: [
+            {
+              id: 'tx-ok',
+              type: 'Draw',
+              amount: 10_000_000n,
+              date: 1704153600n,
+              status: 'Completed',
+            },
+            {
+              id: 'tx-bad',
+              type: 'InvalidType',
+              amount: 10_000_000n,
+              date: 1704153600n,
+              status: 'Completed',
+            },
+          ],
+        }),
+      ).toThrowError(expect.objectContaining({ code: 'invalid_response' }));
+    });
+  });
+
+  // ── Scenario 11: listTransactions ──────────────────────────────────────────
+  describe('11. listTransactions pagination, abort, and timeout', () => {
+    it('returns decoded transactions and nextCursor from get_transactions', async () => {
+      const page = {
+        items: [
+          {
+            id: 'tx-10',
+            type: 'Draw',
+            amount: 25_000_000_000n,
+            date: 1704153600n,
+            status: 'Completed',
+            tx_hash: '0xhash10',
+          },
+        ],
+        next_cursor: 'cursor-page-2',
+      };
+      mockSimulateTransaction.mockResolvedValueOnce(createSuccessSimulation(nativeToScVal(page)));
+
+      const result = await adapter.listTransactions('cl-001', { cursor: 'cursor-page-1', limit: 1 });
+      expect(result).toEqual({
+        items: [
+          {
+            id: 'tx-10',
+            type: 'Draw',
+            amount: 2500,
+            date: new Date(1704153600 * 1000).toISOString(),
+            status: 'Completed',
+            txHash: '0xhash10',
+          },
+        ],
+        nextCursor: 'cursor-page-2',
+      });
+      expect(mockSimulateTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('honours aborted signal without dispatching RPC', async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(
+        adapter.listTransactions('cl-001', { signal: controller.signal }),
+      ).rejects.toMatchObject({ code: 'aborted' });
+      expect(mockSimulateTransaction).not.toHaveBeenCalled();
+    });
+
+    it('maps timeout to network error', async () => {
+      vi.useFakeTimers();
+      try {
+        adapter = createAdapter(mockServer, {
+          defaultTimeoutMs: 50,
+          retry: { attempts: 0, sleep: mockSleep },
+        });
+        mockSimulateTransaction.mockImplementationOnce(() => new Promise(() => {}));
+
+        const promise = adapter.listTransactions('cl-001');
+        vi.advanceTimersByTime(50);
+
+        await expect(promise).rejects.toMatchObject({ code: 'network' });
       } finally {
         vi.useRealTimers();
       }

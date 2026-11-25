@@ -34,6 +34,9 @@
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { describe, expect, it, beforeEach } from 'vitest';
+import { http, HttpResponse, delay } from 'msw';
+import { server } from '../../mocks/server';
 import { afterEach, describe, expect, it, beforeEach, vi } from 'vitest';
 import { LoginPage } from '../LoginPage';
 import { WalletProvider } from '../../context/WalletContext';
@@ -79,6 +82,11 @@ afterEach(() => {
  * setError("An error occurred. Please try again.").
  */
 async function submitFormAndAwaitError() {
+  server.use(
+    http.post('/api/auth/login', () =>
+      HttpResponse.json({ message: 'Invalid credentials' }, { status: 401 }),
+    ),
+  );
   renderPage();
 
   const emailInput = document.getElementById('emailOrUsername') as HTMLInputElement | null;
@@ -149,6 +157,12 @@ describe('LoginPage — color-blind pattern fills (WCAG 1.4.1 / GrantFox FWC26)'
     });
 
     it('8. button carries lp-btn--pending class while aria-busy="true" (pending)', async () => {
+      server.use(
+        http.post('/api/auth/login', async () => {
+          await delay('infinite');
+          return HttpResponse.json({ token: 'mock-jwt-token' });
+        }),
+      );
       renderPage();
       vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
 

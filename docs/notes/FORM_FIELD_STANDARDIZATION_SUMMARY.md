@@ -212,8 +212,8 @@ For users with `prefers-reduced-motion: reduce`:
 
 ### Documentation
 - [COMPONENT_SPECS.md](./COMPONENT_SPECS.md) - Complete pattern documentation
-- [FormField.tsx](./src/components/FormField.tsx) - Component implementation
-- [FormField.css](./src/components/FormField.css) - Component styles
+- [FormField.tsx](../../src/components/FormField.tsx) - Component implementation
+- [FormField.css](../../src/components/FormField.css) - Component styles
 
 ### Accessibility Standards
 - [WCAG 2.1 Level AA](https://www.w3.org/WAI/WCAG21/quickref/)

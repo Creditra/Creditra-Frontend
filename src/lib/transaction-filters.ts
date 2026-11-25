@@ -1,16 +1,27 @@
 export const TRANSACTION_RANGES = [
   "custom",
+  "today",
+  "last-7-days",
   "this-week",
   "this-month",
   "last-30-days",
   "last-90-days",
+  "all-time",
 ] as const;
 
 export type TransactionRange = (typeof TRANSACTION_RANGES)[number];
 
-export type TransactionType = "Payment" | "Repay" | "Drawdown" | "Fee";
+/** Ledger vocabulary used by the app, plus the legacy API aliases. */
+export type TransactionType =
+  | "Draw"
+  | "Repay"
+  | "Fee"
+  | "Interest"
+  | "StatusChange"
+  | "Payment"
+  | "Drawdown";
 
-export type TransactionStatus = "Success" | "Pending" | "Failed";
+export type TransactionStatus = "Completed" | "Pending" | "Failed" | "Success";
 
 export interface TransactionFilters {
   line: string;
@@ -28,9 +39,22 @@ export interface TransactionFilters {
 
 export type TransactionFilterErrors = Record<string, string>;
 
-export const TRANSACTION_TYPES = ["Payment", "Repay", "Drawdown", "Fee"] as const;
+export const TRANSACTION_TYPES = [
+  "Draw",
+  "Repay",
+  "Fee",
+  "Interest",
+  "StatusChange",
+  "Payment",
+  "Drawdown",
+] as const;
 
-export const TRANSACTION_STATUSES = ["Success", "Pending", "Failed"] as const;
+export const TRANSACTION_STATUSES = [
+  "Completed",
+  "Pending",
+  "Failed",
+  "Success",
+] as const;
 
 export const FILTER_KEYS = [
   "line",

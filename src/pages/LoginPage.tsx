@@ -1,11 +1,16 @@
 // src/pages/LoginPage.tsx
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AlertCircle } from "lucide-react";
 import { LoginFormData, AuthError } from "../types/auth.types";
 import { PendingButton } from "../components/PendingButton";
 import { FormField } from "../components/FormField";
 import { TrustBadges } from "../components/TrustBadges";
+import {
+  fetchWithTimeout,
+  FetchTimeoutError,
+  isAbortError,
+} from "../utils/fetchWithTimeout";
 import { useWallet } from "../context/WalletContext";
 import { signInWithWallet, Sep10AuthError } from "../services/sep10";
 import { AUTH_TOKEN_KEY } from "../constants/storageKeys";
@@ -40,6 +45,13 @@ export function LoginPage() {
   });
   const [error, setError] = useState<AuthError | null>(null);
   const [loading, setLoading] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
   const [walletLoading, setWalletLoading] = useState(false);
 
   const storeToken = (token: string) => {
@@ -67,12 +79,20 @@ export function LoginPage() {
     setError(null);
     setLoading(true);
 
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
+      const response = await fetchWithTimeout(
+        "/api/auth/login",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        },
+        { signal: controller.signal },
+      );
 
       const data = await response.json();
 
@@ -87,9 +107,21 @@ export function LoginPage() {
       // Redirect to dashboard
       navigate("/dashboard");
     } catch (err) {
+      if (controller.signal.aborted || isAbortError(err)) {
+        return;
+      }
+      if (err instanceof FetchTimeoutError) {
+        setError({ message: "Request timed out. Please try again." });
+        return;
+      }
       setError({ message: "An error occurred. Please try again." });
     } finally {
-      setLoading(false);
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   };
 

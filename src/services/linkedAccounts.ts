@@ -27,10 +27,70 @@ import type {
 const STORAGE_KEY = 'creditra:linked-accounts';
 const MOCK_API_DELAY = 800; // Simulate network latency
 
+export type LinkedAccountsOperation =
+  | 'fetchLinkedAccounts'
+  | 'initiateLinkAccount'
+  | 'completeOAuthLink'
+  | 'disconnectAccount'
+  | 'reconnectAccount'
+  | 'verifyAccount';
+
+export type LinkedAccountsFailureInjector = (
+  operation: LinkedAccountsOperation,
+  context?: unknown,
+) => AccountLinkError | Error | null | undefined | void;
+
+let configuredDelayMs: number | null = null;
+let failureInjector: LinkedAccountsFailureInjector | null = null;
+let stateCounter = 0;
+
+/**
+ * Configure the simulated API delay in milliseconds (e.g. `0` for tests).
+ * Pass `null` to restore the default per-operation delays.
+ */
+export function setLinkedAccountsDelay(ms: number | null): void {
+  configuredDelayMs = ms === null ? null : Math.max(0, ms);
+}
+
+/**
+ * Configure an explicit failure injector for tests.
+ * Pass `null` to disable failure injection (default).
+ */
+export function setLinkedAccountsFailureInjector(
+  injector: LinkedAccountsFailureInjector | null,
+): void {
+  failureInjector = injector;
+}
+
+function getDelayMs(defaultMs: number): number {
+  return configuredDelayMs !== null ? configuredDelayMs : defaultMs;
+}
+
+function maybeInjectFailure(operation: LinkedAccountsOperation, context?: unknown): void {
+  if (!failureInjector) return;
+  const injected = failureInjector(operation, context);
+  if (injected) {
+    throw injected;
+  }
+}
+
+/**
+ * Deterministic FNV-1a hash for deriving stable external IDs.
+ */
+function deterministicHash(input: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
 /**
  * Simulates API delay for realistic UX testing.
  */
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const delay = (ms: number) =>
+  ms <= 0 ? Promise.resolve() : new Promise<void>(resolve => setTimeout(resolve, ms));
 
 /**
  * Provider metadata for UI display.
@@ -49,8 +109,9 @@ export const PROVIDER_INFO: Record<AccountProvider, { name: string; icon: string
  * @throws Error if fetch fails
  */
 export async function fetchLinkedAccounts(): Promise<LinkedAccount[]> {
-  await delay(MOCK_API_DELAY);
-  
+  await delay(getDelayMs(MOCK_API_DELAY));
+  maybeInjectFailure('fetchLinkedAccounts');
+
   try {
     const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
     return accounts.filter(acc => acc.status !== 'disconnected');
@@ -69,7 +130,8 @@ export async function fetchLinkedAccounts(): Promise<LinkedAccount[]> {
 export async function initiateLinkAccount(request: LinkAccountRequest): Promise<LinkAccountResponse> {
   return offlineMutation({
     fn: async () => {
-      await delay(400);
+      await delay(getDelayMs(400));
+      maybeInjectFailure('initiateLinkAccount', request);
 
       // Check if provider is already linked
       const existing = readJson<LinkedAccount[]>(STORAGE_KEY, []);
@@ -89,8 +151,9 @@ export async function initiateLinkAccount(request: LinkAccountRequest): Promise<
       // is never embedded in the OAuth URL or written to storage verbatim.
       const returnPath = safeReturnPath(request.redirectUrl);
 
-      // Generate state token for CSRF protection
-      const state = `${request.provider}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      // Generate deterministic state token for CSRF protection
+      stateCounter += 1;
+      const state = `${request.provider}-${Date.now()}-${stateCounter}`;
 
       // Store pending state alongside the sanitised return path
       writeJson('creditra:oauth-state', {
@@ -120,7 +183,8 @@ export async function initiateLinkAccount(request: LinkAccountRequest): Promise<
 export async function completeOAuthLink(request: CompleteOAuthRequest): Promise<LinkedAccount> {
   return offlineMutation({
     fn: async () => {
-      await delay(MOCK_API_DELAY);
+      await delay(getDelayMs(MOCK_API_DELAY));
+      maybeInjectFailure('completeOAuthLink', request);
 
       // Verify state token
       const storedState = readJson<{ state: string; provider: string; timestamp: number } | null>('creditra:oauth-state', null);
@@ -148,7 +212,7 @@ export async function completeOAuthLink(request: CompleteOAuthRequest): Promise<
         provider: request.provider,
         status: 'connected',
         displayName: `${PROVIDER_INFO[request.provider].name} User`, // In production, from OAuth
-        externalId: `user-${Math.random().toString(36).substring(7)}@${request.provider}.com`,
+        externalId: `user-${deterministicHash(`${request.provider}:${request.state}`)}@${request.provider}.com`,
         connectedAt: new Date().toISOString(),
         lastVerified: new Date().toISOString(),
       };
@@ -176,7 +240,8 @@ export async function completeOAuthLink(request: CompleteOAuthRequest): Promise<
 export async function disconnectAccount(accountId: string): Promise<void> {
   return offlineMutation({
     fn: async () => {
-      await delay(600);
+      await delay(getDelayMs(600));
+      maybeInjectFailure('disconnectAccount', accountId);
 
       const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
       const accountIndex = accounts.findIndex(acc => acc.id === accountId);
@@ -202,7 +267,8 @@ export async function disconnectAccount(accountId: string): Promise<void> {
 export async function reconnectAccount(accountId: string): Promise<LinkAccountResponse> {
   return offlineMutation({
     fn: async () => {
-      await delay(400);
+      await delay(getDelayMs(400));
+      maybeInjectFailure('reconnectAccount', accountId);
 
       const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
       const account = accounts.find(acc => acc.id === accountId);
@@ -227,7 +293,7 @@ export async function reconnectAccount(accountId: string): Promise<LinkAccountRe
 export async function verifyAccount(accountId: string): Promise<LinkedAccount> {
   return offlineMutation({
     fn: async () => {
-      await delay(1000);
+      await delay(getDelayMs(1000));
 
       const accounts = readJson<LinkedAccount[]>(STORAGE_KEY, []);
       const accountIndex = accounts.findIndex(acc => acc.id === accountId);
@@ -239,17 +305,20 @@ export async function verifyAccount(accountId: string): Promise<LinkedAccount> {
       // Update last verified timestamp
       accounts[accountIndex].lastVerified = new Date().toISOString();
 
-      // Simulate random verification failure (10% chance)
-      if (Math.random() < 0.1) {
-        accounts[accountIndex].status = 'error';
-        accounts[accountIndex].error = {
-          code: 'provider_error',
-          message: 'Unable to verify account. The token may have been revoked.',
-          timestamp: new Date().toISOString(),
-        };
-      } else {
+      try {
+        maybeInjectFailure('verifyAccount', accountId);
         accounts[accountIndex].status = 'connected';
         delete accounts[accountIndex].error;
+      } catch (err) {
+        const injectedError = err as Partial<AccountLinkError>;
+        accounts[accountIndex].status = 'error';
+        accounts[accountIndex].error = {
+          code: injectedError.code ?? 'provider_error',
+          message:
+            injectedError.message ??
+            'Unable to verify account. The token may have been revoked.',
+          timestamp: new Date().toISOString(),
+        };
       }
 
       writeJson(STORAGE_KEY, accounts);

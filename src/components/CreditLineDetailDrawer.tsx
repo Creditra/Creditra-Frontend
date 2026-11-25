@@ -16,6 +16,8 @@ import {
   UTIL_COLOR,
 } from '../utils/tokens';
 import { timeAgo } from '../utils/dates';
+import { getExplorerBaseUrl } from '../utils/wallet';
+import { getCreditNetworkConfig } from '../config/creditNetwork';
 import type { CreditLine } from '../types/creditLine';
 import './CreditLineDetailDrawer.css';
 
@@ -30,6 +32,14 @@ export function CreditLineDetailDrawer({ line, onClose, triggerRef }: CreditLine
   const utilizationLevel = getUtilizationLevel(line.utilized, line.limit);
   const available = line.limit - line.utilized;
   const currentHealthFactor = deriveHealthFactor(line.limit, line.utilized);
+
+  let explorerBase: string;
+  try {
+    const config = getCreditNetworkConfig();
+    explorerBase = getExplorerBaseUrl(config?.network);
+  } catch {
+    explorerBase = getExplorerBaseUrl('PUBLIC');
+  }
 
   const timelineEntries = useMemo<ActivityEntry[]>(() => {
     const txEntries: ActivityEntry[] = line.transactions.map((tx) => ({
@@ -359,7 +369,7 @@ export function CreditLineDetailDrawer({ line, onClose, triggerRef }: CreditLine
                         </span>
                         {tx.txHash && (
                           <a
-                            href={`https://stellar.expert/explorer/public/tx/${tx.txHash}`}
+                            href={`${explorerBase}/${tx.txHash}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="tx-explorer-link"
