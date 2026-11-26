@@ -58,4 +58,9 @@ describe('decodeStrKey', () => {
   it('rejects an unknown version byte', () => {
     expect(decodeStrKey(`Z${PUBLIC_KEY.slice(1)}`)).toBeNull();
   });
+
+  it('rejects addresses with the wrong length or that do not start with G', () => {
+    expect(isValidAccountId('GABC')).toBe(false);
+    expect(isValidAccountId('A' + 'A'.repeat(55))).toBe(false);
+  });
 });

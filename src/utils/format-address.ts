@@ -1,5 +1,3 @@
-import { isValidAccountId } from './strkey';
-
 /**
  * Helpers for displaying Stellar public keys / addresses in UI surfaces
  * where the full 56-character key would be visually overwhelming.
@@ -27,9 +25,4 @@ export function shortenAddress(
   if (!address) return '';
   if (address.length <= lead + tail) return address;
   return `${address.slice(0, lead)}…${address.slice(-tail)}`;
-}
-
-/** @deprecated Use isValidAccountId, which verifies the StrKey checksum. */
-export function looksLikeStellarAddress(address: string): boolean {
-  return isValidAccountId(address);
 }
