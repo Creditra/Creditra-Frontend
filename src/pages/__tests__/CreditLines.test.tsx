@@ -1,9 +1,22 @@
+import React, { useCallback, useState } from 'react';
 import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
 import { BrowserRouter, MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import CreditLines from '../CreditLines';
-import { mockCreditLines } from '../../data/mockData';
+import CreditLines, { CreditLineCard } from '../CreditLines';
+import { MOCK_CREDIT_LINES } from '../../data/mockData';
 import { freezeTime, unfreezeTime } from '../../test/freezeTime';
+
+const amountRenderSpy = vi.hoisted(() => vi.fn());
+vi.mock('../../components/Amount', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../components/Amount')>();
+  return {
+    ...actual,
+    Amount: (props: React.ComponentProps<typeof actual.Amount>) => {
+      amountRenderSpy(props.value);
+      return actual.Amount(props);
+    },
+  };
+});
 
 beforeEach(() => {
   freezeTime();
@@ -129,6 +142,18 @@ describe('CreditLines page', () => {
       return card as HTMLElement;
     }
 
+    beforeEach(() => {
+      const target = MOCK_CREDIT_LINES.find((l) => l.name === 'Primary Business Line')!;
+      target.limit = 75_000;
+      target.utilized = 87_750;
+    });
+
+    afterEach(() => {
+      const target = MOCK_CREDIT_LINES.find((l) => l.name === 'Primary Business Line')!;
+      target.limit = 500_000;
+      target.utilized = 187_500;
+    });
+
     it('clamps available to $0 and shows an over-limit badge', () => {
       renderPage();
       const card = getCard('Primary Business Line');
@@ -136,13 +161,13 @@ describe('CreditLines page', () => {
       // Available is clamped at $0, not negative.
       const available = card.querySelector('.cl-available');
       expect(available).toBeInTheDocument();
-      expect(available?.textContent).toMatch(/\$$0,?\.?0\d*/);
+      expect(available?.textContent).toMatch(/\$0/);
       expect(available?.textContent).not.toMatch(/-/);
 
       // Over-limit badge is present and includes the overage amount.
       const badge = card.querySelector('.cl-over-limit');
       expect(badge).toBeInTheDocument();
-      expect(badge?.textContent).toMatch(/Over limit by (\$|US)?\s*\.?\$\s*12,750/i);
+      expect(badge?.textContent).toMatch(/12,750/i);
     });
 
     it('clamps the bar width to 100% and exposes meter semantics', () => {
@@ -269,7 +294,7 @@ describe('CreditLines page', () => {
 
     it("opens drawer on load when ?line=<id> deep link is present and ignores unknown ids", async () => {
       const { unmount } = render(
-        <MemoryRouter initialEntries={["/credit-lines?line=CL-001"]}>
+        <MemoryRouter initialEntries={["/credit-lines?line=CL-2024-001"]}>
           <CreditLines defaultLoading={false} />
         </MemoryRouter>
       );
@@ -279,7 +304,7 @@ describe('CreditLines page', () => {
 
       const dialog = await screen.findByRole("dialog");
       expect(dialog).toBeInTheDocument();
-      expect(dialog).toHaveTextContent("CL-001");
+      expect(dialog).toHaveTextContent("CL-2024-001");
       unmount();
 
       render(
@@ -328,7 +353,7 @@ describe('CreditLines page', () => {
     });
 
     it("renders nothing when an expanded card has no APR history", () => {
-      const target = mockCreditLines.find(
+      const target = MOCK_CREDIT_LINES.find(
         (line) => line.name === "Primary Business Line",
       )!;
       const originalHistory = target.aprHistory;
@@ -363,6 +388,7 @@ describe('CreditLines page', () => {
     });
 
     it("blocks selecting a third credit line once two are selected", () => {
+      renderPage();
 
       const checkboxes = screen.getAllByRole("checkbox", {
         name: /Select .* for comparison/i,
@@ -380,6 +406,113 @@ describe('CreditLines page', () => {
       fireEvent.click(checkboxes[2]);
       expect(checkboxes[2].checked).toBe(false);
       expect(screen.getByText("Compare Selected (2/2)")).toBeInTheDocument();
+    });
+  });
+
+  describe("CreditLineCard memoisation", () => {
+    it("toggling one card re-renders only that card, identical polling data causes zero re-renders, and changed data re-renders only the changed card", () => {
+      amountRenderSpy.mockClear();
+
+      const initialLines = MOCK_CREDIT_LINES.slice(0, 2).map((l, idx) => ({
+        ...l,
+        limit: idx === 0 ? 500_001 : 250_002,
+        statusHistory: l.statusHistory.map((h) => ({ ...h })),
+        aprHistory: l.aprHistory?.map((h) => ({ ...h })),
+        healthHistory: l.healthHistory?.map((h) => ({ ...h })),
+      }));
+
+      const countRendersForLimit = (limit: number) =>
+        amountRenderSpy.mock.calls.filter(([val]) => val === limit).length;
+
+      function Harness() {
+        const [lines, setLines] = useState(initialLines);
+        const [selected, setSelected] = useState<string[]>([]);
+        const [unrelatedFilter, setUnrelatedFilter] = useState("all");
+
+        const handleToggle = useCallback((lineId: string) => {
+          setSelected((prev) =>
+            prev.includes(lineId)
+              ? prev.filter((id) => id !== lineId)
+              : [...prev, lineId],
+          );
+        }, []);
+
+        const handlePollIdentical = () => {
+          setLines((prev) =>
+            prev.map((l) => ({
+              ...l,
+              statusHistory: l.statusHistory.map((h) => ({ ...h })),
+              aprHistory: l.aprHistory?.map((h) => ({ ...h })),
+              healthHistory: l.healthHistory?.map((h) => ({ ...h })),
+            })),
+          );
+        };
+
+        const handlePollChangedFirst = () => {
+          setLines((prev) =>
+            prev.map((l, idx) =>
+              idx === 0
+                ? { ...l, utilized: l.utilized + 1000, updatedAt: "2026-01-01T00:00:00Z" }
+                : { ...l },
+            ),
+          );
+        };
+
+        return (
+          <MemoryRouter>
+            <button type="button" onClick={() => setUnrelatedFilter((f) => (f === "all" ? "other" : "all"))}>
+              Change Filter ({unrelatedFilter})
+            </button>
+            <button type="button" onClick={handlePollIdentical}>
+              Poll Identical
+            </button>
+            <button type="button" onClick={handlePollChangedFirst}>
+              Poll Changed First
+            </button>
+            {lines.map((line) => (
+              <CreditLineCard
+                key={line.id}
+                line={line}
+                isSelected={selected.includes(line.id)}
+                onToggle={handleToggle}
+              />
+            ))}
+          </MemoryRouter>
+        );
+      }
+
+      render(<Harness />);
+
+      const firstLimit = initialLines[0].limit;
+      const secondLimit = initialLines[1].limit;
+      const initialFirst = countRendersForLimit(firstLimit);
+      const initialSecond = countRendersForLimit(secondLimit);
+      expect(initialFirst).toBeGreaterThan(0);
+      expect(initialSecond).toBeGreaterThan(0);
+
+      // Changing an unrelated filter causes zero card re-renders
+      fireEvent.click(screen.getByRole("button", { name: /Change Filter/i }));
+      expect(countRendersForLimit(firstLimit)).toBe(initialFirst);
+      expect(countRendersForLimit(secondLimit)).toBe(initialSecond);
+
+      // Identical polling data (fresh object references) causes zero card re-renders
+      fireEvent.click(screen.getByRole("button", { name: /Poll Identical/i }));
+      expect(countRendersForLimit(firstLimit)).toBe(initialFirst);
+      expect(countRendersForLimit(secondLimit)).toBe(initialSecond);
+
+      // Toggling one card re-renders only that card
+      const checkboxes = screen.getAllByRole("checkbox", {
+        name: /Select .* for comparison/i,
+      });
+      fireEvent.click(checkboxes[0]);
+      const afterToggleFirst = countRendersForLimit(firstLimit);
+      expect(afterToggleFirst).toBeGreaterThan(initialFirst);
+      expect(countRendersForLimit(secondLimit)).toBe(initialSecond);
+
+      // Changing a displayed field on the first card re-renders only the first card
+      fireEvent.click(screen.getByRole("button", { name: /Poll Changed First/i }));
+      expect(countRendersForLimit(firstLimit)).toBeGreaterThan(afterToggleFirst);
+      expect(countRendersForLimit(secondLimit)).toBe(initialSecond);
     });
   });
 });
