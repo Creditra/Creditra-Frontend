@@ -17,6 +17,9 @@ import { PendingButton } from './PendingButton';
 import './RepayModal.css';
 import { Modal } from './Modal';
 import { isTypedAmountMatch } from './TypedAmountConfirm';
+import { offlineMutation } from '../utils/offline';
+import { generateIdempotencyKey } from '../utils/idempotency';
+import { submitRepayment } from '../services/repay';
 
 interface RepaymentCreditLine {
   id: string;
@@ -668,21 +671,30 @@ export function RepayModal({
           )}
 
           <div style={{ display: 'flex', gap: '1rem' }}>
-            <button className="focus-ring" onClick={() => setStep('input')} style={{ ...btn.outline, flex: 1 }}>
+            <button
+              className="focus-ring"
+              onClick={() => {
+                setSubmitError(null);
+                idempotencyKeyRef.current = null;
+                setStep('input');
+              }}
+              disabled={isSubmitting}
+              style={{ ...btn.outline, flex: 1 }}
+            >
               Back
             </button>
             <div style={{ flex: 2, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               <PendingButton className="focus-ring"
                 onClick={handleConfirm}
-                pending={false}
+                pending={isSubmitting}
                 pendingLabel="Processing..."
-                disabled={isConfirmDisabled}
-                aria-disabled={isConfirmDisabled || undefined}
+                disabled={isConfirmDisabled || isSubmitting}
+                aria-disabled={isConfirmDisabled || isSubmitting || undefined}
                 style={{
                   ...btn.primary,
                   width: '100%',
-                  opacity: isConfirmDisabled ? 0.5 : 1,
-                  cursor: isConfirmDisabled ? 'not-allowed' : 'pointer',
+                  opacity: isConfirmDisabled || isSubmitting ? 0.5 : 1,
+                  cursor: isConfirmDisabled || isSubmitting ? 'not-allowed' : 'pointer',
                 }}
               >
                 Confirm Repayment
