@@ -422,7 +422,9 @@ export function ConfirmationStep({
         {/* Before */}
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
-            <span className="text-muted font-medium">Current utilization</span>
+            <AccessibleTooltip label="Utilization is the percentage of your available credit that is currently being used.">
+              <span className="text-muted font-medium">Current utilization</span>
+            </AccessibleTooltip>
             <span className="font-semibold text-foreground tabular-nums">
               {currentUtilizationPct}%
             </span>

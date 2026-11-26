@@ -13,6 +13,7 @@ import {
 } from "../utils/password-strength";
 import { PendingButton } from "../components/PendingButton";
 import { FormField } from "../components/FormField";
+import { custom, email, matches, minLength, required, useForm } from "../hooks/useForm";
 import {
   fetchWithTimeout,
   FetchTimeoutError,
@@ -21,12 +22,6 @@ import {
 
 export function RegisterPage() {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState<RegisterFormData>({
-    email: "",
-    password: "",
-    confirmPassword: "",
-    acceptTerms: false,
-  });
   const [passwordStrength, setPasswordStrength] =
     useState<PasswordStrength>("weak");
   const [error, setError] = useState<AuthError | null>(null);
@@ -39,52 +34,8 @@ export function RegisterPage() {
     };
   }, []);
 
-  const handlePasswordChange = (password: string) => {
-    setFormData({ ...formData, password });
-    setPasswordStrength(calculatePasswordStrength(password));
-  };
-
-  const validateForm = (): boolean => {
-    if (!formData.email || !formData.password || !formData.confirmPassword) {
-      setError({ message: "All fields are required" });
-      return false;
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      setError({
-        field: "email",
-        message: "Please enter a valid email address",
-      });
-      return false;
-    }
-
-    if (formData.password.length < 8) {
-      setError({
-        field: "password",
-        message: "Password must be at least 8 characters",
-      });
-      return false;
-    }
-
-    if (formData.password !== formData.confirmPassword) {
-      setError({ field: "confirmPassword", message: "Passwords do not match" });
-      return false;
-    }
-
-    if (!formData.acceptTerms) {
-      setError({ message: "You must accept the terms and conditions" });
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitRegister = async (values: RegisterFormData) => {
     setError(null);
-
-    if (!validateForm()) return;
-
     setLoading(true);
 
     abortControllerRef.current?.abort();
@@ -98,8 +49,8 @@ export function RegisterPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            email: formData.email,
-            password: formData.password,
+            email: values.email,
+            password: values.password,
           }),
         },
         { signal: controller.signal },
@@ -132,6 +83,36 @@ export function RegisterPage() {
     }
   };
 
+  const form = useForm<RegisterFormData>({
+    initialValues: {
+      email: "",
+      password: "",
+      confirmPassword: "",
+      acceptTerms: false,
+    },
+    validators: {
+      email: [required("All fields are required"), email("Please enter a valid email address")],
+      password: [
+        required("All fields are required"),
+        minLength(8, "Password must be at least 8 characters"),
+      ],
+      confirmPassword: [
+        required("All fields are required"),
+        matches("password", "Passwords do not match"),
+      ],
+      acceptTerms: custom(
+        (value) => value === true,
+        "You must accept the terms and conditions",
+      ),
+    },
+    onSubmit: submitRegister,
+  });
+
+  const handlePasswordChange = (password: string) => {
+    form.setValue("password", password);
+    setPasswordStrength(calculatePasswordStrength(password));
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center  px-4 py-12">
       <div className="w-full max-w-[400px]">
@@ -147,37 +128,37 @@ export function RegisterPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={form.handleSubmit} className="space-y-6" noValidate>
             <FormField
               id="email"
+              name="email"
               label="Email Address"
               type="email"
               required
               helpText="We'll never share your email with anyone"
-              error={error?.field === 'email' ? error.message : undefined}
-              inputProps={{
-                value: formData.email,
-                onChange: (e) => setFormData({ ...formData, email: e.target.value }),
-                placeholder: "you@example.com",
-                autoComplete: "email"
-              }}
+              error={error?.field === 'email' ? error.message : form.errors.email}
+              value={form.values.email}
+              onChange={(value) => form.setValue("email", value)}
+              onBlur={() => form.handleBlur("email")}
+              placeholder="you@example.com"
+              autoComplete="email"
             />
 
             <FormField
               id="password"
+              name="password"
               label="Password"
               type="password"
               required
               helpText="Must be at least 8 characters with letters and numbers"
-              error={error?.field === 'password' ? error.message : undefined}
-              inputProps={{
-                value: formData.password,
-                onChange: (e) => handlePasswordChange(e.target.value),
-                placeholder: "Create a strong password",
-                autoComplete: "new-password"
-              }}
+              error={error?.field === 'password' ? error.message : form.errors.password}
+              value={form.values.password}
+              onChange={handlePasswordChange}
+              onBlur={() => form.handleBlur("password")}
+              placeholder="Create a strong password"
+              autoComplete="new-password"
             />
-            {formData.password && (
+            {form.values.password && (
               <div className="mt-2">
                 <div className="flex gap-1 mb-1">
                   <div
@@ -198,25 +179,32 @@ export function RegisterPage() {
 
             <FormField
               id="confirmPassword"
+              name="confirmPassword"
               label="Confirm Password"
               type="password"
               required
-              error={error?.field === 'confirmPassword' ? error.message : undefined}
-              inputProps={{
-                value: formData.confirmPassword,
-                onChange: (e) => setFormData({ ...formData, confirmPassword: e.target.value }),
-                placeholder: "Re-enter your password",
-                autoComplete: "new-password"
-              }}
+              error={
+                error?.field === 'confirmPassword'
+                  ? error.message
+                  : form.errors.confirmPassword
+              }
+              value={form.values.confirmPassword}
+              onChange={(value) => form.setValue("confirmPassword", value)}
+              onBlur={() => form.handleBlur("confirmPassword")}
+              placeholder="Re-enter your password"
+              autoComplete="new-password"
             />
 
             <div>
               <label className="flex items-start">
                 <input
+                  id="acceptTerms"
                   type="checkbox"
-                  checked={formData.acceptTerms}
-                  onChange={(e) =>
-                    setFormData({ ...formData, acceptTerms: e.target.checked })
+                  checked={form.values.acceptTerms}
+                  onChange={(e) => form.setValue("acceptTerms", e.target.checked)}
+                  aria-invalid={Boolean(form.errors.acceptTerms)}
+                  aria-describedby={
+                    form.errors.acceptTerms ? "acceptTerms-error" : undefined
                   }
                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mt-1"
                 />
@@ -237,6 +225,11 @@ export function RegisterPage() {
                   </Link>
                 </span>
               </label>
+              {form.errors.acceptTerms && (
+                <p id="acceptTerms-error" className="mt-1 text-sm text-red-700" role="alert">
+                  {form.errors.acceptTerms}
+                </p>
+              )}
             </div>
 
             <PendingButton

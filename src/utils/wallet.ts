@@ -263,7 +263,7 @@ const isTestnetPassphrase = (networkPassphrase: string): boolean =>
  * normalized into `WalletConnectError` (with `type: 'user_rejected'` on
  * cancellation).
  */
-export const signTransaction = async (
+const signTransactionWithType = async (
   type: WalletType,
   xdr: string,
   networkPassphrase: string,
@@ -550,7 +550,7 @@ function extractSignedXdr(result: unknown): string {
 }
 
 /** Ask the connected wallet to sign a transaction XDR for the configured network. */
-export const signTransaction = async (
+const signTransactionWithWallet = async (
   wallet: WalletInfo,
   xdr: string,
   networkPassphrase: string,
@@ -589,6 +589,32 @@ export const signTransaction = async (
     throw classifyWalletError(error);
   }
 };
+
+/**
+ * Ask a wallet to sign a transaction XDR.
+ *
+ * Accepts either a `WalletType` (used by the Soroban write client) or a
+ * `WalletInfo` (used by SEP-10). Both paths keep their original behaviour.
+ */
+export function signTransaction(
+  type: WalletType,
+  xdr: string,
+  networkPassphrase: string,
+): Promise<string>;
+export function signTransaction(
+  wallet: WalletInfo,
+  xdr: string,
+  networkPassphrase: string,
+): Promise<string>;
+export function signTransaction(
+  walletOrType: WalletType | WalletInfo,
+  xdr: string,
+  networkPassphrase: string,
+): Promise<string> {
+  return typeof walletOrType === 'string'
+    ? signTransactionWithType(walletOrType, xdr, networkPassphrase)
+    : signTransactionWithWallet(walletOrType, xdr, networkPassphrase);
+}
 
 /**
  * Explicitly wipe the MRU list.  Not currently called by any user-facing

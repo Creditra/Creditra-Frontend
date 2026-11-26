@@ -29,6 +29,7 @@ import {
   formatPayoffDate,
 } from '../utils/payoffProjection';
 import { PendingButton } from './PendingButton';
+import { NetworkFeeDisplay } from './NetworkFeeDisplay';
 import {
   TypedAmountConfirmField,
   isTypedAmountMatch,
@@ -378,6 +379,16 @@ export function RepayPreviewModal({
                 <span className="tabular-nums">{fmt(walletBalanceAfter)}</span>
               </span>
             </div>
+            <NetworkFeeDisplay
+              method="repay"
+              lineId={creditLine.id}
+              amount={repayAmount}
+              label="Network Fee"
+              containerClassName="repay-preview-row"
+              labelClassName="repay-preview-row-label"
+              valueClassName="repay-preview-row-value tabular-nums"
+              testId="repay-network-fee"
+            />
           </div>
 
           {/* Low Wallet Reserve Warning Callout */}

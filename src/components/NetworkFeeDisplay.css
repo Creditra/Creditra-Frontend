@@ -1,0 +1,44 @@
+.network-fee {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.network-fee__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--text-muted, #8b949e);
+}
+
+.network-fee__help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent, #58a6ff);
+  cursor: help;
+}
+
+.network-fee__help:hover,
+.network-fee__help:focus-visible {
+  background: rgba(88, 166, 255, 0.12);
+}
+
+.network-fee__value {
+  font-size: 0.85rem;
+  color: var(--text, #e6edf3);
+}
+
+.network-fee--stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+}

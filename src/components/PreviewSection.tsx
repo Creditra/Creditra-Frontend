@@ -25,10 +25,11 @@ import {
   getDrawPricingQuote,
   getNextAprTier,
 } from "@/lib/draw-credit-pricing";
-import { projectDraw } from "@/lib/draw-projection";
 import { formatMoney } from "@/utils/amountValidation";
 import { formatCurrency } from "../utils/currency";
-import { DollarSign, Percent, TrendingUp } from "lucide-react";
+import { AccessibleTooltip } from "./AccessibleTooltip";
+import { NetworkFeeDisplay } from "./NetworkFeeDisplay";
+import { Coins, DollarSign, Percent, TrendingUp } from "lucide-react";
 
 interface PreviewSectionProps {
   creditLine: CreditLine;
@@ -115,7 +116,9 @@ export function PreviewSection({ creditLine, amount }: PreviewSectionProps) {
       {/* Current utilization progress bar */}
       <div className="dc-util-section">
         <div className="dc-util-row">
-          <span className="dc-util-row__label">Current utilization</span>
+          <AccessibleTooltip label="Utilization is the percentage of your available credit that is currently being used.">
+            <span className="dc-util-row__label">Current utilization</span>
+          </AccessibleTooltip>
           <span className="dc-util-row__value tabular-nums">{creditLine.utilization}%</span>
         </div>
         <div
@@ -159,6 +162,27 @@ export function PreviewSection({ creditLine, amount }: PreviewSectionProps) {
             className={`dc-progress-bar${isHighAfterDraw ? " dc-progress-bar--warning" : ""}`}
             style={{ width: `${newUtilization}%` }}
           />
+        </div>
+      </div>
+
+      {/* Network fee — simulated inclusion + Soroban resource fee */}
+      <div className="dc-stat-grid">
+        <div className="dc-stat-card">
+          <div className="dc-stat-card__header">
+            <div>
+              <NetworkFeeDisplay
+                method="draw"
+                lineId={creditLine.id}
+                amount={safeAmount}
+                label="Network Fee"
+                containerClassName="network-fee network-fee--stacked"
+                labelClassName="dc-stat-card__label"
+                valueClassName="dc-stat-card__value tabular-nums"
+                testId="preview-network-fee"
+              />
+            </div>
+            <Coins className="dc-stat-card__icon" aria-hidden="true" />
+          </div>
         </div>
       </div>
     </div>

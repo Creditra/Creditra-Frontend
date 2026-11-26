@@ -6,6 +6,7 @@ import { LoginFormData, AuthError } from "../types/auth.types";
 import { PendingButton } from "../components/PendingButton";
 import { FormField } from "../components/FormField";
 import { TrustBadges } from "../components/TrustBadges";
+import { useForm } from "../hooks/useForm";
 import {
   fetchWithTimeout,
   FetchTimeoutError,
@@ -38,11 +39,6 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { wallet } = useWallet();
-  const [formData, setFormData] = useState<LoginFormData>({
-    emailOrUsername: "",
-    password: "",
-    rememberMe: false,
-  });
   const [error, setError] = useState<AuthError | null>(null);
   const [loading, setLoading] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -54,10 +50,10 @@ export function LoginPage() {
   }, []);
   const [walletLoading, setWalletLoading] = useState(false);
 
-  const storeToken = (token: string) => {
+  const storeToken = (token: string, rememberMe: boolean) => {
     localStorage.removeItem(AUTH_TOKEN_KEY);
     sessionStorage.removeItem(AUTH_TOKEN_KEY);
-    if (formData.rememberMe) {
+    if (rememberMe) {
       localStorage.setItem(AUTH_TOKEN_KEY, token);
     } else {
       sessionStorage.setItem(AUTH_TOKEN_KEY, token);
@@ -74,8 +70,7 @@ export function LoginPage() {
     );
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitLogin = async (values: LoginFormData) => {
     setError(null);
     setLoading(true);
 
@@ -89,7 +84,7 @@ export function LoginPage() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
+          body: JSON.stringify(values),
         },
         { signal: controller.signal },
       );
@@ -102,7 +97,7 @@ export function LoginPage() {
       }
 
       // Store token if remember me is checked
-      storeToken(data.token);
+      storeToken(data.token, values.rememberMe);
 
       // Redirect to dashboard
       navigate("/dashboard");
@@ -125,13 +120,22 @@ export function LoginPage() {
     }
   };
 
+  const form = useForm<LoginFormData>({
+    initialValues: {
+      emailOrUsername: "",
+      password: "",
+      rememberMe: false,
+    },
+    onSubmit: submitLogin,
+  });
+
   const handleWalletSignIn = async () => {
     if (!wallet) return;
     setError(null);
     setWalletLoading(true);
     try {
       const session = await signInWithWallet(wallet);
-      storeToken(session.token);
+      storeToken(session.token, form.values.rememberMe);
       redirectAfterSignIn();
     } catch (err) {
       if (err instanceof Sep10AuthError) {
@@ -198,21 +202,22 @@ export function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={form.handleSubmit} className="space-y-6">
             <FormField
               id="emailOrUsername"
               name="emailOrUsername"
               label="Email or Username"
               type="text"
               required
-              value={formData.emailOrUsername}
-              onChange={(value) =>
-                setFormData({ ...formData, emailOrUsername: value })
-              }
+              value={form.values.emailOrUsername}
+              onChange={(value) => form.setValue("emailOrUsername", value)}
+              onBlur={() => form.handleBlur("emailOrUsername")}
               placeholder="Enter your email or username"
               autoComplete="username"
               error={
-                error?.field === "emailOrUsername" ? error.message : undefined
+                error?.field === "emailOrUsername"
+                  ? error.message
+                  : form.errors.emailOrUsername
               }
             />
 
@@ -230,22 +235,25 @@ export function LoginPage() {
               type="password"
               required
               helpText="Enter the password for your account"
-              value={formData.password}
-              onChange={(value) =>
-                setFormData({ ...formData, password: value })
-              }
+              value={form.values.password}
+              onChange={(value) => form.setValue("password", value)}
+              onBlur={() => form.handleBlur("password")}
               placeholder="Enter your password"
               autoComplete="current-password"
-              error={error?.field === "password" ? error.message : undefined}
+              error={
+                error?.field === "password"
+                  ? error.message
+                  : form.errors.password
+              }
             />
 
             <div className="flex items-center justify-between">
               <label className="flex items-center">
                 <input
                   type="checkbox"
-                  checked={formData.rememberMe}
+                  checked={form.values.rememberMe}
                   onChange={(e) =>
-                    setFormData({ ...formData, rememberMe: e.target.checked })
+                    form.setValue("rememberMe", e.target.checked)
                   }
                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                 />
