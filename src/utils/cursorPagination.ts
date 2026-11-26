@@ -141,3 +141,47 @@ export function paginateByCursor<T>(
         : null,
   };
 }
+
+/** Query shape used by the in-memory credit transaction feed. */
+export interface TransactionCursorQuery {
+  cursor?: string;
+  limit?: number;
+}
+
+export interface TransactionCursorPage<T> {
+  transactions: T[];
+  nextCursor: string | null;
+  staleCursor: boolean;
+}
+
+/**
+ * Id-based pagination for the already-loaded transaction list. The cursor is
+ * the id of the last returned row; if that row has disappeared, restarting at
+ * index zero would duplicate the first page, so report a stale cursor instead.
+ */
+export function paginateTransactions<T extends { id: string }>(
+  transactions: readonly T[],
+  query: TransactionCursorQuery,
+): TransactionCursorPage<T> {
+  let cursorIndex = 0;
+  if (query.cursor) {
+    const foundIndex = transactions.findIndex(
+      (transaction) => transaction.id === query.cursor,
+    );
+    if (foundIndex < 0) {
+      return { transactions: [], nextCursor: null, staleCursor: true };
+    }
+    cursorIndex = foundIndex + 1;
+  }
+
+  const limit =
+    query.limit === undefined ? transactions.length : Math.max(0, query.limit);
+  const page = transactions.slice(cursorIndex, cursorIndex + limit);
+  const hasNext = cursorIndex + limit < transactions.length;
+
+  return {
+    transactions: page,
+    nextCursor: hasNext && page.length > 0 ? page[page.length - 1].id : null,
+    staleCursor: false,
+  };
+}
