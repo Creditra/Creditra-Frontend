@@ -103,4 +103,39 @@ describe('CreditLineRowMenu', () => {
     fireEvent.click(item);
     expect(onAdjustCollateral).toHaveBeenCalledWith('line-123');
   });
+
+  test('exposes limit increase eligibility reasons accessibly', () => {
+    const onRequestLimitIncrease = vi.fn();
+    const reasons = ['Risk score must be at least 650.'];
+    render(
+      <MemoryRouter>
+        <CreditLineRowMenu
+          {...defaultProps}
+          onRequestLimitIncrease={onRequestLimitIncrease}
+          limitIncreaseDisabledReasons={reasons}
+        />
+      </MemoryRouter>
+    );
+    fireEvent.click(screen.getByLabelText(/Menu for Test Credit Line/i));
+
+    const action = screen.getByRole('menuitem', { name: /Request limit increase/i });
+    expect(action).toBeDisabled();
+    expect(action).toHaveAccessibleDescription(reasons[0]);
+    expect(onRequestLimitIncrease).not.toHaveBeenCalled();
+  });
+
+  test('invokes an eligible limit increase action', () => {
+    const onRequestLimitIncrease = vi.fn();
+    render(
+      <MemoryRouter>
+        <CreditLineRowMenu
+          {...defaultProps}
+          onRequestLimitIncrease={onRequestLimitIncrease}
+        />
+      </MemoryRouter>
+    );
+    fireEvent.click(screen.getByLabelText(/Menu for Test Credit Line/i));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Request limit increase/i }));
+    expect(onRequestLimitIncrease).toHaveBeenCalledWith('line-123');
+  });
 });
