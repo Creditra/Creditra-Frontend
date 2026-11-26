@@ -1,0 +1,45 @@
+name: Feature Request
+description: Suggest an idea or improvement for Creditra Frontend
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature or improvement for Creditra Frontend!
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem or limitation does this feature solve?
+      placeholder: I'm always frustrated when...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution or behavior you would like to see.
+      placeholder: Describe how this feature should work...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions, workarounds, or features you have considered.
+      placeholder: Optional...
+    validations:
+      required: false
+
+  - type: textarea
+    id: affected-areas
+    attributes:
+      label: Affected Pages / Components
+      description: Which pages, routes, or UI components would this change affect?
+      placeholder: e.g., Dashboard, Wallet Connect modal, Borrow form...
+    validations:
+      required: false
