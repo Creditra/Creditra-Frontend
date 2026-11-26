@@ -10,13 +10,16 @@ export function createCreditDataSource(
   type?: 'mock' | 'soroban' | string,
   options?: SorobanCreditDataSourceOptions,
 ): CreditDataSource {
-  const selectedType = type || getCreditDataSourceType();
+  const selectedType = type ?? getCreditDataSourceType();
 
   switch (selectedType) {
     case 'soroban':
       return new SorobanCreditDataSource(options);
     case 'mock':
-    default:
       return new MockCreditDataSource();
+    default:
+      throw new Error(
+        `Unknown credit data source type "${selectedType}". Allowed values are "mock" and "soroban".`,
+      );
   }
 }

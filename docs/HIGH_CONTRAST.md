@@ -52,21 +52,23 @@ override without additional work.
 
 ```ts
 type ContrastMode = 'normal' | 'high';
+type ContrastSource = 'user' | 'system';
 
 // Provider
 <ContrastProvider>…</ContrastProvider>
 
 // Hook
-const { contrastMode, toggleContrast, setContrastMode } = useContrast();
+const { contrastMode, source, toggleContrast, setContrastMode } = useContrast();
 ```
 
-On every mode change the provider:
-1. Sets or removes `data-contrast="high"` on `document.documentElement`.
-2. Writes the new value to `localStorage` via `writeJson('creditra-contrast', mode)`.
+How mode resolution works:
+1. On mount, the provider reads `localStorage` via `readJson('creditra-contrast', null)`.
+2. If a valid stored mode (`'normal'` or `'high'`) exists, `source` is `'user'` and that value wins over OS settings.
+3. If nothing (or a corrupted value) is stored, `source` is `'system'` and the provider initialises from `window.matchMedia('(prefers-contrast: more)')` or `window.matchMedia('(forced-colors: active)')`, subscribing to live `change` events without writing to `localStorage`.
+4. `data-contrast="high"` is set or removed on `document.documentElement` whenever the active mode changes.
+5. `localStorage` is written via `writeJson('creditra-contrast', mode)` only when the user explicitly calls `toggleContrast()` or `setContrastMode(mode)`.
 
-The initial value is read synchronously from `localStorage` via
-`readJson('creditra-contrast', 'normal')` so there is no flash-of-wrong-contrast on
-first paint.
+Both storage and `matchMedia` are read synchronously on first render (with an SSR/jsdom guard when `matchMedia` is unavailable) so there is no flash-of-wrong-contrast on first paint.
 
 ---
 

@@ -325,3 +325,64 @@ Credit lifecycle suites (Dashboard, Credit Lines, Repay, Transaction History, Dr
 - **Stable fixtures**: Fixture generators such as `generateAprHistory` take a fixed anchor date (`FIXTURE_ANCHOR_DATE`) so that imported mock structures do not drift across test runs.
 
 
+
+---
+
+## 8. API Mocking with Mock Service Worker (MSW)
+
+Auth, analytics, and file upload endpoints are mocked with [Mock Service Worker (MSW)](https://mswjs.io/) so the Vite dev server and Vitest share the same realistic handlers.
+
+- **Handlers**: `src/mocks/handlers.ts`
+- **Node test server**: `src/mocks/server.ts` — started in `src/test/setup.ts` with `onUnhandledRequest: 'error'`, reset after every test (`server.resetHandlers()`), and closed in `afterAll`.
+- **Browser service worker**: `src/mocks/browser.ts` + `public/mockServiceWorker.js` — dynamically imported and started in `src/main.tsx` only when `import.meta.env.DEV` is true and `VITE_ENABLE_MOCKS !== 'false'`. Production builds tree-shake MSW out completely.
+
+### Disabling mocks in local development
+
+```bash
+VITE_ENABLE_MOCKS=false npm run dev
+```
+
+### Overriding handlers in tests
+
+Use `server.use(...)` inside a test to override a specific endpoint for that test only (`afterEach` automatically restores the defaults):
+
+```ts
+import { http, HttpResponse } from 'msw';
+import { server } from '../../mocks/server';
+
+server.use(
+  http.post('/api/auth/login', () =>
+    HttpResponse.json({ message: 'Too many login attempts.' }, { status: 429 }),
+  ),
+);
+```
+
+### Magic triggers for manual & automated testing
+
+| Endpoint | Trigger value | Response |
+| --- | --- | --- |
+| `POST /api/auth/login` | `emailOrUsername`: `validation@creditra.test` or `validation` | `400` validation error (`AuthError` with `field`) |
+| `POST /api/auth/login` | `emailOrUsername`: `invalid@creditra.test` or `invalid` (or password `wrong-password`) | `401` invalid credentials |
+| `POST /api/auth/login` | `emailOrUsername`: `ratelimit@creditra.test` or `ratelimit` | `429` rate limit (`Retry-After: 60`) |
+| `POST /api/auth/login` | `emailOrUsername`: `network@creditra.test` or `network-error` | Network error (`HttpResponse.error()`) |
+| `POST /api/auth/register` | `email`: `exists@creditra.test` or `validation@creditra.test` | `400` validation / duplicate email error |
+| `POST /api/auth/register` | `email`: `unauthorized@creditra.test` | `401` unauthorized |
+| `POST /api/auth/register` | `email`: `ratelimit@creditra.test` | `429` rate limit |
+| `POST /api/auth/register` | `email`: `network@creditra.test` | Network error |
+| `POST /api/auth/forgot-password` | `email`: `validation@creditra.test` | `400` validation error |
+| `POST /api/auth/forgot-password` | `email`: `unauthorized@creditra.test` | `401` unauthorized |
+| `POST /api/auth/forgot-password` | `email`: `ratelimit@creditra.test` | `429` rate limit |
+| `POST /api/auth/forgot-password` | `email`: `network@creditra.test` | Network error |
+| `POST /api/auth/reset-password` | `newPassword` shorter than 8 chars or empty `token` | `400` validation error |
+| `POST /api/auth/reset-password` | `token`: `invalid-token` or `expired-token` | `401` invalid/expired token |
+| `POST /api/auth/reset-password` | `token`: `rate-limit` | `429` rate limit |
+| `POST /api/auth/reset-password` | `token`: `network-error` | Network error |
+| `POST /api/analytics` | `event`: `validation_error` | `400` validation error |
+| `POST /api/analytics` | `event`: `unauthorized` | `401` unauthorized |
+| `POST /api/analytics` | `event`: `rate_limit` | `429` rate limit |
+| `POST /api/analytics` | `event`: `network_error` | Network error |
+| `POST /api/mock-upload` | filename starting with `slow` (e.g. `slow-statement.pdf`) | `200` delayed response (`600ms`) with progress |
+| `POST /api/mock-upload` | filename starting with `invalid` | `400` validation error |
+| `POST /api/mock-upload` | filename starting with `unauthorized` | `401` unauthorized |
+| `POST /api/mock-upload` | filename starting with `ratelimit` | `429` rate limit |
+| `POST /api/mock-upload` | filename starting with `network` | Network error |

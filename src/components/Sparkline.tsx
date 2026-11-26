@@ -1,4 +1,14 @@
-import React from 'react';
+import { useMemo } from 'react';
+import {
+  ChartDataTable,
+  ChartFrame,
+  ChartTooltip,
+  ChartTooltipPoints,
+  buildPolylinePoints,
+  createLinearScale,
+  useChartTooltip,
+} from './charts';
+import type { ChartTooltipPoint } from './charts';
 
 interface SparklineProps {
   data: number[];
@@ -10,6 +20,8 @@ interface SparklineProps {
   ariaLabel?: string;
 }
 
+const TABLE_COLUMNS = [{ header: 'Day' }, { header: 'Value' }] as const;
+
 export function Sparkline({
   data,
   width = 100,
@@ -19,29 +31,76 @@ export function Sparkline({
   className = '',
   ariaLabel = '30-day risk trend',
 }: SparklineProps) {
+  const { pointsAttr, tooltipPoints, min, max } = useMemo(() => {
+    if (!data || data.length === 0) {
+      return {
+        pointsAttr: '',
+        tooltipPoints: [] as ChartTooltipPoint[],
+        min: 0,
+        max: 0,
+      };
+    }
+
+    const minV = Math.min(...data);
+    const maxV = Math.max(...data);
+    const padding = strokeWidth;
+
+    const xScale = createLinearScale(
+      [0, Math.max(data.length - 1, 1)],
+      [padding, width - padding],
+    );
+    const yScale = createLinearScale(
+      [minV, maxV],
+      [height - padding, padding],
+    );
+
+    const coords = data.map((d, i) => ({
+      x: data.length === 1 ? width / 2 : xScale(i),
+      y: yScale(d),
+      value: d,
+      day: i + 1,
+    }));
+
+    return {
+      pointsAttr: buildPolylinePoints(coords),
+      tooltipPoints: coords.map((c) => ({
+        key: `day-${c.day}`,
+        x: c.x,
+        y: c.y,
+        label: `Day ${c.day}`,
+        value: String(c.value),
+      })),
+      min: minV,
+      max: maxV,
+    };
+  }, [data, width, height, strokeWidth]);
+
+  const { activeIndex, setActiveIndex, activePoint } =
+    useChartTooltip(tooltipPoints);
+
+  const tableRows = useMemo(
+    () =>
+      (data ?? []).map((d, i) => ({
+        key: String(i),
+        cells: [`Day ${i + 1}`, String(d)],
+      })),
+    [data],
+  );
+
   if (!data || data.length === 0) return null;
 
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-
-  const padding = strokeWidth;
-  const innerWidth = width - padding * 2;
-  const innerHeight = height - padding * 2;
-
-  const points = data.map((d, i) => {
-    const x = padding + (i / (data.length - 1)) * innerWidth;
-    const y = padding + innerHeight - ((d - min) / range) * innerHeight;
-    return `${x},${y}`;
-  }).join(' ');
+  const summaryTitle = `${ariaLabel}: ${data.length} points, range ${min} to ${max}`;
 
   return (
-    <div className={`sparkline-container ${className}`} style={{ display: 'inline-flex', flexDirection: 'column', gap: '4px' }}>
-      <svg
+    <div
+      className={`sparkline-container ${className}`}
+      style={{ display: 'inline-flex', flexDirection: 'column', gap: '4px', position: 'relative' }}
+    >
+      <ChartFrame
         width={width}
         height={height}
-        viewBox={`0 0 ${width} ${height}`}
-        aria-hidden="true"
+        explicitDimensions
+        title={summaryTitle}
         preserveAspectRatio="none"
         style={{ overflow: 'visible' }}
       >
@@ -51,26 +110,24 @@ export function Sparkline({
           strokeWidth={strokeWidth}
           strokeLinecap="round"
           strokeLinejoin="round"
-          points={points}
+          points={pointsAttr}
         />
-      </svg>
+        <ChartTooltipPoints
+          points={tooltipPoints}
+          activeIndex={activeIndex}
+          onActiveChange={setActiveIndex}
+          hitRadius={4}
+          ringRadius={3}
+        />
+      </ChartFrame>
+      <ChartTooltip point={activePoint} />
+
       {/* SR table fallback */}
-      <table className="sr-only" aria-label={ariaLabel}>
-        <thead>
-          <tr>
-            <th scope="col">Day</th>
-            <th scope="col">Value</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((d, i) => (
-            <tr key={i}>
-              <td>Day {i + 1}</td>
-              <td>{d}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <ChartDataTable
+        ariaLabel={ariaLabel}
+        columns={TABLE_COLUMNS}
+        rows={tableRows}
+      />
     </div>
   );
 }

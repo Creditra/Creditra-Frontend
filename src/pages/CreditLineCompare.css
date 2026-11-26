@@ -148,21 +148,23 @@
 }
 
 .clc-picker-selects {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  gap: var(--space-xl);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  justify-content: center;
   align-items: center;
   margin-bottom: var(--space-2xl);
 }
 
 @media (max-width: 700px) {
   .clc-picker-selects {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
     gap: var(--space-lg);
   }
 
   .clc-picker-vs {
-    order: 1;
+    display: none;
   }
 }
 
@@ -172,9 +174,12 @@
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  padding: 0 var(--space-xs);
 }
 
 .clc-picker-field {
+  flex: 1 1 180px;
+  min-width: 160px;
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
@@ -242,6 +247,7 @@
 
 .clc-table {
   width: 100%;
+  min-width: 600px;
   border-collapse: separate;
   border-spacing: 0;
   background: var(--surface);
@@ -268,6 +274,10 @@
 .clc-th-label {
   width: 20%;
   min-width: 140px;
+  position: sticky;
+  left: 0;
+  background: var(--surface-raised);
+  z-index: 3;
 }
 
 .clc-th {
@@ -293,6 +303,14 @@
 
 .clc-th--b .clc-th-tag {
   background: var(--success);
+}
+
+.clc-th--c .clc-th-tag {
+  background: #a371f7;
+}
+
+.clc-th--d .clc-th-tag {
+  background: #f0883e;
 }
 
 .clc-th-name {
@@ -340,6 +358,15 @@
   text-align: left;
   vertical-align: middle;
   border-bottom: 1px solid var(--border);
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 2;
+  box-shadow: 1px 0 0 var(--border);
+}
+
+.clc-row:hover .clc-row-label {
+  background: var(--surface);
 }
 
 .clc-cell {
@@ -476,6 +503,14 @@
   border-left: 3px solid var(--success);
 }
 
+.clc-scorecard-item--c {
+  border-left: 3px solid #a371f7;
+}
+
+.clc-scorecard-item--d {
+  border-left: 3px solid #f0883e;
+}
+
 .clc-scorecard-item--ties {
   border-left: 3px solid var(--muted);
 }
@@ -494,6 +529,14 @@
 
 .clc-scorecard-item--b .clc-scorecard-tag {
   background: var(--success);
+}
+
+.clc-scorecard-item--c .clc-scorecard-tag {
+  background: #a371f7;
+}
+
+.clc-scorecard-item--d .clc-scorecard-tag {
+  background: #f0883e;
 }
 
 .clc-scorecard-label {

@@ -1,3 +1,13 @@
+import { getContractErrorCopy, HOST_ERROR_KIND } from '../copy/contractErrors';
+import { parseSorobanError } from './soroban-errors';
+
+export { parseSorobanError } from './soroban-errors';
+export type {
+  ParsedSorobanError,
+  SorobanDiagnosticEvent,
+  SorobanErrorCategory,
+} from './soroban-errors';
+
 export type DrawErrorKind = 'retryable' |'terminal';
 
 export interface ClassifiedDrawError {
@@ -26,8 +36,18 @@ function extractCode(err: unknown): string | undefined {
   if (!err || typeof err !== 'object') {
     return undefined;
   }
-  const candidate = err as { code?: unknown; errorCode?: unknown; reason?: unknown };
-  for (const value of [candidate.code, candidate.errorCode, candidate.reason]) {
+  const candidate = err as {
+    code?: unknown;
+    errorCode?: unknown;
+    reason?: unknown;
+    type?: unknown;
+  };
+  for (const value of [
+    candidate.code,
+    candidate.errorCode,
+    candidate.reason,
+    candidate.type,
+  ]) {
     if (typeof value === 'string' && value.length > 0) {
       return value;
     }
@@ -52,11 +72,64 @@ function extractMessage(err: unknown): string | undefined {
 }
 
 /**
+ * Map a Soroban simulation failure to specific copy.
+ *
+ * Explicit `code`/`errorCode`/`reason` fields still win (see the lookups in
+ * `classifyDrawError`), so this only runs for errors that reach us as raw
+ * simulation text. Returns `null` when the error is not a Soroban error, which
+ * keeps every pre-existing classification path untouched.
+ */
+function classifySorobanError(err: unknown): ClassifiedDrawError | null {
+  const parsed = parseSorobanError(err);
+  if (!parsed) {
+    return null;
+  }
+
+  if (parsed.category === 'contract') {
+    if (parsed.contractCode === undefined) {
+      return {
+        kind: 'terminal',
+        code: 'contract_error',
+        message: DEFAULT_TERMINAL_MESSAGE,
+      };
+    }
+    const copy = getContractErrorCopy(parsed.contractCode);
+    if (copy) {
+      return {
+        kind: copy.kind,
+        code: `contract_${copy.code}`,
+        message: copy.message,
+      };
+    }
+    // Unknown contract code: keep the existing terminal default rather than
+    // inventing copy for a code we do not understand.
+    return {
+      kind: 'terminal',
+      code: `contract_${parsed.contractCode}`,
+      message: DEFAULT_TERMINAL_MESSAGE,
+    };
+  }
+
+  if (parsed.category === 'host' && parsed.hostErrorKey) {
+    const kind = HOST_ERROR_KIND[parsed.hostErrorKey];
+    if (kind) {
+      return {
+        kind,
+        code: `host_${parsed.hostErrorKey}`,
+        message: kind === 'retryable' ? DEFAULT_RETRYABLE_MESSAGE : DEFAULT_TERMINAL_MESSAGE,
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Classify a draw error into a retryable or terminal kind.
  *
- * Retryable: network, timeout, quote expired.
+ * Retryable: network, timeout, quote expired, transient host conditions.
  * Terminal:   insufficient availability, ineligible line, contract rejection,
- *              user rejection.
+ *              user rejection, known contract error codes.
  */
 export function classifyDrawError(err: unknown): ClassifiedDrawError {
   const code = extractCode(err);
@@ -67,6 +140,27 @@ export function classifyDrawError(err: unknown): ClassifiedDrawError {
 
   if (code && code in TERMINAL_CODES) {
     return { kind: 'terminal', code, message: TERMINAL_CODES[code] };
+  }
+
+  const soroban = classifySorobanError(err);
+  if (soroban) {
+    return soroban;
+  }
+
+  if (code === 'simulation_error' || code === 'transaction_failed') {
+    return {
+      kind: 'terminal',
+      code,
+      message: extractMessage(err) ?? DEFAULT_TERMINAL_MESSAGE,
+    };
+  }
+
+  if (code === 'wallet_not_connected') {
+    return {
+      kind: 'retryable',
+      code,
+      message: extractMessage(err) ?? 'Connect your Stellar wallet and try again.',
+    };
   }
 
   // Message-based classification for errors that lack a code.

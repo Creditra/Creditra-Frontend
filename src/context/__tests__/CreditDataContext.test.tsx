@@ -38,6 +38,15 @@ function TransactionProbe({ cursor, testId }: { cursor?: string; testId: string 
   );
 }
 
+function UnsortedTransactionProbe() {
+  const { transactions } = useCreditTransactions({ sort: false });
+  return (
+    <span data-testid="unsorted-transactions">
+      {transactions.map((transaction) => transaction.id).join(',')}
+    </span>
+  );
+}
+
 function tree(wallet: WalletInfo | null, source: CreditDataSource, probe = <Probe />) {
   return (
     <WalletProvider initialWallet={wallet}>
@@ -52,6 +61,7 @@ describe('CreditDataProvider', () => {
     const source: CreditDataSource = {
       listCreditLines,
       getCreditLine: vi.fn(),
+      listTransactions: vi.fn().mockResolvedValue({ items: [] }),
     };
     render(tree(walletA, source, <>
       <Probe id={MOCK_CREDIT_LINES[0].id} />
@@ -68,7 +78,7 @@ describe('CreditDataProvider', () => {
 
   it('does not call the source while disconnected', async () => {
     const listCreditLines = vi.fn().mockResolvedValue(MOCK_CREDIT_LINES);
-    const source: CreditDataSource = { listCreditLines, getCreditLine: vi.fn() };
+    const source: CreditDataSource = { listCreditLines, getCreditLine: vi.fn(), listTransactions: vi.fn().mockResolvedValue({ items: [] }) };
     render(tree(null, source));
 
     expect(screen.getByTestId('list-status')).toHaveTextContent('idle');
@@ -77,7 +87,7 @@ describe('CreditDataProvider', () => {
 
   it('keeps the provider loading without scheduling a fake timer', async () => {
     const listCreditLines = vi.fn(() => new Promise<CreditLine[]>(() => undefined));
-    const source: CreditDataSource = { listCreditLines, getCreditLine: vi.fn() };
+    const source: CreditDataSource = { listCreditLines, getCreditLine: vi.fn(), listTransactions: vi.fn().mockResolvedValue({ items: [] }) };
     vi.useFakeTimers();
     try {
       render(tree(walletA, source));
@@ -97,7 +107,7 @@ describe('CreditDataProvider', () => {
       if (owner === walletA.publicKey) resolveA = resolve;
       else resolveB = resolve;
     }));
-    const source: CreditDataSource = { listCreditLines, getCreditLine: vi.fn() };
+    const source: CreditDataSource = { listCreditLines, getCreditLine: vi.fn(), listTransactions: vi.fn().mockResolvedValue({ items: [] }) };
     const view = render(tree(walletA, source));
 
     await waitFor(() => expect(listCreditLines).toHaveBeenCalledTimes(1));
@@ -114,6 +124,7 @@ describe('CreditDataProvider', () => {
     const source: CreditDataSource = {
       listCreditLines: vi.fn().mockResolvedValue(MOCK_CREDIT_LINES),
       getCreditLine: vi.fn(),
+      listTransactions: vi.fn().mockResolvedValue({ items: [] }),
     };
     render(tree(walletA, source));
 
@@ -123,7 +134,7 @@ describe('CreditDataProvider', () => {
 
   it('paginates the shared transactions by cursor without another source request', async () => {
     const listCreditLines = vi.fn().mockResolvedValue(MOCK_CREDIT_LINES);
-    const source: CreditDataSource = { listCreditLines, getCreditLine: vi.fn() };
+    const source: CreditDataSource = { listCreditLines, getCreditLine: vi.fn(), listTransactions: vi.fn().mockResolvedValue({ items: [] }) };
     const expected = MOCK_CREDIT_LINES.flatMap((line) => line.transactions)
       .sort((a, b) =>
         new Date(b.date).getTime() - new Date(a.date).getTime() || b.id.localeCompare(a.id),
@@ -138,6 +149,33 @@ describe('CreditDataProvider', () => {
     expect(screen.getByTestId('first-cursor')).toHaveTextContent(expected[0].id);
     expect(screen.getByTestId('second-transaction')).toHaveTextContent(expected[1].id);
     expect(listCreditLines).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves transaction order when sorting is delegated to a downstream worker', async () => {
+    const transactions = [
+      {
+        ...MOCK_CREDIT_LINES[0].transactions[1],
+        id: 'older',
+        date: '2024-01-01T00:00:00Z',
+      },
+      {
+        ...MOCK_CREDIT_LINES[0].transactions[0],
+        id: 'newer',
+        date: '2025-01-01T00:00:00Z',
+      },
+    ];
+    const line = { ...MOCK_CREDIT_LINES[0], transactions };
+    const source: CreditDataSource = {
+      listCreditLines: vi.fn().mockResolvedValue([line]),
+      getCreditLine: vi.fn(),
+    };
+    render(tree(walletA, source, <UnsortedTransactionProbe />));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('unsorted-transactions')).toHaveTextContent(
+        'older,newer',
+      );
+    });
   });
 });
 

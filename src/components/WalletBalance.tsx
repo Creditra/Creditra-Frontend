@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { usePageVisible } from '../hooks/usePageVisible';
 import type { HorizonStreamStatus } from '../services/horizonStream';
+import { Amount } from './Amount';
 import './WalletBalance.css';
 
 const STREAM_STATUS_LABELS: Record<HorizonStreamStatus, string> = {
@@ -38,12 +39,18 @@ export function WalletBalance() {
   if (status !== 'connected' || !balances) return null;
 
   const xlmBalance = balances.find((b) => b.asset === 'XLM');
-  const displayBalance = xlmBalance ? `${xlmBalance.balance} XLM` : '0 XLM';
   const statusLabel = STREAM_STATUS_LABELS[streamStatus];
 
   return (
     <div className="wallet-balance" aria-label="Wallet Balance">
-      <span className="wallet-balance-amount">{displayBalance}</span>
+      <span className="wallet-balance-amount">
+        <Amount
+          value={xlmBalance?.balance ?? '0'}
+          format={(v) => String(v)}
+          symbol="XLM"
+          maskedLabel="Wallet balance hidden for privacy"
+        />
+      </span>
       <span
         className={`wallet-balance-indicator wallet-balance-indicator--${streamStatus}`}
         role="status"

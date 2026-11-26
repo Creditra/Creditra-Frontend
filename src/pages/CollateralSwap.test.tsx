@@ -2,36 +2,99 @@
  * @fileoverview Tests for src/pages/CollateralSwap.tsx
  *
  * Covers:
- *   - Skeleton renders while loading (shape-parity assertions — issue #834)
- *   - Loaded state renders the swap form with correct structure
- *   - Accessible markup: role="status", aria-busy, aria-label
- *   - WCAG-relevant attributes on interactive elements
- *   - CollateralSwap.css structural rules (class presence via DOM)
- *
- * Shape-parity approach:
- *   jsdom cannot evaluate CSS variables or computed styles so radius assertions
- *   are done by verifying that the class name driving the correct token is
- *   present on the element, mirroring the strategy used in Skeleton.test.tsx.
- *
- * GrantFox FWC26 — issue #834
+ *   - Skeleton renders while credit lines are loading (shape-parity assertions — issue #834)
+ *   - Error state when credit-line fetch fails
+ *   - Empty state when no credit line has collateral
+ *   - Real credit-line selection, from/to asset derivation, and live LTV + fee calculation
+ *   - Unsafe swaps pushing LTV over liquidation threshold are blocked with accessible alert
+ *   - Stale quote expiry and refresh flow
+ *   - Slippage tolerance preset selection
+ *   - Handoff to CollateralSubstitutionModal on confirm
+ *   - CollateralSwap.css & Skeleton.css structural rules
  */
 
-import { act, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import CollateralSwap from './CollateralSwap';
+import { useCreditLines, type UseCreditLinesResult } from '../hooks/useCreditLines';
+import type { CreditLine } from '../types/creditLine';
+import {
+  AVAILABLE_COLLATERAL_ASSETS,
+  computeLtvSnapshot,
+  computeSubstitutionFee,
+  fmtLtv,
+  STALE_QUOTE_THRESHOLD_MS,
+} from '../utils/collateral';
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+vi.mock('../hooks/useCreditLines', () => ({
+  useCreditLines: vi.fn(),
+}));
 
-// Advance timers past the simulated data-fetch delay (1400 ms) and wait for
-// all pending React state updates to flush before the test body asserts.
-const resolveLoading = async () => {
-  await act(async () => {
-    vi.advanceTimersByTime(1500);
-  });
+const mockedUseCreditLines = vi.mocked(useCreditLines);
+
+// ── Fixtures ──────────────────────────────────────────────────────────────────
+
+const LINE_WITH_USDC: CreditLine = {
+  id: 'cl-usdc',
+  name: 'Treasury Line',
+  status: 'Active',
+  limit: 400_000,
+  utilized: 200_000,
+  apr: 7.5,
+  riskScore: 750,
+  collateral: 'USDC Treasury',
+  openedAt: '2025-01-15',
+  updatedAt: '2025-02-20T10:00:00Z',
+  transactions: [],
+  statusHistory: [],
 };
+
+const LINE_WITH_REAL_ESTATE: CreditLine = {
+  id: 'cl-re',
+  name: 'Commercial Line',
+  status: 'Active',
+  limit: 800_000,
+  utilized: 250_000,
+  apr: 8.5,
+  riskScore: 720,
+  collateral: 'Commercial Real Estate',
+  openedAt: '2024-03-15',
+  updatedAt: '2025-02-20T14:32:00Z',
+  transactions: [],
+  statusHistory: [],
+};
+
+const LINE_WITHOUT_COLLATERAL: CreditLine = {
+  id: 'cl-unsecured',
+  name: 'Unsecured Builder Line',
+  status: 'Active',
+  limit: 50_000,
+  utilized: 10_000,
+  apr: 11.0,
+  riskScore: 700,
+  openedAt: '2025-01-01',
+  updatedAt: '2025-02-01T10:00:00Z',
+  transactions: [],
+  statusHistory: [],
+};
+
+function makeCreditLinesResult(
+  overrides: Partial<UseCreditLinesResult> = {},
+): UseCreditLinesResult {
+  return {
+    status: 'success',
+    lines: [LINE_WITH_USDC, LINE_WITH_REAL_ESTATE],
+    error: null,
+    refetch: vi.fn().mockResolvedValue([]),
+    lastUpdatedAt: new Date(),
+    owner: 'GABC',
+    wallet: null,
+    setLines: vi.fn(),
+    ...overrides,
+  };
+}
 
 // ── CSS structural tests ──────────────────────────────────────────────────────
 
@@ -87,7 +150,6 @@ describe('CollateralSwap.css — structural class rules (issue #834)', () => {
   });
 
   it('uses only design token references, not hard-coded hex colours', () => {
-    // Hex literals (other than zero values) should not appear as property values
     const hexPattern = /:\s*#[0-9a-fA-F]{3,8}\b/g;
     const matches = css.match(hexPattern) ?? [];
     expect(matches).toHaveLength(0);
@@ -97,8 +159,11 @@ describe('CollateralSwap.css — structural class rules (issue #834)', () => {
 // ── Loading skeleton tests ────────────────────────────────────────────────────
 
 describe('CollateralSwap — loading skeleton (shape parity, issue #834)', () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
+  beforeEach(() => {
+    mockedUseCreditLines.mockReturnValue(
+      makeCreditLinesResult({ status: 'loading', lines: [] }),
+    );
+  });
 
   it('renders a status region with aria-busy="true" while loading', () => {
     render(<CollateralSwap />);
@@ -113,154 +178,182 @@ describe('CollateralSwap — loading skeleton (shape parity, issue #834)', () =>
     expect(statusRegion.getAttribute('aria-label')).toBe('Loading collateral swap');
   });
 
-  it('renders the card skeleton with shape class for --radius-lg outer container', () => {
+  it('renders the card skeleton with shape classes and decorative aria-hidden', () => {
     const { container } = render(<CollateralSwap />);
-    // The card wrapper is .collateral-swap__card, not a <Skeleton>, but the
-    // child skeletons that are Skeleton elements should carry shape classes.
-    // Verify at least one skeleton--rectangular or skeleton--circular is rendered.
     const skeletons = container.querySelectorAll('.skeleton');
     expect(skeletons.length).toBeGreaterThanOrEqual(6);
-  });
-
-  it('renders circular skeleton shapes for asset icon placeholders', () => {
-    const { container } = render(<CollateralSwap />);
-    const circular = container.querySelectorAll('.skeleton--circular');
-    // Two asset icons (40x40) + one direction indicator (28x28) = 3 minimum
-    expect(circular.length).toBeGreaterThanOrEqual(3);
-  });
-
-  it('renders rounded skeleton shapes for text-row placeholders', () => {
-    const { container } = render(<CollateralSwap />);
-    const rounded = container.querySelectorAll('.skeleton--rounded');
-    // name + balance rows for each asset block plus impact values
-    expect(rounded.length).toBeGreaterThanOrEqual(6);
-  });
-
-  it('renders the header title skeleton before data loads', () => {
-    const { container } = render(<CollateralSwap />);
-    // Title and subtitle skeletons are direct children of the header skeleton
-    const headerSkeletons = container.querySelector('.collateral-swap__header');
-    expect(headerSkeletons).toBeInTheDocument();
-    const skeletons = headerSkeletons!.querySelectorAll('.skeleton');
-    expect(skeletons.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('all skeleton elements are aria-hidden by default (decorative)', () => {
-    const { container } = render(<CollateralSwap />);
-    const skeletons = container.querySelectorAll('.skeleton');
+    expect(container.querySelectorAll('.skeleton--circular').length).toBeGreaterThanOrEqual(3);
+    expect(container.querySelectorAll('.skeleton--rounded').length).toBeGreaterThanOrEqual(6);
+    expect(container.querySelectorAll('.skeleton--subtle').length).toBeGreaterThanOrEqual(3);
     skeletons.forEach((el) => {
-      // Each Skeleton primitive defaults aria-hidden to true
       expect(el.getAttribute('aria-hidden')).toBe('true');
     });
   });
+});
 
-  it('applies subtle variant to secondary skeleton rows', () => {
-    const { container } = render(<CollateralSwap />);
-    const subtle = container.querySelectorAll('.skeleton--subtle');
-    // Balance rows and direction indicator use variant="subtle"
-    expect(subtle.length).toBeGreaterThanOrEqual(3);
+// ── Error & Empty states ──────────────────────────────────────────────────────
+
+describe('CollateralSwap — error and empty states', () => {
+  it('renders an accessible error state and retries when clicked', () => {
+    const refetch = vi.fn().mockResolvedValue([]);
+    mockedUseCreditLines.mockReturnValue(
+      makeCreditLinesResult({
+        status: 'error',
+        lines: [],
+        error: new Error('Network unreachable'),
+        refetch,
+      }),
+    );
+
+    render(<CollateralSwap />);
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(/network unreachable/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders EmptyState when no credit line has collateral', () => {
+    mockedUseCreditLines.mockReturnValue(
+      makeCreditLinesResult({
+        status: 'success',
+        lines: [LINE_WITHOUT_COLLATERAL],
+      }),
+    );
+
+    render(<CollateralSwap />);
+    expect(screen.getByTestId('collateral-swap-empty-state')).toBeInTheDocument();
+    expect(screen.getByText(/no collateralized credit lines/i)).toBeInTheDocument();
   });
 });
 
-// ── Post-load state tests ─────────────────────────────────────────────────────
+// ── Loaded state & quote engine calculations ──────────────────────────────────
 
-describe('CollateralSwap — loaded state', () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
-  it('removes the loading skeleton after data resolves', async () => {
-    render(<CollateralSwap />);
-    await resolveLoading();
-
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+describe('CollateralSwap — real credit lines and quote engine', () => {
+  beforeEach(() => {
+    mockedUseCreditLines.mockReturnValue(makeCreditLinesResult());
   });
 
-  it('renders the page heading after data loads', async () => {
+  it('derives the From asset from the selected credit line and computes real LTV and fee', () => {
     render(<CollateralSwap />);
-    await resolveLoading();
 
     expect(screen.getByRole('heading', { name: /swap collateral/i })).toBeInTheDocument();
+
+    const usdc = AVAILABLE_COLLATERAL_ASSETS.find((a) => a.id === 'asset-usdc')!;
+    const xlm = AVAILABLE_COLLATERAL_ASSETS.find((a) => a.id === 'asset-xlm')!;
+    const beforeSnap = computeLtvSnapshot(usdc, LINE_WITH_USDC.utilized);
+    const afterSnap = computeLtvSnapshot(xlm, LINE_WITH_USDC.utilized);
+    const expectedFee = computeSubstitutionFee(LINE_WITH_USDC.utilized, xlm);
+
+    expect(screen.getByTestId('ltv-before')).toHaveTextContent(fmtLtv(beforeSnap.ltvRatio));
+    expect(screen.getByTestId('ltv-after')).toHaveTextContent(fmtLtv(afterSnap.ltvRatio));
+    expect(screen.getByTestId('swap-fee')).toHaveTextContent(
+      new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
+        expectedFee.total,
+      ),
+    );
   });
 
-  it('renders the page subtitle after data loads', async () => {
+  it('recalculates LTV and fee when changing credit line, target asset, or amount', () => {
     render(<CollateralSwap />);
-    await resolveLoading();
 
-    expect(screen.getByText(/exchange one collateral asset/i)).toBeInTheDocument();
+    // Change target asset to Commercial Real Estate (adds $250 appraisal fee)
+    const toSelect = screen.getByLabelText(/target collateral asset/i);
+    fireEvent.change(toSelect, { target: { value: 'asset-real-estate' } });
+
+    const realEstate = AVAILABLE_COLLATERAL_ASSETS.find((a) => a.id === 'asset-real-estate')!;
+    const feeWithAppraisal = computeSubstitutionFee(LINE_WITH_USDC.utilized, realEstate);
+    expect(screen.getByTestId('swap-fee')).toHaveTextContent(
+      new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
+        feeWithAppraisal.total,
+      ),
+    );
+
+    // Change credit line to Commercial Line
+    const lineSelect = screen.getByLabelText(/credit line/i);
+    fireEvent.change(lineSelect, { target: { value: LINE_WITH_REAL_ESTATE.id } });
+
+    const reBefore = computeLtvSnapshot(realEstate, LINE_WITH_REAL_ESTATE.utilized);
+    expect(screen.getByTestId('ltv-before')).toHaveTextContent(fmtLtv(reBefore.ltvRatio));
+
+    // Change loan amount
+    const amountInput = screen.getByLabelText(/loan balance/i);
+    fireEvent.change(amountInput, { target: { value: '100000' } });
+    const reUpdated = computeLtvSnapshot(realEstate, 100_000);
+    expect(screen.getByTestId('ltv-before')).toHaveTextContent(fmtLtv(reUpdated.ltvRatio));
   });
 
-  it('renders the "From" and "To" asset groups', async () => {
+  it('blocks unsafe swaps pushing post-swap LTV over the liquidation threshold', () => {
     render(<CollateralSwap />);
-    await resolveLoading();
 
-    expect(screen.getByText(/^from$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^to$/i)).toBeInTheDocument();
+    // Target XLM has value 320,000 and maxLtvRatio 0.65 (max safe loan = 208,000).
+    // Setting amount to 250,000 pushes LTV to 78.1% > 65%.
+    const amountInput = screen.getByLabelText(/loan balance/i);
+    fireEvent.change(amountInput, { target: { value: '250000' } });
+
+    const alert = screen.getByTestId('over-ltv-alert');
+    expect(alert).toHaveAttribute('role', 'alert');
+    expect(alert).toHaveTextContent(/swap blocked/i);
+
+    const confirmBtn = screen.getByRole('button', { name: /swap blocked/i });
+    expect(confirmBtn).toBeDisabled();
   });
 
-  it('renders the confirm swap button in an enabled state', async () => {
+  it('allows changing slippage tolerance presets', () => {
     render(<CollateralSwap />);
-    await resolveLoading();
 
-    const btn = screen.getByRole('button', { name: /confirm swap/i });
-    expect(btn).toBeInTheDocument();
-    expect(btn).not.toBeDisabled();
+    const defaultChip = screen.getByRole('radio', { name: '1%' });
+    const twoPctChip = screen.getByRole('radio', { name: '2%' });
+
+    expect(defaultChip).toHaveAttribute('aria-checked', 'true');
+    expect(twoPctChip).toHaveAttribute('aria-checked', 'false');
+
+    fireEvent.click(twoPctChip);
+    expect(twoPctChip).toHaveAttribute('aria-checked', 'true');
+    expect(defaultChip).toHaveAttribute('aria-checked', 'false');
   });
 
-  it('renders the impact summary section with three metrics', async () => {
+  it('hands off confirmation to CollateralSubstitutionModal when Confirm Swap is clicked', () => {
     render(<CollateralSwap />);
-    await resolveLoading();
 
-    // The impact labels are always present in the loaded state
-    expect(screen.getByText(/health before/i)).toBeInTheDocument();
-    expect(screen.getByText(/health after/i)).toBeInTheDocument();
-    expect(screen.getByText(/swap fee/i)).toBeInTheDocument();
+    const confirmBtn = screen.getByRole('button', { name: /confirm swap/i });
+    expect(confirmBtn).not.toBeDisabled();
+
+    fireEvent.click(confirmBtn);
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });
 
-// ── Interaction tests ─────────────────────────────────────────────────────────
+// ── Stale quote expiry tests ──────────────────────────────────────────────────
 
-describe('CollateralSwap — confirm button interaction', () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
-  it('disables the button and shows "Swapping..." while submitting', async () => {
-    render(<CollateralSwap />);
-    await resolveLoading();
-
-    const btn = screen.getByRole('button', { name: /confirm swap/i });
-    act(() => {
-      btn.click();
-    });
-
-    expect(screen.getByRole('button', { name: /swapping/i })).toBeDisabled();
+describe('CollateralSwap — stale quote handling', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockedUseCreditLines.mockReturnValue(makeCreditLinesResult());
   });
 
-  it('shows "Swapped" after the submission resolves', async () => {
-    render(<CollateralSwap />);
-    await resolveLoading();
-
-    const btn = screen.getByRole('button', { name: /confirm swap/i });
-    act(() => {
-      btn.click();
-    });
-
-    await act(async () => {
-      vi.advanceTimersByTime(1000);
-    });
-
-    expect(screen.getByRole('button', { name: /swapped/i })).toBeDisabled();
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it('marks the confirm button as aria-busy while submitting', async () => {
+  it('marks the quote stale after STALE_QUOTE_THRESHOLD_MS and allows refreshing', () => {
     render(<CollateralSwap />);
-    await resolveLoading();
 
-    const btn = screen.getByRole('button', { name: /confirm swap/i });
+    expect(screen.queryByTestId('stale-quote-alert')).not.toBeInTheDocument();
+
     act(() => {
-      btn.click();
+      vi.advanceTimersByTime(STALE_QUOTE_THRESHOLD_MS + 100);
     });
 
-    expect(screen.getByRole('button', { name: /swapping/i }).getAttribute('aria-busy')).toBe('true');
+    const staleAlert = screen.getByTestId('stale-quote-alert');
+    expect(staleAlert).toHaveAttribute('role', 'alert');
+    expect(screen.getByRole('button', { name: /quote expired/i })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /refresh quote/i }));
+
+    expect(screen.queryByTestId('stale-quote-alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /confirm swap/i })).not.toBeDisabled();
   });
 });
 

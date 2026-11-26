@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle, Info } from 'lucide-react';
-import { useFocusTrap } from '../hooks/useFocusTrap';
+import { Modal } from './Modal';
 import { getRepayAmountValidation, requiresRepayConfirmation } from '../utils/amountValidation';
 import {
   computeMonthlyAccruedInterest,
@@ -17,6 +17,7 @@ import {
   type SubmissionAttempt,
 } from '../utils/idempotency';
 import { Skeleton } from './Skeleton';
+import './QuickRepayModal.css';
 import { ConnectWalletPrompt } from './ConnectWalletPrompt';
 import type { RepayableBalanceResult } from '../lib/repayable-balance';
 import { SETTLEMENT_ASSET } from '../lib/repayable-balance';
@@ -119,29 +120,16 @@ export function QuickRepayModal({
   const inFlightRef = useRef(false);
   const submissionRef = useRef<SubmissionAttempt | null>(null);
   const transactionIdRef = useRef<string | null>(null);
+  const modalContainerRef = useRef<HTMLDivElement>(null);
   
-  const modalRef = useFocusTrap({
-    isActive: true,
-    triggerRef,
-    onEscape: step !== 'pending' ? onClose : undefined,
-  });
-
   useEffect(() => {
-    if (step === 'confirm') {
-      document.body.style.overflow = 'hidden';
-    } else if (step === 'success') {
-      document.body.style.overflow = '';
-    }
     // Manage focus across step states to prevent focus dropping to body
     if (step !== 'confirm') {
       requestAnimationFrame(() => {
-        modalRef.current?.focus();
+        modalContainerRef.current?.focus();
       });
     }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [step, modalRef]);
+  }, [step]);
 
   const accruedInterest = computeMonthlyAccruedInterest(
     creditLine.utilized,
@@ -247,18 +235,18 @@ export function QuickRepayModal({
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fadeIn 0.2s ease' }}
-      onClick={step !== 'pending' ? onClose : undefined} role="presentation">
-      
-      <div 
-        ref={modalRef}
-        style={{ background: COLOR.surface, border: `1px solid ${COLOR.border}`, borderRadius: 12, width: '100%', maxWidth: 400, boxShadow: '0 16px 40px rgba(0,0,0,0.4)', overflow: 'hidden', animation: 'slideUp 0.3s ease' }}
-        onClick={e => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="quick-repay-title"
-        tabIndex={-1}
-      >
+    <Modal
+      isOpen
+      triggerRef={triggerRef}
+      dialogRef={modalContainerRef}
+      closeOnEscape={step !== 'pending'}
+      closeOnBackdropClick={step !== 'pending'}
+      onEscape={step !== 'pending' ? onClose : undefined}
+      onBackdropClick={step !== 'pending' ? onClose : undefined}
+      ariaLabelledBy="quick-repay-title"
+      overlayStyle={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fadeIn 0.2s ease' }}
+      dialogStyle={{ background: COLOR.surface, border: `1px solid ${COLOR.border}`, borderRadius: 12, width: '100%', maxWidth: 400, boxShadow: '0 16px 40px rgba(0,0,0,0.4)', overflow: 'hidden', animation: 'slideUp 0.3s ease' }}
+    >
         <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${COLOR.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h2 id="quick-repay-title" style={{ margin: '0 0 0.25rem', fontSize: '1.25rem', fontWeight: 600, color: COLOR.text }}>
@@ -505,14 +493,6 @@ export function QuickRepayModal({
             </button>
           </div>
         )}
-      </div>
-
-      <style>{`
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes scaleIn { 0% { transform: scale(0); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
-      `}</style>
-    </div>
+    </Modal>
   );
 }

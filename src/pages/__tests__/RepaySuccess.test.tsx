@@ -383,4 +383,17 @@ describe('RepaySuccess page', () => {
       screen.getByRole('button', { name: /share repayment summary/i }),
     ).toBeInTheDocument();
   });
+
+  it('renders a valid repayment when storage also contains a corrupt row', async () => {
+    window.localStorage.setItem('creditra.repayment-transactions', JSON.stringify([
+      { id: 'CORRUPT', status: 'Unknown' },
+      completedTransaction,
+    ]));
+    getTransaction.mockResolvedValue(completedTransaction);
+
+    renderSuccessPage(validState);
+
+    expect(await screen.findByText('You repaid $3,200.00!')).toBeInTheDocument();
+    expect(getTransaction).toHaveBeenCalledWith('GTESTWALLET', validState.transactionId);
+  });
 });

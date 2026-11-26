@@ -1,0 +1,23 @@
+/* Monetary amount rendering and the app-wide privacy mask. */
+
+.amount {
+  font-variant-numeric: tabular-nums;
+}
+
+.amount--masked {
+  display: inline-block;
+  min-width: 5ch;
+  text-align: right;
+  letter-spacing: 0.08em;
+  cursor: help;
+}
+
+/*
+ * Generic utility for content that cannot be replaced with a mask (e.g. a
+ * value rendered by a third-party widget). Prefer `<Amount>` so the real
+ * value never reaches the DOM.
+ */
+.privacy-blur {
+  filter: blur(5px);
+  user-select: none;
+}

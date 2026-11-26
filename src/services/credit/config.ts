@@ -1,33 +1,58 @@
+import { getCreditNetworkConfig } from '../../config/creditNetwork';
+
 export interface SorobanCreditConfig {
   rpcUrl: string;
   networkPassphrase: string;
   contractId: string;
 }
 
-const DEFAULT_RPC_URL = 'https://soroban-testnet.stellar.org';
-const DEFAULT_PASSPHRASE = 'Test SDF Network ; September 2015';
-const DEFAULT_CONTRACT_ID = 'CA3D5KRYM6CB7OWQ6TWYRR3Z4T7GNZLKERYNZGGA5SOAOPIFY6YQGAXE';
-
+/**
+ * Thin adapter over the unified network configuration.
+ *
+ * `VITE_STELLAR_NETWORK`, `VITE_SOROBAN_RPC_URL`,
+ * `VITE_STELLAR_NETWORK_PASSPHRASE` and `VITE_CREDIT_CONTRACT_ID` are read in
+ * exactly one place (`src/config/creditNetwork.ts`); this module only reshapes
+ * that result for the Soroban data source.
+ *
+ * `contractId` may be empty when no contract is configured. That is valid for
+ * the mock data source; `SorobanCreditDataSource` raises a `ConfigError` when
+ * it actually needs a contract.
+ */
 export function getSorobanConfig(): SorobanCreditConfig {
-  const rpcUrl =
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SOROBAN_RPC_URL) ||
-    DEFAULT_RPC_URL;
-  const networkPassphrase =
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_NETWORK_PASSPHRASE) ||
-    DEFAULT_PASSPHRASE;
-  const contractId =
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_CREDIT_CONTRACT_ID) ||
-    DEFAULT_CONTRACT_ID;
+  const config = getCreditNetworkConfig();
 
   return {
-    rpcUrl,
-    networkPassphrase,
-    contractId,
+    rpcUrl: config.sorobanRpcUrl,
+    networkPassphrase: config.networkPassphrase,
+    contractId: config.creditContractId,
   };
 }
 
 export function getCreditDataSourceType(): 'mock' | 'soroban' {
-  const type =
-    typeof import.meta !== 'undefined' && import.meta.env?.VITE_CREDIT_DATA_SOURCE;
-  return type === 'soroban' ? 'soroban' : 'mock';
+  const configuredType =
+    typeof import.meta !== 'undefined'
+      ? import.meta.env?.VITE_CREDIT_DATA_SOURCE
+      : undefined;
+  const type = configuredType?.trim().toLowerCase();
+
+  if (!type) {
+    return 'mock';
+  }
+
+  if (type === 'mock' || type === 'soroban') {
+    return type;
+  }
+
+  throw new Error(
+    `Invalid VITE_CREDIT_DATA_SOURCE value "${configuredType}". Allowed values are "mock" and "soroban".`,
+  );
+}
+
+/**
+ * Returns true when the app is running against the mock credit data source
+ * rather than live Soroban chain data.  Use this to surface a demo-data
+ * warning to the user (see DemoDataBanner).
+ */
+export function isDemoData(): boolean {
+  return getCreditDataSourceType() === 'mock';
 }

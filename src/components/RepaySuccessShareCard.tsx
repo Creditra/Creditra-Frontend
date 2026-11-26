@@ -3,6 +3,8 @@ import { useTheme } from '../context/ThemeContext';
 import './RepaySuccessShareCard.css';
 import { Share2, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { fmt } from '../utils/tokens';
+import { usePrivacyMode } from '../context/PrivacyContext';
+import { Amount } from './Amount';
 
 interface RepaySuccessShareCardProps {
   amount: number;
@@ -23,6 +25,7 @@ export const RepaySuccessShareCard: React.FC<RepaySuccessShareCardProps> = ({
   const [isCopied, setIsCopied] = useState(false);
   const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { theme } = useTheme();
+  const { privacyMode } = usePrivacyMode();
 
   useEffect(
     () => () => {
@@ -48,7 +51,7 @@ export const RepaySuccessShareCard: React.FC<RepaySuccessShareCardProps> = ({
   };
 
   const handleShare = async () => {
-    const shareText = `Repaid ${fmt(amount)} on ${creditLineName} (${transactionId})`;
+    const shareText = `Repaid ${privacyMode ? '••••' : fmt(amount)} on ${creditLineName} (${transactionId})`;
     
     if (navigator.share) {
       try {
@@ -66,7 +69,7 @@ export const RepaySuccessShareCard: React.FC<RepaySuccessShareCardProps> = ({
   };
 
   const copyToClipboard = async () => {
-    const shareText = `Repaid ${fmt(amount)} on ${creditLineName} (${transactionId})`;
+    const shareText = `Repaid ${privacyMode ? '••••' : fmt(amount)} on ${creditLineName} (${transactionId})`;
     try {
       await navigator.clipboard.writeText(shareText);
       setIsCopied(true);
@@ -91,7 +94,9 @@ export const RepaySuccessShareCard: React.FC<RepaySuccessShareCardProps> = ({
       <div className="repay-share-content">
 <div className="repay-info-row">
           <span className="repay-label">Amount</span>
-          <span className="repay-value tabular-nums">{fmt(amount)}</span>
+          <span className="repay-value tabular-nums">
+            <Amount value={amount} format={fmt} maskedLabel="Repayment amount hidden for privacy" />
+          </span>
         </div>
         <div className="repay-info-row">
           <span className="repay-label">Credit Line</span>

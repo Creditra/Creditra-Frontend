@@ -27,6 +27,10 @@ export default defineConfig({
         __dirname,
         "./src/test/__mocks__/react-router-dom.tsx",
       ),
+      "virtual:pwa-register/react": path.resolve(
+        __dirname,
+        "./src/test/__mocks__/pwa-register-react.ts",
+      ),
     },
   },
   test: {

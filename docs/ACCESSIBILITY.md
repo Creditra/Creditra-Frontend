@@ -45,7 +45,31 @@ The four POUR principles drive every decision:
 
 ### Modals and sheets
 
-Every modal **must** compose all three a11y hooks:
+Every modal dialog should use `src/components/Modal.tsx`. The primitive owns the
+focus trap, scroll lock, inert background, portal, Escape policy, and backdrop
+policy. Consumers provide the existing visual markup, ARIA label/description IDs,
+trigger ref, and optional initial-focus ref.
+
+Example:
+
+```tsx
+<Modal
+  isOpen={isOpen}
+  role="alertdialog"
+  triggerRef={triggerRef}
+  initialFocusRef={cancelRef}
+  onClose={onCancel}
+  ariaLabelledBy="dialog-title"
+  ariaDescribedBy="dialog-description"
+>
+  <h2 id="dialog-title">Confirm action</h2>
+  <p id="dialog-description">This action cannot be undone.</p>
+  <button ref={cancelRef} onClick={onCancel}>Cancel</button>
+</Modal>
+```
+
+The shared primitive composes all three a11y hooks below; dialog components must
+not invoke these hooks directly:
 
 | Hook | File | Role |
 | --- | --- | --- |

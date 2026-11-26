@@ -5,6 +5,7 @@ import { CreditLineRowMenu } from "../components/CreditLineRowMenu";
 import { Skeleton } from "../components/Skeleton";
 import CompareLinesPanel from "../components/CompareLinesPanel";
 import { CollateralSubstitutionModal } from "../components/CollateralSubstitutionModal";
+import { CollateralAdjustModal } from "../components/CollateralAdjustModal";
 import { NoLines } from "../components/illustrations";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useInertBackdrop } from "../hooks/useInertBackdrop";
@@ -52,12 +53,15 @@ import {
   buildRepaymentScheduleFromLines,
 } from "../components/RepaymentSchedule";
 import { useReducedMotion } from "../context/ReducedMotionContext";
+import { Amount } from "../components/Amount";
 import {
   createStableOrder,
   getStablePage,
   reconcileStableOrder,
 } from "../utils/stableListPagination";
 import {
+  MAX_COMPARE,
+  buildComparisonUrl,
   loadComparisonSelection,
   saveComparisonSelection,
 } from "../utils/comparisonSelection";
@@ -144,6 +148,7 @@ function CreditLineCard({
   isSelected,
   onToggle,
   onSwapCollateral,
+  onAdjustCollateral,
   onRepay,
   onSchedule,
   onDetails,
@@ -154,6 +159,10 @@ function CreditLineCard({
   isSelected: boolean;
   onToggle: () => void;
   onSwapCollateral?: (
+    line: CreditLine,
+    triggerRef: React.RefObject<HTMLButtonElement | null>,
+  ) => void;
+  onAdjustCollateral?: (
     line: CreditLine,
     triggerRef: React.RefObject<HTMLButtonElement | null>,
   ) => void;
@@ -213,6 +222,11 @@ function CreditLineCard({
             frozen={line.status === "Frozen"}
             triggerRef={menuTriggerRef}
             onRepay={onRepay}
+            onAdjustCollateral={
+              onAdjustCollateral
+                ? () => onAdjustCollateral(line, menuTriggerRef)
+                : undefined
+            }
             onFreeze={canFreeze ? onFreeze : undefined}
             onUnfreeze={canUnfreeze ? onUnfreeze : undefined}
             onSchedule={onSchedule}
@@ -233,7 +247,7 @@ function CreditLineCard({
               className="cl-metric-value tabular-nums amount cl-amount"
               style={{ color: COLOR.accent }}
             >
-              {fmt(line.limit)}
+              <Amount value={line.limit} format={fmt} maskedLabel="Credit limit hidden for privacy" />
             </span>
           </div>
           <div className="cl-metric">
@@ -242,7 +256,7 @@ function CreditLineCard({
               className="cl-metric-value tabular-nums amount cl-amount"
               style={{ color: UTIL_COLOR[level] }}
             >
-              {fmt(line.utilized)}
+              <Amount value={line.utilized} format={fmt} maskedLabel="Utilized amount hidden for privacy" />
             </span>
           </div>
           <div className="cl-metric">
@@ -251,7 +265,7 @@ function CreditLineCard({
               className="cl-metric-value tabular-nums amount cl-amount"
               style={{ color: COLOR.success }}
             >
-              {fmt(line.limit - line.utilized)}
+              <Amount value={line.limit - line.utilized} format={fmt} maskedLabel="Available credit hidden for privacy" />
             </span>
           </div>
         </div>
@@ -679,6 +693,11 @@ export default function CreditLines({
     triggerRef: React.RefObject<HTMLButtonElement | null>;
   } | null>(null);
 
+  const [adjustModalTarget, setAdjustModalTarget] = useState<{
+    line: CreditLine;
+    triggerRef: React.RefObject<HTMLButtonElement | null>;
+  } | null>(null);
+
   const handleModalClose = () => setModalTarget(null);
   const handleModalSuccess = (_incomingAsset: CollateralAsset) => {
     setModalTarget(null);
@@ -690,6 +709,16 @@ export default function CreditLines({
     setModalTarget({
       line,
       currentAsset: "ETH",
+      triggerRef,
+    });
+  };
+
+  const handleAdjustCollateral = (
+    line: CreditLine,
+    triggerRef: React.RefObject<HTMLButtonElement | null>,
+  ) => {
+    setAdjustModalTarget({
+      line,
       triggerRef,
     });
   };
@@ -837,7 +866,7 @@ export default function CreditLines({
   };
 
   const handleOpenCompare = () => {
-    if (selectedLines.length === 2) {
+    if (selectedLines.length >= 2 && selectedLines.length <= MAX_COMPARE) {
       setShowCompare(true);
     }
   };
@@ -849,13 +878,14 @@ export default function CreditLines({
 
   const toggleSelection = (id: string) => {
     setSelectedLines((prev) => {
-      const next = prev.includes(id)
-        ? prev.filter((lineId) => lineId !== id)
-        : prev.length < 2
-          ? [...prev, id]
-          : prev;
-
-      return next;
+      if (prev.includes(id)) {
+        return prev.filter((lineId) => lineId !== id);
+      }
+      if (prev.length < MAX_COMPARE) {
+        return [...prev, id];
+      }
+      setAnnouncement(`You can compare up to ${MAX_COMPARE} credit lines at a time.`);
+      return prev;
     });
   };
 
@@ -1002,43 +1032,60 @@ export default function CreditLines({
             ref={triggerRef}
             className="cl-primary-btn focus-ring"
             onClick={handleOpenCompare}
-            disabled={selectedLines.length !== 2}
+            disabled={selectedLines.length < 2 || selectedLines.length > MAX_COMPARE}
             style={{
-              opacity: selectedLines.length === 2 ? 1 : 0.6,
+              opacity:
+                selectedLines.length >= 2 && selectedLines.length <= MAX_COMPARE
+                  ? 1
+                  : 0.6,
               display: "inline-flex",
               alignItems: "center",
               gap: "0.5rem",
             }}
           >
-            <span>Compare Selected ({selectedLines.length}/2)</span>
+            <span>Compare Selected ({selectedLines.length}/{MAX_COMPARE})</span>
             <KbdHint keys={["C"]} description="Compare Selected" />
           </button>
-          {/* Full-page compare — only enabled when exactly 2 lines are selected */}
+          {/* Full-page compare */}
           <Link
             to={
-              selectedLines.length === 2
-                ? `/compare-credit-lines?a=${selectedLines[0]}&b=${selectedLines[1]}`
+              selectedLines.length >= 2 && selectedLines.length <= MAX_COMPARE
+                ? buildComparisonUrl(selectedLines)
                 : "#"
             }
             className="cl-primary-btn focus-ring"
-            aria-disabled={selectedLines.length !== 2}
+            aria-disabled={
+              selectedLines.length < 2 || selectedLines.length > MAX_COMPARE
+            }
             aria-label={
-              selectedLines.length === 2
-                ? "Open full-page comparison for the two selected credit lines"
-                : "Select exactly 2 credit lines to open the full comparison page"
+              selectedLines.length >= 2 && selectedLines.length <= MAX_COMPARE
+                ? `Open full-page comparison for the ${selectedLines.length} selected credit lines`
+                : `Select between 2 and ${MAX_COMPARE} credit lines to open the full comparison page`
             }
             style={{
               background: "var(--surface)",
               border: "1px solid var(--border)",
               color:
-                selectedLines.length === 2 ? "var(--text)" : "var(--muted)",
-              opacity: selectedLines.length === 2 ? 1 : 0.6,
-              pointerEvents: selectedLines.length === 2 ? "auto" : "none",
+                selectedLines.length >= 2 && selectedLines.length <= MAX_COMPARE
+                  ? "var(--text)"
+                  : "var(--muted)",
+              opacity:
+                selectedLines.length >= 2 && selectedLines.length <= MAX_COMPARE
+                  ? 1
+                  : 0.6,
+              pointerEvents:
+                selectedLines.length >= 2 && selectedLines.length <= MAX_COMPARE
+                  ? "auto"
+                  : "none",
               display: "inline-flex",
               alignItems: "center",
               gap: "0.5rem",
             }}
-            tabIndex={selectedLines.length === 2 ? 0 : -1}
+            tabIndex={
+              selectedLines.length >= 2 && selectedLines.length <= MAX_COMPARE
+                ? 0
+                : -1
+            }
           >
             <span>Full Compare →</span>
             <KbdHint keys={["F"]} description="Full Compare" />
@@ -1148,7 +1195,9 @@ export default function CreditLines({
           </button>
         </div>
       )}
-      {showCompare && selectedCreditLines.length === 2 && (
+      {showCompare &&
+        selectedCreditLines.length >= 2 &&
+        selectedCreditLines.length <= MAX_COMPARE && (
         <div
           id="compare-lines-drawer"
           ref={comparePanelRef}
@@ -1167,7 +1216,10 @@ export default function CreditLines({
         >
           <div
             style={{
-              width: "min(480px, 100%)",
+              width:
+                selectedCreditLines.length > 2
+                  ? "min(640px, 100%)"
+                  : "min(480px, 100%)",
               height: "100%",
               position: "relative",
               zIndex: 1201,
@@ -1225,6 +1277,7 @@ export default function CreditLines({
                     isSelected={selectedLines.includes(line.id)}
                     onToggle={() => toggleSelection(line.id)}
                     onSwapCollateral={handleSwapCollateral}
+                    onAdjustCollateral={handleAdjustCollateral}
                     onRepay={() => handleRepay(line.id)}
                     onFreeze={handleFreeze}
                     onUnfreeze={handleUnfreeze}
@@ -1325,6 +1378,20 @@ export default function CreditLines({
           loanBalance={modalTarget.line.utilized}
           currentAsset={modalTarget.currentAsset}
           triggerRef={modalTarget.triggerRef}
+        />
+      )}
+
+      {/* Collateral adjust modal (top up / withdraw) */}
+      {adjustModalTarget && (
+        <CollateralAdjustModal
+          isOpen
+          onClose={() => setAdjustModalTarget(null)}
+          onSuccess={() => {
+            setAdjustModalTarget(null);
+            void refetch();
+          }}
+          creditLine={adjustModalTarget.line}
+          triggerRef={adjustModalTarget.triggerRef}
         />
       )}
 
