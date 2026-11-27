@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { offlineMutation, queueOfflineAction } from '../utils/offline';
+import { formatBytes } from '../utils/formatBytes';
 import './FileUploadZone.css';
 
 interface FileUploadItem {
@@ -43,14 +44,6 @@ export function FileUploadZone({
   const zoneRef = useRef<HTMLDivElement>(null);
   const uploadQueueRef = useRef<FileUploadItem[]>([]);
   const activeUploadsRef = useRef(0);
-
-  const formatSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
 
   const validateFile = (file: File): string | null => {
     const extension = `.${file.name.split('.').pop()?.toLowerCase()}`;
@@ -110,7 +103,7 @@ export function FileUploadZone({
           queueOfflineAction({
             type: 'upload',
             label: `Upload ${item.file.name}`,
-            description: `${formatSize(item.file.size)} · ${item.file.name.split('.').pop()?.toUpperCase() ?? 'file'}`,
+            description: `${formatBytes(item.file.size)} · ${item.file.name.split('.').pop()?.toUpperCase() ?? 'file'}`,
             dedupeKey: `upload-${item.id}`,
             run: () => uploadFile(item),
           });
@@ -257,7 +250,7 @@ export function FileUploadZone({
           <div key={item.id} id={item.id} className="file-item" role="listitem">
             <div className="file-item-info">
               <div className="file-item-name">{item.file.name}</div>
-              <div className="file-item-meta">{formatSize(item.file.size)}</div>
+              <div className="file-item-meta">{formatBytes(item.file.size)}</div>
 
               {item.status === 'uploading' && (
                 <div className="file-progress-container">
