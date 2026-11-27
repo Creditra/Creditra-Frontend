@@ -13,16 +13,10 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest",
-
-    "test:integration": "vitest --config vitest.integration.config.ts --run"
-
+    "test:integration": "vitest --config vitest.integration.config.ts --run",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
-
-
     "test:coverage": "vitest run --coverage",
     "docs:links": "node scripts/check-docs-links.mjs"
-
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^17.2.1",
