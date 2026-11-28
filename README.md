@@ -84,7 +84,7 @@ data-flow diagrams.
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20+
 - npm 9+ (we ship `package-lock.json` as the single lockfile and source of truth)
 
 ### Install, run, test, build, lint

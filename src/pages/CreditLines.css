@@ -310,6 +310,18 @@
     text-transform: uppercase;
 }
 
+.cl-limit-increase-pending {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.625rem;
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    color: var(--accent);
+    font-size: 0.7rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
 .cl-card-body {
     padding: 1rem 1.25rem;
 }

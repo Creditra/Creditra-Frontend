@@ -11,8 +11,29 @@
   margin-right: 0.5rem;
 }
 
+.wallet-balance-values {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  min-width: 0;
+}
+
 .wallet-balance-amount {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wallet-balance-divider {
+  opacity: 0.6;
+}
+
+.wallet-balance-note {
+  font-size: 0.75rem;
+  opacity: 0.75;
 }
 
 .wallet-balance-indicator {
@@ -49,5 +70,31 @@
   100% {
     opacity: 0.5;
     transform: scale(0.8);
+  }
+}
+
+@media (max-width: 640px) {
+  .wallet-balance {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    border-radius: 0.75rem;
+    padding: 0.35rem 0.6rem;
+    row-gap: 0.25rem;
+  }
+
+  .wallet-balance-values {
+    flex: 1 1 100%;
+  }
+
+  .wallet-balance-amount {
+    flex: 1 1 auto;
+  }
+
+  .wallet-balance-amount--missing .wallet-balance-note {
+    flex-basis: 100%;
+  }
+
+  .wallet-balance-indicator {
+    margin-left: auto;
   }
 }

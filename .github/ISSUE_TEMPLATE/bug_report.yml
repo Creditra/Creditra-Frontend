@@ -1,0 +1,125 @@
+name: Bug Report
+description: File a bug report to help us improve Creditra Frontend
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug!
+        **Security notice:** Never paste Stellar secret keys, mnemonic seed phrases, or private credentials into an issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of the bug.
+      placeholder: Describe what went wrong...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Provide step-by-step instructions to reproduce the issue.
+      placeholder: |
+        1. Go to '...'
+        2. Connect wallet '...'
+        3. Click on '...'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-vs-actual
+    attributes:
+      label: Expected vs. Actual Behavior
+      description: Describe what you expected to happen and what actually happened.
+      placeholder: |
+        **Expected:** ...
+        **Actual:** ...
+    validations:
+      required: true
+
+  - type: input
+    id: browser-os
+    attributes:
+      label: Browser and OS
+      description: Which browser (with version) and operating system are you using?
+      placeholder: e.g., Chrome 128 on macOS 14.6 / Windows 11
+    validations:
+      required: true
+
+  - type: dropdown
+    id: wallet
+    attributes:
+      label: Wallet
+      description: Which Stellar wallet were you using?
+      options:
+        - Freighter
+        - Albedo
+        - xBull
+        - None / Not connected
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: network
+    attributes:
+      label: Stellar Network
+      description: Which network were you connected to?
+      options:
+        - TESTNET
+        - PUBLIC
+        - Not applicable
+    validations:
+      required: true
+
+  - type: dropdown
+    id: data-source
+    attributes:
+      label: Data Source (VITE_CREDIT_DATA_SOURCE)
+      description: Which data source mode was configured when the bug occurred?
+      options:
+        - mock
+        - soroban
+        - Unknown / Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: route
+    attributes:
+      label: Route / Page
+      description: Which route or page were you on when the issue happened?
+      placeholder: e.g., /dashboard, /borrow, /lend
+    validations:
+      required: false
+
+  - type: textarea
+    id: console-errors
+    attributes:
+      label: Console Errors / Logs
+      description: Paste any relevant browser console errors or network error responses (redact any sensitive info).
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or Recordings
+      description: Drag and drop screenshots or screen recordings here if they help explain the problem.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: security-confirmation
+    attributes:
+      label: Security Confirmation
+      description: Please confirm before submitting.
+      options:
+        - label: I confirm that I have NOT pasted any secret keys, seed phrases, or private credentials in this report.
+          required: true

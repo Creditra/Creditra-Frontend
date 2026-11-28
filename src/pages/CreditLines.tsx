@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState, useMemo, useCallback, lazy, Suspense } from "react";
+import React, { useEffect, useRef, useState, useMemo, useCallback, lazy, Suspense } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback, lazy, Suspense, useContext } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { StatusBadge } from "../components/StatusBadge";
 import { CreditLineRowMenu } from "../components/CreditLineRowMenu";
+import { LimitIncreaseModal } from "../components/LimitIncreaseModal";
 import { Skeleton } from "../components/Skeleton";
 import CompareLinesPanel from "../components/CompareLinesPanel";
 import { CollateralSubstitutionModal } from "../components/CollateralSubstitutionModal";
@@ -37,6 +39,7 @@ import {
   fmtDateTime,
   relativeTime,
   getUtilizationLevel,
+  getUtilizationDisplay,
   utilizationPct,
 } from "../utils/tokens";
 import "./CreditLines.css";
@@ -48,6 +51,13 @@ import { LastActivityStamp } from "../components/LastActivityStamp";
 import { RepaymentPlanChart } from "../components/RepaymentPlanChart";
 import { CreditLineAging } from "../components/CreditLineAging";
 import { now as clockNow } from "../lib/clock";
+import { evaluateLimitIncreaseEligibility } from "../lib/limit-increase";
+import { walletIdentityKey } from "../context/WalletContext";
+import { NotificationContext } from "../context/NotificationContext";
+import {
+  getLatestLimitIncreaseRequest,
+  useLimitIncreaseRequestsForWallet,
+} from "../state/limitIncreaseRequests";
 import {
   RepaymentSchedule,
   buildRepaymentScheduleFromLines,
@@ -66,17 +76,8 @@ import {
   saveComparisonSelection,
 } from "../utils/comparisonSelection";
 
-const CreditLineDetailDrawer = lazy(() =>
-  import("../components/CreditLineDetailDrawer").then((m) => ({
-    default: m.CreditLineDetailDrawer,
-  })),
-);
-
-const AprHistoryChart = lazy(() =>
-  import("../components/AprHistoryChart").then((m) => ({
-    default: m.AprHistoryChart,
-  })),
-);
+import { CreditLineDetailDrawer } from "../components/CreditLineDetailDrawer";
+import { AprHistoryChart } from "../components/AprHistoryChart";
 
 const CREDIT_LINES_PAGE_SIZE = 6;
 const getCreditLineId = (line: CreditLine) => line.id;
@@ -154,10 +155,13 @@ function CreditLineCard({
   onDetails,
   onFreeze,
   onUnfreeze,
+  limitIncreaseDisabledReasons,
+  onRequestLimitIncrease,
+  increasePending,
 }: {
   line: CreditLine;
   isSelected: boolean;
-  onToggle: () => void;
+  onToggle: (lineId: string) => void;
   onSwapCollateral?: (
     line: CreditLine,
     triggerRef: React.RefObject<HTMLButtonElement | null>,
@@ -174,9 +178,46 @@ function CreditLineCard({
   ) => void;
   onFreeze?: (lineId: string) => void;
   onUnfreeze?: (lineId: string) => void;
-}) {
-  const pct = utilizationPct(line.utilized, line.limit);
-  const level = getUtilizationLevel(line.utilized, line.limit);
+}
+
+function areCreditLineCardPropsEqual(
+  prev: CreditLineCardProps,
+  next: CreditLineCardProps,
+): boolean {
+  return (
+    prev.isSelected === next.isSelected &&
+    prev.onToggle === next.onToggle &&
+    prev.onSwapCollateral === next.onSwapCollateral &&
+    prev.onRepay === next.onRepay &&
+    prev.onSchedule === next.onSchedule &&
+    prev.onDetails === next.onDetails &&
+    prev.onFreeze === next.onFreeze &&
+    prev.onUnfreeze === next.onUnfreeze &&
+    areCreditLinesEqual(prev.line, next.line)
+  );
+}
+
+export const CreditLineCard = React.memo(function CreditLineCard({
+  line,
+  isSelected,
+  onToggle,
+  onSwapCollateral,
+  onRepay,
+  onSchedule,
+  onDetails,
+  onFreeze,
+  onUnfreeze,
+}: CreditLineCardProps) {
+  const { pct, barPct, level, overLimitBy, available } = getUtilizationDisplay(
+    line.utilized,
+    line.limit,
+  );
+  limitIncreaseDisabledReasons: string[];
+  onRequestLimitIncrease: (
+    line: CreditLine,
+    triggerRef: React.RefObject<HTMLButtonElement | null>,
+  ) => void;
+  increasePending: boolean;
   const swapTriggerRef = useRef<HTMLButtonElement>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -202,7 +243,7 @@ function CreditLineCard({
             <input
               type="checkbox"
               checked={isSelected}
-              onChange={onToggle}
+              onChange={() => onToggle(line.id)}
               aria-label={`Select ${line.name} for comparison`}
               className="focus-ring"
             />
@@ -215,6 +256,11 @@ function CreditLineCard({
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge status={line.status} />
+          {increasePending && (
+            <span className="cl-limit-increase-pending">
+              Increase pending
+            </span>
+          )}
           <CreditLineAging line={line} />
           <CreditLineRowMenu
             lineId={line.id}
@@ -231,6 +277,10 @@ function CreditLineCard({
             onUnfreeze={canUnfreeze ? onUnfreeze : undefined}
             onSchedule={onSchedule}
             onDetails={onDetails ? (id) => onDetails(id, menuTriggerRef) : undefined}
+            onRequestLimitIncrease={(id) => {
+              if (id === line.id) onRequestLimitIncrease(line, menuTriggerRef);
+            }}
+            limitIncreaseDisabledReasons={limitIncreaseDisabledReasons}
           />
         </div>
       </div>
@@ -262,10 +312,10 @@ function CreditLineCard({
           <div className="cl-metric">
             <span className="cl-metric-label">Available</span>
             <span
-              className="cl-metric-value tabular-nums amount cl-amount"
+              className="cl-metric-value cl-available tabular-nums amount cl-amount"
               style={{ color: COLOR.success }}
             >
-              <Amount value={line.limit - line.utilized} format={fmt} maskedLabel="Available credit hidden for privacy" />
+              <Amount value={available} format={fmt} maskedLabel="Available credit hidden for privacy" />
             </span>
           </div>
         </div>
@@ -280,10 +330,27 @@ function CreditLineCard({
               {pct}%
             </span>
           </div>
-          <div className="cl-util-track">
+          {overLimitBy > 0 && (
+            <div className="cl-over-limit" role="note">
+              Over limit by {fmt(overLimitBy)}
+            </div>
+          )}
+          <div
+            className="cl-util-track"
+            role="meter"
+            aria-label={`Utilization for ${line.name}`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={pct}
+            aria-valuetext={
+              overLimitBy > 0
+                ? `${pct}% — over limit by ${fmt(overLimitBy)}`
+                : `${pct}%`
+            }
+          >
             <div
-              className="cl-util-fill"
-              style={{ width: `${pct}%`, background: UTIL_COLOR[level] }}
+              className={`cl-util-fill cl-bar-fill${overLimitBy > 0 ? " cl-bar-fill--over-limit" : ""}`}
+              style={{ width: `${barPct}%`, background: UTIL_COLOR[level] }}
             />
           </div>
         </div>
@@ -307,7 +374,7 @@ function CreditLineCard({
           </div>
           <div className="cl-detail">
             <span className="label">Opened</span>
-            <span className="value">{fmtDate(line.openedAt)}</span>
+            <span className="value tabular-nums">{fmtDate(line.openedAt)}</span>
           </div>
         </div>
 
@@ -352,7 +419,12 @@ function CreditLineCard({
       </div>
 
       {isExpanded && (
-        <div id={`cl-expanded-${line.id}`} className="cl-card-expanded">
+        <div
+          id={`cl-expanded-${line.id}`}
+          className="cl-card-expanded"
+          role="region"
+          aria-label={`APR history for ${line.name}`}
+        >
           {line.aprHistory && line.aprHistory.length > 0 && (
             <div className="cl-apr-history">
               <Suspense fallback={null}>
@@ -367,7 +439,7 @@ function CreditLineCard({
       )}
     </div>
   );
-}
+}, areCreditLineCardPropsEqual);
 
 // ─── Credit Line Card Skeleton ───────────────────────────────────────────────
 
@@ -512,10 +584,37 @@ export default function CreditLines({
   const { isReducedMotionActive } = useReducedMotion();
 
   // ── URL-backed list state ─────────────────────────────────────────────────
-  const sortField = parseSortField(searchParams.get("sort"));
-  const sortDir = parseSortDir(searchParams.get("dir"));
-  const statusFilter = parseStatusFilter(searchParams.get("status"));
-  const pageIndex = parsePageIndex(searchParams.get("page"));
+  const urlSortField = parseSortField(searchParams.get("sort"));
+  const urlSortDir = parseSortDir(searchParams.get("dir"));
+  const urlStatusFilter = parseStatusFilter(searchParams.get("status"));
+  const urlPageIndex = parsePageIndex(searchParams.get("page"));
+
+  const [localListState, setLocalListState] = useState<{
+    sort: SortField;
+    dir: SortDirection;
+    status: CreditLineStatus | "all";
+    page: number;
+  }>({
+    sort: urlSortField,
+    dir: urlSortDir,
+    status: urlStatusFilter,
+    page: urlPageIndex,
+  });
+
+  const searchStr = searchParams.toString();
+  useEffect(() => {
+    setLocalListState({
+      sort: urlSortField,
+      dir: urlSortDir,
+      status: urlStatusFilter,
+      page: urlPageIndex,
+    });
+  }, [searchStr, urlSortField, urlSortDir, urlStatusFilter, urlPageIndex]);
+
+  const sortField = localListState.sort;
+  const sortDir = localListState.dir;
+  const statusFilter = localListState.status;
+  const pageIndex = localListState.page;
 
   /** Write new list params into the URL with replace:true so Back from /repay
    *  restores the filter/sort/page rather than adding a history entry. */
@@ -531,6 +630,13 @@ export default function CreditLines({
       const newDir = updates.dir ?? sortDir;
       const newStatus = updates.status ?? statusFilter;
       const newPage = updates.page ?? pageIndex;
+
+      setLocalListState({
+        sort: newSort,
+        dir: newDir,
+        status: newStatus,
+        page: newPage,
+      });
 
       // Omit defaults from the URL to keep it canonical
       if (newSort === DEFAULT_SORT_FIELD) next.delete("sort");
@@ -556,8 +662,46 @@ export default function CreditLines({
   //    freeze/unfreeze changes are visible to Dashboard, Quick Repay, etc.
   //    The hook reads from the in-memory store in useCreditLines.ts; the
   //    setLineFrozen service writes to that same store.
-  const { lines: creditLines, status, error, refetch, setLines } = useCreditLines();
-  void defaultLoading;
+  const { lines: creditLines, status, error, refetch, setLines, owner, wallet } = useCreditLines();
+  const walletKey = wallet ? walletIdentityKey(wallet) : owner;
+  const { requests, create: createLimitIncreaseRequest } =
+    useLimitIncreaseRequestsForWallet(walletKey);
+  const notificationContext = useContext(NotificationContext);
+  const increaseStateByLine = useMemo(
+    () =>
+      new Map(
+        creditLines.map((line) => {
+          const latestRequest = getLatestLimitIncreaseRequest(requests, line.id);
+          const eligibility = evaluateLimitIncreaseEligibility(
+            line,
+            clockNow(),
+            latestRequest?.createdAt,
+          );
+          const disabledReasons = [...eligibility.reasons];
+          const increasePending = requests.some(
+            (request) => request.creditLineId === line.id && request.status === "pending",
+          );
+          if (!walletKey) disabledReasons.push("Connect a wallet to request a limit increase.");
+          if (increasePending) {
+            disabledReasons.push("A limit increase request is already pending.");
+          }
+          return [
+            line.id,
+            { maxRequestable: eligibility.maxRequestable, disabledReasons, increasePending },
+          ] as const;
+        }),
+      ),
+    [creditLines, requests, walletKey],
+  );
+  const [simulatedLoading, setSimulatedLoading] = useState(defaultLoading);
+
+  useEffect(() => {
+    if (!defaultLoading) return;
+    const timer = setTimeout(() => {
+      setSimulatedLoading(false);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [defaultLoading]);
 
   // ── Freeze/unfreeze optimistic state ─────────────────────────────────
   /** Deep snapshot of each line before an optimistic update, keyed by lineId.
@@ -569,13 +713,18 @@ export default function CreditLines({
    *  Keyed by lineId → { frozen: boolean; previousLine: CreditLine } */
   const inFlightRef = useRef<Map<string, { frozen: boolean; previousLine: CreditLine }>>(new Map());
 
+  const creditLinesRef = useRef(creditLines);
+  creditLinesRef.current = creditLines;
+  const searchParamsRef = useRef(searchParams);
+  searchParamsRef.current = searchParams;
+
   /** Persist a freeze or unfreeze through the credit data source with
    *  optimistic UI and exact rollback on failure. Concurrent toggles on
    *  the same line are serialised: the latest intent wins, and an earlier
    *  failure cannot roll back a later success. */
   const handleFreezeToggle = useCallback(
     async (lineId: string, frozen: boolean) => {
-      const lines = creditLines;
+      const lines = creditLinesRef.current;
       const currentLine = lines.find((cl) => cl.id === lineId);
       if (!currentLine) return;
 
@@ -633,7 +782,7 @@ export default function CreditLines({
         }
 
         // Apply the server-authoritative record
-        setLines(creditLines.map((cl) => (cl.id === lineId ? serverLine : cl)));
+        setLines(creditLinesRef.current.map((cl) => (cl.id === lineId ? serverLine : cl)));
         setAnnouncement(
           `Credit line ${currentLine.name} ${frozen ? "frozen." : "unfrozen."}`,
         );
@@ -647,7 +796,7 @@ export default function CreditLines({
         }
 
         // Exact rollback: restore the exact previous line object
-        setLines(creditLines.map((cl) => (cl.id === lineId ? previousLine : cl)));
+        setLines(creditLinesRef.current.map((cl) => (cl.id === lineId ? previousLine : cl)));
         setAnnouncement(
           `Failed to ${frozen ? "freeze" : "unfreeze"} ${currentLine.name}. ${frozen ? "Free" : "Unfree"}ze could not be completed — try again.`,
         );
@@ -658,16 +807,22 @@ export default function CreditLines({
         inFlightRef.current.delete(lineId);
       }
     },
-    [creditLines, setLines],
+    [setLines],
   );
 
-  const handleFreeze = (lineId: string) => {
-    handleFreezeToggle(lineId, true);
-  };
+  const handleFreeze = useCallback(
+    (lineId: string) => {
+      void handleFreezeToggle(lineId, true);
+    },
+    [handleFreezeToggle],
+  );
 
-  const handleUnfreeze = (lineId: string) => {
-    handleFreezeToggle(lineId, false);
-  };
+  const handleUnfreeze = useCallback(
+    (lineId: string) => {
+      void handleFreezeToggle(lineId, false);
+    },
+    [handleFreezeToggle],
+  );
 
   const handleRetryFreeze = () => {
     if (retryLineId) {
@@ -697,21 +852,63 @@ export default function CreditLines({
     line: CreditLine;
     triggerRef: React.RefObject<HTMLButtonElement | null>;
   } | null>(null);
+  const [limitIncreaseTarget, setLimitIncreaseTarget] = useState<{
+    line: CreditLine;
+    maxRequestable: number;
+    triggerRef: React.RefObject<HTMLButtonElement | null>;
+  } | null>(null);
+
+  const handleOpenLimitIncrease = (
+    line: CreditLine,
+    triggerRef: React.RefObject<HTMLButtonElement | null>,
+  ) => {
+    const state = increaseStateByLine.get(line.id);
+    if (!walletKey || !state || state.disabledReasons.length > 0) return;
+    setLimitIncreaseTarget({ line, maxRequestable: state.maxRequestable, triggerRef });
+  };
+
+  const handleSubmitLimitIncrease = ({
+    amount,
+    reason,
+  }: {
+    amount: number;
+    reason: string;
+  }) => {
+    if (!walletKey) throw new Error("Connect a wallet before submitting a request.");
+    if (!limitIncreaseTarget) {
+      throw new Error("Select a credit line before submitting a request.");
+    }
+    createLimitIncreaseRequest({
+      creditLineId: limitIncreaseTarget.line.id,
+      amount,
+      reason,
+    });
+    notificationContext?.addToast({
+      type: "success",
+      category: "credit_line",
+      title: "Limit increase requested",
+      message: `Your request for ${limitIncreaseTarget.line.name} has been saved.`,
+      saveToHistory: true,
+    });
+  };
 
   const handleModalClose = () => setModalTarget(null);
   const handleModalSuccess = (_incomingAsset: CollateralAsset) => {
     setModalTarget(null);
   };
-  const handleSwapCollateral = (
-    line: CreditLine,
-    triggerRef: React.RefObject<HTMLButtonElement | null>,
-  ) => {
-    setModalTarget({
-      line,
-      currentAsset: "ETH",
-      triggerRef,
-    });
-  };
+  const handleSwapCollateral = useCallback(
+    (
+      line: CreditLine,
+      triggerRef: React.RefObject<HTMLButtonElement | null>,
+    ) => {
+      setModalTarget({
+        line,
+        currentAsset: "ETH",
+        triggerRef,
+      });
+    },
+    [],
+  );
 
   const handleAdjustCollateral = (
     line: CreditLine,
@@ -733,29 +930,37 @@ export default function CreditLines({
     [creditLines, selectedLineId],
   );
 
-  const handleRepay = (lineId: string) => {
-    navigate(`/repay?line=${lineId}`);
-  };
+  const handleRepay = useCallback(
+    (lineId: string) => {
+      navigate(`/repay?line=${lineId}`);
+    },
+    [navigate],
+  );
 
-  const handleSchedule = (lineId: string) => {
-    navigate(`/repay?line=${lineId}`);
-  };
+  const handleSchedule = useCallback(
+    (lineId: string) => {
+      navigate(`/repay?line=${lineId}`);
+    },
+    [navigate],
+  );
 
   const handleDetails = useCallback(
     (lineId: string, trigger?: React.RefObject<HTMLButtonElement | null>) => {
       drawerTriggerRef.current = trigger?.current ?? null;
-      const next = new URLSearchParams(searchParams);
+      setActiveDetailsLineId(lineId);
+      const next = new URLSearchParams(searchParamsRef.current);
       next.set("line", lineId);
       setSearchParams(next, { replace: true });
     },
-    [searchParams, setSearchParams],
+    [setSearchParams],
   );
 
   const handleCloseDetails = useCallback(() => {
-    const next = new URLSearchParams(searchParams);
+    setActiveDetailsLineId(null);
+    const next = new URLSearchParams(searchParamsRef.current);
     next.delete("line");
     setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+  }, [setSearchParams]);
 
   const filteredAndSorted = useMemo(() => {
     let filtered =
@@ -813,6 +1018,7 @@ export default function CreditLines({
   }, [creditLines, sortField, sortDir, statusFilter]);
 
   const paginationKey = `${statusFilter}:${sortField}:${sortDir}`;
+  const prevPaginationKeyRef = useRef(paginationKey);
   const latestFilteredRef = useRef(filteredAndSorted);
   latestFilteredRef.current = filteredAndSorted;
   const [stableOrder, setStableOrder] = useState(() =>
@@ -825,7 +1031,10 @@ export default function CreditLines({
     setStableOrder(
       createStableOrder(latestFilteredRef.current, getCreditLineId),
     );
-    setListParams({ page: DEFAULT_PAGE });
+    if (prevPaginationKeyRef.current !== paginationKey) {
+      prevPaginationKeyRef.current = paginationKey;
+      setListParams({ page: DEFAULT_PAGE });
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paginationKey]);
 
@@ -876,7 +1085,7 @@ export default function CreditLines({
     setSelectedLines([]);
   };
 
-  const toggleSelection = (id: string) => {
+  const toggleSelection = useCallback((id: string) => {
     setSelectedLines((prev) => {
       if (prev.includes(id)) {
         return prev.filter((lineId) => lineId !== id);
@@ -887,7 +1096,7 @@ export default function CreditLines({
       setAnnouncement(`You can compare up to ${MAX_COMPARE} credit lines at a time.`);
       return prev;
     });
-  };
+  }, []);
 
   const comparePanelRef = useFocusTrap({
     isActive: showCompare,
@@ -945,7 +1154,7 @@ export default function CreditLines({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedLines, showCompare, navigate, creditLines]);
 
-  if (status === "loading") {
+  if (status === "loading" || simulatedLoading) {
     return (
       <div
         className="credit-lines-page"
@@ -1243,7 +1452,7 @@ export default function CreditLines({
               <button
                 type="button"
                 className="cl-primary-btn focus-ring"
-                onClick={() => setStatusFilter("all")}
+                onClick={() => setListParams({ status: "all", page: DEFAULT_PAGE })}
               >
                 Clear Filters
               </button>
@@ -1275,14 +1484,23 @@ export default function CreditLines({
                     key={line.id}
                     line={line}
                     isSelected={selectedLines.includes(line.id)}
-                    onToggle={() => toggleSelection(line.id)}
+                    onToggle={toggleSelection}
                     onSwapCollateral={handleSwapCollateral}
                     onAdjustCollateral={handleAdjustCollateral}
                     onRepay={() => handleRepay(line.id)}
                     onFreeze={handleFreeze}
                     onUnfreeze={handleUnfreeze}
-                    onSchedule={() => handleSchedule(line.id)}
+                    onSchedule={handleSchedule}
                     onDetails={handleDetails}
+                    limitIncreaseDisabledReasons={
+                      increaseStateByLine.get(line.id)?.disabledReasons ?? [
+                        "Eligibility could not be determined.",
+                      ]
+                    }
+                    increasePending={
+                      increaseStateByLine.get(line.id)?.increasePending ?? false
+                    }
+                    onRequestLimitIncrease={handleOpenLimitIncrease}
                   />
                 ))}
               </div>
@@ -1392,6 +1610,16 @@ export default function CreditLines({
           }}
           creditLine={adjustModalTarget.line}
           triggerRef={adjustModalTarget.triggerRef}
+        />
+      )}
+
+      {limitIncreaseTarget && (
+        <LimitIncreaseModal
+          line={limitIncreaseTarget.line}
+          maxRequestable={limitIncreaseTarget.maxRequestable}
+          triggerRef={limitIncreaseTarget.triggerRef}
+          onClose={() => setLimitIncreaseTarget(null)}
+          onSubmit={handleSubmitLimitIncrease}
         />
       )}
 

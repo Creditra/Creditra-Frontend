@@ -83,3 +83,8 @@ export const TRANSACTION_PRESETS_STORAGE_KEY = 'creditra.transaction_presets';
 export function autopaySchedulesStorageKey(owner: string): string {
   return `creditra.autopay_schedules.${owner}.v1`;
 }
+
+/** Per-wallet credit limit increase requests persistence key. */
+export function limitIncreaseRequestsStorageKey(owner: string): string {
+  return `creditra.limit_increase_requests.${owner}.v1`;
+}

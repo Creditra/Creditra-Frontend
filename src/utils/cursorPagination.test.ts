@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_HISTORY_PAGE_SIZE,
   paginateByCursor,
+  paginateTransactions,
 } from "./cursorPagination";
 
 type Entry = { id: string; date: string };
@@ -64,5 +65,91 @@ describe("paginateByCursor", () => {
 
     expect(result.items).toHaveLength(MAX_HISTORY_PAGE_SIZE);
     expect(result.hasNextPage).toBe(true);
+  });
+});
+
+describe("paginateTransactions", () => {
+  type Row = { id: string };
+  const rows: Row[] = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+  const ids = (page: { transactions: Row[] }) =>
+    page.transactions.map((row) => row.id);
+
+  it("returns the first page without a cursor", () => {
+    const page = paginateTransactions(rows, { limit: 2 });
+
+    expect(ids(page)).toEqual(["a", "b"]);
+    expect(page.nextCursor).toBe("b");
+    expect(page.staleCursor).toBe(false);
+  });
+
+  it("continues after a valid cursor in the middle of the list", () => {
+    const page = paginateTransactions(rows, { cursor: "b", limit: 1 });
+
+    expect(ids(page)).toEqual(["c"]);
+    expect(page.nextCursor).toBe("c");
+    expect(page.staleCursor).toBe(false);
+  });
+
+  it("returns the last page with no next cursor", () => {
+    const page = paginateTransactions(rows, { cursor: "c", limit: 2 });
+
+    expect(ids(page)).toEqual(["d"]);
+    expect(page.nextCursor).toBeNull();
+    expect(page.staleCursor).toBe(false);
+  });
+
+  it("returns the remainder when no limit is supplied", () => {
+    const page = paginateTransactions(rows, { cursor: "a" });
+
+    expect(ids(page)).toEqual(["b", "c", "d"]);
+    expect(page.nextCursor).toBeNull();
+    expect(page.staleCursor).toBe(false);
+  });
+
+  it("reports a stale cursor instead of restarting at the first page", () => {
+    const page = paginateTransactions(rows, {
+      cursor: "removed-row",
+      limit: 2,
+    });
+
+    expect(page.transactions).toEqual([]);
+    expect(page.nextCursor).toBeNull();
+    expect(page.staleCursor).toBe(true);
+    expect(ids(page)).not.toEqual(["a", "b"]);
+  });
+
+  it("handles an empty list with and without a cursor", () => {
+    expect(paginateTransactions([], { limit: 2 })).toEqual({
+      transactions: [],
+      nextCursor: null,
+      staleCursor: false,
+    });
+    expect(paginateTransactions([], { cursor: "gone", limit: 2 })).toEqual({
+      transactions: [],
+      nextCursor: null,
+      staleCursor: true,
+    });
+  });
+
+  it("returns an empty page for limit 0, even with a valid cursor", () => {
+    const first = paginateTransactions(rows, { limit: 0 });
+    const afterCursor = paginateTransactions(rows, {
+      cursor: "b",
+      limit: 0,
+    });
+
+    expect(first.transactions).toEqual([]);
+    expect(first.nextCursor).toBeNull();
+    expect(first.staleCursor).toBe(false);
+    expect(afterCursor.transactions).toEqual([]);
+    expect(afterCursor.nextCursor).toBeNull();
+    expect(afterCursor.staleCursor).toBe(false);
+  });
+
+  it("keeps the previous behaviour for an empty-string cursor", () => {
+    const page = paginateTransactions(rows, { cursor: "", limit: 2 });
+
+    expect(ids(page)).toEqual(["a", "b"]);
+    expect(page.staleCursor).toBe(false);
   });
 });

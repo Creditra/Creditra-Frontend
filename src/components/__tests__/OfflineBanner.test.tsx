@@ -84,4 +84,27 @@ describe('OfflineBanner', () => {
     
     vi.useRealTimers();
   });
+
+  it('does not submit an enclosing form when retry button is clicked', async () => {
+    const handleSubmit = vi.fn((e) => e.preventDefault());
+    vi.spyOn(useOnlineHook, 'useOnline').mockReturnValue({
+      isOnline: false,
+      queueAction: vi.fn(),
+      checkOnlineStatus: mockCheckOnlineStatus,
+      queuedActionCount: 0,
+    });
+
+    render(
+      <form onSubmit={handleSubmit}>
+        <OfflineBanner />
+      </form>,
+    );
+
+    const button = screen.getByRole('button', { name: 'Retry connection' });
+    expect(button).toHaveAttribute('type', 'button');
+
+    await userEvent.click(button);
+    expect(mockCheckOnlineStatus).toHaveBeenCalledTimes(1);
+    expect(handleSubmit).not.toHaveBeenCalled();
+  });
 });
